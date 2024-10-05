@@ -1,0 +1,40 @@
+name: Tag Release
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Get latest tag
+        id: get_latest_tag
+        run: |
+          git fetch --tags
+          TAG=$(git tag --sort=-creatordate | head -n 1)
+          echo "Latest tag is $TAG"
+          echo "::set-output name=latest::$TAG"
+
+      - name: Determine new version
+        id: new_version
+        run: |
+          latest_tag="${{ steps.get_latest_tag.outputs.latest }}"
+          if [ -z "$latest_tag" ]; then
+            new_version="v0.1.0"
+          else
+            # Increment the patch version
+            new_version=$(echo $latest_tag | awk -F. -v OFS=. '{$NF++;print}')
+          fi
+          echo "New version is $new_version"
+          echo "::set-output name=new_version::$new_version"
+
+      - name: Create new tag
+        run: |
+          git tag "${{ steps.new_version.outputs.new_version }}"
+          git push origin "${{ steps.new_version.outputs.new_version }}"
