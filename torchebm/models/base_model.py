@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import torch
-from ..core import EnergyFunction, Sampler
+from torchebm.core.energy_function import EnergyFunction
+from torchebm.core.sampler import Sampler
 
 class BaseModel(ABC):
     def __init__(self, energy_function: EnergyFunction, sampler: Sampler):

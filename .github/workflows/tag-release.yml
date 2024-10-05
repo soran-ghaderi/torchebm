@@ -1,52 +1,9 @@
-#name: Tag Release
-#
-#on:
-#  push:
-#    branches:
-#      - master
-#
-#jobs:
-#  tag:
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v3
-#
-#      - name: Get latest tag
-#        id: get_latest_tag
-#        run: |
-#          git fetch --tags
-#          TAG=$(git tag --sort=-creatordate | head -n 1)
-#          echo "Latest tag is $TAG"
-#          echo "::set-output name=latest::$TAG"
-#
-#      - name: Determine new version
-#        id: new_version
-#        run: |
-#          latest_tag="${{ steps.get_latest_tag.outputs.latest }}"
-#          if [ -z "$latest_tag" ]; then
-#            new_version="v0.1.0"
-#          else
-#            # Increment the patch version
-#            new_version=$(echo $latest_tag | awk -F. -v OFS=. '{$NF++;print}')
-#          fi
-#          echo "New version is $new_version"
-#          echo "::set-output name=new_version::$new_version"
-#
-#      - name: Create new tag
-#        run: |
-#          git tag "${{ steps.new_version.outputs.new_version }}"
-#          git push origin "${{ steps.new_version.outputs.new_version }}"
-
 #name: Release and Publish
 #
 #on:
 #  push:
 #    branches:
 #      - master  # Adjust as necessary
-#  release:
-#    types: [published]  # Trigger on release published
 #
 #jobs:
 #  release:
@@ -69,10 +26,10 @@
 #        run: |
 #          latest_tag="${{ steps.get_latest_tag.outputs.latest }}"
 #          if [ -z "$latest_tag" ]; then
-#            new_version="v0.1.0"
+#            new_version="0.1.0"  # No 'v' prefix for version number
 #          else
 #            # Increment the patch version
-#            new_version=$(echo $latest_tag | awk -F. -v OFS=. '{$NF++;print}')
+#            new_version=$(echo $latest_tag | awk -F. -v OFS=. '{$NF++;print}' | sed 's/^v//')
 #          fi
 #          echo "New version is $new_version"
 #          echo "::set-output name=new_version::$new_version"
@@ -83,8 +40,8 @@
 #
 #      - name: Create new tag
 #        run: |
-#          git tag "${{ steps.new_version.outputs.new_version }}"
-#          git push origin "${{ steps.new_version.outputs.new_version }}"
+#          git tag "v${{ steps.new_version.outputs.new_version }}"
+#          git push origin "v${{ steps.new_version.outputs.new_version }}"
 #
 #      - name: Set up Python
 #        uses: actions/setup-python@v4
@@ -95,14 +52,6 @@
 #        run: |
 #          python -m pip install --upgrade pip
 #          pip install -r requirements.txt
-#
-#      - name: Set PYTHONPATH
-#        run: echo "PYTHONPATH=$(pwd)/torchebm" >> $GITHUB_ENV
-#
-#
-#      - name: Install package
-#        run: |
-#          pip install .
 #
 #      - name: Set PYTHONPATH
 #        run: echo "PYTHONPATH=$(pwd)/torchebm" >> $GITHUB_ENV
@@ -127,13 +76,14 @@
 #          password: ${{ secrets.PYPI_API_TOKEN_EBM }}
 
 
-
 name: Release and Publish
 
 on:
   push:
     branches:
       - master  # Adjust as necessary
+    paths:
+      - 'pyproject.toml'  # Trigger on changes to pyproject.toml
 
 jobs:
   release:
@@ -142,6 +92,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Get current version from pyproject.toml
+        id: get_version
+        run: |
+          version=$(grep '^version =' pyproject.toml | sed 's/version = //; s/"//g')
+          echo "Current version is $version"
+          echo "::set-output name=current_version::$version"
 
       - name: Get latest tag
         id: get_latest_tag
@@ -155,18 +112,15 @@ jobs:
         id: new_version
         run: |
           latest_tag="${{ steps.get_latest_tag.outputs.latest }}"
-          if [ -z "$latest_tag" ]; then
-            new_version="0.1.0"  # No 'v' prefix for version number
+          current_version="${{ steps.get_version.outputs.current_version }}"
+          
+          if [ "$latest_tag" == "$current_version" ]; then
+            echo "No new version detected."
+            exit 1  # Exit if no new version is found
           else
-            # Increment the patch version
-            new_version=$(echo $latest_tag | awk -F. -v OFS=. '{$NF++;print}' | sed 's/^v//')
+            echo "New version detected: $current_version"
+            echo "::set-output name=new_version::$current_version"
           fi
-          echo "New version is $new_version"
-          echo "::set-output name=new_version::$new_version"
-
-      - name: Update pyproject.toml version
-        run: |
-          sed -i "s/^version = .*/version = \"${{ steps.new_version.outputs.new_version }}\"/" pyproject.toml
 
       - name: Create new tag
         run: |

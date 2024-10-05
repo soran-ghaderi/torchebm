@@ -9,9 +9,3 @@ class EnergyFunction(ABC):
     @abstractmethod
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         pass
-
-    def cuda_forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward(x)  # Default to PyTorch implementation
-
-    def cuda_gradient(self, x: torch.Tensor) -> torch.Tensor:
-        return self.gradient(x)
