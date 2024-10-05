@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'  # Specify your Python version
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
@@ -36,4 +36,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           username: __token__  # Use __token__ for token-based authentication
-          password: ${{ secrets.PYPI_API_TOKEN }}  # Store your API token in GitHub Secrets
+          password: ${{ secrets.PYPI_API_TOKEN_EBM }}
