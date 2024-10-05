@@ -1,6 +1,5 @@
 import pytest
 import torch
-
 from torchebm.core.energy_function import EnergyFunction
 
 class SimpleQuadraticEnergy(EnergyFunction):
@@ -35,3 +34,5 @@ def test_energy_function():
     cuda_grad = energy_fn.cuda_gradient(x)
     assert torch.allclose(cuda_grad, grad), f"cuda_gradient should match gradient, but got {cuda_grad} vs {grad}"
 
+if __name__ == "__main__":
+    pytest.main([__file__])

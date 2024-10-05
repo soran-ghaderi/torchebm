@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 import torch
 
+from torchebm.core.energy_function import EnergyFunction
+
+
 class Sampler(ABC):
     @abstractmethod
     def sample(self, energy_function: EnergyFunction, initial_state: torch.Tensor, num_steps: int) -> torch.Tensor:
