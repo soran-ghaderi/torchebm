@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "torchEBM"  # Replace with your package name
-#version = "0.1.1"
-dynamic = ["version"]
+version = "0.1.0"
+#dynamic = ["version"]
 description = "Components and algorithms for energy-based models"
 readme = "README.md"
 license = { file = "LICENSE" }
