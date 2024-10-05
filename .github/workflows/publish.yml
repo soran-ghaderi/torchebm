@@ -1,0 +1,39 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'  # Specify your Python version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          pytest tests/  # Adjust the path to your test directory
+
+      - name: Build the package
+        run: |
+          python -m pip install --upgrade build
+          python -m build  # This will create .tar.gz and .whl files in the dist/ directory
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          username: __token__  # Use __token__ for token-based authentication
+          password: ${{ secrets.PYPI_API_TOKEN }}  # Store your API token in GitHub Secrets
