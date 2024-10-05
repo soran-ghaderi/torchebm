@@ -76,6 +76,10 @@ jobs:
           fi
           echo "New version is $new_version"
           echo "::set-output name=new_version::$new_version"
+      
+      - name: Update pyproject.toml version
+        run: |
+          sed -i "s/^version = .*/version = \"${{ steps.new_version.outputs.new_version }}\"/" pyproject.toml
 
       - name: Create new tag
         run: |
