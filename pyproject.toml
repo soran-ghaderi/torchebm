@@ -13,4 +13,4 @@ authors = [{ name="Soran Ghaderi", email="soran.gdr.cs@gmail.com" }]
 dependencies = [
     # List your dependencies here, e.g., "numpy", "torch"
 ]
-url = "https://github.com/soran-ghaderi/torchebm"
+homepage = "https://github.com/soran-ghaderi/torchebm"
