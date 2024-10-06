@@ -76,7 +76,6 @@
 #          password: ${{ secrets.PYPI_API_TOKEN_EBM }}
 
 
-
 name: Automated Tagging and Release
 
 on:
@@ -100,10 +99,10 @@ jobs:
     - name: Get update type from commit message
       id: get_update_type
       run: |
-        commit_message=$(git log -1 --pretty=%B)
-        if [[ $commit_message == *"#major"* ]]; then
+        commit_message="${{ github.event.head_commit.message }}"
+        if [[ "$commit_message" == *"#major"* ]]; then
           echo "update_type=major" >> $GITHUB_OUTPUT
-        elif [[ $commit_message == *"#minor"* ]]; then
+        elif [[ "$commit_message" == *"#minor"* ]]; then
           echo "update_type=minor" >> $GITHUB_OUTPUT
         else
           echo "update_type=patch" >> $GITHUB_OUTPUT
