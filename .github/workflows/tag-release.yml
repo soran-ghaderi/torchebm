@@ -81,7 +81,7 @@ name: Automated Tagging and Release
 on:
   push:
     branches:
-      - master  # or master, depending on your default branch name
+      - master
 
 jobs:
   update-tag:
@@ -153,6 +153,7 @@ jobs:
         git tag $new_tag
         git push origin $new_tag
 
+# =========== it works until here ==================
   release:
     needs: update-tag
     if: contains(github.event.head_commit.message, '#release')
@@ -181,7 +182,7 @@ jobs:
       run: pip install .
 
     - name: Run tests
-      run: pytest tests/  # Adjust the path to your test directory
+      run: pytest tests/
 
     - name: Build the package
       run: |
