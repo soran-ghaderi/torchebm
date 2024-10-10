@@ -1,6 +1,6 @@
 import torch
 from torchebm.core.energy_function import EnergyFunction
-from torchebm.core.sampler import LangevinDynamics
+from torchebm.samplers.langevin_dynamics import LangevinDynamics
 from matplotlib import pyplot as plt
 
 class QuadraticEnergy(EnergyFunction):
