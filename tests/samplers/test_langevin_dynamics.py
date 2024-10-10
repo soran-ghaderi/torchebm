@@ -25,3 +25,17 @@ def test_langevin_dynamics_initialization():
     assert sampler.step_size == 0.1
     assert sampler.noise_scale == 0.1
 
+def test_langevin_dynamics_initialization_invalid_params():
+    energy_func = QuadraticEnergy()
+    with pytest.raises(ValueError):
+        LangevinDynamics(energy_func, step_size=-0.1, noise_scale=0.1)
+    with pytest.raises(ValueError):
+        LangevinDynamics(energy_func, step_size=0.1, noise_scale=-0.1)
+
+def test_langevin_dynamics_sample(langevin_sampler):
+    initial_state = torch.tensor([1.0, 1.0])
+    n_steps = 100
+    final_state = langevin_sampler.sample(initial_state, n_steps)
+    assert final_state.shape == initial_state.shape
+    assert torch.all(torch.isfinite(final_state))
+
