@@ -120,3 +120,19 @@ class AckleyEnergy(EnergyFunction):
     def to(self, device):
         self.device = device
         return self
+
+class RastriginEnergy(EnergyFunction):
+    def __init__(self, a: float = 10.0):
+        super().__init__()
+        self.a = a
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        n = x.shape[-1]
+        return self.a * n + torch.sum(x**2 - self.a * torch.cos(2 * math.pi * x), dim=-1)
+
+    def gradient(self, x: torch.Tensor) -> torch.Tensor:
+        return 2 * x + 2 * math.pi * self.a * torch.sin(2 * math.pi * x)
+
+    def to(self, device):
+        self.device = device
+        return self
