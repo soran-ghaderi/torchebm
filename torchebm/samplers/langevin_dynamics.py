@@ -92,3 +92,4 @@ class LangevinDynamics(Sampler):
             current_states = current_states - self.step_size * gradients + noise
 
         return current_states
+
