@@ -99,8 +99,6 @@ def advanced_example():
 
         def to(self, device):
             self.device = device
-            self.mean = self.mean.to(device)
-            self.precision = self.precision.to(device)
             return self
 
     # Create energy function and sampler

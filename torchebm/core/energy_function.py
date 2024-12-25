@@ -21,3 +21,18 @@ class EnergyFunction(nn.Module, ABC):
     def to(self, device):
         self.device = device
         return self
+
+class DoubleWellEnergy(EnergyFunction):
+    def __init__(self, barrier_height: float = 2.0):
+        super().__init__()
+        self.barrier_height = barrier_height
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.barrier_height * (x.pow(2) - 1).pow(2)
+
+    def gradient(self, x: torch.Tensor) -> torch.Tensor:
+        return 4 * self.barrier_height * x * (x.pow(2) - 1)
+
+    def to(self, device):
+        self.device = device
+        return self
