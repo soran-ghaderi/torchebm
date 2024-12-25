@@ -17,3 +17,7 @@ class EnergyFunction(nn.Module, ABC):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs):
         return self.forward(x)
+
+    def to(self, device):
+        self.device = device
+        return self
