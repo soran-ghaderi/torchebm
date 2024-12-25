@@ -51,10 +51,11 @@ def main():
         n_chains = 10
         initial_states = torch.randn(n_chains, 2) * 2
         parallel_samples = sampler.sample_parallel(initial_states, n_steps)
-            plot_samples(parallel_samples, energy_function, "Parallel Langevin Dynamics Sampling")
+        plot_samples(parallel_samples, energy_function, "Parallel Langevin Dynamics Sampling")
 
     except ValueError as e:
         print(f"Error: {e}")
+
 
 
 if __name__ == "__main__":
