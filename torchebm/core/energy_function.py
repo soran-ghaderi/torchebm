@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import torch
 from torch import nn
 
+
+
 class EnergyFunction(nn.Module, ABC):
     def __init__(self):
         super().__init__()
@@ -29,7 +31,7 @@ class DoubleWellEnergy(EnergyFunction):
         self.barrier_height = barrier_height
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.barrier_height * (x.pow(2) - 1).pow(2)
+        return self.barrier_height * (x.pow(2) - 1).pow(2).sum(dim=-1)
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         return 4 * self.barrier_height * x * (x.pow(2) - 1)
@@ -65,7 +67,7 @@ class HarmonicEnergy(EnergyFunction):
         self.k = k
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return 0.5 * self.k * x.pow(2)
+        return 0.5 * self.k * x.pow(2).sum(dim=-1)
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         return self.k * x
@@ -136,3 +138,4 @@ class RastriginEnergy(EnergyFunction):
     def to(self, device):
         self.device = device
         return self
+
