@@ -10,13 +10,13 @@ class LangevinDynamics(Sampler):
     """Langevin dynamics sampler implementation."""
 
     def __init__(
-            self,
-            energy_function: EnergyFunction,
-            step_size: float = 1e-3,
-            noise_scale: float = 1.0,
-            decay: float = 0.0,
-            dtype: torch.dtype = torch.float32,
-            device: Optional[Union[str, torch.device]] = None
+        self,
+        energy_function: EnergyFunction,
+        step_size: float = 1e-3,
+        noise_scale: float = 1.0,
+        decay: float = 0.0,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = None,
     ):
         """
         Initialize Langevin dynamics sampler.
@@ -41,11 +41,11 @@ class LangevinDynamics(Sampler):
         self.decay = decay
 
     def sample(
-            self,
-            initial_state: torch.Tensor,
-            n_steps: int,
-            return_trajectory: bool = False,
-            return_diagnostics: bool = False
+        self,
+        initial_state: torch.Tensor,
+        n_steps: int,
+        return_trajectory: bool = False,
+        return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
         """Implementation of Langevin dynamics sampling."""
         current_state = initial_state.to(device=self.device, dtype=self.dtype)
@@ -56,8 +56,14 @@ class LangevinDynamics(Sampler):
             gradient = self.energy_function.gradient(current_state)
 
             if return_diagnostics:
-                diagnostics['energies'].append(
-                    self.energy_function(current_state).item()
+                # diagnostics['energies'].append(
+                #     self.energy_function(current_state).item()
+                # )
+                diagnostics["energies"] = torch.cat(
+                    [
+                        diagnostics["energies"],
+                        self.energy_function(current_state).unsqueeze(0),
+                    ]
                 )
 
             if self.decay > 0:
@@ -72,33 +78,35 @@ class LangevinDynamics(Sampler):
         result = torch.stack(trajectory) if return_trajectory else current_state
 
         if return_diagnostics:
-            if diagnostics['energies']:
-                diagnostics['energies'] = torch.tensor(diagnostics['energies'])
+            # if diagnostics["energies"]:
+            if diagnostics["energies"].nelement() > 0:
+                diagnostics["energies"] = diagnostics["energies"]
             return result, diagnostics
         return result
 
     @torch.no_grad()
     def sample_parallel(
-            self,
-            initial_states: torch.Tensor,
-            n_steps: int,
-            return_diagnostics: bool = False
+        self,
+        initial_states: torch.Tensor,
+        n_steps: int,
+        return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
         """Implementation of parallel Langevin dynamics sampling."""
         current_states = initial_states.to(device=self.device, dtype=self.dtype)
-        diagnostics = {
-            'mean_energies': [],
-            'mean_gradient_norms': []
-        } if return_diagnostics else None
+        diagnostics = (
+            {"mean_energies": [], "mean_gradient_norms": []}
+            if return_diagnostics
+            else None
+        )
 
         for _ in range(n_steps):
             gradients = self.energy_function.gradient(current_states)
 
             if return_diagnostics:
-                diagnostics['mean_energies'].append(
+                diagnostics["mean_energies"].append(
                     self.energy_function(current_states).mean().item()
                 )
-                diagnostics['mean_gradient_norms'].append(
+                diagnostics["mean_gradient_norms"].append(
                     gradients.norm(dim=-1).mean().item()
                 )
 
@@ -109,10 +117,12 @@ class LangevinDynamics(Sampler):
             current_states = current_states - self.step_size * gradients + noise
 
         if return_diagnostics:
-            if diagnostics['mean_energies']:
-                diagnostics['mean_energies'] = torch.tensor(diagnostics['mean_energies'])
-                diagnostics['mean_gradient_norms'] = torch.tensor(diagnostics['mean_gradient_norms'])
+            if diagnostics["mean_energies"]:
+                diagnostics["mean_energies"] = torch.tensor(
+                    diagnostics["mean_energies"]
+                )
+                diagnostics["mean_gradient_norms"] = torch.tensor(
+                    diagnostics["mean_gradient_norms"]
+                )
             return current_states, diagnostics
         return current_states
-
-

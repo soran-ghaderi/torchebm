@@ -318,7 +318,7 @@ class HamiltonianMonteCarlo1(Sampler):
     #     state_shape = current_states.shape[1:]
     #
     #     for _ in range(n_steps):
-    #         # Sample initial momentum
+    #         # sample initial momentum
     #         momenta = self._sample_initial_momentum(batch_size, state_shape)
     #
     #         # Perform leapfrog integration
@@ -401,7 +401,7 @@ class HamiltonianMonteCarlo1(Sampler):
         state_shape = current_states.shape[1:]
 
         for step in range(n_steps):
-            # Sample initial momentum (already on correct device from _sample_initial_momentum)
+            # sample initial momentum (already on correct device from _sample_initial_momentum)
             momenta = self._sample_initial_momentum(batch_size, state_shape)
 
             # Initialize new states and momenta
@@ -535,7 +535,7 @@ class HamiltonianMonteCarlo(Sampler):
     def _sample_initial_momentum(
         self, batch_size: int, state_shape: tuple
     ) -> torch.Tensor:
-        """Sample initial momentum."""
+        """sample initial momentum."""
         momentum = torch.randn(
             (batch_size, *state_shape), device=self.device, dtype=self.dtype
         )
@@ -566,7 +566,7 @@ class HamiltonianMonteCarlo(Sampler):
         )
 
         for step in range(n_steps):
-            # Sample initial momentum
+            # sample initial momentum
             initial_momentum = self._sample_initial_momentum(batch_size, state_shape)
 
             # Initialize position
@@ -658,7 +658,7 @@ class HamiltonianMonteCarlo(Sampler):
         state_shape = current_states.shape[1:]
 
         for step in range(n_steps):
-            # Sample initial momentum (already on correct device from _sample_initial_momentum)
+            # sample initial momentum (already on correct device from _sample_initial_momentum)
             momenta = self._sample_initial_momentum(batch_size, state_shape)
 
             # Initialize new states and momenta
@@ -858,7 +858,7 @@ def visualize_sampling_trajectory(
     # Create figure with subplots
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=figsize)
 
-    # Plot 1: Sampling Trajectory
+    # plot 1: Sampling Trajectory
     scatter = ax1.scatter(
         samples[:, 0],
         samples[:, 1],
@@ -876,20 +876,20 @@ def visualize_sampling_trajectory(
     ax1.legend()
     plt.colorbar(scatter, ax=ax1, label="Step")
 
-    # Plot 2: Energy Evolution
+    # plot 2: Energy Evolution
     energies = diagnostics["energies"].cpu().numpy()
     ax2.plot(energies, "b-", alpha=0.7)
     ax2.set_xlabel("Step")
     ax2.set_ylabel("Energy")
     ax2.set_title("Energy Evolution")
 
-    # Plot 3: Sample Distribution
+    # plot 3: sample Distribution
     sns.kdeplot(
         x=samples[:, 0], y=samples[:, 1], ax=ax3, fill=True, cmap="viridis", levels=10
     )
     ax3.set_xlabel("x₁")
     ax3.set_ylabel("x₂")
-    ax3.set_title("Sample Distribution")
+    ax3.set_title("sample Distribution")
 
     # Add acceptance rate as text
     acceptance_rate = diagnostics["acceptance_rate"].item()
@@ -914,7 +914,7 @@ def plot_hmc_diagnostics(
     save_path: Optional[str] = None,
 ) -> None:
     """
-    Plot detailed diagnostics for HMC sampling.
+    plot detailed diagnostics for HMC sampling.
 
     Args:
         samples: Tensor of samples
@@ -931,24 +931,24 @@ def plot_hmc_diagnostics(
 
     fig, axes = plt.subplots(1, 3, figsize=figsize)
 
-    # Plot 1: Energy Trace
+    # plot 1: Energy Trace
     axes[0].plot(energies, "b-", alpha=0.7)
     axes[0].set_title("Energy Trace")
     axes[0].set_xlabel("Step")
     axes[0].set_ylabel("Energy")
 
-    # Plot 2: Energy Distribution
+    # plot 2: Energy Distribution
     sns.histplot(energies, kde=True, ax=axes[1])
     axes[1].set_title("Energy Distribution")
     axes[1].set_xlabel("Energy")
 
-    # Plot 3: Sample Autocorrelation
+    # plot 3: sample Autocorrelation
     from statsmodels.tsa.stattools import acf
 
     max_lag = min(50, len(samples) - 1)
     acf_values = acf(samples[:, 0], nlags=max_lag, fft=True)
     axes[2].plot(range(max_lag + 1), acf_values)
-    axes[2].set_title("Sample Autocorrelation")
+    axes[2].set_title("sample Autocorrelation")
     axes[2].set_xlabel("Lag")
     axes[2].set_ylabel("ACF")
 
@@ -960,7 +960,6 @@ def plot_hmc_diagnostics(
     plt.show()
 
 
-# Example usage
 if __name__ == "__main__":
     # visualize_sampling_trajectory(n_steps=100, step_size=0.1, n_leapfrog_steps=10)
 
