@@ -86,7 +86,7 @@ class Sampler(ABC):
     def _setup_diagnostics(self) -> dict:
         """Initialize the diagnostics dictionary."""
         return {
-            "energies": torch.empty(0, device=self.device, dtype=self.dtype),
+            "energies": torch.tensor([], device=self.device, dtype=self.dtype),
             "acceptance_rate": torch.tensor(0.0, device=self.device, dtype=self.dtype),
         }
 
