@@ -13,7 +13,7 @@ from torchebm.core.energy_function import EnergyFunction
 from torchebm.core.losses import Loss
 
 
-class ContrastiveDivergenceLoss(Loss):
+class ContrastiveDivergenceBase(Loss):
     def __init__(self, k=1):
         super().__init__()
         self.k = k  # Number of sampling steps
@@ -36,7 +36,7 @@ class ContrastiveDivergenceLoss(Loss):
         return loss
 
 
-class ContrastiveDivergence(ContrastiveDivergenceLoss):
+class ContrastiveDivergence(ContrastiveDivergenceBase):
     def __init__(self, k=1):
         super().__init__(k)
 
@@ -49,7 +49,7 @@ class ContrastiveDivergence(ContrastiveDivergenceLoss):
         return x_neg
 
 
-class PersistentContrastiveDivergence(ContrastiveDivergenceLoss):
+class PersistentContrastiveDivergence(ContrastiveDivergenceBase):
     def __init__(self, buffer_size=100):
         super().__init__(k=1)
         self.buffer = None  # Persistent chain state
@@ -68,3 +68,22 @@ class PersistentContrastiveDivergence(ContrastiveDivergenceLoss):
     #     # Return a subset of the buffer as negative samples
     #     idx = torch.randint(0, self.buffer_size, (x_pos.shape[0],))
     #     return self.buffer[idx]
+
+
+class ParallelTemperingCD(ContrastiveDivergenceBase):
+    def __init__(self, temps=[1.0, 0.5], k=5):
+        super().__init__(k)
+        self.temps = temps  # List of temperatures
+
+    # def sample(self, energy_model, x_pos):
+    #     chains = [x_pos.detach().clone() for _ in self.temps]
+    #     for _ in range(self.k):
+    #         # Run Gibbs steps at each temperature
+    #         for i, temp in enumerate(self.temps):
+    #             chains[i] = energy_model.gibbs_step(chains[i], temp=temp)
+    #
+    #         # Swap states between chains (temperature exchange)
+    #         swap_idx = torch.randint(0, len(self.temps) - 1, (1,))
+    #         chains[swap_idx], chains[swap_idx + 1] = chains[swap_idx + 1], chains[swap_idx]
+    #
+    #     return chains[0]  # Return samples from the highest-temperature chain
