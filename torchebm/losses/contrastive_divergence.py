@@ -13,7 +13,7 @@ from torchebm.core.energy_function import EnergyFunction
 from torchebm.core.losses import Loss
 
 
-class ContrastiveDivergence(Loss):
+class ContrastiveDivergenceLoss(Loss):
     def __init__(self, k=1):
         super().__init__()
         self.k = k  # Number of sampling steps
@@ -34,3 +34,37 @@ class ContrastiveDivergence(Loss):
         x_neg = self.sample(energy_model, x_pos)
         loss = energy_model(x_pos).mean() - energy_model(x_neg).mean()
         return loss
+
+
+class ContrastiveDivergence(ContrastiveDivergenceLoss):
+    def __init__(self, k=1):
+        super().__init__(k)
+
+    def sample(self, energy_model, x_pos):
+        x_neg = x_pos.clone().detach()
+        for _ in range(self.k):
+            x_neg = energy_model.gibbs_step(
+                x_neg
+            )  # todo: implement `gibbs_step` in energy_model
+        return x_neg
+
+
+# class PersistentContrastiveDivergence(ContrastiveDivergenceLoss):
+#     def __init__(self, buffer_size=100):
+#         super().__init__(k=1)
+#         self.buffer = None  # Persistent chain state
+#         self.buffer_size = buffer_size
+#
+#     def sample(self, energy_model, x_pos):
+#         if self.buffer is None or len(self.buffer) != self.buffer_size:
+#             # Initialize buffer with random noise
+#             self.buffer = torch.randn(self.buffer_size, *x_pos.shape[1:],
+#                                       device=x_pos.device)
+#
+#         # Update buffer with Gibbs steps
+#         for _ in range(self.k):
+#             self.buffer = energy_model.gibbs_step(self.buffer)
+#
+#         # Return a subset of the buffer as negative samples
+#         idx = torch.randint(0, self.buffer_size, (x_pos.shape[0],))
+#         return self.buffer[idx]
