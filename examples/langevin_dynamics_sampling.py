@@ -241,129 +241,200 @@ from matplotlib.animation import FuncAnimation
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 
-class TwoModeEnergy:
-    """Simple 2D energy function with two modes."""
+# class TwoModeEnergy:
+#     """Simple 2D energy function with two modes."""
+#
+#     def __init__(self, device=None):
+#         super().__init__()
+#         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+#         # Define the means and covariances of two Gaussian modes
+#         self.mu1 = torch.tensor([-2.0, -2.0], device=self.device)
+#         self.mu2 = torch.tensor([2.0, 2.0], device=self.device)
+#         self.sigma = torch.eye(2, device=self.device)
+#
+#     def forward(self, x):
+#         # Create a double-well potential
+#         x = x.to(self.device)
+#         z1 = x - self.mu1
+#         z2 = x - self.mu2
+#         energy1 = 0.5 * torch.sum(torch.matmul(z1, self.sigma) * z1, dim=-1)
+#         energy2 = 0.5 * torch.sum(torch.matmul(z2, self.sigma) * z2, dim=-1)
+#         return torch.min(energy1, energy2)
+#
+#     def __call__(self, x, *args, **kwargs):
+#         return self.forward(x)
+#
+#     def gradient(self, x):
+#         x = x.to(self.device)
+#         # Compute gradient analytically
+#         z1 = x - self.mu1
+#         z2 = x - self.mu2
+#         grad1 = torch.matmul(z1, self.sigma)
+#         grad2 = torch.matmul(z2, self.sigma)
+#         energy1 = 0.5 * torch.sum(grad1 * z1, dim=-1, keepdim=True)
+#         energy2 = 0.5 * torch.sum(grad2 * z2, dim=-1, keepdim=True)
+#         mask = (energy1 < energy2).float().unsqueeze(-1)
+#         return mask * grad1 + (1 - mask) * grad2
+#
+#
+# def visualize_sampling(device=None):
+#     # Create energy function and sampler
+#     device = torch.device(
+#         "cuda" if (torch.cuda.is_available() and device == None) else "cpu"
+#     )
+#     energy_fn = TwoModeEnergy(device=device)
+#
+#     sampler = LangevinDynamics(
+#         energy_function=energy_fn,
+#         step_size=0.1,
+#         noise_scale=0.1,
+#         decay=0.1,
+#         device=device,
+#     )
+#
+#     # Create grid for energy landscape visualization
+#     x = np.linspace(-4, 4, 100)
+#     y = np.linspace(-4, 4, 100)
+#
+#     X, Y = np.meshgrid(x, y)
+#
+#     points = torch.tensor(
+#         np.stack([X.flatten(), Y.flatten()], axis=1).astype(np.float32), device=device
+#     )
+#
+#     # Compute energy landscape
+#     with torch.no_grad():
+#         energies = energy_fn(points).cpu().numpy().reshape(X.shape)
+#
+#     # Initialize samples
+#     n_samples = 2
+#     initial_states = torch.randn(n_samples, 2, device=device) * 3
+#
+#     # Run sampling
+#     n_steps = 20
+#     trajectories = []
+#     current_states = initial_states.clone()
+#
+#     for _ in range(n_steps):
+#         with torch.no_grad():
+#             next_states = sampler.sample(current_states, n_steps=1)
+#
+#             trajectories.append(current_states.cpu().clone())
+#             current_states = next_states
+#             print(
+#                 "heref", _, len(trajectories), current_states.shape, next_states.shape
+#             )
+#             # exit()
+#
+#     # trajectories = torch.stack(trajectories)
+#
+#     # Plotting
+#     fig, ax = plt.subplots(figsize=(10, 10))
+#
+#     # Plot energy landscape
+#     contour = ax.contour(X, Y, energies, levels=20, cmap="viridis")
+#     plt.colorbar(contour, label="Energy")
+#
+#     # Plot initial points
+#     ax.scatter(
+#         initial_states.cpu()[:, 0],
+#         initial_states.cpu()[:, 1],
+#         c="red",
+#         marker="o",
+#         label="Initial states",
+#     )
+#
+#     # Animation update function
+#     def update(frame):
+#         ax.clear()
+#         ax.contour(X, Y, energies, levels=20, cmap="viridis")
+#
+#         # Plot trajectories up to current frame
+#         for i in range(n_samples):
+#             trajectory = trajectories[: int(frame + 1), int(i)]
+#             ax.plot(trajectory[:, 0], trajectory[:, 1], "r-", alpha=0.5)
+#             ax.scatter(trajectory[-1, 0], trajectory[-1, 1], c="red", marker="o", s=50)
+#
+#         ax.set_xlim(-4, 4)
+#         ax.set_ylim(-4, 4)
+#         ax.set_title(f"Langevin Dynamics Sampling - Step {frame}")
+#
+#     # Create animation
+#     anim = FuncAnimation(fig, update, frames=n_steps, interval=50, repeat=False)
+#
+#     plt.show()
 
-    def __init__(self, device=None):
-        super().__init__()
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        # Define the means and covariances of two Gaussian modes
-        self.mu1 = torch.tensor([-2.0, -2.0], device=self.device)
-        self.mu2 = torch.tensor([2.0, 2.0], device=self.device)
-        self.sigma = torch.eye(2, device=self.device)
 
-    def forward(self, x):
-        # Create a double-well potential
-        x = x.to(self.device)
-        z1 = x - self.mu1
-        z2 = x - self.mu2
-        energy1 = 0.5 * torch.sum(torch.matmul(z1, self.sigma) * z1, dim=-1)
-        energy2 = 0.5 * torch.sum(torch.matmul(z2, self.sigma) * z2, dim=-1)
-        return torch.min(energy1, energy2)
-
-    def __call__(self, x, *args, **kwargs):
-        return self.forward(x)
-
-    def gradient(self, x):
-        x = x.to(self.device)
-        # Compute gradient analytically
-        z1 = x - self.mu1
-        z2 = x - self.mu2
-        grad1 = torch.matmul(z1, self.sigma)
-        grad2 = torch.matmul(z2, self.sigma)
-        energy1 = 0.5 * torch.sum(grad1 * z1, dim=-1, keepdim=True)
-        energy2 = 0.5 * torch.sum(grad2 * z2, dim=-1, keepdim=True)
-        mask = (energy1 < energy2).float().unsqueeze(-1)
-        return mask * grad1 + (1 - mask) * grad2
+# if __name__ == "__main__":
+#     visualize_sampling(device="cpu")
 
 
-def visualize_sampling(device=None):
-    # Create energy function and sampler
-    device = torch.device(
-        "cuda" if (torch.cuda.is_available() and device == None) else "cpu"
-    )
-    energy_fn = TwoModeEnergy(device=device)
+#
+# import torch
+from torchebm.core.energy_function import EnergyFunction
 
-    sampler = LangevinDynamics(
-        energy_function=energy_fn,
-        step_size=0.1,
-        noise_scale=0.1,
-        decay=0.1,
-        device=device,
-    )
+# from torchebm.samplers.langevin_dynamics import LangevinDynamics
+# from matplotlib import pyplot as plt
 
-    # Create grid for energy landscape visualization
-    x = np.linspace(-4, 4, 100)
-    y = np.linspace(-4, 4, 100)
 
-    X, Y = np.meshgrid(x, y)
+class QuadraticEnergy(EnergyFunction):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return 0.5 * torch.sum(x**2, dim=-1)
 
-    points = torch.tensor(
-        np.stack([X.flatten(), Y.flatten()], axis=1).astype(np.float32), device=device
-    )
+    def gradient(self, x: torch.Tensor) -> torch.Tensor:
+        return x
 
-    # Compute energy landscape
-    with torch.no_grad():
-        energies = energy_fn(points).cpu().numpy().reshape(X.shape)
 
-    # Initialize samples
-    n_samples = 2
-    initial_states = torch.randn(n_samples, 2, device=device) * 3
+def plot_samples(samples, energy_function, title):
+    samples = samples.cpu().numpy()
+    x = torch.linspace(-3, 3, 100)
+    y = torch.linspace(-3, 3, 100)
+    X, Y = torch.meshgrid(x, y)
+    Z = energy_function(torch.stack([X, Y], dim=-1)).to("cpu").detach().numpy()
 
-    # Run sampling
-    n_steps = 20
-    trajectories = []
-    current_states = initial_states.clone()
+    plt.figure(figsize=(10, 8))
+    plt.contourf(X, Y, Z, levels=20, cmap="viridis")
+    plt.colorbar(label="Energy")
+    print(f"Samples shape: {samples.shape}")
 
-    for _ in range(n_steps):
-        with torch.no_grad():
-            next_states = sampler.sample(current_states, n_steps=1)
-
-            trajectories.append(current_states.cpu().clone())
-            current_states = next_states
-            print(
-                "heref", _, len(trajectories), current_states.shape, next_states.shape
-            )
-            # exit()
-
-    # trajectories = torch.stack(trajectories)
-
-    # Plotting
-    fig, ax = plt.subplots(figsize=(10, 10))
-
-    # Plot energy landscape
-    contour = ax.contour(X, Y, energies, levels=20, cmap="viridis")
-    plt.colorbar(contour, label="Energy")
-
-    # Plot initial points
-    ax.scatter(
-        initial_states.cpu()[:, 0],
-        initial_states.cpu()[:, 1],
-        c="red",
-        marker="o",
-        label="Initial states",
-    )
-
-    # Animation update function
-    def update(frame):
-        ax.clear()
-        ax.contour(X, Y, energies, levels=20, cmap="viridis")
-
-        # Plot trajectories up to current frame
-        for i in range(n_samples):
-            trajectory = trajectories[: int(frame + 1), int(i)]
-            ax.plot(trajectory[:, 0], trajectory[:, 1], "r-", alpha=0.5)
-            ax.scatter(trajectory[-1, 0], trajectory[-1, 1], c="red", marker="o", s=50)
-
-        ax.set_xlim(-4, 4)
-        ax.set_ylim(-4, 4)
-        ax.set_title(f"Langevin Dynamics Sampling - Step {frame}")
-
-    # Create animation
-    anim = FuncAnimation(fig, update, frames=n_steps, interval=50, repeat=False)
-
+    plt.scatter(samples[:, 0], samples[:, 1], c="red", alpha=0.5)
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
     plt.show()
 
 
+def main():
+    try:
+        # Set up the energy function and sampler
+        energy_function = QuadraticEnergy()
+        sampler = LangevinDynamics(energy_function, step_size=0.1, noise_scale=0.1)
+
+        # Generate samples
+        initial_state = torch.tensor([2.0, 2.0])
+        n_steps = 100
+        n_samples = 50
+
+        samples = sampler.sample_chain(initial_state, n_steps, n_samples)
+
+        # Plot the results
+        plot_samples(samples, energy_function, "Langevin Dynamics Sampling")
+
+        # Visualize a single trajectory
+        trajectory = sampler.sample(initial_state, n_steps, return_trajectory=True)
+        plot_samples(trajectory, energy_function, "Single Langevin Dynamics Trajectory")
+
+        # Demonstrate parallel sampling
+        n_chains = 10
+        initial_states = torch.randn(n_chains, 2) * 2
+        parallel_samples = sampler.sample_parallel(initial_states, n_steps)
+        plot_samples(
+            parallel_samples, energy_function, "Parallel Langevin Dynamics Sampling"
+        )
+
+    except ValueError as e:
+        print(f"Error: {e}")
+
+
 if __name__ == "__main__":
-    visualize_sampling(device="cpu")
+    main()
