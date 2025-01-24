@@ -395,7 +395,6 @@ def plot_samples(samples, energy_function, title):
     plt.figure(figsize=(10, 8))
     plt.contourf(X, Y, Z, levels=20, cmap="viridis")
     plt.colorbar(label="Energy")
-    print(f"Samples shape: {samples.shape}")
 
     plt.scatter(samples[:, 0], samples[:, 1], c="red", alpha=0.5)
     plt.title(title)
@@ -417,17 +416,22 @@ def main():
 
         samples = sampler.sample_chain(initial_state, n_steps, n_samples)
 
+        print(f"Samples shape: {samples.shape}")
         # Plot the results
         plot_samples(samples, energy_function, "Langevin Dynamics Sampling")
 
         # Visualize a single trajectory
         trajectory = sampler.sample(initial_state, n_steps, return_trajectory=True)
+
+        print(f"trajectory shape: {trajectory.shape}")
         plot_samples(trajectory, energy_function, "Single Langevin Dynamics Trajectory")
 
         # Demonstrate parallel sampling
         n_chains = 10
         initial_states = torch.randn(n_chains, 2) * 2
         parallel_samples = sampler.sample_parallel(initial_states, n_steps)
+        print(f"parallel_samples shape: {parallel_samples.shape}")
+
         plot_samples(
             parallel_samples, energy_function, "Parallel Langevin Dynamics Sampling"
         )

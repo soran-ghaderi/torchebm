@@ -29,7 +29,7 @@ class Sampler(ABC):
         return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         """
-        Generate multiple samples using the sampler.
+        Generate multiple independent samples using the sampler.
 
         Args:
             initial_state: Starting point
@@ -39,8 +39,8 @@ class Sampler(ABC):
             return_diagnostics: Whether to return diagnostic info
 
         Returns:
-            samples tensor of shape (n_samples, *state_shape)
-            optionally with list of diagnostics dicts if return_diagnostics=True
+            - samples tensor of shape (n_samples, *state_shape)
+            - optionally with list of diagnostics dicts if return_diagnostics=True
         """
         samples = []
         diagnostics_list = [] if return_diagnostics else None
@@ -87,7 +87,9 @@ class Sampler(ABC):
         """Initialize the diagnostics dictionary."""
         return {
             "energies": torch.tensor([], device=self.device, dtype=self.dtype),
-            "acceptance_rate": torch.tensor(0.0, device=self.device, dtype=self.dtype),
+            "acceptance_rate": torch.tensor(
+                0.0, device=self.device, dtype=self.dtype
+            ),  # todo: this should be only included in methods that use acceptance rate
         }
 
     def to(self, device: Union[str, torch.device]) -> "Sampler":

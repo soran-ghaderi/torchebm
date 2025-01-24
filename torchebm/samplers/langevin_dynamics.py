@@ -47,7 +47,17 @@ class LangevinDynamics(Sampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
-        """Implementation of Langevin dynamics sampling."""
+        """Implementation of Langevin dynamics sampling.
+
+        Args:
+            initial_state:
+            n_steps: Number of steps to take
+            return_trajectory: It gives the full trajectory/path of 'one' sample's evolution. (n_steps + 1, *state_shape)
+            return_diagnostics: It gives the energy and gradient norms at each step. (n_steps,)
+
+        Returns:
+            The final state or the full trajectory and diagnostics.
+        """
 
         if n_steps <= 0:
             raise ValueError("n_steps must be positive")
@@ -56,7 +66,7 @@ class LangevinDynamics(Sampler):
             raise TypeError("initial_states must be a torch.Tensor")
 
         current_states = initial_state.to(device=self.device, dtype=self.dtype)
-        # trajectory = [current_state.clone()] if return_trajectory else None
+        trajectory = [current_states.clone()] if return_trajectory else None
         diagnostics = self._setup_diagnostics() if return_diagnostics else None
 
         for _ in range(n_steps):
@@ -81,18 +91,21 @@ class LangevinDynamics(Sampler):
             )
             current_states = current_states - self.step_size * gradient + noise
 
-            # if return_trajectory:
-            #     trajectory.append(current_state.clone())
+            if return_trajectory:
+                trajectory.append(current_states.clone())
 
-        # result = torch.stack(trajectory) if return_trajectory else current_state
+        # if return_trajectory:
+        #     result = torch.stack(trajectory)
 
-        # if return_diagnostics:
-        #     # if diagnostics["energies"]:
-        #     if diagnostics["energies"].nelement() > 0:
-        #         diagnostics["energies"] = diagnostics["energies"]
-        #     return result, diagnostics
-        # return result
-        return (current_states, diagnostics) if return_diagnostics else current_states
+        result = torch.stack(trajectory) if return_trajectory else current_states
+
+        if return_diagnostics:
+            # if diagnostics["energies"]:
+            # if diagnostics["energies"].nelement() > 0:
+            #     diagnostics["energies"] = diagnostics["energies"]
+            return result, diagnostics
+        return result
+        # return (current_states, diagnostics) if return_diagnostics else current_states
 
     @torch.no_grad()
     def sample_parallel(
