@@ -233,6 +233,7 @@
 #
 #     print("\nRunning utilities example...")
 #     sampling_utilities_example()
+import time
 
 import torch
 import numpy as np
@@ -440,5 +441,117 @@ def main():
         print(f"Error: {e}")
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
+
+
+# ============================
+# benchmarking
+# ============================
+
+
+# class QuadraticEnergy(EnergyFunction):
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         return 0.5 * torch.sum(x**2, dim=-1)
+#
+#     def gradient(self, x: torch.Tensor) -> torch.Tensor:
+#         return x
+#
+#
+# def benchmark_langevin(device="cpu", n_chains=1000, n_steps=100, dim=2, n_samples=100):
+#     """Benchmark sequential vs parallel sampling"""
+#
+#     energy = QuadraticEnergy()
+#     sampler = LangevinDynamics(energy, device=device)
+#
+#     initial_state = torch.randn(1, dim) * 2  # For sequential
+#     initial_states = torch.randn(n_chains, dim) * 2  # For parallel
+#
+#     # warm-up runs
+#     print("Warming up...")
+#     _ = sampler.sample_chain(initial_state.to(device), 10, 10)
+#     _ = sampler.sample_parallel(initial_states.to(device), 10)
+#     if "cuda" in device:
+#         torch.cuda.synchronize()
+#
+#     # Benchmark sequential sampling
+#     print("\nBenchmarking sequential sampling...")
+#     start = time.time()
+#     seq_samples = sampler.sample_chain(initial_state, n_steps, n_samples)
+#     if "cuda" in device:
+#         torch.cuda.synchronize()
+#     seq_time = time.time() - start
+#
+#     # Benchmark parallel sampling
+#     print("Benchmarking parallel sampling...")
+#     start = time.time()
+#     par_samples = sampler.sample_parallel(initial_states, n_steps)
+#     if "cuda" in device:
+#         torch.cuda.synchronize()
+#     par_time = time.time() - start
+#
+#     # Calculate metrics
+#     total_seq_steps = n_samples * n_steps
+#     total_par_steps = n_steps * n_chains
+#     print(f"Total steps: {total_seq_steps} (sequential), {total_par_steps} (parallel)")
+#     seq_speed = total_seq_steps / seq_time
+#     par_speed = total_par_steps / par_time
+#     speedup = par_speed / seq_speed if seq_speed > 0 else float("inf")
+#
+#     # Validate results
+#     seq_mean = seq_samples.mean(dim=0).norm().item()
+#     par_mean = par_samples.mean(dim=0).norm().item()
+#
+#     print(f"\n=== {device.upper()} Results ===")
+#     print(f"Sequential: {seq_time:.2f}s ({seq_speed:.1f} steps/s)")
+#     print(f"Parallel: {par_time:.2f}s ({par_speed:.1f} steps/s)")
+#     print(f"Speedup: {speedup:.1f}x")
+#     print(f"Mean validation (should be near 0):")
+#     print(f"  Sequential: {seq_mean:.4f}")
+#     print(f"  Parallel: {par_mean:.4f}")
+#
+#     return {
+#         "device": device,
+#         "seq_time": seq_time,
+#         "par_time": par_time,
+#         "speedup": speedup,
+#         "samples": (seq_samples, par_samples),
+#     }
+#
+#
+# def plot_results(metrics):
+#     """Visualize benchmark results"""
+#     fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+#
+#     # Scatter plot of samples
+#     seq_samples, par_samples = metrics["samples"]
+#     seq_samples, par_samples = seq_samples.cpu().numpy(), par_samples.cpu().numpy()
+#     axs[0].scatter(seq_samples[:, 0], seq_samples[:, 2], alpha=0.5, label="Sequential")
+#     axs[0].scatter(par_samples[:, 0], par_samples[:, 1], alpha=0.5, label="Parallel")
+#     axs[0].set_title(f"Sampled Points ({metrics['device'].upper()})")
+#     axs[0].legend()
+#
+#     # Speed comparison
+#     devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+#     speedups = [metrics["speedup"]]
+#     if torch.cuda.is_available():
+#         cuda_metrics = benchmark_langevin(device="cuda")
+#         speedups.append(cuda_metrics["speedup"])
+#
+#     axs[1].bar(devices, speedups)
+#     axs[1].set_title("Parallel Sampling Speedup")
+#     axs[1].set_ylabel("Speedup Factor (x)")
+#
+#     plt.tight_layout()
+#     plt.show()
+
+
+# if __name__ == "__main__":
+#     # Run benchmark on available devices
+#     device = "cuda" if torch.cuda.is_available() else "cpu"
+#     metrics = benchmark_langevin(
+#         device=device, n_chains=1000, n_steps=100, dim=2, n_samples=100
+#     )
+#
+#     # Visualize results
+#     plot_results(metrics)

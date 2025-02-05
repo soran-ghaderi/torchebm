@@ -1,7 +1,9 @@
+import time
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Tuple, List
 
 import torch
+
 from torchebm.core.energy_function import EnergyFunction
 
 

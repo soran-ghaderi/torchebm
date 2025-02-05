@@ -107,45 +107,51 @@ class LangevinDynamics(Sampler):
         return result
         # return (current_states, diagnostics) if return_diagnostics else current_states
 
-    @torch.no_grad()
-    def sample_parallel(
-        self,
-        initial_states: torch.Tensor,
-        n_steps: int,
-        return_diagnostics: bool = False,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
-        """Implementation of parallel Langevin dynamics sampling."""
-        current_states = initial_states.to(device=self.device, dtype=self.dtype)
-        diagnostics = (
-            {"mean_energies": [], "mean_gradient_norms": []}
-            if return_diagnostics
-            else None
-        )
-
-        for _ in range(n_steps):
-            gradients = self.energy_function.gradient(current_states)
-
-            if return_diagnostics:
-                diagnostics["mean_energies"].append(
-                    self.energy_function(current_states).mean().item()
-                )
-                diagnostics["mean_gradient_norms"].append(
-                    gradients.norm(dim=-1).mean().item()
-                )
-
-            if self.decay > 0:
-                current_states = current_states * (1 - self.decay)
-
-            noise = torch.randn_like(current_states) * self.noise_scale
-            current_states = current_states - self.step_size * gradients + noise
-
-        if return_diagnostics:
-            if diagnostics["mean_energies"]:
-                diagnostics["mean_energies"] = torch.tensor(
-                    diagnostics["mean_energies"]
-                )
-                diagnostics["mean_gradient_norms"] = torch.tensor(
-                    diagnostics["mean_gradient_norms"]
-                )
-            return current_states, diagnostics
-        return current_states
+    # @torch.no_grad()
+    # def sample_parallel(
+    #     self,
+    #     initial_states: torch.Tensor,
+    #     n_steps: int,
+    #     return_diagnostics: bool = False,
+    # ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
+    #     """Implementation of parallel Langevin dynamics sampling."""
+    #
+    #     if n_steps <= 0:
+    #         raise ValueError("n_steps must be > 0")
+    #     if initial_states.ndim < 1:
+    #         raise ValueError("initial_states must have batch dimension")
+    #
+    #     current_states = initial_states.to(device=self.device, dtype=self.dtype)
+    #     diagnostics = (
+    #         {"mean_energies": [], "mean_gradient_norms": []}
+    #         if return_diagnostics
+    #         else None
+    #     )
+    #
+    #     for _ in range(n_steps):
+    #         gradients = self.energy_function.gradient(current_states)
+    #
+    #         if return_diagnostics:
+    #             diagnostics["mean_energies"].append(
+    #                 self.energy_function(current_states).mean().item()
+    #             )
+    #             diagnostics["mean_gradient_norms"].append(
+    #                 gradients.norm(dim=-1).mean().item()
+    #             )
+    #
+    #         if self.decay > 0:
+    #             current_states = current_states * (1 - self.decay)
+    #
+    #         noise = torch.randn_like(current_states) * self.noise_scale
+    #         current_states = current_states - self.step_size * gradients + noise
+    #
+    #     if return_diagnostics:
+    #         if diagnostics["mean_energies"]:
+    #             diagnostics["mean_energies"] = torch.tensor(
+    #                 diagnostics["mean_energies"]
+    #             )
+    #             diagnostics["mean_gradient_norms"] = torch.tensor(
+    #                 diagnostics["mean_gradient_norms"]
+    #             )
+    #         return current_states, diagnostics
+    #     return current_states
