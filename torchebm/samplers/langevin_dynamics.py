@@ -2,8 +2,6 @@ import time
 from typing import Optional, Union, Tuple, List
 from functools import partial
 
-from functorch import vmap
-
 import torch
 
 from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
@@ -11,7 +9,6 @@ from torchebm.core.sampler import Sampler
 
 
 class LangevinDynamics(Sampler):
-    """Langevin dynamics sampler implementation."""
 
     def __init__(
         self,
@@ -29,7 +26,7 @@ class LangevinDynamics(Sampler):
             energy_function: The energy function to sample from
             step_size: The step size for updates
             noise_scale: Scale of the noise
-            decay: Damping coefficient
+            decay: Damping coefficient (not supported yet)
             dtype: Tensor dtype to use
             device: Device to run on
         """
@@ -47,15 +44,14 @@ class LangevinDynamics(Sampler):
         self.device = device
         self.dtype = torch.float16 if device == "cuda" else torch.float32
 
-    # @torch.jit.script
-    def langevin_step(self, prev_x: torch.Tensor):
-        draw = torch.randn_like(prev_x)
+    def langevin_step(self, prev_x: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
+
         gradient_fn = partial(self.energy_function.gradient)
         new_x = (
             prev_x
             - self.step_size * gradient_fn(prev_x)
             + torch.sqrt(torch.tensor(2.0 * self.step_size, device=prev_x.device))
-            * draw
+            * noise
         )
         return new_x
 
@@ -65,160 +61,89 @@ class LangevinDynamics(Sampler):
         dim: int = 10,
         n_steps: int = 100,
         n_samples: int = 1,
-        thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-        """
-        Return a chain of Langevin samples over n-steps.
-        Args:
-            x:
-            n_steps:
-            n_samples:
-            thin:
-            return_diagnostics:
-
-        Returns:
-
-        """
-        # configurations for CUDA
-        # device = x.device
-        # dtype = torch.float16 if self.device.type == "cuda" else torch.float32
+        print(
+            "Sampling chain, dim: ", dim, "n_steps: ", n_steps, "n_samples: ", n_samples
+        )
         x = torch.randn(
             n_samples, dim, dtype=self.dtype, device=self.device
         )  # Initial batch
 
-        xs = torch.empty(
-            (n_samples, n_steps, dim), dtype=self.dtype, device=self.device
-        )  # Storage for samples
+        if return_trajectory:
+            trajectory = torch.empty(
+                (n_samples, n_steps, dim), dtype=self.dtype, device=self.device
+            )
 
-        # xs = torch.empty((n_steps, *x.shape), dtype=dtype, device=x.device)
+        if return_diagnostics:
+            diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast("cuda"):
+            noise = torch.randn_like(x)
             for i in range(n_steps):
-                x = self.langevin_step(x)
-                # xs[i] = x
-                xs[:, i, :] = x
+                x = self.langevin_step(x, noise)
+                if return_trajectory:
+                    trajectory[:, i, :] = x
 
-        return x, xs
+                if return_diagnostics:
+                    mean_x = x.mean(dim=0)
+                    var_x = x.var(dim=0)
+                    energy = self.energy_function.gradient(x)
 
-    @torch.no_grad()
-    def sample(
-        self,
-        initial_state: torch.Tensor,
-        n_steps: int,
-        return_trajectory: bool = False,
-        return_diagnostics: bool = False,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
-        """Implementation of Langevin dynamics sampling."""
-        current_state = initial_state.to(device=self.device, dtype=self.dtype)
-        trajectory = [current_state.clone()] if return_trajectory else None
-        diagnostics = self._setup_diagnostics() if return_diagnostics else None
+                    # Stack the diagnostics along the second dimension (index 1)
+                    diagnostics[i, 0, :, :] = mean_x
+                    diagnostics[i, 1, :, :] = var_x
+                    diagnostics[i, 2, :, :] = energy
 
-        for _ in range(n_steps):
-            gradient = self.energy_function.gradient(current_state)
-
+        if return_trajectory:
             if return_diagnostics:
-                # diagnostics['energies'].append(
-                #     self.energy_function(current_state).item()
-                # )
-                diagnostics["energies"] = torch.cat(
-                    [
-                        diagnostics["energies"],
-                        self.energy_function(current_state).unsqueeze(0),
-                    ]
-                )
-
-            if self.decay > 0:
-                current_state = current_state * (1 - self.decay)
-
-            noise = torch.randn_like(current_state) * self.noise_scale
-            current_state = current_state - self.step_size * gradient + noise
-
-            if return_trajectory:
-                trajectory.append(current_state.clone())
-
-        result = torch.stack(trajectory) if return_trajectory else current_state
-
+                return trajectory, diagnostics
+            return trajectory
         if return_diagnostics:
-            # if diagnostics["energies"]:
-            if diagnostics["energies"].nelement() > 0:
-                diagnostics["energies"] = diagnostics["energies"]
-            return result, diagnostics
-        return result
+            return x, diagnostics
+        return x
 
-    @torch.no_grad()
-    def sample_parallel(
-        self,
-        initial_states: torch.Tensor,
-        n_steps: int,
-        return_diagnostics: bool = False,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
-        """Implementation of parallel Langevin dynamics sampling."""
-        current_states = initial_states.to(device=self.device, dtype=self.dtype)
-        diagnostics = (
-            {"mean_energies": [], "mean_gradient_norms": []}
-            if return_diagnostics
-            else None
-        )
-
-        for _ in range(n_steps):
-            gradients = self.energy_function.gradient(current_states)
-
-            if return_diagnostics:
-                diagnostics["mean_energies"].append(
-                    self.energy_function(current_states).mean().item()
-                )
-                diagnostics["mean_gradient_norms"].append(
-                    gradients.norm(dim=-1).mean().item()
-                )
-
-            if self.decay > 0:
-                current_states = current_states * (1 - self.decay)
-
-            noise = torch.randn_like(current_states) * self.noise_scale
-            current_states = current_states - self.step_size * gradients + noise
-
-        if return_diagnostics:
-            if diagnostics["mean_energies"]:
-                diagnostics["mean_energies"] = torch.tensor(
-                    diagnostics["mean_energies"]
-                )
-                diagnostics["mean_gradient_norms"] = torch.tensor(
-                    diagnostics["mean_gradient_norms"]
-                )
-            return current_states, diagnostics
-        return current_states
-
-    def _setup_diagnostics(self) -> dict:
+    def _setup_diagnostics(
+        self, dim: int, n_steps: int, n_samples: int = None
+    ) -> torch.Tensor:
         """Initialize the diagnostics dictionary."""
-        return {
-            "energies": torch.empty(0, device=self.device, dtype=self.dtype),
-        }
+        if n_samples is not None:
+            return torch.empty(
+                (n_steps, 3, n_samples, dim), device=self.device, dtype=self.dtype
+            )
+        else:
+            return torch.empty((n_steps, 3, dim), device=self.device, dtype=self.dtype)
 
-
-# class EF(EnergyFunction):
-#     def __init__(self):
-#         super().__init__()
-#
-#     def forward(self, x: torch.Tensor) -> torch.Tensor:
-#         return x**2
-#
-#     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-#         return 2 * x
 
 energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Initialize Langevin dynamics model
-langevin_chain = LangevinDynamics(energy_function=energy_fn, step_size=5e-3).to(device)
+langevin_sampler = LangevinDynamics(
+    energy_function=energy_fn, step_size=5e-3, device=device
+).to(device)
 
 # Initial state: batch of 100 samples, 10-dimensional space
-x0 = torch.randn(100, 10, device=device)
 ts = time.time()
 # Run Langevin sampling for 500 steps
-final_x, xs = langevin_chain.sample_chain(dim=10, n_steps=500, n_samples=10000)
+final_x = langevin_sampler.sample_chain(
+    dim=10, n_steps=500, n_samples=10000, return_trajectory=False
+)
 
 print(final_x.shape)  # Output: (100, 10)  (final state)
-print(xs.shape)  # Output: (500, 100, 10)  (history of all states)
+# print(xs.shape)  # Output: (500, 100, 10)  (history of all states)
 print("Time taken: ", time.time() - ts)
+
+n_samples = 250
+n_steps = 500
+dim = 10
+final_samples, diagnostics = langevin_sampler.sample_chain(
+    n_samples=n_samples,
+    n_steps=n_steps,
+    dim=dim,
+    return_trajectory=True,
+    return_diagnostics=True,
+)
+print(final_samples.shape)  # Output: (100, 10)  (final state)
+print(diagnostics.shape)  # (500, 3, 100, 10) -> All diagnostics
