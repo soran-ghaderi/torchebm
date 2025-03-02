@@ -3,11 +3,11 @@ from typing import Optional, Union, Tuple
 import numpy as np
 import torch
 
-from torchebm.core import Sampler
+from torchebm.core import BaseSampler
 from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
 
 
-class HamiltonianMonteCarlo1(Sampler):
+class HamiltonianMonteCarlo1(BaseSampler):
     """Hamiltonian Monte Carlo sampler implementation.
 
     References:
@@ -479,7 +479,7 @@ class HamiltonianMonteCarlo1(Sampler):
         return current_states
 
 
-class HamiltonianMonteCarlo(Sampler):
+class HamiltonianMonteCarlo(BaseSampler):
     def __init__(
         self,
         energy_function: EnergyFunction,

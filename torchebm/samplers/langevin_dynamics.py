@@ -5,10 +5,28 @@ from functools import partial
 import torch
 
 from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
-from torchebm.core.sampler import Sampler
+from torchebm.core.basesampler import BaseSampler
 
 
-class LangevinDynamics(Sampler):
+class LangevinDynamics(BaseSampler):
+    """
+    Langevin dynamics sampler.
+
+    Inherits from :class:`BaseSampler`.
+
+    Args:
+        energy_function (EnergyFunction): Energy function to sample from.
+        step_size (float): Step size for updates.
+        noise_scale (float): Scale of the noise.
+        decay (float): Damping coefficient (not supported yet).
+        dtype (torch.dtype): Data type to use for the computations.
+        device (str): Device to run the computations on (e.g., "cpu" or "cuda").
+
+    Methods:
+        langevin_step(prev_x, noise): Perform a Langevin step.
+        sample_chain(x, dim, n_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
+        _setup_diagnostics(dim, n_steps, n_samples): Initialize the diagnostics
+    """
 
     def __init__(
         self,
@@ -64,9 +82,27 @@ class LangevinDynamics(Sampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-        print(
-            "Sampling chain, dim: ", dim, "n_steps: ", n_steps, "n_samples: ", n_samples
-        )
+        """
+        Run the sampling process.
+
+        This method implements the following formula:
+
+        .. math::
+            x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t
+
+        where :math:`\eta` is the step size, :math:`\nabla_x U(x_t)` is the gradient of the energy function at :math:`x_t`,
+
+        Args:
+            x: Initial state to start the sampling from.
+            dim: Dimension of the state space.
+            n_steps: Number of steps to take between samples.
+            n_samples: Number of samples to generate.
+            return_trajectory: Whether to return the trajectory of the samples.
+            return_diagnostics: Whether to return the diagnostics of the sampling process.
+
+        Returns:
+
+        """
         if x is None:
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
         else:

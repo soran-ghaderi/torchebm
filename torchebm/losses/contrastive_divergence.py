@@ -8,7 +8,7 @@ from abc import abstractmethod
 from torch.nn.modules.module import T
 from torch.utils.hooks import RemovableHandle
 
-from torchebm.core import Sampler
+from torchebm.core import BaseSampler
 from torchebm.core.energy_function import EnergyFunction
 from torchebm.core.losses import Loss
 

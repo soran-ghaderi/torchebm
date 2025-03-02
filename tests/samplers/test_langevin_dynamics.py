@@ -94,7 +94,9 @@ def test_langevin_dynamics_sample_chain(langevin_sampler):
     dim = 2
     n_steps = 100
     n_samples = 10
-    samples = langevin_sampler.sample_chain(dim, n_steps, n_samples)
+    samples = langevin_sampler.sample_chain(
+        dim=dim, n_steps=n_steps, n_samples=n_samples
+    )
     assert samples.shape == (n_samples, dim)
     assert torch.all(torch.isfinite(samples))
 
@@ -112,11 +114,11 @@ def test_langevin_dynamics_reproducibility(langevin_sampler):
     sampler1 = langevin_sampler
     dim = 2
     n_steps = 100
-    result1 = sampler1.sample(dim, n_steps)
+    result1 = sampler1.sample(dim=dim, n_steps=n_steps)
 
     torch.manual_seed(42)
     sampler2 = langevin_sampler
-    result2 = sampler2.sample(dim, n_steps)
+    result2 = sampler2.sample(dim=dim, n_steps=n_steps)
 
     assert torch.allclose(result1, result2)
 
