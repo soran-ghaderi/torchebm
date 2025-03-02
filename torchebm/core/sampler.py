@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Tuple, List
 
+
 import torch
 from torchebm.core.energy_function import EnergyFunction
 
@@ -20,7 +21,7 @@ class Sampler(ABC):
     def sample(self, initial_state: torch.Tensor, n_steps: int) -> torch.Tensor:
         pass
 
-    def sample_chain(
+    def sample_chain1(
         self,
         initial_state: torch.Tensor,
         n_steps: int,
