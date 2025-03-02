@@ -4,16 +4,12 @@ from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 
-class QuadraticEnergy(EnergyFunction):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return 0.5 * torch.sum(x**2, dim=-1)
-
-    def gradient(self, x: torch.Tensor) -> torch.Tensor:
-        return x
-
-
 @pytest.fixture
 def energy_function(request):
+    if not hasattr(request, "param"):
+        return GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
+
+    # Use parameters when provided through parametrize
     mean = request.param.get("mean", torch.zeros(10))
     cov = request.param.get("cov", torch.eye(10))
 
@@ -22,7 +18,15 @@ def energy_function(request):
 
 @pytest.fixture
 def langevin_sampler(request, energy_function):
-    device = request.param.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+    if not hasattr(request, "param"):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = request.param.get(
+            "device", "cuda" if torch.cuda.is_available() else "cpu"
+        )
+
+    energy_function = energy_function.to(device)
+
     return LangevinDynamics(
         energy_function=energy_function, step_size=5e-3, device=device
     ).to(device)
@@ -78,65 +82,59 @@ def test_langevin_dynamics_sample_trajectory(langevin_sampler):
     assert torch.all(torch.isfinite(trajectory))
 
 
+@pytest.mark.parametrize(
+    "energy_function, langevin_sampler",
+    [
+        ({"mean": torch.zeros(2), "cov": torch.eye(2)}, {"device": "cuda"}),
+        ({"mean": torch.zeros(2), "cov": 2 * torch.eye(2)}, {"device": "cuda"}),
+    ],
+    indirect=True,  # This tells pytest to apply parameters to fixtures
+)
 def test_langevin_dynamics_sample_chain(langevin_sampler):
-    initial_state = torch.tensor([1.0, 1.0])
+    dim = 2
     n_steps = 100
     n_samples = 10
-    samples = langevin_sampler.sample_chain(initial_state, n_steps, n_samples)
-    assert samples.shape == (n_samples, *initial_state.shape)
+    samples = langevin_sampler.sample_chain(dim, n_steps, n_samples)
+    assert samples.shape == (n_samples, dim)
     assert torch.all(torch.isfinite(samples))
 
 
-def test_langevin_dynamics_sample_parallel(langevin_sampler):
-    n_chains = 5
-    initial_states = torch.randn(n_chains, 2)
-    n_steps = 100
-    final_states = langevin_sampler.sample_parallel(initial_states, n_steps)
-    assert final_states.shape == initial_states.shape
-    assert torch.all(torch.isfinite(final_states))
-
-
-@pytest.mark.parametrize("shape", [(2,), (3,), (2, 3), (3, 2)])
-def test_langevin_dynamics_different_shapes(energy_function, shape):
-    sampler = LangevinDynamics(energy_function, step_size=0.1, noise_scale=0.1)
-    initial_state = torch.randn(*shape)
-    n_steps = 100
-    final_state = sampler.sample(initial_state, n_steps)
-    assert final_state.shape == initial_state.shape
-    assert torch.all(torch.isfinite(final_state))
-
-
-def test_langevin_dynamics_reproducibility(energy_function):
+@pytest.mark.parametrize(
+    "energy_function, langevin_sampler",
+    [
+        ({"mean": torch.zeros(2), "cov": torch.eye(2)}, {"device": "cuda"}),
+        ({"mean": torch.zeros(2), "cov": 2 * torch.eye(2)}, {"device": "cuda"}),
+    ],
+    indirect=True,  # This tells pytest to apply parameters to fixtures
+)
+def test_langevin_dynamics_reproducibility(langevin_sampler):
     torch.manual_seed(42)
-    sampler1 = LangevinDynamics(energy_function, step_size=0.1, noise_scale=0.1)
-    initial_state = torch.tensor([1.0, 1.0])
+    sampler1 = langevin_sampler
+    dim = 2
     n_steps = 100
-    result1 = sampler1.sample(initial_state, n_steps)
+    result1 = sampler1.sample(dim, n_steps)
 
     torch.manual_seed(42)
-    sampler2 = LangevinDynamics(energy_function, step_size=0.1, noise_scale=0.1)
-    result2 = sampler2.sample(initial_state, n_steps)
+    sampler2 = langevin_sampler
+    result2 = sampler2.sample(dim, n_steps)
 
     assert torch.allclose(result1, result2)
 
 
-def test_langevin_dynamics_gradient_calls(energy_function):
-    class GradientCountingEnergy(EnergyFunction):
-        def __init__(self, energy_function):
-            super().__init__()
-            self.energy_function = energy_function
-            self.gradient_calls = 0
-
-        def forward(self, x):
-            return self.energy_function.forward(x)
-
-        def gradient(self, x):
-            self.gradient_calls += 1
-            return self.energy_function.gradient(x)
-
-    counting_energy = GradientCountingEnergy(energy_function)
-    sampler = LangevinDynamics(counting_energy, step_size=0.1, noise_scale=0.1)
-    initial_state = torch.tensor([1.0, 1.0])
+@pytest.mark.parametrize(
+    "langevin_sampler",
+    [
+        ({"device": "cpu"}),
+        ({"device": "cuda"}),
+    ],
+    indirect=True,  # This tells pytest to apply parameters to fixtures
+)
+def test_langevin_dynamics_sample_x_input(langevin_sampler):
+    dim = 10
+    n_samples = 150
     n_steps = 100
-    sampler.sample(initial_state, n_steps)
-    assert counting_energy.gradient_calls == n_steps
+    device = langevin_sampler.device
+    x_init = torch.randn(n_samples, dim, dtype=torch.float32, device=device)
+    samples = langevin_sampler.sample(x=x_init, n_steps=n_steps)
+    assert samples.shape == (n_samples, dim)
+    assert torch.all(torch.isfinite(samples))

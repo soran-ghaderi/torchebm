@@ -45,7 +45,6 @@ class LangevinDynamics(Sampler):
         self.dtype = torch.float16 if device == "cuda" else torch.float32
 
     def langevin_step(self, prev_x: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
-
         gradient_fn = partial(self.energy_function.gradient)
         new_x = (
             prev_x
@@ -58,6 +57,7 @@ class LangevinDynamics(Sampler):
     @torch.no_grad()
     def sample_chain(
         self,
+        x: Optional[torch.Tensor] = None,
         dim: int = 10,
         n_steps: int = 100,
         n_samples: int = 1,
@@ -67,9 +67,10 @@ class LangevinDynamics(Sampler):
         print(
             "Sampling chain, dim: ", dim, "n_steps: ", n_steps, "n_samples: ", n_samples
         )
-        x = torch.randn(
-            n_samples, dim, dtype=self.dtype, device=self.device
-        )  # Initial batch
+        if x is None:
+            x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
+        else:
+            x = x.to(self.device)  # Initial batch
 
         if return_trajectory:
             trajectory = torch.empty(
@@ -80,7 +81,7 @@ class LangevinDynamics(Sampler):
             diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
         with torch.amp.autocast("cuda"):
-            noise = torch.randn_like(x)
+            noise = torch.randn_like(x, device=self.device)
             for i in range(n_steps):
                 x = self.langevin_step(x, noise)
                 if return_trajectory:
@@ -147,3 +148,7 @@ final_samples, diagnostics = langevin_sampler.sample_chain(
 )
 print(final_samples.shape)  # Output: (100, 10)  (final state)
 print(diagnostics.shape)  # (500, 3, 100, 10) -> All diagnostics
+
+x_init = torch.randn(n_samples, dim, dtype=torch.float32, device="cuda")
+samples = langevin_sampler.sample(x=x_init, n_steps=100)
+print(samples.shape)  # Output: (100, 10)  (final state)

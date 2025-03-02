@@ -30,6 +30,7 @@ class Sampler(ABC):
 
     def sample(
         self,
+        x: Optional[torch.Tensor] = None,
         dim: int = 10,
         n_steps: int = 100,
         n_samples: int = 1,
@@ -38,6 +39,7 @@ class Sampler(ABC):
         return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         return self.sample_chain(
+            x=x,
             dim=dim,
             n_steps=n_steps,
             n_samples=n_samples,
