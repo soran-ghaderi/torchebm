@@ -1,3 +1,16 @@
+---
+title: Langevin dynamics sampling
+date: 2025-03-06
+author: Soran Ghaderi
+tags:
+  - langevin
+  - sampling
+---
+
+Langevin dynamics sampling
+<!-- more -->
+
+
 ```py title="Langevin dynamics sampling" linenums="1"
 def langevin_gaussain_sampling():
 
@@ -36,22 +49,4 @@ def langevin_gaussain_sampling():
     x_init = torch.randn(n_samples, dim, dtype=torch.float32, device="cuda")
     samples = langevin_sampler.sample(x=x_init, n_steps=100)
     print(samples.shape)  # Output: (100, 10)  (final state)
-
 ```
-
-[//]: # ()
-[//]: # (``` mermaid)
-
-[//]: # (graph LR)
-
-[//]: # (    A[Start] --> B[Convolutional Layer 1];)
-
-[//]: # (    B --> C[Activation Function ReLU];)
-
-[//]: # (    C --> D[Pooling Layer 1];)
-
-[//]: # (    D --> E[Convolutional Layer 2];)
-
-[//]: # (    E --> F[Activation Function &#40;ReLU #41;];)
-
-[//]: # (```)

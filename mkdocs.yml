@@ -1,66 +1,97 @@
 # $schema: https://squidfunk.github.io/mkdocs-material/schema.json
 
 site_name: TorchEBM
+site_description: Energy-Based Modeling library for PyTorch, offering tools for sampling, inference, and learning in complex distributions.
+site_author: Soran Ghaderi
 site_url: https://soran-ghaderi.github.io/torchebm/
 repo_url: https://github.com/soran-ghaderi/torchebm/
 theme:
   name: material
   font:
-    text: Merriweather Sans
-    code: Red Hat Mono
+    text: Roboto
+    code: Roboto Mono
   icon:
     logo: simple/pytorch
   features:
-    - navigation.tabs
-    - navigation.expand
-    - navigation.sections
     - navigation.footer
-    - toc.integrate
-    - toc.numbered
-    - tabs
-    - search
-    - favicon
-    - footer
-    - code.highlight
-    - code.copy
-    - code.line_numbers
-    - code.language
-    - mermaid
-    - admonition
-    - attr_list
-    - emoji
-    - super_fences
-    - snippets
-    - tabbed
-    - details
-    - smartquotes
-    - meta
-    - figcaption
-    - extra
-    - cite
-    - toc
-    - toc
-    - sitemap
-    - authors
-    - logo
-    - math
-    - local_search
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tooltips
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
   palette:
     #dark mode:
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       toggle:
         icon: material/weather-sunny
         name: Dark mode
       primary: green
       accent: deep purple
-
     #light mode:
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       toggle:
         icon: material/weather-night
         name: Light mode
       primary: green
       accent: deep orange
+
+nav:
+  - index.md
+  - Blog:
+    - blog/index.md
+
+plugins:
+  - blog:
+      blog_dir: blog
+      blog_toc: true
+      post_url_format: "{slug}"
+      authors_profiles: true
+  - git-committers:
+      enabled: true
+      repository: soran-ghaderi/torchebm
+      branch: master
+      token: !ENV GH_TOKEN
+  - git-revision-date-localized:
+      type: date
+      fallback_to_build_date: false
+      enable_creation_date: true
+      enabled: true
+  - glightbox:
+      touchNavigation: false
+      loop: false
+      effect: zoom
+      width: 100%
+      height: auto
+      zoomable: true
+      draggable: true
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - minify:
+      minify_html: true
+      minify_js: true
+      minify_css: true
+  - tags:
+      tags_file: tags.md
+  - privacy:
+      links:
+      links_attr_map:
+        target: _blank
+      links_noopener: true
+      enabled: true
+      assets_exclude:
+        - cdn.jsdelivr.net/npm/mathjax@3/*
+        - giscus.app/*
 
 
 markdown_extensions:
@@ -83,7 +114,6 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
-
 extra:
     social:
         - icon: simple/github
@@ -94,3 +124,6 @@ extra:
           link: https://www.linkedin.com/in/soran-ghaderi
         - icon: material/link
           link: https://www.soran-ghaderi.github.io
+
+hooks:
+  - docs/hooks/socialmedia.py
