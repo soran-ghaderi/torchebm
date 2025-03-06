@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 
-class EnergyFunction(nn.Module, ABC):
+class EnergyFunction(nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -37,26 +37,22 @@ class DoubleWellEnergy(EnergyFunction):
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         return 4 * self.barrier_height * x * (x.pow(2) - 1)
 
-    def to(self, device):
-        self.device = device
-        return self
-
 
 class GaussianEnergy(EnergyFunction):
     def __init__(self, mean: torch.Tensor, cov: torch.Tensor, device=None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.mean = mean.to(self.device)
         self.cov = cov.to(device)
-        # self.cov_inv = torch.inverse(cov) #.to(self.device)
+        self.cov_inv = torch.inverse(cov).to(self.device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # assuming the cov is already positive definite and symmetric
         x = x.to(self.device)
         delta = x - self.mean
-        cov_inv = torch.inverse(
-            self.cov
-        )  # it's dynamic here, but see if it's fine to compute it only in the init
-        return 0.5 * torch.einsum("...i,...ij,...j->...", delta, cov_inv, delta)
+        # cov_inv = torch.inverse(
+        #     self.cov
+        # )  # it's dynamic here, but see if it's fine to compute it only in the init
+        return 0.5 * torch.einsum("...i,...ij,...j->...", delta, self.cov_inv, delta)
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(self.device)
@@ -80,10 +76,6 @@ class HarmonicEnergy(EnergyFunction):
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         return self.k * x
 
-    def to(self, device):
-        self.device = device
-        return self
-
 
 class RosenbrockEnergy(EnergyFunction):
     def __init__(self, a: float = 1.0, b: float = 100.0):
@@ -101,10 +93,6 @@ class RosenbrockEnergy(EnergyFunction):
         )
         grad[..., 1] = 2 * self.b * (x[..., 1] - x[..., 0] ** 2)
         return grad
-
-    def to(self, device):
-        self.device = device
-        return self
 
 
 class AckleyEnergy(EnergyFunction):
@@ -135,10 +123,6 @@ class AckleyEnergy(EnergyFunction):
         term2 = torch.exp(sum2 / n) * torch.sin(self.c * x) * self.c / n
         return term1 + term2
 
-    def to(self, device):
-        self.device = device
-        return self
-
 
 class RastriginEnergy(EnergyFunction):
     def __init__(self, a: float = 10.0):
@@ -153,7 +137,3 @@ class RastriginEnergy(EnergyFunction):
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         return 2 * x + 2 * math.pi * self.a * torch.sin(2 * math.pi * x)
-
-    def to(self, device):
-        self.device = device
-        return self

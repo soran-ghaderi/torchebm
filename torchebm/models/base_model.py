@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 import torch
 from torchebm.core.energy_function import EnergyFunction
-from torchebm.core.sampler import Sampler
+from torchebm.core.basesampler import BaseSampler
+
 
 class BaseModel(ABC):
-    def __init__(self, energy_function: EnergyFunction, sampler: Sampler):
+    def __init__(self, energy_function: EnergyFunction, sampler: BaseSampler):
         self.energy_function = energy_function
         self.sampler = sampler
 
@@ -19,4 +20,3 @@ class BaseModel(ABC):
     @abstractmethod
     def train_step(self, real_data: torch.Tensor) -> dict:
         pass
-

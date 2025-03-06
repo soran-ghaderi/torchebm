@@ -7,4 +7,4 @@ from .energy_function import (
     RosenbrockEnergy,
 )
 
-from .sampler import Sampler
+from .basesampler import BaseSampler
