@@ -2,6 +2,8 @@
 Examples for using the Langevin Dynamics sampler.
 """
 
+import time
+
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +11,7 @@ from typing import Tuple
 
 from torch.xpu import device
 
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellEnergy, GaussianEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 
@@ -22,31 +24,34 @@ def basic_example():
     """
 
     # Define a simple 2D Gaussian energy function
-    class GaussianEnergy:
-        def __init__(self, mean: torch.Tensor, cov: torch.Tensor, device=None):
-            self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-            self.mean = mean.to(self.device)
-            self.precision = torch.inverse(cov).to(self.device)
-
-        def __call__(self, x: torch.Tensor) -> torch.Tensor:
-            x = x.to(self.device)
-            delta = x - self.mean
-            return 0.5 * torch.einsum(
-                "...i,...ij,...j->...", delta, self.precision, delta
-            )
-
-        def gradient(self, x: torch.Tensor) -> torch.Tensor:
-            x = x.to(self.device)
-            return torch.einsum("...ij,...j->...i", self.precision, x - self.mean)
-
-        def to(self, device):
-            self.device = device
-            self.mean = self.mean.to(device)
-            self.precision = self.precision.to(device)
-            return self
+    # class GaussianEnergy:
+    #     def __init__(self, mean: torch.Tensor, cov: torch.Tensor, device=None):
+    #         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    #         self.mean = mean.to(self.device)
+    #         self.precision = torch.inverse(cov).to(self.device)
+    #
+    #     def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    #         x = x.to(self.device)
+    #         delta = x - self.mean
+    #         return 0.5 * torch.einsum(
+    #             "...i,...ij,...j->...", delta, self.precision, delta
+    #         )
+    #
+    #     def gradient(self, x: torch.Tensor) -> torch.Tensor:
+    #         x = x.to(self.device)
+    #         return torch.einsum("...ij,...j->...i", self.precision, x - self.mean)
+    #
+    #     def to(self, device):
+    #         self.device = device
+    #         self.mean = self.mean.to(device)
+    #         self.precision = self.precision.to(device)
+    #         return self
 
     # Create energy function for a 2D Gaussian
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dim = 2  # dimension of the state space
+    n_steps = 100  # steps between samples
+    n_samples = 1000  # num of samples
     mean = torch.tensor([1.0, -1.0])
     cov = torch.tensor([[1.0, 0.5], [0.5, 2.0]])
     energy_fn = GaussianEnergy(mean, cov, device=device)
@@ -60,11 +65,11 @@ def basic_example():
     )
 
     # Generate samples
-    initial_state = torch.zeros(2, device=device)
+    initial_state = torch.zeros(n_samples, dim, device=device)
     samples = sampler.sample_chain(
-        initial_state=initial_state,
-        n_steps=100,  # steps between samples
-        n_samples=1000,  # number of samples to collect
+        x=initial_state,
+        n_steps=n_steps,  # steps between samples
+        n_samples=n_samples,  # number of samples to collect
     )
 
     # Plot results
@@ -90,21 +95,6 @@ def advanced_example():
     5. Handling multimodal distributions
     """
 
-    # Define a double-well potential
-    # class DoubleWellEnergy:
-    #     def __init__(self, barrier_height: float = 2.0):
-    #         self.barrier_height = barrier_height
-    #
-    #     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-    #         return self.barrier_height * (x.pow(2) - 1).pow(2)
-    #
-    #     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-    #         return 4 * self.barrier_height * x * (x.pow(2) - 1)
-    #
-    #     def to(self, device):
-    #         self.device = device
-    #         return self
-
     # Create energy function and sampler
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     energy_fn = DoubleWellEnergy(barrier_height=2.0)
@@ -119,58 +109,33 @@ def advanced_example():
     # 1. Generate trajectory with diagnostics
     initial_state = torch.tensor([0.0], device=device)
     trajectory, diagnostics = sampler.sample(
-        initial_state=initial_state,
+        x=initial_state,
         n_steps=1000,
         return_trajectory=True,
         return_diagnostics=True,
     )
 
-    # 2. Parallel sampling from multiple initial points
-    initial_states = torch.linspace(-2, 2, 10).unsqueeze(1)
-    parallel_samples, parallel_diagnostics = sampler.sample_parallel(
-        initial_states=initial_states, n_steps=1000, return_diagnostics=True
-    )
-
-    if isinstance(parallel_diagnostics, list) and all(
-        isinstance(diag, dict) for diag in parallel_diagnostics
-    ):
-        # Extract diagnostics safely
-        energies = [
-            diag["energies"] for diag in parallel_diagnostics if "energies" in diag
-        ]
-    else:
-        energies = None
     # Plot results
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
 
     # Plot trajectory
     # parallel_samples = parallel_samples.cpu().numpy()
     # parallel_diagnostics = [diag['energies'] for diag in parallel_diagnostics]
-    ax1.plot(trajectory.cpu().numpy())
+    # ax1.plot(trajectory.cpu().numpy())
+    ax1.plot(trajectory[0, :, 0].cpu().numpy())
     ax1.set_title("Single Chain Trajectory")
     ax1.set_xlabel("Step")
     ax1.set_ylabel("Position")
 
     # Plot energy over time
-    ax2.plot(diagnostics["energies"].cpu().numpy())
+    # ax2.plot(diagnostics["energies"].cpu().numpy())
+    ax2.plot(
+        diagnostics[:, 2, 0, 0].cpu().numpy()
+    )  # Select the first sample and first dimension
+
     ax2.set_title("Energy Evolution")
     ax2.set_xlabel("Step")
     ax2.set_ylabel("Energy")
-
-    # Plot parallel chain results
-    parallel_samples_cpu = parallel_samples.cpu().numpy()
-    for sample in parallel_samples_cpu:
-        ax3.axhline(sample.item(), alpha=0.3, color="blue")
-    ax3.set_title("Final States of Parallel Chains")
-    ax3.set_ylabel("Position")
-
-    if "mean_energies" in parallel_diagnostics:
-        ax2.plot(
-            parallel_diagnostics["mean_energies"].cpu().numpy(),
-            linestyle="--",
-            label="Parallel Mean Energy",
-        )
-        ax2.legend()
 
     plt.tight_layout()
     plt.show()
@@ -205,10 +170,10 @@ def sampling_utilities_example():
     # Generate samples with thinning
     initial_state = torch.tensor([2.0], device=device)
     samples, diagnostics = sampler.sample_chain(
-        initial_state=initial_state,
+        x=initial_state,
         n_steps=50,  # steps between samples
         n_samples=1000,  # number of samples
-        thin=10,  # keep every 10th sample
+        # thin=10,  # keep every 10th sample -> not supported yet
         return_diagnostics=True,
     )
 
@@ -225,7 +190,49 @@ def sampling_utilities_example():
     print(f"Sample Statistics - Mean: {mean:.3f}, Std: {std:.3f}")
 
 
+def langevin_gaussain_sampling():
+
+    energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Initialize Langevin dynamics model
+    langevin_sampler = LangevinDynamics(
+        energy_function=energy_fn, step_size=5e-3, device=device
+    ).to(device)
+
+    # Initial state: batch of 100 samples, 10-dimensional space
+    ts = time.time()
+    # Run Langevin sampling for 500 steps
+    final_x = langevin_sampler.sample_chain(
+        dim=10, n_steps=500, n_samples=10000, return_trajectory=False
+    )
+
+    print(final_x.shape)  # Output: (100, 10)  (final state)
+    # print(xs.shape)  # Output: (500, 100, 10)  (history of all states)
+    print("Time taken: ", time.time() - ts)
+
+    n_samples = 250
+    n_steps = 500
+    dim = 10
+    final_samples, diagnostics = langevin_sampler.sample_chain(
+        n_samples=n_samples,
+        n_steps=n_steps,
+        dim=dim,
+        return_trajectory=True,
+        return_diagnostics=True,
+    )
+    print(final_samples.shape)  # Output: (100, 10)  (final state)
+    print(diagnostics.shape)  # (500, 3, 100, 10) -> All diagnostics
+
+    x_init = torch.randn(n_samples, dim, dtype=torch.float32, device="cuda")
+    samples = langevin_sampler.sample(x=x_init, n_steps=100)
+    print(samples.shape)  # Output: (100, 10)  (final state)
+
+
 if __name__ == "__main__":
+    print("Running sampling from a Gaussian...")
+    langevin_gaussain_sampling()
+
     print("Running basic example...")
     basic_example()
 

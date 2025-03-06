@@ -48,6 +48,7 @@ class LangevinDynamics(BaseSampler):
             dtype: Tensor dtype to use
             device: Device to run on
         """
+
         super().__init__(energy_function, dtype, device)
 
         if step_size <= 0 or noise_scale <= 0:
@@ -83,14 +84,30 @@ class LangevinDynamics(BaseSampler):
         return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         """
-        Run the sampling process.
+        Generates samples using Langevin dynamics.
 
-        This method implements the following formula:
+        This method simulates a Markov chain using Langevin dynamics, where each step updates
+        the state `x_t` according to the discretized Langevin equation:
 
         .. math::
-            x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t
 
-        where :math:`\eta` is the step size, :math:`\nabla_x U(x_t)` is the gradient of the energy function at :math:`x_t`,
+            x_{t+1} = x_t - \eta \\nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t
+
+        This process generates samples that asymptotically follow the Boltzmann distribution:
+
+        .. math::
+
+            p(x) \propto e^{-U(x)}
+
+        where :math:`U(x)` defines the energy landscape.
+
+        ### Algorithm:
+        1. If `x` is not provided, initialize it with Gaussian noise.
+        2. Iteratively update `x` for `n_steps` using `self.langevin_step()`.
+        3. Optionally track trajectory (`return_trajectory=True`).
+        4. Optionally collect diagnostics such as mean, variance, and energy gradients.
+
+
 
         Args:
             x: Initial state to start the sampling from.
@@ -101,7 +118,13 @@ class LangevinDynamics(BaseSampler):
             return_diagnostics: Whether to return the diagnostics of the sampling process.
 
         Returns:
-
+            Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
+                - If `return_trajectory=False` and `return_diagnostics=False`, returns the final
+                  samples of shape `(n_samples, dim)`.
+                - If `return_trajectory=True`, returns a tensor of shape `(n_samples, n_steps, dim)`,
+                  containing the sampled trajectory.
+                - If `return_diagnostics=True`, returns a tuple `(samples, diagnostics)`, where
+                  `diagnostics` is a list of dictionaries storing per-step statistics.
         """
         if x is None:
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
@@ -144,47 +167,9 @@ class LangevinDynamics(BaseSampler):
     def _setup_diagnostics(
         self, dim: int, n_steps: int, n_samples: int = None
     ) -> torch.Tensor:
-        """Initialize the diagnostics dictionary."""
         if n_samples is not None:
             return torch.empty(
                 (n_steps, 3, n_samples, dim), device=self.device, dtype=self.dtype
             )
         else:
             return torch.empty((n_steps, 3, dim), device=self.device, dtype=self.dtype)
-
-
-energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# Initialize Langevin dynamics model
-langevin_sampler = LangevinDynamics(
-    energy_function=energy_fn, step_size=5e-3, device=device
-).to(device)
-
-# Initial state: batch of 100 samples, 10-dimensional space
-ts = time.time()
-# Run Langevin sampling for 500 steps
-final_x = langevin_sampler.sample_chain(
-    dim=10, n_steps=500, n_samples=10000, return_trajectory=False
-)
-
-print(final_x.shape)  # Output: (100, 10)  (final state)
-# print(xs.shape)  # Output: (500, 100, 10)  (history of all states)
-print("Time taken: ", time.time() - ts)
-
-n_samples = 250
-n_steps = 500
-dim = 10
-final_samples, diagnostics = langevin_sampler.sample_chain(
-    n_samples=n_samples,
-    n_steps=n_steps,
-    dim=dim,
-    return_trajectory=True,
-    return_diagnostics=True,
-)
-print(final_samples.shape)  # Output: (100, 10)  (final state)
-print(diagnostics.shape)  # (500, 3, 100, 10) -> All diagnostics
-
-x_init = torch.randn(n_samples, dim, dtype=torch.float32, device="cuda")
-samples = langevin_sampler.sample(x=x_init, n_steps=100)
-print(samples.shape)  # Output: (100, 10)  (final state)
