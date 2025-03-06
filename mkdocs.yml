@@ -1,0 +1,96 @@
+# $schema: https://squidfunk.github.io/mkdocs-material/schema.json
+
+site_name: TorchEBM
+site_url: https://soran-ghaderi.github.io/torchebm/
+repo_url: https://github.com/soran-ghaderi/torchebm/
+theme:
+  name: material
+  font:
+    text: Merriweather Sans
+    code: Red Hat Mono
+  icon:
+    logo: simple/pytorch
+  features:
+    - navigation.tabs
+    - navigation.expand
+    - navigation.sections
+    - navigation.footer
+    - toc.integrate
+    - toc.numbered
+    - tabs
+    - search
+    - favicon
+    - footer
+    - code.highlight
+    - code.copy
+    - code.line_numbers
+    - code.language
+    - mermaid
+    - admonition
+    - attr_list
+    - emoji
+    - super_fences
+    - snippets
+    - tabbed
+    - details
+    - smartquotes
+    - meta
+    - figcaption
+    - extra
+    - cite
+    - toc
+    - toc
+    - sitemap
+    - authors
+    - logo
+    - math
+    - local_search
+  palette:
+    #dark mode:
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Dark mode
+      primary: green
+      accent: deep purple
+
+    #light mode:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Light mode
+      primary: green
+      accent: deep orange
+
+
+markdown_extensions:
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.inlinehilite:
+  - pymdownx.snippets:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+
+extra:
+    social:
+        - icon: simple/github
+          link: https://www.github.com/soran-ghaderi
+        - icon: simple/x
+          link: https://www.x.com/soranghadri
+        - icon: fontawesome/brands/linkedin
+          link: https://www.linkedin.com/in/soran-ghaderi
+        - icon: material/link
+          link: https://www.soran-ghaderi.github.io
