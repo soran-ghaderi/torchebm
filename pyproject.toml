@@ -4,7 +4,7 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "torchEBM"
+name = "torchebm"
 #version = "0.1.0"
 dynamic = ["version"]
 
@@ -26,7 +26,12 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.0.0",
+    "numpy>=1.20.0",
+    "matplotlib>=3.4.0",
 ]
+
+[tool.setuptools]
+packages = ["torchebm"]
 
 [project.optional-dependencies]
 dev = [
@@ -43,7 +48,7 @@ homepage = "https://github.com/soran-ghaderi/torchebm"
 #changelog = "https://github.com/soran-ghaderi/torchebm/blob/main/CHANGELOG.md"
 
 [tool.setuptools_scm]
-write_to = "torchEBM/_version.py"
+write_to = "torchebm/_version.py"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
