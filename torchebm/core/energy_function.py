@@ -5,6 +5,27 @@ from torch import nn
 
 
 class EnergyFunction(nn.Module):
+    """
+    Base class for the energy functions.
+
+    This class provides a template for defining energy functions, which are used
+    in various sampling algorithms such as Hamiltonian Monte Carlo (HMC). It
+    includes methods for computing the energy and its gradient.
+
+    Methods:
+        forward(x: torch.Tensor) -> torch.Tensor:
+            Computes the energy of the input tensor `x`.
+
+        gradient(x: torch.Tensor) -> torch.Tensor:
+            Computes the gradient of the energy with respect to the input tensor `x`.
+
+        __call__(x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+            Calls the `forward` method to compute the energy of the input tensor `x`.
+
+        to(device: torch.device) -> 'EnergyFunction':
+            Moves the energy function to the specified device (CPU or GPU).
+    """
+
     def __init__(self):
         super().__init__()
 
@@ -27,6 +48,13 @@ class EnergyFunction(nn.Module):
 
 
 class DoubleWellEnergy(EnergyFunction):
+    """
+    Energy function for a double well potential.
+
+    Args:
+        barrier_height (float): Height of the barrier between the wells.
+    """
+
     def __init__(self, barrier_height: float = 2.0):
         super().__init__()
         self.barrier_height = barrier_height
@@ -39,6 +67,15 @@ class DoubleWellEnergy(EnergyFunction):
 
 
 class GaussianEnergy(EnergyFunction):
+    """
+    Energy function for a Gaussian distribution.
+
+    Args:
+        mean (torch.Tensor): Mean of the Gaussian distribution.
+        cov (torch.Tensor): Covariance matrix of the Gaussian distribution.
+        device (torch.device, optional): Device to run the computations on.
+    """
+
     def __init__(self, mean: torch.Tensor, cov: torch.Tensor, device=None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.mean = mean.to(self.device)
@@ -66,6 +103,13 @@ class GaussianEnergy(EnergyFunction):
 
 
 class HarmonicEnergy(EnergyFunction):
+    """
+    Energy function for a harmonic oscillator.
+
+    Args:
+        k (float): Spring constant.
+    """
+
     def __init__(self, k: float = 1.0):
         super().__init__()
         self.k = k
@@ -78,6 +122,14 @@ class HarmonicEnergy(EnergyFunction):
 
 
 class RosenbrockEnergy(EnergyFunction):
+    """
+    Energy function for the Rosenbrock function.
+
+    Args:
+        a (float): Parameter `a` of the Rosenbrock function.
+        b (float): Parameter `b` of the Rosenbrock function.
+    """
+
     def __init__(self, a: float = 1.0, b: float = 100.0):
         super().__init__()
         self.a = a
@@ -96,6 +148,15 @@ class RosenbrockEnergy(EnergyFunction):
 
 
 class AckleyEnergy(EnergyFunction):
+    """
+    Energy function for the Ackley function.
+
+    Args:
+        a (float): Parameter `a` of the Ackley function.
+        b (float): Parameter `b` of the Ackley function.
+        c (float): Parameter `c` of the Ackley function.
+    """
+
     def __init__(self, a: float = 20.0, b: float = 0.2, c: float = 2 * math.pi):
         super().__init__()
         self.a = a
@@ -125,6 +186,13 @@ class AckleyEnergy(EnergyFunction):
 
 
 class RastriginEnergy(EnergyFunction):
+    """
+    Energy function for the Rastrigin function.
+
+    Args:
+        a (float): Parameter `a` of the Rastrigin function.
+    """
+
     def __init__(self, a: float = 10.0):
         super().__init__()
         self.a = a
