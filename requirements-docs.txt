@@ -1,0 +1,12 @@
+# Documentation dependencies
+mkdocs-material>=9.0.0
+mkdocstrings[python]>=0.18
+mike>=1.0.0
+tomli>=2.0.0
+pyyaml>=6.0
+mkdocs-git-revision-date-localized-plugin>=1.0.0
+mkdocs-glightbox>=0.2.0
+mkdocs-minify-plugin>=0.5.0
+mkdocs-blog-plugin>=0.1.0
+mkdocs-autolinks-plugin>=0.5.0
+mkdocs-tags-plugin>=0.1.0
