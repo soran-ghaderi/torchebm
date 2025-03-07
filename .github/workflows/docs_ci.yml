@@ -25,5 +25,16 @@ jobs:
           path: .cache
           restore-keys: |
             mkdocs-material-
-      - run: pip install mkdocs-material
+      - run: |
+          pip install mkdocs-material
+          pip install mkdocstrings[python]
+          pip install mike
+          pip install mike
+          pip install tomli
+      - name: Extract Version and Deploy
+        run: |
+          VERSION=$(poetry version)
+          mike deploy --push --update-aliases $VERSION latest
+          mike set-default --push latest
+      - run: mkdocs build
       - run: mkdocs gh-deploy --force

@@ -10,6 +10,23 @@ from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
 class HamiltonianMonteCarlo1(BaseSampler):
     """Hamiltonian Monte Carlo sampler implementation.
 
+    Args:
+        energy_function (EnergyFunction): Energy function to sample from.
+        step_size (float): Step size for leapfrog updates.
+        n_leapfrog_steps (int): Number of leapfrog steps per sample.
+        dtype (torch.dtype): Data type to use for the computations.
+        device (str): Device to run the computations on (e.g., "cpu" or "cuda").
+        mass_matrix (torch.Tensor): Mass matrix for momentum sampling.
+
+    Methods:
+        _compute_log_prob(state): Compute the log-probability of a given state.
+        _kinetic_energy(momentum): Compute the kinetic energy of a given momentum.
+        _compute_hamiltonian(position, momentum): Compute the Hamiltonian of a given position and momentum.
+        _setup_diagnostics(): Initialize the diagnostics dictionary.
+        _sample_initial_momentum(batch_size, state_shape): Sample the initial momentum for a given state.
+        sample(initial_state, n_steps, return_diagnostics): Generate samples using HMC.
+        sample_parallel(initial_states, n_steps, return_diagnostics): Implementation of parallel Hamiltonian Monte Carlo sampling.
+
     References:
         - Implements the HMC based on https://faculty.washington.edu/yenchic/19A_stat535/Lec9_HMC.pdf.
     """
@@ -480,6 +497,30 @@ class HamiltonianMonteCarlo1(BaseSampler):
 
 
 class HamiltonianMonteCarlo(BaseSampler):
+    """Hamiltonian Monte Carlo sampler implementation.
+
+    Args:
+        energy_function: The energy function to sample from
+        step_size: The step size for leapfrog updates
+        n_leapfrog_steps: Number of leapfrog steps per sample
+        dtype: Tensor dtype to use
+        device: Device to run on
+        mass_matrix: Optional mass matrix for momentum sampling
+
+    Methods:
+        _compute_log_prob(state): Compute the log-probability of a given state
+        _kinetic_energy(momentum): Compute the kinetic energy of a given momentum
+        _compute_hamiltonian(position, momentum): Compute the Hamiltonian of a given position and momentum
+        _setup_diagnostics(): Initialize the diagnostics dictionary
+        _sample_initial_momentum(batch_size, state_shape): Sample the initial momentum for a given state
+        sample(initial_state, n_steps, return_diagnostics): Generate samples using HMC
+        sample_parallel(initial_states, n_steps, return_diagnostics): Implementation of parallel Hamiltonian Monte Carlo sampling
+
+    References:
+        - Implements the HMC based on https://faculty.washington.edu/yenchic/19A_stat535/Lec9_HMC.pdf
+
+    """
+
     def __init__(
         self,
         energy_function: EnergyFunction,

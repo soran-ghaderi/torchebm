@@ -83,21 +83,20 @@ class LangevinDynamics(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-        """
-        Generates samples using Langevin dynamics.
+        """Generates samples using Langevin dynamics.
 
         This method simulates a Markov chain using Langevin dynamics, where each step updates
         the state `x_t` according to the discretized Langevin equation:
 
         .. math::
 
-            x_{t+1} = x_t - \eta \\nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t
+            x_{t+1} = x_t - \\eta \\nabla_x U(x_t) + \\sqrt{2\\eta} \\epsilon_t
 
         This process generates samples that asymptotically follow the Boltzmann distribution:
 
         .. math::
 
-            p(x) \propto e^{-U(x)}
+            p(x) \\propto e^{-U(x)}
 
         where :math:`U(x)` defines the energy landscape.
 
