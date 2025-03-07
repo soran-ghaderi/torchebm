@@ -28,9 +28,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools wheel
-          pip install -e .[dev]
-          pip install -e .[docs]
+          python -m pip install setuptools wheel setuptools_scm[toml]
+#          pip install setuptools wheel
+          python -m pip install -e .[dev,docs]
 
 
       - name: Generate API Documentation
@@ -38,6 +38,14 @@ jobs:
           chmod +x generate_api_docs.py
           ./generate_api_docs.py
 
+      - name: Build and Deploy Documentation
+        run: |
+          # Build the documentation
+          mkdocs build
+          
+          # Deploy with Mike
+          mike deploy --push --update-aliases latest
+          mike set-default --push latest
 #      - name: Extract Version and Deploy
 #        run: |
 #          # Get version from SCM (setuptools_scm)
@@ -47,4 +55,4 @@ jobs:
 #          mike deploy --push --update-aliases ${VERSION} latest
 #          mike set-default --push latest
 #      - run: mkdocs build
-      - run: mkdocs gh-deploy --force
+#      - run: mkdocs gh-deploy --force

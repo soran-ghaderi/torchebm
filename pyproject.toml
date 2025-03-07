@@ -31,9 +31,9 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-packages = [
-    { include = "torchebm" }
-]
+#packages = [
+#    { include = "torchebm" }
+#]
 
 dependencies = [
     "torch>=2.0.0",
