@@ -79,7 +79,12 @@ class BaseSampler(ABC):
 
     # @abstractmethod
     def _setup_diagnostics(self) -> dict:
-        """Initialize the diagnostics dictionary."""
+        """
+        Initialize the diagnostics dictionary.
+
+            .. deprecated:: 1.0
+               This method is deprecated and will be removed in a future version.
+        """
         return {
             "energies": torch.empty(0, device=self.device, dtype=self.dtype),
             "acceptance_rate": torch.tensor(0.0, device=self.device, dtype=self.dtype),
