@@ -25,5 +25,36 @@ jobs:
           path: .cache
           restore-keys: |
             mkdocs-material-
-      - run: pip install mkdocs-material
+      - name: Install dependencies
+        run: |
+          # Core dependencies
+          pip install --upgrade pip
+          pip install poetry
+          
+          # Install project and its dependencies
+          poetry install
+
+          # MkDocs plugins from mkdocs.yml
+          pip install mkdocs-git-revision-date-localized-plugin
+          pip install mkdocs-glightbox
+          pip install mkdocs-minify-plugin
+          pip install mkdocs-blog-plugin
+          pip install mkdocs-autolinks-plugin
+          pip install mkdocs-tags-plugin
+          
+          # Install the project in development mode to ensure docs can access the code
+          pip install -e .
+      - name: Generate API Documentation
+        run: |
+          chmod +x generate_api_docs.py
+          ./generate_api_docs.py
+      - name: Extract Version and Deploy
+        run: |
+          # Get version from SCM (setuptools_scm)
+          python -c "from torchebm._version import version; print(f'VERSION={version}')" >> $GITHUB_ENV
+          
+          # Deploy with Mike
+          mike deploy --push --update-aliases ${VERSION} latest
+          mike set-default --push latest
+      - run: mkdocs build
       - run: mkdocs gh-deploy --force

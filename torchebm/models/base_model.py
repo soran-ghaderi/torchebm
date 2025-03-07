@@ -5,6 +5,19 @@ from torchebm.core.basesampler import BaseSampler
 
 
 class BaseModel(ABC):
+    """
+    Base class for models.
+
+    Args:
+        energy_function (EnergyFunction): Energy function to sample from.
+        sampler (BaseSampler): Sampler to use for sampling.
+
+    Methods:
+        energy(x): Compute the energy of the input.
+        sample(num_samples): Sample from the model.
+        train_step(real_data): Perform a single training step
+    """
+
     def __init__(self, energy_function: EnergyFunction, sampler: BaseSampler):
         self.energy_function = energy_function
         self.sampler = sampler

@@ -1,67 +1,144 @@
 # $schema: https://squidfunk.github.io/mkdocs-material/schema.json
 
 site_name: TorchEBM
+site_description: Energy-Based Modeling library for PyTorch, offering tools for sampling, inference, and learning in complex distributions.
+site_author: Soran Ghaderi
 site_url: https://soran-ghaderi.github.io/torchebm/
+repo_name: torchebm
 repo_url: https://github.com/soran-ghaderi/torchebm/
+edit_uri: ''  #disables edit button
+
 theme:
   name: material
+  custom_dir: docs/overrides
   font:
-    text: Merriweather Sans
-    code: Red Hat Mono
+    text: Roboto
+    code: Roboto Mono
   icon:
     logo: simple/pytorch
   features:
-    - navigation.tabs
-    - navigation.expand
-    - navigation.sections
     - navigation.footer
-    - toc.integrate
-    - toc.numbered
-    - tabs
-    - search
-    - favicon
-    - footer
-    - code.highlight
-    - code.copy
-    - code.line_numbers
-    - code.language
-    - mermaid
-    - admonition
-    - attr_list
-    - emoji
-    - super_fences
-    - snippets
-    - tabbed
-    - details
-    - smartquotes
-    - meta
-    - figcaption
-    - extra
-    - cite
-    - toc
-    - toc
-    - sitemap
-    - authors
-    - logo
-    - math
-    - local_search
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tooltips
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
   palette:
     #dark mode:
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       toggle:
         icon: material/weather-sunny
         name: Dark mode
       primary: green
       accent: deep purple
-
     #light mode:
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       toggle:
         icon: material/weather-night
         name: Light mode
       primary: green
       accent: deep orange
+nav:
+  - Home: index.md
+  - API:
+    - Overview: api/index.md
+    - Torchebm:
+      - Package Overview: api/torchebm.md
+      - Core:
+        - Package Overview: api/torchebm/core.md
+        - Basesampler: api/torchebm/core/basesampler.md
+        - Energy_function: api/torchebm/core/energy_function.md
+        - Losses: api/torchebm/core/losses.md
+        - Optimizer: api/torchebm/core/optimizer.md
+        - Score_matching: api/torchebm/core/score_matching.md
+        - Trainer: api/torchebm/core/trainer.md
+      - Cuda: api/torchebm/cuda.md
+      - Losses:
+        - Package Overview: api/torchebm/losses.md
+        - Contrastive_divergence: api/torchebm/losses/contrastive_divergence.md
+      - Models:
+        - Package Overview: api/torchebm/models.md
+        - Base_model: api/torchebm/models/base_model.md
+      - Samplers:
+        - Package Overview: api/torchebm/samplers.md
+        - Langevin_dynamics: api/torchebm/samplers/langevin_dynamics.md
+        - Mcmc: api/torchebm/samplers/mcmc.md
+      - Utils: api/torchebm/utils.md
+      - _version: api/torchebm/_version.md
+  - Developer Guide:
+      - API Documentation: api_generation.md
+  - Blog:
+    - blog/index.md
 
+plugins:
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [ torchebm ]
+          options:
+            show_source: true
+            show_docstring_attributes: false
+            show_docstring_functions: true
+            show_docstring_parameters: true
+            show_docstring_other_parameters: true
+            docstring_style: google
+            docstring_options:
+              ignore_init_summary: true
+              trim_doctest_flags: true
+            docstring_section_style: table
+            show_category_heading: true
+            show_if_no_docstring: true
+            show_signature_annotations: true
+            separate_signature: true
+            heading_level: 2
+            group_by_category: true
+
+
+  - blog:
+      blog_dir: blog
+      blog_toc: true
+      post_url_format: "{slug}"
+#      authors_profiles: true
+#  - git-committers:
+#      enabled: false
+#      repository: soran-ghaderi/torchebm
+#      branch: master
+#      token: !ENV GH_TOKEN
+  - git-revision-date-localized:
+      type: date
+      fallback_to_build_date: false
+      enable_creation_date: true
+      enabled: true
+  - glightbox:
+      touchNavigation: false
+      loop: false
+      effect: zoom
+      width: 100%
+      height: auto
+      zoomable: true
+      draggable: true
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - autolinks
+  - minify:
+      minify_html: true
+      minify_js: true
+      minify_css: true
+  - tags:
+      tags_file: tags.md
 
 markdown_extensions:
   - def_list
@@ -83,7 +160,9 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
-
+  - markdown.extensions.toc:
+      baselevel: 4
+      permalink: true
 extra:
     social:
         - icon: simple/github
@@ -94,3 +173,12 @@ extra:
           link: https://www.linkedin.com/in/soran-ghaderi
         - icon: material/link
           link: https://www.soran-ghaderi.github.io
+
+    version:
+      default: stable
+      provider: mike
+
+
+#hooks:
+#  - docs/hooks/socialmedia.py
+
