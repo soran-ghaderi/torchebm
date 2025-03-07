@@ -1,18 +1,18 @@
 [build-system]
 #requires = ["setuptools>=42", "wheel"]
-requires = ["poetry-core>=1.0.0", "setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
-#build-backend = "setuptools.build_meta"
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=64", "wheel", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+#build-backend = "poetry.core.masonry.api"
 
 
-[tool.poetry]
+[project]
 name = "torchebm"
-version = "0.0.0"
-#dynamic = ["version"]
-
+#version = "0.0.0"
+dynamic = ["version"]
 description = "Components and algorithms for energy-based models"
 readme = "README.md"
 license = { file = "LICENSE" }
+#license = "MIT"
 authors = [{ name = "Soran Ghaderi", email = "soran.gdr.cs@gmail.com" }]
 keywords = ["deep-learning", "energy-based-models", "pytorch"]
 classifiers = [
@@ -35,34 +35,35 @@ packages = [
     { include = "torchebm" }
 ]
 
-[tool.poetry.dependencies]
-python = "^3.9"
-torch = ">=2.0.0"
-numpy = ">=1.20.0"
-matplotlib = ">=3.4.0"
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.20.0",
+    "matplotlib>=3.4.0"
+]
 
-[tool.poetry.group.dev.dependencies]
-pytest = ">=6.0"
-pytest-cov = ">=2.0"
-mypy = ">=0.800"
-black = ">=20.8b1"
-isort = ">=5.0"
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "mypy>=0.800",
+    "black>=20.8b1",
+    "isort>=5.0"
+]
+docs = [
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.18",
+    "mike>=1.0.0",
+    "tomli>=2.0.0",
+    "pyyaml>=6.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.0.0",
+    "mkdocs-glightbox>=0.2.0",
+    "mkdocs-minify-plugin>=0.5.0",
+    "mkdocs-blog-plugin>=0.1.0",
+    "mkdocs-autolinks-plugin>=0.5.0",
+    "mkdocs-tags-plugin>=0.1.0"
+]
 
-[tool.poetry.group.docs.dependencies]
-mkdocs-material = ">=9.0.0"
-mkdocstrings = {extras = ["python"], version = ">=0.18"}
-mike = ">=1.0.0"
-tomli = ">=2.0.0"
-pyyaml = ">=6.0"
-mkdocs-git-revision-date-localized-plugin = ">=1.0.0"
-mkdocs-glightbox = ">=0.2.0"
-mkdocs-minify-plugin = ">=0.5.0"
-mkdocs-blog-plugin = ">=0.1.0"
-mkdocs-autolinks-plugin = ">=0.5.0"
-mkdocs-tags-plugin = ">=0.1.0"
-
-
-[tool.poetry.urls]
+[project.urls]
 homepage = "https://github.com/soran-ghaderi/torchebm"
 documentation = "https://soran-ghaderi.github.io/torchebm/"
 repository = "https://github.com/soran-ghaderi/torchebm.git"
