@@ -1,4 +1,4 @@
-"""
+r"""
 Hamiltonian Monte Carlo Sampler Module.
 
 This module provides an implementation of the Hamiltonian Monte Carlo (HMC) sampling algorithm.
@@ -43,7 +43,7 @@ Functions:
     The kinetic energy is typically defined as:
 
     $$
-    K(p) = \\frac{1}{2} p^T M^{-1} p
+    K(p) = \frac{1}{2} p^T M^{-1} p
     $$
 
     where \( p \) is the momentum and \( M \) is the mass matrix.
@@ -56,19 +56,19 @@ Functions:
         1. **Half-step update for momentum:**
 
             $$
-            p_{t + \\frac{1}{2}} = p_t - \\frac{\epsilon}{2} \\nabla U(x_t)
+            p_{t + \frac{1}{2}} = p_t - \frac{\epsilon}{2} \nabla U(x_t)
             $$
 
         2. **Full-step update for position:**
 
             $$
-            x_{t + 1} = x_t + \epsilon M^{-1} p_{t + \\frac{1}{2}}
+            x_{t + 1} = x_t + \epsilon M^{-1} p_{t + \frac{1}{2}}
             $$
 
         3. **Another half-step update for momentum:**
 
             $$
-            p_{t + 1} = p_{t + \\frac{1}{2}} - \\frac{\epsilon}{2} \\nabla U(x_{t + 1})
+            p_{t + 1} = p_{t + \frac{1}{2}} - \frac{\epsilon}{2} \nabla U(x_{t + 1})
             $$
 
     **Acceptance Probability:**
@@ -78,10 +78,10 @@ Functions:
         After proposing a new state using the leapfrog integration, the acceptance probability is computed as:
 
         $$
-        \\alpha = \\min \\left(1, \\exp \\left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \\right) \\right)
+        \alpha = \min \left(1, \exp \left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \right) \right)
         $$
 
-        The new state is accepted with probability \( \\alpha \).
+        The new state is accepted with probability \( \alpha \).
 
 ??? info "References"
 
@@ -588,7 +588,7 @@ from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
 
 
 class HamiltonianMonteCarlo(BaseSampler):
-    """Hamiltonian Monte Carlo sampler implementation.
+    r"""Hamiltonian Monte Carlo sampler implementation.
 
     This method simulates a Hamiltonian Monte Carlo.
 
@@ -626,7 +626,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         The kinetic energy is typically defined as:
 
         $$
-        K(p) = \\frac{1}{2} p^T M^{-1} p
+        K(p) = \frac{1}{2} p^T M^{-1} p
         $$
 
         where \( p \) is the momentum and \( M \) is the mass matrix.
@@ -638,29 +638,29 @@ class HamiltonianMonteCarlo(BaseSampler):
                 1.  Half-step update for momentum:
 
                     $$
-                    p_{t + 1/2} = p_t - \\frac{\\epsilon}{2} \\nabla U(x_t)
+                    p_{t + 1/2} = p_t - \frac{\epsilon}{2} \nabla U(x_t)
                     $$
 
                 2.  Full-step update for position:
 
                     $$
-                    x_{t + 1} = x_t + \\epsilon M^{-1} p_{t + \\frac{1}{2}}
+                    x_{t + 1} = x_t + \epsilon M^{-1} p_{t + \frac{1}{2}}
                     $$
 
                 3.  Another half-step update for momentum:
 
                     $$
-                    p_{t + 1} = p_{t + \\frac{1}{2}} - \\frac{\\epsilon}{2} \\nabla U(x_{t + 1})
+                    p_{t + 1} = p_{t + \frac{1}{2}} - \frac{\epsilon}{2} \nabla U(x_{t + 1})
                     $$
 
         Acceptance Probability:
             After proposing a new state using the leapfrog integration, the acceptance probability is computed as:
 
             $$
-            \\alpha = \\min \\left(1, \\exp \\left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \\right) \\right)
+            \alpha = \min \left(1, \exp \left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \right) \right)
             $$
 
-            The new state is accepted with probability \\( \\alpha \).
+            The new state is accepted with probability \( \alpha \).
 
 
     References:
