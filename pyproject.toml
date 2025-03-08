@@ -16,12 +16,12 @@ dynamic = [
     "authors",
     "keywords"
 ]
-description = "Components and algorithms for energy-based models"
+#description = "Components and algorithms for energy-based models"
 readme = "README.md"
-license = { file = "LICENSE" }
+#license = { file = "LICENSE" }
 #license = "MIT"
-authors = [{ name = "Soran Ghaderi", email = "soran.gdr.cs@gmail.com" }]
-keywords = ["deep-learning", "energy-based-models", "pytorch"]
+#authors = [{ name = "Soran Ghaderi", email = "soran.gdr.cs@gmail.com" }]
+#keywords = ["deep-learning", "energy-based-models", "pytorch"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
