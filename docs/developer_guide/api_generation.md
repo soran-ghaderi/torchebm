@@ -192,8 +192,7 @@ To update the API documentation:
 1. Run the API documentation generator script:
 
     ```bash
-    chmod +x generate_api_docs.py
-    ./generate_api_docs.py
+    python gen_ref_pages.py
     ```
 
 2. Build the documentation to preview changes:
