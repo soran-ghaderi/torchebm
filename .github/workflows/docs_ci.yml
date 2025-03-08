@@ -32,8 +32,8 @@ jobs:
       ##          pip install setuptools wheel
       - name: Generate API Documentation
         run: |
-          chmod +x generate_api_docs.py
-          ./generate_api_docs.py
+#          chmod +x generate_api_docs.py
+          python generate_api_docs.py
 #      - run: mkdocs gh-deploy --force
 
       - name: Build and Deploy Documentation

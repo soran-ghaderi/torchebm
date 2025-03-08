@@ -6,10 +6,10 @@
 
 <table align="center">
   <tr>
-    <td><img src="assets/images/e_functions/gaussian.png" alt="Ackley" width="250"/></td>
-    <td><img src="assets/images/e_functions/double_well.png" alt="double_well" width="250"/></td>
-    <td><img src="assets/images/e_functions/rastrigin.png" alt="rastrigin" width="250"/></td>
-    <td><img src="assets/images/e_functions/rosenbrock.png" alt="rosenbrock" width="250"/></td>
+    <td><img src="../../assets/images/e_functions/gaussian.png" alt="Ackley" width="250"/></td>
+    <td><img src="../../assets/images/e_functions/double_well.png" alt="double_well" width="250"/></td>
+    <td><img src="../../assets/images/e_functions/rastrigin.png" alt="rastrigin" width="250"/></td>
+    <td><img src="../../assets/images/e_functions/rosenbrock.png" alt="rosenbrock" width="250"/></td>
   </tr>
   <tr>
     <td align="center">Gaussian Function</td>
@@ -17,7 +17,7 @@
     <td align="center">Rastrigin Function</td>
     <td align="center">Rosenbrock Function</td>
   </tr>
-</table>
+</table>  
 
 ## About
 
@@ -87,9 +87,9 @@ parallel_samples = sampler.sample_parallel(initial_states, n_steps=1000)
 For the visualization codes, check out the examples directory
 <table>
   <tr>
-    <td><img src="assets/images/sampling.jpg" alt="Langevin Dynamics Sampling" width="250"/></td>
-    <td><img src="assets/images/trajectory.jpg" alt="Single Langevin Dynamics Trajectory" width="250"/></td>
-    <td><img src="assets/images/parallel.jpg" alt="Parallel Langevin Dynamics Sampling" width="250"/></td>
+    <td><img src="../../assets/images/sampling.jpg" alt="Langevin Dynamics Sampling" width="250"/></td>
+    <td><img src="../../assets/images/trajectory.jpg" alt="Single Langevin Dynamics Trajectory" width="250"/></td>
+    <td><img src="../../assets/images/parallel.jpg" alt="Parallel Langevin Dynamics Sampling" width="250"/></td>
   </tr>
   <tr>
     <td align="center">Langevin Dynamics Sampling</td>

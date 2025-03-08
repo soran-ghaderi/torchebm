@@ -1,3 +1,4 @@
+
 # $schema: https://squidfunk.github.io/mkdocs-material/schema.json
 
 site_name: TorchEBM
@@ -51,37 +52,57 @@ theme:
       primary: green
       accent: deep orange
 nav:
-  - Home: index.md
-  - API:
-    - Overview: api/index.md
+  - Home: menu/home
+  - API Reference:
+    - Overview: menu/api/index.md
     - Torchebm:
-      - Package Overview: api/torchebm.md
       - Core:
-        - Package Overview: api/torchebm/core.md
-        - Basesampler: api/torchebm/core/basesampler.md
-        - Energy_function: api/torchebm/core/energy_function.md
-        - Losses: api/torchebm/core/losses.md
-        - Optimizer: api/torchebm/core/optimizer.md
-        - Score_matching: api/torchebm/core/score_matching.md
-        - Trainer: api/torchebm/core/trainer.md
-      - Cuda: api/torchebm/cuda.md
+        - Basesampler:
+          - Module Overview: menu/api/torchebm/core/basesampler.md
+          - BaseSampler: menu/api/torchebm/core/basesampler/classes/BaseSampler.md
+        - Energy_function:
+          - Module Overview: menu/api/torchebm/core/energy_function.md
+          - AckleyEnergy: menu/api/torchebm/core/energy_function/classes/AckleyEnergy.md
+          - DoubleWellEnergy: menu/api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
+          - EnergyFunction: menu/api/torchebm/core/energy_function/classes/EnergyFunction.md
+          - GaussianEnergy: menu/api/torchebm/core/energy_function/classes/GaussianEnergy.md
+          - HarmonicEnergy: menu/api/torchebm/core/energy_function/classes/HarmonicEnergy.md
+          - RastriginEnergy: menu/api/torchebm/core/energy_function/classes/RastriginEnergy.md
+          - RosenbrockEnergy: menu/api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
+        - Losses:
+          - Module Overview: menu/api/torchebm/core/losses.md
+          - Loss: menu/api/torchebm/core/losses/classes/Loss.md
+        - Optimizer:
+          - Module Overview: menu/api/torchebm/core/optimizer.md
+          - Optimizer: menu/api/torchebm/core/optimizer/classes/Optimizer.md
+        - Score_matching:
+          - Module Overview: menu/api/torchebm/core/score_matching.md
+          - ScoreMatching: menu/api/torchebm/core/score_matching/classes/ScoreMatching.md
+        - Trainer:
+          - Module Overview: menu/api/torchebm/core/trainer.md
+          - ContrastiveDivergenceTrainer: menu/api/torchebm/core/trainer/classes/ContrastiveDivergenceTrainer.md
+      - Cuda: menu/api/torchebm/cuda.md
       - Losses:
-        - Package Overview: api/torchebm/losses.md
-        - Contrastive_divergence: api/torchebm/losses/contrastive_divergence.md
+        - Contrastive_divergence:
+          - Module Overview: menu/api/torchebm/losses/contrastive_divergence.md
+          - ContrastiveDivergence: menu/api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
+          - ContrastiveDivergenceBase: menu/api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergenceBase.md
+          - ParallelTemperingCD: menu/api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
+          - PersistentContrastiveDivergence: menu/api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
       - Models:
-        - Package Overview: api/torchebm/models.md
-        - Base_model: api/torchebm/models/base_model.md
+        - Base_model:
+          - Module Overview: menu/api/torchebm/models/base_model.md
+          - BaseModel: menu/api/torchebm/models/base_model/classes/BaseModel.md
       - Samplers:
-        - Package Overview: api/torchebm/samplers.md
-        - Langevin_dynamics: api/torchebm/samplers/langevin_dynamics.md
-        - Mcmc: api/torchebm/samplers/mcmc.md
-      - Utils: api/torchebm/utils.md
-      - _version: api/torchebm/_version.md
+        - Langevin_dynamics:
+          - Module Overview: menu/api/torchebm/samplers/langevin_dynamics.md
+          - LangevinDynamics: menu/api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
+        - Mcmc:
+          - Module Overview: menu/api/torchebm/samplers/mcmc.md
+          - HamiltonianMonteCarlo: menu/api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
+      - Utils: menu/api/torchebm/utils.md
   - Developer Guide:
-      - API Documentation: api_generation.md
-  - Blog:
-    - blog/index.md
-
+      - Contribution Guide: menu/developer_guide/api_generation.md
 plugins:
   - mkdocstrings:
       default_handler: python
@@ -89,34 +110,51 @@ plugins:
         python:
           paths: [ torchebm ]
           options:
+            filters:
+              - "!^_.*"
+              - "!^_[^_]"
             show_source: true
             show_docstring_attributes: false
             show_docstring_functions: true
             show_docstring_parameters: true
+            show_docstring_modules: true
+            show_docstring_classes: true
+            show_docstring_examples: true
+            show_docstring_description: true
             show_docstring_other_parameters: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            show_inheritance_diagram: true
+            show_submodules: true
+            modernize_annotations: true
+            show_signature: true
             docstring_style: google
             docstring_options:
               ignore_init_summary: true
               trim_doctest_flags: true
             docstring_section_style: table
             show_category_heading: true
+            show_root_heading: true
             show_if_no_docstring: true
             show_signature_annotations: true
             separate_signature: true
-            heading_level: 2
+            heading_level: 4
             group_by_category: true
+            show_overloads: true
+            summary:
+              attributes: false
+              functions: true
+              modules: true
+              classes: true
+            parameter_headings: false
+      watch:
+        - torchebm/
 
 
   - blog:
       blog_dir: blog
       blog_toc: true
       post_url_format: "{slug}"
-#      authors_profiles: true
-#  - git-committers:
-#      enabled: false
-#      repository: soran-ghaderi/torchebm
-#      branch: master
-#      token: !ENV GH_TOKEN
   - git-revision-date-localized:
       type: date
       fallback_to_build_date: false
@@ -133,15 +171,24 @@ plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
   - autolinks
+  - autorefs
   - minify:
       minify_html: true
       minify_js: true
       minify_css: true
   - tags:
       tags_file: tags.md
+  - gen-files:
+      scripts:
+        - generate_api_docs.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - section-index
 
 markdown_extensions:
   - def_list
+  - pymdownx.arithmatex:
+      generic: true
   - pymdownx.tasklist:
       custom_checkbox: true
   - attr_list
@@ -160,9 +207,18 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
+  - def_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
   - markdown.extensions.toc:
       baselevel: 4
       permalink: true
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.keys
+
 extra:
     social:
         - icon: simple/github
@@ -177,6 +233,11 @@ extra:
     version:
       default: stable
       provider: mike
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - https://unpkg.com/mermaid@10.9.0/dist/mermaid.min.js
+
 
 
 #hooks:

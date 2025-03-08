@@ -1,3 +1,9 @@
+"""Langevin Dynamics Sampler Module.
+
+Classes:
+    Class: LangevinDynamics
+"""
+
 import time
 from typing import Optional, Union, Tuple, List
 from functools import partial
@@ -12,7 +18,24 @@ class LangevinDynamics(BaseSampler):
     """
     Langevin dynamics sampler.
 
-    Inherits from :class:`BaseSampler`.
+    This method simulates a Markov chain using Langevin dynamics, where each step updates
+    the state $x_t$ according to the discretized Langevin equation:
+
+    $$x_{t+1} = x_t - \\eta \\nabla_x U(x_t) + \\sqrt{2\\eta} \\epsilon_t$$
+
+    This process generates samples that asymptotically follow the Boltzmann distribution:
+
+
+    $$p(x) \\propto e^{-U(x)}$$
+
+    where $U(x)$ defines the energy landscape.
+
+    Note:
+        ### Algorithm:
+        1. If `x` is not provided, initialize it with Gaussian noise.
+        2. Iteratively update `x` for `n_steps` using `self.langevin_step()`.
+        3. Optionally track trajectory (`return_trajectory=True`).
+        4. Optionally collect diagnostics such as mean, variance, and energy gradients.
 
     Args:
         energy_function (EnergyFunction): Energy function to sample from.
@@ -26,6 +49,22 @@ class LangevinDynamics(BaseSampler):
         langevin_step(prev_x, noise): Perform a Langevin step.
         sample_chain(x, dim, n_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
         _setup_diagnostics(dim, n_steps, n_samples): Initialize the diagnostics
+
+    Examples:
+        >>> sampler = LangevinDynamics(
+        >>> energy_function=energy_fn,
+        >>> step_size=0.01,
+        >>> noise_scale=0.1,
+        >>> device=device,  # Make sure to pass the same device
+        >>> )
+
+        # Generate samples
+        >>> initial_state = torch.zeros(n_samples, dim, device=device)
+        >>> samples = sampler.sample_chain(
+        >>>     x=initial_state,
+        >>>     n_steps=n_steps,  # steps between samples
+        >>>     n_samples=n_samples,  # number of samples to collect
+        >>> )
     """
 
     def __init__(
@@ -37,18 +76,6 @@ class LangevinDynamics(BaseSampler):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
-        """
-        Initialize Langevin dynamics sampler.
-
-        Args:
-            energy_function: The energy function to sample from
-            step_size: The step size for updates
-            noise_scale: Scale of the noise
-            decay: Damping coefficient (not supported yet)
-            dtype: Tensor dtype to use
-            device: Device to run on
-        """
-
         super().__init__(energy_function, dtype, device)
 
         if step_size <= 0 or noise_scale <= 0:
@@ -85,29 +112,6 @@ class LangevinDynamics(BaseSampler):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         """Generates samples using Langevin dynamics.
 
-        This method simulates a Markov chain using Langevin dynamics, where each step updates
-        the state `x_t` according to the discretized Langevin equation:
-
-        .. math::
-
-            x_{t+1} = x_t - \\eta \\nabla_x U(x_t) + \\sqrt{2\\eta} \\epsilon_t
-
-        This process generates samples that asymptotically follow the Boltzmann distribution:
-
-        .. math::
-
-            p(x) \\propto e^{-U(x)}
-
-        where :math:`U(x)` defines the energy landscape.
-
-        ### Algorithm:
-        1. If `x` is not provided, initialize it with Gaussian noise.
-        2. Iteratively update `x` for `n_steps` using `self.langevin_step()`.
-        3. Optionally track trajectory (`return_trajectory=True`).
-        4. Optionally collect diagnostics such as mean, variance, and energy gradients.
-
-
-
         Args:
             x: Initial state to start the sampling from.
             dim: Dimension of the state space.
@@ -124,6 +128,8 @@ class LangevinDynamics(BaseSampler):
                   containing the sampled trajectory.
                 - If `return_diagnostics=True`, returns a tuple `(samples, diagnostics)`, where
                   `diagnostics` is a list of dictionaries storing per-step statistics.
+
+
         """
         if x is None:
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)

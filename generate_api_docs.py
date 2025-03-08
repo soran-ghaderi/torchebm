@@ -5,12 +5,11 @@ This creates a structured set of markdown files for each module and submodule.
 """
 
 import os
-import importlib
-import inspect
-import pkgutil
-import yaml
+import re
 import sys
-from collections import defaultdict
+import inspect
+import importlib
+import pkgutil
 
 
 def is_package(module_name):
@@ -22,8 +21,52 @@ def is_package(module_name):
         return False
 
 
-def create_module_page(module_name, output_dir, nav_items=None):
-    """Create a markdown file for a module."""
+def should_skip_member(name):
+    """Determine if a member should be skipped in documentation."""
+    return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
+
+
+def should_skip_module(name):
+    """Determine if a module should be skipped in documentation."""
+    return name.startswith("_")
+
+
+def get_docstring_summary(obj):
+    """Extract the first line of a docstring as a summary."""
+    if not obj.__doc__:
+        return "No description available."
+
+    # Extract first line or first sentence
+    doc = obj.__doc__.strip().split("\n")[0].strip()
+    if len(doc) > 100:
+        doc = doc[:97] + "..."
+    return doc
+
+
+def get_submodules(module_name):
+    """Get all importable submodules of a module."""
+    try:
+        module = importlib.import_module(module_name)
+        if not hasattr(module, "__path__"):
+            return []
+
+        submodules = []
+        for _, name, is_pkg in pkgutil.iter_modules(module.__path__, module_name + "."):
+            # Skip modules starting with underscore
+            if should_skip_module(name.split(".")[-1]):
+                continue
+            submodules.append((name, is_pkg))
+        return submodules
+    except ImportError:
+        return []
+
+
+def create_module_page(module_name, output_dir):
+    """Create a markdown file for a module with class listings and summaries."""
+    # Skip if module name starts with underscore
+    if should_skip_module(module_name.split(".")[-1]):
+        return None
+
     # Create directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
@@ -34,23 +77,120 @@ def create_module_page(module_name, output_dir, nav_items=None):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(file_name), exist_ok=True)
 
-    # Create markdown content
-    # module_title = module_name.split(".")[-1].capitalize()
+    try:
+        # Import the module
+        module = importlib.import_module(module_name)
+    except ImportError:
+        print(f"Warning: Could not import module {module_name}, skipping...")
+        return None
+
+    # Get module parts for breadcrumb
     module_parts = module_name.split(".")
     module_title = module_parts[-1].capitalize()
 
+    # Create breadcrumb navigation
     if len(module_parts) > 1:
         breadcrumb = " > ".join([p.capitalize() for p in module_parts[:-1]])
-        content = f"# {breadcrumb} > {module_title}\n\n"
+        header = f"# {breadcrumb} > {module_title}\n\n"
     else:
-        content = f"# {module_title}\n\n"
+        header = f"# {module_title}\n\n"
 
-    content = f"# {module_title} Module\n\n"
+    # Get module docstring
+    # module_doc = module.__doc__ or "No description available."
+    # content = header + f"{module_doc.strip()}\n\n"
+    content = ""
+
+    # Add table of contents section
+    content += "## Contents\n\n"
+
+    # Check if module is a package and get submodules/subpackages
+    is_package = hasattr(module, "__path__")
+    if is_package:
+        submodules = get_submodules(module_name)
+        subpackages = [name for name, is_pkg in submodules if is_pkg]
+        modules = [name for name, is_pkg in submodules if not is_pkg]
+
+        # Add subpackages to the table of contents
+        if subpackages:
+            content += "### Subpackages\n\n"
+            for subpkg in sorted(subpackages):
+                pkg_name = subpkg.split(".")[-1]
+                content += f"- [{pkg_name.capitalize()}]({pkg_name}/)\n"
+            content += "\n"
+
+        # Add modules to the table of contents
+        if modules:
+            content += "### Modules\n\n"
+            for mod in sorted(modules):
+                mod_name = mod.split(".")[-1]
+                summary = ""
+                try:
+                    mod_obj = importlib.import_module(mod)
+                    if mod_obj.__doc__:
+                        summary = " - " + get_docstring_summary(mod_obj)
+                except ImportError:
+                    pass
+                content += f"- [{mod_name.capitalize()}]({mod_name}.md){summary}\n"
+            content += "\n"
+
+    # Find all classes in the module
+    classes = []
+    functions = []
+
+    for name, obj in inspect.getmembers(module):
+        if should_skip_member(name):
+            continue
+
+        if inspect.isclass(obj) and obj.__module__ == module_name:
+            classes.append((name, obj))
+        elif inspect.isfunction(obj) and obj.__module__ == module_name:
+            functions.append((name, obj))
+
+    # Add classes to the table of contents
+    if classes:
+        content += "### Classes\n\n"
+        for name, cls in sorted(classes):
+            summary = get_docstring_summary(cls)
+            # content += f"- [`{name}`](#{name.lower()}) - {summary}\n"
+            # Use fully qualified class name in the anchor link
+            fully_qualified_name = f"{module_name}.{name}"
+            # content += f"- [`{name}`](#{fully_qualified_name.lower()}) - {summary}\n"
+            content += f"- [`{name}`](classes/{name}) - {summary}\n"
+
+        content += "\n"
+
+    # Add functions to the table of contents
+    if functions:
+        content += "### Functions\n\n"
+        for name, func in sorted(functions):
+            summary = get_docstring_summary(func)
+            content += f"- [`{name}()`](#{name.lower()}) - {summary}\n"
+        content += "\n"
+
+    # Add the module API reference using mkdocstrings
+    content += "## API Reference\n\n"
     content += f"::: {module_name}\n"
     content += "    options:\n"
     content += "      show_root_heading: true\n"
     content += "      show_root_toc_entry: true\n"
-    content += "      show_submodules: true\n"
+    content += "      show_source: true\n"
+
+    content += "      show_symbol_type_heading: true\n"
+    content += "      show_symbol_type_toc: true\n"
+    content += "      show_docstring_attributes: false\n"
+    content += "      show_docstring_classes: true\n"
+    content += "      show_docstring_functions: true\n"
+    content += "      trim_doctest_flags: true\n"
+    content += "      show_category_heading: false\n"
+    content += "      show_if_no_docstring: true\n"
+    content += "      members_order: source\n"
+    content += "      show_signature_annotations: true\n"
+    content += "      separate_signature: true\n"
+    content += "      unwrap_annotated: true\n"
+    content += "      docstring_section_style: table\n"
+    content += "      inherited_members: false\n"
+    content += "      members:\n"
+    content += '        - "!__*"\n'  # Exclude dunder methods
 
     # Write to file
     with open(file_name, "w") as f:
@@ -58,397 +198,245 @@ def create_module_page(module_name, output_dir, nav_items=None):
 
     print(f"Created documentation for {module_name} at {file_name}")
 
-    # # Add to nav items if provided
-    # if nav_items is not None:
-    #     relative_path = os.path.relpath(file_name, "docs")
-    #     nav_items.append(f"    - {module_title}: {relative_path}")
+    # Generate individual class pages if there are classes
+    class_pages = []
+    for name, cls in classes:
+        class_file = create_class_page(module_name, name, cls, output_dir)
+        if class_file:
+            class_pages.append((name, class_file))
 
+    return os.path.relpath(file_name, "docs"), class_pages
+
+
+def create_class_page(module_name, class_name, cls, output_dir):
+    """Create a dedicated page for a class."""
+    # Create directory for class pages
+    module_path = module_name.replace(".", "/")
+    class_dir = os.path.join(output_dir, module_path, "classes")
+    os.makedirs(class_dir, exist_ok=True)
+
+    file_name = os.path.join(class_dir, f"{class_name}.md")
+
+    # Get module parts for breadcrumb
+    module_parts = module_name.split(".")
+    module_title = module_parts[-1].capitalize()
+
+    # Create breadcrumb navigation
+    if len(module_parts) > 1:
+        breadcrumb = " > ".join([p.capitalize() for p in module_parts])
+        header = f"# {breadcrumb} > {class_name}\n\n"
+    else:
+        header = f"# {module_title} > {class_name}\n\n"
+
+    # Get class docstring
+    class_doc = cls.__doc__ or "No description available."
+    content = header + f"{class_doc.strip()}\n\n"
+    content = ""
+
+    # Add inheritance information
+    if cls.__bases__ and cls.__bases__ != (object,):
+        # base_classes = ", ".join(
+        #     [b.__name__ for b in cls.__bases__ if b.__name__ != "object"]
+        # )
+        base_classes = []
+        for base in cls.__bases__:
+            if base.__name__ != "object":
+                base_module = base.__module__
+                # Fix the base class links to point to proper module pages
+                if base_module.startswith(module_name.split(".")[0]):
+                    # It's an internal link, create a proper relative path
+                    base_module_path = base_module.replace(".", "/")
+                    base_class_path = f"{base_module_path}.md"
+                    # Check if it's likely a class in a module
+
+                    if base_module != module_name:
+                        base_classes.append(
+                            f"[{base.__name__}](/{base_class_path}#{base_module.lower()}.{base.__name__.lower()})"
+                        )
+                    else:
+                        # Same module, just use the class name
+                        base_classes.append(
+                            f"[{base.__name__}](#{base_module.lower()}.{base.__name__.lower()})"
+                        )
+
+                    # base_classes.append(
+                    #     f"[{base.__name__}](/{base_module_path}#{base_module}.{base.__name__.lower()})"
+                    # )
+                else:
+                    # External class, just show the name
+                    base_classes.append(f"{base.__name__}")
+
+        # if base_classes:
+        # content += f"**Inherits from:** {base_classes}\n\n"
+        # content += f"**Inherits from:** {', '.join(base_classes)}\n\n"
+
+    # Add methods and attributes sections
+    content += "## Methods and Attributes\n\n"
+    content += f"::: {module_name}.{class_name}\n"
+    content += "    options:\n"
+    content += "      show_root_heading: false\n"
+    content += "      show_source: true\n"
+    content += "      members_order: source\n"
+    content += "      show_category_heading: false\n"
+    content += "      show_if_no_docstring: true\n"
+    content += "      show_docstring_attributes: false\n"
+    content += "      show_docstring_classes: true\n"
+    content += "      show_docstring_functions: true\n"
+    content += "      show_signature_annotations: true\n"
+    content += "      separate_signature: true\n"
+    content += "      unwrap_annotated: true\n"
+    content += "      show_symbol_type_heading: true\n"
+    content += "      show_symbol_type_toc: true\n"
+    content += "      docstring_section_style: table\n"
+    content += "      trim_doctest_flags: true\n"
+    content += "      inherited_members: false\n"
+    content += "      filters:\n"
+    content += '        - "!^_[^_]"\n'  # Exclude single underscore methods
+    content += '        - "!^__"\n'  # Exclude dunder methods
+
+    # Write to file
+    with open(file_name, "w") as f:
+        f.write(content)
+
+    print(f"Created documentation for class {class_name} at {file_name}")
     return os.path.relpath(file_name, "docs")
 
 
-# def generate_api_docs(package_name, output_dir="docs/api"):
-#     """Generate markdown files for a package and its submodules."""
-#     # Create main index file
-#     os.makedirs(output_dir, exist_ok=True)
-#
-#     nav_items = []
-#
-#     # Create index.md file
-#     index_content = f"# {package_name.capitalize()} API Reference\n\n"
-#     index_content += "This page provides an overview of the API.\n\n"
-#
-#     # Try to import the package
-#     try:
-#         package = importlib.import_module(package_name)
-#     except ImportError:
-#         print(f"Error: Could not import package {package_name}")
-#         return
-#
-#     # Process the package and its submodules
-#     for _, module_name, is_pkg in pkgutil.walk_packages(
-#         package.__path__, package.__name__ + "."
-#     ):
-#         # Create a page for this module
-#         create_module_page(module_name, output_dir, nav_items)
-#
-#         # If it's a package, we've already created pages for its submodules
-#         # through the walk_packages function
-#
-#     # Create a root page for the main package
-#     create_module_page(package_name, output_dir, nav_items)
-#
-#     # Update index with module listing
-#     index_content += "## Modules\n\n"
-#     for nav_item in sorted(nav_items):
-#         print("here is the nav item: ", nav_item)
-#         module_name = nav_item.split(":")[0].split("-")[1].strip()
-#         index_content += f"- [{module_name}]({nav_item.split(':')[1].strip()})\n"
-#
-#     # Write index file
-#     with open(os.path.join(output_dir, "index.md"), "w") as f:
-#         f.write(index_content)
-#
-#     print(f"Created API documentation index at {os.path.join(output_dir, 'index.md')}")
-#
-#     # Print nav configuration
-#     print("\nAdd this to your mkdocs.yml nav section:")
-#     print("  - API:")
-#     print(f"    - Overview: api/index.md")
-#     for item in sorted(nav_items):
-#         print(item)
-#
-#
-# if __name__ == "__main__":
-#     # Generate API docs for torchebm
-#     generate_api_docs("torchebm")
-
-
-# def update_mkdocs_nav(nav_structure):
-#     """Update the mkdocs.yml file with the new navigation structure."""
-#     try:
-#         # Read existing mkdocs.yml
-#         with open("mkdocs.yml", "r") as f:
-#             mkdocs_config = yaml.safe_load(f)
-#
-#         # Find the API section in nav
-#         api_section_found = False
-#         for i, section in enumerate(mkdocs_config.get("nav", [])):
-#             if isinstance(section, dict) and "API" in section:
-#                 mkdocs_config["nav"][i]["API"] = nav_structure
-#                 api_section_found = True
-#                 break
-#
-#         # If no API section found, add one
-#         if not api_section_found:
-#             api_entry = {"API": nav_structure}
-#             if "nav" not in mkdocs_config:
-#                 mkdocs_config["nav"] = []
-#             mkdocs_config["nav"].append(api_entry)
-#
-#         # Write updated config back
-#         with open("mkdocs.yml", "w") as f:
-#             yaml.dump(mkdocs_config, f, default_flow_style=False, sort_keys=False)
-#
-#         print("Updated mkdocs.yml with new API navigation structure")
-#     except Exception as e:
-#         print(f"Error updating mkdocs.yml: {e}")
-#         print("Please manually update your navigation structure.")
-
-
-# def update_mkdocs_nav(nav_structure):
-#     """Update the mkdocs.yml file with the new navigation structure."""
-#     try:
-#         # Read existing mkdocs.yml preserving comments and formatting
-#         with open("mkdocs.yml", "r") as f:
-#             mkdocs_content = f.read()
-#
-#         # Load YAML content
-#         mkdocs_config = yaml.safe_load(mkdocs_content)
-#
-#         # Find the API section in nav
-#         api_section_found = False
-#         for i, section in enumerate(mkdocs_config.get("nav", [])):
-#             if isinstance(section, dict) and "API" in section:
-#                 # Replace only the API section
-#                 mkdocs_config["nav"][i]["API"] = nav_structure
-#                 api_section_found = True
-#                 break
-#
-#         print("mkdocs_config", mkdocs_config)
-#         print("nav_structure", nav_structure)
-#         # If no API section found, add one
-#         if not api_section_found:
-#             api_entry = {"API": nav_structure}
-#             if "nav" not in mkdocs_config:
-#                 mkdocs_config["nav"] = []
-#             mkdocs_config["nav"].append(api_entry)
-#
-#         # Write updated config back with proper formatting
-#         with open("mkdocs.yml", "w") as f:
-#             yaml.dump(
-#                 mkdocs_config,
-#                 f,
-#                 default_flow_style=False,
-#                 sort_keys=False,
-#                 indent=2,
-#                 width=80,
-#                 allow_unicode=True,
-#             )
-#
-#         print("Successfully updated mkdocs.yml with new API navigation structure")
-#
-#         # Output the new structure for verification
-#         print("\nNew API navigation structure:")
-#         for entry in nav_structure:
-#             if isinstance(entry, dict):
-#                 for k, v in entry.items():
-#                     print(f"- {k}")
-#                     if isinstance(v, list):
-#                         for item in v:
-#                             if isinstance(item, dict):
-#                                 for sk, sv in item.items():
-#                                     print(f"  - {sk}")
-#                             else:
-#                                 print(f"  - {item}")
-#                     else:
-#                         print(f"  {v}")
-#             else:
-#                 print(f"- {entry}")
-#
-#     except Exception as e:
-#         print(f"Error updating mkdocs.yml: {e}")
-#         print("Please manually update your navigation structure using the following:")
-#         print("\nAPI navigation structure to add manually:")
-#         print(yaml.dump({"API": nav_structure}, default_flow_style=False))
-#
-#         # Create a backup file with the nav structure
-#         backup_file = "api_nav_structure.yml"
-#         with open(backup_file, "w") as f:
-#             yaml.dump({"API": nav_structure}, f, default_flow_style=False)
-#         print(f"Navigation structure saved to {backup_file}")
-
-
-import re
-import yaml
-
-
-def update_mkdocs_nav(nav_structure):
-    """Update the mkdocs.yml file with the new navigation structure using text processing."""
-    try:
-        # Read existing mkdocs.yml as text
-        with open("mkdocs.yml", "r") as f:
-            lines = f.readlines()
-
-        # Find the API section in the nav
-        api_section_start = -1
-        api_section_end = -1
-        nav_section_start = -1
-        nav_section_indent = -1
-        in_nav = False
-        current_indent = 0
-
-        for i, line in enumerate(lines):
-            stripped = line.lstrip()
-            if stripped.startswith("nav:"):
-                nav_section_start = i
-                in_nav = True
-                nav_section_indent = len(line) - len(stripped)
-                continue
-
-            if in_nav:
-                # Calculate the current indent level
-                if stripped and not stripped.startswith("#"):  # Skip comments
-                    current_indent = len(line) - len(stripped)
-
-                    # If we're back to the same indent level as nav or less, we've exited the nav section
-                    if (
-                        current_indent <= nav_section_indent
-                        and i > nav_section_start + 1
-                    ):
-                        in_nav = False
-                        continue
-
-                    # Look for the API section
-                    if stripped.startswith("- API:"):
-                        api_section_start = i
-                        # Find where the API section ends
-                        for j in range(i + 1, len(lines)):
-                            next_line = lines[j].lstrip()
-                            if next_line and not next_line.startswith(
-                                "#"
-                            ):  # Skip comments
-                                next_indent = len(lines[j]) - len(next_line)
-                                # If indent level is the same as or less than the "- API:" line,
-                                # we've reached the end of the API section
-                                if next_indent <= current_indent:
-                                    api_section_end = j
-                                    break
-                        if (
-                            api_section_end == -1
-                        ):  # If API section is the last in the file
-                            api_section_end = len(lines)
-                        break
-
-        # Convert nav_structure to YAML format
-        api_yaml = yaml.safe_dump(nav_structure, default_flow_style=False).split("\n")
-        # Properly indent the YAML lines
-        api_indented_yaml = []
-        base_indent = " " * (current_indent + 2)  # Add 2 spaces for the subsection
-        for line in api_yaml:
-            if line.strip():
-                api_indented_yaml.append(base_indent + line + "\n")
-
-        # If we found the API section, replace it
-        if api_section_start != -1:
-            # Replace the API section with the new content
-            new_lines = lines[: api_section_start + 1]  # Include the "- API:" line
-            new_lines.extend(api_indented_yaml)
-            new_lines.extend(lines[api_section_end:])
-
-        else:
-            # If we didn't find an API section but found the nav section, add it
-            if nav_section_start != -1:
-                api_entry = (
-                    " " * (nav_section_indent + 2) + "- API:\n"
-                )  # Proper indent for nav subsection
-
-                # Find where to insert the API section (end of nav)
-                insert_pos = nav_section_start + 1
-                while insert_pos < len(lines) and (
-                    not lines[insert_pos].strip()
-                    or lines[insert_pos].strip().startswith("#")
-                    or len(lines[insert_pos]) - len(lines[insert_pos].lstrip())
-                    > nav_section_indent
-                ):
-                    insert_pos += 1
-
-                new_lines = lines[:insert_pos]
-                new_lines.append(api_entry)
-                new_lines.extend(api_indented_yaml)
-                new_lines.extend(lines[insert_pos:])
-            else:
-                # If there's no nav section at all, add it at the end
-                nav_entry = "nav:\n"
-                api_entry = "  - API:\n"
-
-                new_lines = lines
-                new_lines.append(nav_entry)
-                new_lines.append(api_entry)
-                new_lines.extend(api_indented_yaml)
-
-        # Write the updated content back to the file
-        with open("mkdocs.yml", "w") as f:
-            f.writelines(new_lines)
-
-        print("Successfully updated mkdocs.yml with new API navigation structure")
-
-    except Exception as e:
-        print(f"Error updating mkdocs.yml: {e}")
-        print("Please manually update your navigation structure using the following:")
-        print("\nAPI navigation structure to add manually:")
-        print(yaml.dump({"API": nav_structure}, default_flow_style=False))
-
-        # Create a backup file with the nav structure
-        backup_file = "api_nav_structure.yml"
-        with open(backup_file, "w") as f:
-            yaml.dump({"API": nav_structure}, f, default_flow_style=False)
-        print(f"Navigation structure saved to {backup_file}")
-
-
 def build_hierarchical_structure(all_modules):
-    """Build a hierarchical structure from a flat list of modules."""
+    """Build a hierarchical structure from modules and their classes."""
     hierarchy = {}
 
-    # First pass: identify all packages and create the hierarchy
-    for module_name, file_path in all_modules.items():
+    # First pass: process all modules
+    for module_info in all_modules:
+        module_name = module_info["name"]
+
         if module_name.count(".") == 0:
             # This is the root package
             if module_name not in hierarchy:
                 hierarchy[module_name] = {
-                    "filepath": file_path,
+                    "filepath": module_info["filepath"],
                     "title": module_name.capitalize(),
                     "subpackages": {},
                     "modules": {},
+                    "classes": {},
+                }
+            # Add classes from the root module
+            for class_name, class_path in module_info.get("classes", []):
+                hierarchy[module_name]["classes"][class_name] = {
+                    "filepath": class_path,
+                    "title": class_name,
                 }
             continue
 
         parts = module_name.split(".")
-        current_package = parts[0]
+        root_package = parts[0]
 
         # Ensure the root package exists
-        if current_package not in hierarchy:
-            hierarchy[current_package] = {
-                "filepath": all_modules.get(current_package, ""),
-                "title": current_package.capitalize(),
+        if root_package not in hierarchy:
+            hierarchy[root_package] = {
+                "filepath": "",
+                "title": root_package.capitalize(),
                 "subpackages": {},
                 "modules": {},
+                "classes": {},
             }
 
-        current = hierarchy[current_package]
+        current = hierarchy[root_package]
 
         # Navigate through the package hierarchy
         for i, part in enumerate(parts[1:], 1):
-            # Check if we're at the last part (the module name)
+            current_path = ".".join(parts[: i + 1])
+
+            # Check if we're at the last part (module name)
             if i == len(parts) - 1:
-                # This is a module, add it to the current level
-                current_path = ".".join(parts[: i + 1])
-                if is_package(current_path):
-                    # It's a subpackage
+                if module_info["is_package"]:
                     if part not in current["subpackages"]:
                         current["subpackages"][part] = {
-                            "filepath": file_path,
+                            "filepath": module_info["filepath"],
                             "title": part.capitalize(),
                             "subpackages": {},
                             "modules": {},
+                            "classes": {},
+                        }
+                    # Add classes to this package
+                    for class_name, class_path in module_info.get("classes", []):
+                        current["subpackages"][part]["classes"][class_name] = {
+                            "filepath": class_path,
+                            "title": class_name,
                         }
                 else:
-                    # It's a module
                     current["modules"][part] = {
-                        "filepath": file_path,
+                        "filepath": module_info["filepath"],
                         "title": part.capitalize(),
+                        "classes": {},
                     }
+                    # Add classes to this module
+                    for class_name, class_path in module_info.get("classes", []):
+                        current["modules"][part]["classes"][class_name] = {
+                            "filepath": class_path,
+                            "title": class_name,
+                        }
             else:
-                # This is a package level, ensure it exists
+                # This is a package level
                 if part not in current["subpackages"]:
-                    current_path = ".".join(parts[: i + 1])
                     current["subpackages"][part] = {
-                        "filepath": all_modules.get(current_path, ""),
+                        "filepath": "",  # Will be filled if we have this package's info
                         "title": part.capitalize(),
                         "subpackages": {},
                         "modules": {},
+                        "classes": {},
                     }
                 current = current["subpackages"][part]
 
     return hierarchy
 
 
+# def hierarchy_to_nav(hierarchy):
+#     """Convert the hierarchical structure to MkDocs navigation format."""
+#     nav = []
+#
+#     # Add overview first
+#     nav.append({"Overview": "api/index.md"})
+#
+#     # Process each root package
+#     for package_name, package_info in sorted(hierarchy.items()):
+#         package_nav = package_to_nav(package_name, package_info)
+#         nav.append(package_nav)
+#
+#     return nav
+
+
 def hierarchy_to_nav(hierarchy):
     """Convert the hierarchical structure to MkDocs navigation format."""
     nav = []
 
-    # Add overview first
-    nav.append({"Overview": "api/index.md"})
+    # Add overview first as a child item
+    overview_item = {"Overview": "menu/api/index.md"}
 
     # Process each root package
+    packages = []
     for package_name, package_info in sorted(hierarchy.items()):
         package_nav = package_to_nav(package_name, package_info)
-        nav.append(package_nav)
+        packages.append(package_nav)
 
-    return nav
+    # Include overview as the first child item, followed by packages
+    all_items = [overview_item] + packages
+
+    return all_items
 
 
 def package_to_nav(name, info):
     """Convert a package structure to navigation format."""
-    # If this package has no subpackages or modules, it's a simple entry
-    if not info["subpackages"] and not info["modules"]:
+    # If this is a simple entry with no subpackages, modules, or classes
+    if not info["subpackages"] and not info["modules"] and not info["classes"]:
         return {info["title"]: info["filepath"]}
 
     # Otherwise, it's a section with sub-entries
     section = {info["title"]: []}
 
-    # Add the package itself as an entry if it has a filepath
-    if info["filepath"]:
-        section[info["title"]].append({"Package Overview": info["filepath"]})
+    # Add the package overview first if it exists
+    # if info["filepath"]:
+    #     section[info["title"]].append({"Package Overview": info["filepath"]})
 
     # Add subpackages (recursive)
     for subname, subinfo in sorted(info["subpackages"].items()):
@@ -456,7 +444,25 @@ def package_to_nav(name, info):
 
     # Add modules
     for modname, modinfo in sorted(info["modules"].items()):
-        section[info["title"]].append({modinfo["title"]: modinfo["filepath"]})
+        # If the module has classes, create a subsection
+        if modinfo["classes"]:
+            module_section = {
+                modinfo["title"]: [{"Module Overview": modinfo["filepath"]}]
+            }
+            # Add classes to the module section
+            for classname, classinfo in sorted(modinfo["classes"].items()):
+                module_section[modinfo["title"]].append(
+                    {classinfo["title"]: classinfo["filepath"]}
+                )
+            section[info["title"]].append(module_section)
+        else:
+            # Simple module with no classes
+            section[info["title"]].append({modinfo["title"]: modinfo["filepath"]})
+        # section[info["title"]].append({modinfo["title"]: modinfo["filepath"]})
+    #
+    # # Add direct classes of the package (if any)
+    # for classname, classinfo in sorted(info["classes"].items()):
+    #     section[info["title"]].append({classinfo["title"]: classinfo["filepath"]})
 
     return section
 
@@ -466,28 +472,108 @@ def generate_index_page(hierarchy, output_dir):
     content = "# API Reference\n\n"
     content += "This page provides an overview of the TorchEBM API.\n\n"
 
+    # Create a table of contents
+    content += "## Table of Contents\n\n"
+
+    # Add the main packages to the TOC
     for package_name, package_info in sorted(hierarchy.items()):
-        content += f"## {package_info['title']}\n\n"
+        # content += f"- [{package_info['title']}](#{package_name.lower()})\n"
+
+        #  =======================================s
+        content += f"## {package_info['title']} <a id='{package_name.lower()}'></a>\n\n"
 
         if package_info["filepath"]:
-            content += f"[Package Overview]({os.path.relpath(package_info['filepath'], 'docs')})\n\n"
+            content += f"[Package Documentation]({os.path.relpath(package_info['filepath'], 'docs')})\n\n"
 
-        if package_info["subpackages"] or package_info["modules"]:
-            content += "### Contents\n\n"
+        #  =======================================e
 
-            # Add subpackages
-            if package_info["subpackages"]:
-                content += "#### Subpackages\n\n"
-                for subname, subinfo in sorted(package_info["subpackages"].items()):
-                    content += f"- [{subinfo['title']}]({os.path.relpath(subinfo['filepath'], 'docs')})\n"
-                content += "\n"
+        # Add subpackages
+        if package_info["subpackages"]:
+            for subname, subinfo in sorted(package_info["subpackages"].items()):
+                content += f"  - [{subinfo['title']}](#{package_name.lower()}-{subname.lower()})\n"
 
-            # Add modules
-            if package_info["modules"]:
-                content += "#### Modules\n\n"
-                for modname, modinfo in sorted(package_info["modules"].items()):
-                    content += f"- [{modinfo['title']}]({os.path.relpath(modinfo['filepath'], 'docs')})\n"
-                content += "\n"
+        # Add modules (only direct modules of the package)
+        if package_info["modules"]:
+            for modname, modinfo in sorted(package_info["modules"].items()):
+                content += f"  - [{modinfo['title']}](#{package_name.lower()}-{modname.lower()})\n"
+
+    content += "\n"
+
+    # Generate detailed content for each package
+    for package_name, package_info in sorted(hierarchy.items()):
+        content += f"## {package_info['title']} <a id='{package_name.lower()}'></a>\n\n"
+
+        if package_info["filepath"]:
+            content += f"[Package Documentation]({os.path.relpath(package_info['filepath'], 'docs')})\n\n"
+
+        # Add description if we can get it
+        try:
+            package = importlib.import_module(package_name)
+            if package.__doc__:
+                content += f"{package.__doc__.strip().split('.')[0]}.\n\n"
+        except (ImportError, AttributeError, IndexError):
+            pass
+
+        # Add subpackages
+        if package_info["subpackages"]:
+            content += "### Subpackages\n\n"
+            for subname, subinfo in sorted(package_info["subpackages"].items()):
+                anchor = f"{package_name.lower()}-{subname.lower()}"
+                content += f"#### {subinfo['title']} <a id='{anchor}'></a>\n\n"
+                if subinfo["filepath"]:
+                    content += f"[Documentation]({os.path.relpath(subinfo['filepath'], 'docs')})\n\n"
+
+                # Add modules in this subpackage
+                if subinfo["modules"]:
+                    content += "**Modules:**\n\n"
+                    for modname, modinfo in sorted(subinfo["modules"].items()):
+                        content += f"- [{modinfo['title']}]({os.path.relpath(modinfo['filepath'], 'docs')}) - "
+
+                        # Try to get a description
+                        try:
+                            mod = importlib.import_module(
+                                f"{package_name}.{subname}.{modname}"
+                            )
+                            if mod.__doc__:
+                                content += f"{mod.__doc__.strip().split('.')[0]}.\n"
+                            else:
+                                content += "No description available.\n"
+                        except (ImportError, AttributeError, IndexError):
+                            content += "No description available.\n"
+
+                    content += "\n"
+
+                # Add direct classes in this subpackage
+                if subinfo["classes"]:
+                    content += "**Classes:**\n\n"
+                    for classname, classinfo in sorted(subinfo["classes"].items()):
+                        content += f"- [{classinfo['title']}]({os.path.relpath(classinfo['filepath'], 'docs')})\n"
+
+                    content += "\n"
+
+        # Add modules directly in the package
+        if package_info["modules"]:
+            content += "### Modules\n\n"
+            for modname, modinfo in sorted(package_info["modules"].items()):
+                anchor = f"{package_name.lower()}-{modname.lower()}"
+                content += f"#### {modinfo['title']} <a id='{anchor}'></a>\n\n"
+                content += f"[Documentation]({os.path.relpath(modinfo['filepath'], 'docs')})\n\n"
+
+                # Add classes in this module
+                if modinfo["classes"]:
+                    content += "**Classes:**\n\n"
+                    for classname, classinfo in sorted(modinfo["classes"].items()):
+                        content += f"- [{classinfo['title']}]({os.path.relpath(classinfo['filepath'], 'docs')})\n"
+
+                    content += "\n"
+
+        # Add direct classes in this package
+        if package_info["classes"]:
+            content += "### Classes\n\n"
+            for classname, classinfo in sorted(package_info["classes"].items()):
+                content += f"- [{classinfo['title']}]({os.path.relpath(classinfo['filepath'], 'docs')})\n"
+
+            content += "\n"
 
     # Write to file
     with open(os.path.join(output_dir, "index.md"), "w") as f:
@@ -496,32 +582,244 @@ def generate_index_page(hierarchy, output_dir):
     print(f"Created API documentation index at {os.path.join(output_dir, 'index.md')}")
 
 
-def generate_api_docs(package_name, output_dir="docs/api"):
-    """Generate markdown files for a package and its submodules with hierarchical structure."""
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Dictionary to store all modules and their file paths
-    all_modules = {}
-
-    # Try to import the package
+def update_mkdocs_nav(nav_structure, tab_name="API Reference"):
+    """Update the mkdocs.yml file with the new navigation structure."""
     try:
+        # Read existing mkdocs.yml as text
+        with open("mkdocs.yml", "r") as f:
+            lines = f.readlines()
+
+        # Find the nav section and API subsection
+        nav_section_start = -1
+        api_section_start = -1
+        api_section_end = -1
+        in_nav = False
+        nav_indent = -1
+
+        for i, line in enumerate(lines):
+            stripped = line.lstrip()
+            if stripped.startswith("nav:"):
+                nav_section_start = i
+                in_nav = True
+                nav_indent = len(line) - len(stripped)
+                continue
+
+            if in_nav:
+                if stripped and not stripped.startswith("#"):  # Skip comments
+                    current_indent = len(line) - len(stripped)
+
+                    # Back to same level as nav or less, we've exited nav section
+                    if current_indent <= nav_indent and i > nav_section_start + 1:
+                        in_nav = False
+                        continue
+
+                    # Look for API section
+                    if stripped.startswith(f"- {tab_name}:"):
+                        api_section_start = i
+                        # Find where API section ends
+                        for j in range(i + 1, len(lines)):
+                            if j >= len(lines):
+                                api_section_end = len(lines)
+                                break
+
+                            next_line = lines[j].lstrip()
+                            if next_line and not next_line.startswith("#"):
+                                next_indent = len(lines[j]) - len(next_line)
+                                # If at same level as "- API:" or less, we've exited the API section
+                                if next_indent <= current_indent:
+                                    api_section_end = j
+                                    break
+
+                        if api_section_end == -1:  # API is last section
+                            api_section_end = len(lines)
+                        break
+
+        # Convert nav_structure to YAML lines with proper indentation
+        api_yaml = yaml.safe_dump(nav_structure, default_flow_style=False).split("\n")
+        base_indent = "  "  # Base indentation for nav items
+
+        if api_section_start != -1:
+            # Get the indent of the "- API:" line
+            api_line_indent = len(lines[api_section_start]) - len(
+                lines[api_section_start].lstrip()
+            )
+            base_indent = " " * (api_line_indent + 2)  # Add 2 spaces for sub-items
+
+        api_indented_yaml = []
+        for line in api_yaml:
+            if line.strip():
+                api_indented_yaml.append(base_indent + line + "\n")
+
+        # Update the file
+        if api_section_start != -1:
+            # Replace existing API section
+            new_lines = lines[: api_section_start + 1]  # Include the "- API:" line
+            new_lines.extend(api_indented_yaml)
+            new_lines.extend(lines[api_section_end:])
+        elif nav_section_start != -1:
+            # Add new API section to existing nav
+            api_entry = " " * (nav_indent + 2) + f"- {tab_name}:\n"
+
+            # Find where to insert (end of nav)
+            insert_pos = nav_section_start + 1
+            while insert_pos < len(lines) and (
+                not lines[insert_pos].strip()
+                or lines[insert_pos].strip().startswith("#")
+                or len(lines[insert_pos]) - len(lines[insert_pos].lstrip()) > nav_indent
+            ):
+                insert_pos += 1
+
+            new_lines = lines[:insert_pos]
+            new_lines.append(api_entry)
+            new_lines.extend(api_indented_yaml)
+            new_lines.extend(lines[insert_pos:])
+        else:
+            # Create new nav section
+            nav_entry = "nav:\n"
+            api_entry = f"  - {tab_name}:\n"
+
+            new_lines = lines
+            new_lines.append(nav_entry)
+            new_lines.append(api_entry)
+            new_lines.extend(api_indented_yaml)
+
+        # Write updated content back
+        with open("mkdocs.yml", "w") as f:
+            f.writelines(new_lines)
+
+        print("Successfully updated mkdocs.yml with new API navigation structure")
+
+    except Exception as e:
+        print(f"Error updating mkdocs.yml: {e}")
+        print("Please manually update your navigation structure")
+
+        # Create backup file with nav structure
+        backup_file = "api_nav_structure.yml"
+        with open(backup_file, "w") as f:
+            yaml.dump({f"{tab_name}": nav_structure}, f, default_flow_style=False)
+        print(f"Navigation structure saved to {backup_file}")
+
+
+# Add a new function to ensure proper inline URLs in the documentation:
+def add_inline_class_references(module_name, output_dir):
+    """Add proper inline references to classes in module documentation."""
+    module_path = module_name.replace(".", "/")
+    file_name = os.path.join(output_dir, f"{module_path}.md")
+
+    if not os.path.exists(file_name):
+        return
+
+    with open(file_name, "r") as f:
+        content = f.read()
+
+    # Find class reference patterns and add fully qualified IDs
+    pattern = r"## API Reference\n\n::: " + module_name
+    if re.search(pattern, content):
+        # Add anchors with fully qualified names for each class
+        try:
+            module = importlib.import_module(module_name)
+            for name, obj in inspect.getmembers(module):
+                if (
+                    inspect.isclass(obj)
+                    and obj.__module__ == module_name
+                    and not should_skip_member(name)
+                ):
+                    qualified_anchor = f"{module_name}.{name}"
+                    anchor_line = f'<a id="{qualified_anchor}"></a>\n'
+                    # content = re.sub(
+                    #     f"### {name}\n", f"### {name}\n{anchor_line}", content
+                    # )
+                    # This fixes the simple anchor names as well
+                    simple_anchor_line = f'<a id="{name}"></a>\n'
+                    # Add both anchors to support both types of links
+                    content = re.sub(
+                        f"### {name}\n",
+                        f"### {name}\n{anchor_line}{simple_anchor_line}",
+                        content,
+                    )
+
+        except ImportError:
+            pass
+
+    with open(file_name, "w") as f:
+        f.write(content)
+
+
+def process_package(package_name, output_dir):
+    """Process a package and all its submodules, generating documentation."""
+    all_modules = []
+
+    try:
+        # Import the root package
         package = importlib.import_module(package_name)
     except ImportError:
         print(f"Error: Could not import package {package_name}")
+        return []
+
+    # Create documentation for the root package
+    root_filepath, root_classes = create_module_page(package_name, output_dir)
+    if root_filepath:
+        all_modules.append(
+            {
+                "name": package_name,
+                "filepath": root_filepath,
+                "is_package": True,
+                "classes": root_classes,
+            }
+        )
+
+    # Queue for BFS traversal of packages
+    queue = [(package_name, True)]
+    visited = {package_name}
+
+    # Process all packages and modules using BFS
+    while queue:
+        current_name, is_pkg = queue.pop(0)
+
+        if is_pkg:
+            # Get all importable submodules
+            submodules = get_submodules(current_name)
+
+            for submodule_name, is_subpkg in submodules:
+                if submodule_name not in visited:
+                    visited.add(submodule_name)
+                    queue.append((submodule_name, is_subpkg))
+
+                    # Create documentation for this submodule
+                    filepath, classes = create_module_page(submodule_name, output_dir)
+                    if filepath:
+                        all_modules.append(
+                            {
+                                "name": submodule_name,
+                                "filepath": filepath,
+                                "is_package": is_subpkg,
+                                "classes": classes,
+                            }
+                        )
+    # After creating all documentation, add inline references
+    for module_info in all_modules:
+        add_inline_class_references(module_info["name"], output_dir)
+
+    return all_modules
+
+
+def generate_api_docs(package_name, output_dir="docs/menu/api"):
+    """Generate documentation for a package and its submodules with hierarchical structure."""
+    print(f"Generating API documentation for {package_name}...")
+
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Process the entire package
+    all_modules = process_package(package_name, output_dir)
+
+    if not all_modules:
+        print(
+            "No modules were processed. Please check the package name and permissions."
+        )
         return
 
-    # Create a page for the root package
-    root_filepath = create_module_page(package_name, output_dir)
-    all_modules[package_name] = root_filepath
-
-    # Process the package and its submodules
-    for _, module_name, is_pkg in pkgutil.walk_packages(
-        package.__path__, package.__name__ + "."
-    ):
-        # Create a page for this module
-        filepath = create_module_page(module_name, output_dir)
-        all_modules[module_name] = filepath
+    print(f"Processed {len(all_modules)} modules and packages.")
 
     # Build hierarchical structure
     hierarchy = build_hierarchical_structure(all_modules)
@@ -533,16 +831,17 @@ def generate_api_docs(package_name, output_dir="docs/api"):
     nav_structure = hierarchy_to_nav(hierarchy)
 
     # Update mkdocs.yml
-    update_mkdocs_nav(nav_structure)
+    update_mkdocs_nav(nav_structure, tab_name="API Reference")
 
     print("\nAPI documentation generation complete!")
     print(f"- Generated documentation for {len(all_modules)} modules")
+    print(f"- Created class documentation pages for all public classes")
     print(f"- Updated navigation structure in mkdocs.yml")
     print(f"- Created hierarchical index at {os.path.join(output_dir, 'index.md')}")
 
 
 if __name__ == "__main__":
-    # Check if PyYAML is installed
+    # Check for PyYAML
     try:
         import yaml
     except ImportError:
