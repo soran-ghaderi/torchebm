@@ -81,7 +81,11 @@ def create_module_page(module_name, output_dir):
         # Import the module
         module = importlib.import_module(module_name)
     except ImportError:
+        import sys
+
+        print("sys.version: ", sys.version)
         print(f"Warning: Could not import module {module_name}, skipping...")
+        module = importlib.import_module(module_name)
         return None
 
     # Get module parts for breadcrumb

@@ -8,7 +8,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "torchebm"
 #version = "0.0.0"
-dynamic = ["version"]
+dynamic = [
+    "version",
+    "dependencies",
+    "license",
+    "description",
+    "authors",
+    "keywords"
+]
 description = "Components and algorithms for energy-based models"
 readme = "README.md"
 license = { file = "LICENSE" }
