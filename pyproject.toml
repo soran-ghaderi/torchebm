@@ -60,6 +60,11 @@ docs = [
     "mkdocs-minify-plugin>=0.5.0",
     "mkdocs-blog-plugin>=0.1.0",
     "mkdocs-autolinks-plugin>=0.5.0",
+    "mkdocs-gen-files",
+    "mkdocs-literate-nav",
+    "mkdocs-section-index",
+    "mkdocs-autorefs",
+    "pymdown-extensions>=9.0",
 ]
 
 [project.urls]
