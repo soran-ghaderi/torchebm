@@ -786,6 +786,11 @@ def process_package(package_name, output_dir):
                     queue.append((submodule_name, is_subpkg))
 
                     # Create documentation for this submodule
+                    print(
+                        "creat module page for submodule_name, output_dir",
+                        submodule_name,
+                        output_dir,
+                    )
                     filepath, classes = create_module_page(submodule_name, output_dir)
                     if filepath:
                         all_modules.append(
