@@ -27,20 +27,14 @@ jobs:
             mkdocs-material-
       - run: |
           python -m pip install -e .[docs]
-      #          python -m pip install --upgrade pip
-      #          python -m pip install setuptools wheel setuptools_scm[toml]
-      ##          pip install setuptools wheel
       - name: Generate API Documentation
         run: |
-#          chmod +x generate_api_docs.py
           python generate_api_docs.py
-#      - run: mkdocs gh-deploy --force
-
+          # - run: mkdocs gh-deploy --force
       - name: Build and Deploy Documentation
         run: |
           # Build the documentation
           mkdocs build
-          
           # Deploy with Mike
           mike deploy --push --update-aliases latest
           mike set-default --push latest
