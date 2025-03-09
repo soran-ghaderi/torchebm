@@ -24,21 +24,18 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Machine Learning",
     "Operating System :: OS Independent",
 ]
 
-#packages = [
-#    { include = "torchebm" }
-#]
+#packages = ["torchebm"]
+
 
 dependencies = [
-    "torch>=2.0.0",
-    "numpy>=1.20.0",
-    "matplotlib>=3.4.0"
+    "torch",
+    "numpy",
+    "matplotlib"
 ]
 
 [project.optional-dependencies]
@@ -88,8 +85,11 @@ ignore_missing_imports = true
 
 [tool.black]
 line-length = 88
-target-version = ['py310', 'py38', 'py39']
+target-version = ['py313', 'py310', 'py38', 'py39']
 
 [tool.isort]
 profile = "black"
 multi_line_output = 3
+
+[tool.setuptools.packages.find]
+where = ["."]

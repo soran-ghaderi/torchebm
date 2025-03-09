@@ -40,75 +40,75 @@ theme:
       scheme: slate
       toggle:
         icon: material/weather-sunny
-        name: Dark mode
-      primary: green
-      accent: deep purple
+        name: deep orange
+      primary: black
+      accent: green
     #light mode:
     - media: "(prefers-color-scheme: light)"
       scheme: default
       toggle:
         icon: material/weather-night
         name: Light mode
-      primary: green
+      primary: deep orange
       accent: deep orange
 nav:
-  - Home: menu/home
+  - Home: index.md
   - API Reference:
-    - Overview: menu/api/index.md
+    - Overview: api/index.md
     - Torchebm:
       - Core:
         - Basesampler:
-          - Module Overview: menu/api/torchebm/core/basesampler.md
-          - BaseSampler: menu/api/torchebm/core/basesampler/classes/BaseSampler.md
+          - Module Overview: api/torchebm/core/basesampler.md
+          - BaseSampler: api/torchebm/core/basesampler/classes/BaseSampler.md
         - Energy_function:
-          - Module Overview: menu/api/torchebm/core/energy_function.md
-          - AckleyEnergy: menu/api/torchebm/core/energy_function/classes/AckleyEnergy.md
-          - DoubleWellEnergy: menu/api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
-          - EnergyFunction: menu/api/torchebm/core/energy_function/classes/EnergyFunction.md
-          - GaussianEnergy: menu/api/torchebm/core/energy_function/classes/GaussianEnergy.md
-          - HarmonicEnergy: menu/api/torchebm/core/energy_function/classes/HarmonicEnergy.md
-          - RastriginEnergy: menu/api/torchebm/core/energy_function/classes/RastriginEnergy.md
-          - RosenbrockEnergy: menu/api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
+          - Module Overview: api/torchebm/core/energy_function.md
+          - AckleyEnergy: api/torchebm/core/energy_function/classes/AckleyEnergy.md
+          - DoubleWellEnergy: api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
+          - EnergyFunction: api/torchebm/core/energy_function/classes/EnergyFunction.md
+          - GaussianEnergy: api/torchebm/core/energy_function/classes/GaussianEnergy.md
+          - HarmonicEnergy: api/torchebm/core/energy_function/classes/HarmonicEnergy.md
+          - RastriginEnergy: api/torchebm/core/energy_function/classes/RastriginEnergy.md
+          - RosenbrockEnergy: api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
         - Losses:
-          - Module Overview: menu/api/torchebm/core/losses.md
-          - Loss: menu/api/torchebm/core/losses/classes/Loss.md
+          - Module Overview: api/torchebm/core/losses.md
+          - Loss: api/torchebm/core/losses/classes/Loss.md
         - Optimizer:
-          - Module Overview: menu/api/torchebm/core/optimizer.md
-          - Optimizer: menu/api/torchebm/core/optimizer/classes/Optimizer.md
+          - Module Overview: api/torchebm/core/optimizer.md
+          - Optimizer: api/torchebm/core/optimizer/classes/Optimizer.md
         - Score_matching:
-          - Module Overview: menu/api/torchebm/core/score_matching.md
-          - ScoreMatching: menu/api/torchebm/core/score_matching/classes/ScoreMatching.md
+          - Module Overview: api/torchebm/core/score_matching.md
+          - ScoreMatching: api/torchebm/core/score_matching/classes/ScoreMatching.md
         - Trainer:
-          - Module Overview: menu/api/torchebm/core/trainer.md
-          - ContrastiveDivergenceTrainer: menu/api/torchebm/core/trainer/classes/ContrastiveDivergenceTrainer.md
-      - Cuda: menu/api/torchebm/cuda.md
+          - Module Overview: api/torchebm/core/trainer.md
+          - ContrastiveDivergenceTrainer: api/torchebm/core/trainer/classes/ContrastiveDivergenceTrainer.md
+      - Cuda: api/torchebm/cuda.md
       - Losses:
         - Contrastive_divergence:
-          - Module Overview: menu/api/torchebm/losses/contrastive_divergence.md
-          - ContrastiveDivergence: menu/api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
-          - ContrastiveDivergenceBase: menu/api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergenceBase.md
-          - ParallelTemperingCD: menu/api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
-          - PersistentContrastiveDivergence: menu/api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
+          - Module Overview: api/torchebm/losses/contrastive_divergence.md
+          - ContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
+          - ContrastiveDivergenceBase: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergenceBase.md
+          - ParallelTemperingCD: api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
+          - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
       - Models:
         - Base_model:
-          - Module Overview: menu/api/torchebm/models/base_model.md
-          - BaseModel: menu/api/torchebm/models/base_model/classes/BaseModel.md
+          - Module Overview: api/torchebm/models/base_model.md
+          - BaseModel: api/torchebm/models/base_model/classes/BaseModel.md
       - Samplers:
         - Langevin_dynamics:
-          - Module Overview: menu/api/torchebm/samplers/langevin_dynamics.md
-          - LangevinDynamics: menu/api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
+          - Module Overview: api/torchebm/samplers/langevin_dynamics.md
+          - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
         - Mcmc:
-          - Module Overview: menu/api/torchebm/samplers/mcmc.md
-          - HamiltonianMonteCarlo: menu/api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
-      - Utils: menu/api/torchebm/utils.md
+          - Module Overview: api/torchebm/samplers/mcmc.md
+          - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
+      - Utils: api/torchebm/utils.md
   - Developer Guide:
-      - Contribution Guide: menu/developer_guide/api_generation.md
+      - Contribution Guide: developer_guide/api_generation.md
 plugins:
   - mkdocstrings:
       default_handler: python
       handlers:
         python:
-          paths: [ torchebm ]
+          paths: [ "torchebm" ]
           options:
             filters:
               - "!^_.*"

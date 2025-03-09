@@ -233,11 +233,11 @@ if __name__ == "__main__":
     print("Running sampling from a Gaussian...")
     langevin_gaussain_sampling()
 
-    print("Running basic example...")
-    basic_example()
-
-    print("\nRunning advanced example...")
-    advanced_example()
-
-    print("\nRunning utilities example...")
-    sampling_utilities_example()
+    # print("Running basic example...")
+    # basic_example()
+    #
+    # print("\nRunning advanced example...")
+    # advanced_example()
+    #
+    # print("\nRunning utilities example...")
+    # sampling_utilities_example()

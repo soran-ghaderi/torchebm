@@ -415,7 +415,7 @@ def hierarchy_to_nav(hierarchy):
     nav = []
 
     # Add overview first as a child item
-    overview_item = {"Overview": "menu/api/index.md"}
+    overview_item = {"Overview": "api/index.md"}
 
     # Process each root package
     packages = []
@@ -812,7 +812,7 @@ def process_package(package_name, output_dir):
     return all_modules
 
 
-def generate_api_docs(package_name, output_dir="docs/menu/api"):
+def generate_api_docs(package_name, output_dir="docs/api"):
     """Generate documentation for a package and its submodules with hierarchical structure."""
     print(f"Generating API documentation for {package_name}...")
 
