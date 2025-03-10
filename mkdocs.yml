@@ -35,14 +35,6 @@ theme:
     - search.suggest
     - toc.follow
   palette:
-    #dark mode:
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      toggle:
-        icon: material/weather-sunny
-        name: deep orange
-      primary: black
-      accent: green
     #light mode:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -51,6 +43,14 @@ theme:
         name: Light mode
       primary: deep orange
       accent: deep orange
+    #dark mode:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: deep orange
+      primary: black
+      accent: green
 nav:
   - Home: index.md
   - API Reference:
@@ -100,6 +100,7 @@ nav:
         - Mcmc:
           - Module Overview: api/torchebm/samplers/mcmc.md
           - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
+          - HamiltonianMonteCarloOld: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarloOld.md
       - Utils: api/torchebm/utils.md
   - Developer Guide:
       - Contribution Guide: developer_guide/api_generation.md

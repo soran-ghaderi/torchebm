@@ -1,92 +1,140 @@
 r"""
 Hamiltonian Monte Carlo Sampler Module.
 
-This module provides an implementation of the Hamiltonian Monte Carlo (HMC) sampling algorithm.
-HMC is a Markov Chain Monte Carlo (MCMC) method that uses Hamiltonian dynamics to propose
-new states in the sampling process, which can improve the efficiency of sampling from complex
-distributions.
+This module provides a robust implementation of the Hamiltonian Monte Carlo (HMC) algorithm, a powerful Markov Chain Monte Carlo (MCMC) technique. By leveraging Hamiltonian dynamics, HMC efficiently explores complex, high-dimensional probability distributions, making it ideal for Bayesian inference and statistical modeling.
+
+!!! success "Key Features"
+    - Efficient sampling using Hamiltonian dynamics.
+    - Customizable step sizes and leapfrog steps for fine-tuned performance.
+    - Diagnostic tools to monitor convergence and sampling quality.
+
+---
+
+## Module Components
 
 Classes:
     HamiltonianMonteCarlo: Implements the Hamiltonian Monte Carlo sampler.
 
-Functions:
-    visualize_sampling_trajectory: Visualize the sampling trajectory and diagnostics of the HMC sampler.
-    plot_hmc_diagnostics: Plot detailed diagnostics for HMC sampling.
+---
 
-!!! example "Examples:"
+## Usage Example
+
+!!! example "Sampling from a Gaussian Distribution"
     ```python
     from torchebm.samplers.mcmc import HamiltonianMonteCarlo
     from torchebm.core.energy_function import GaussianEnergy
     import torch
-    energy_function = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
-    hmc = HamiltonianMonteCarlo(energy_function, step_size=0.1, n_leapfrog_steps=10)
+
+    # Define a 2D Gaussian energy function
+    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
+
+    # Initialize HMC sampler
+    hmc = HamiltonianMonteCarlo(energy_fn, step_size=0.1, n_leapfrog_steps=10)
+
+    # Starting points for 10 chains
     initial_state = torch.randn(10, 2)
+
+    # Run sampling
     samples, diagnostics = hmc.sample(initial_state, n_steps=100, return_diagnostics=True)
-    print(samples)
-    print(diagnostics)
+    print(f"Samples: {samples.shape}")
+    print(f"Diagnostics: {diagnostics.keys()}")
     ```
 
-!!! info "Mathematical Background:"
+---
 
-    Hamiltonian Monte Carlo (HMC) is a method that uses Hamiltonian dynamics to propose new states in the sampling process. The Hamiltonian is defined as:
+## Mathematical Foundations
+
+!!! info "Hamiltonian Dynamics in HMC"
+    HMC combines statistical sampling with concepts from classical mechanics. It introduces an auxiliary momentum variable \( p \) and defines a Hamiltonian:
 
     $$
     H(x, p) = U(x) + K(p)
     $$
 
-    where \( U(x) \) is the potential energy and \( K(p) \) is the kinetic energy. The potential energy is related to the target distribution \( \pi(x) \) by:
+    - **Potential Energy**: \( U(x) = -\log \pi(x) \), where \( \pi(x) \) is the target distribution.
+    - **Kinetic Energy**: \( K(p) = \frac{1}{2} p^T M^{-1} p \), with \( M \) as the mass matrix (often set to the identity matrix).
 
-    $$
-    U(x) = -\log \pi(x)
-    $$
+    This formulation allows HMC to propose new states by simulating trajectories along the energy landscape.
 
-    The kinetic energy is typically defined as:
+!!! tip "Why Hamiltonian Dynamics?"
 
-    $$
-    K(p) = \frac{1}{2} p^T M^{-1} p
-    $$
+    - **Efficient Exploration**: HMC uses gradient information to propose new states, allowing it to explore the state space more efficiently, especially in high-dimensional and complex distributions.
+    - **Reduced Correlation**: By simulating Hamiltonian dynamics, HMC reduces the correlation between successive samples, leading to faster convergence to the target distribution.
+    - **High Acceptance Rate**: The use of Hamiltonian dynamics and a Metropolis acceptance step ensures that proposed moves are accepted with high probability, provided the numerical integration is accurate.
 
-    where \( p \) is the momentum and \( M \) is the mass matrix.
+### Leapfrog Integration
 
-    **Leapfrog Integration**
-    !!! note ""
+!!! note "Numerical Simulation of Dynamics"
+    HMC approximates Hamiltonian trajectories using the leapfrog integrator, a symplectic method that preserves energy. The steps are:
 
-        The leapfrog integration method is used to simulate the Hamiltonian dynamics. It consists of the following steps:
-
-        1. **Half-step update for momentum:**
-
-            $$
-            p_{t + \frac{1}{2}} = p_t - \frac{\epsilon}{2} \nabla U(x_t)
-            $$
-
-        2. **Full-step update for position:**
-
-            $$
-            x_{t + 1} = x_t + \epsilon M^{-1} p_{t + \frac{1}{2}}
-            $$
-
-        3. **Another half-step update for momentum:**
-
-            $$
-            p_{t + 1} = p_{t + \frac{1}{2}} - \frac{\epsilon}{2} \nabla U(x_{t + 1})
-            $$
-
-    **Acceptance Probability:**
-
-    !!! note ""
-
-        After proposing a new state using the leapfrog integration, the acceptance probability is computed as:
-
+    1. **Momentum Half-Step**:
         $$
-        \alpha = \min \left(1, \exp \left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \right) \right)
+        p_{t + \frac{\epsilon}{2}} = p_t - \frac{\epsilon}{2} \nabla U(x_t)
+        $$
+    2. **Position Full-Step**:
+        $$
+        x_{t + 1} = x_t + \epsilon M^{-1} p_{t + \frac{\epsilon}{2}}
+        $$
+    3. **Momentum Half-Step**:
+        $$
+        p_{t + 1} = p_{t + \frac{\epsilon}{2}} - \frac{\epsilon}{2} \nabla U(x_{t + 1})
         $$
 
-        The new state is accepted with probability \( \alpha \).
+    Here, \( \epsilon \) is the step size, and the process is repeated for \( L \) leapfrog steps.
 
-??? info "References"
+### Acceptance Step
 
-    - Implements the HMC based on https://faculty.washington.edu/yenchic/19A_stat535/Lec9_HMC.pdf
+!!! note "Metropolis-Hastings Correction"
+    After proposing a new state \( (x_{t + 1}, p_{t + 1}) \), HMC applies an acceptance criterion to ensure detailed balance:
 
+    $$
+    \alpha = \min \left( 1, \exp \left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \right) \right)
+    $$
+
+    The proposal is accepted with probability \( \alpha \), correcting for numerical errors in the leapfrog integration.
+
+---
+
+## Practical Considerations
+
+!!! warning "Tuning Parameters"
+    - **Step Size (\( \epsilon \))**: Too large a step size can lead to unstable trajectories; too small reduces efficiency.
+    - **Number of Leapfrog Steps (\( L \))**: Affects the distance traveled per proposal—balance exploration vs. computational cost.
+    - **Mass Matrix (\( M \))**: Adjusting \( M \) can improve sampling in distributions with varying scales.
+
+!!! question "How to Diagnose Issues?"
+    Use `plot_hmc_diagnostics` to check:
+
+    - Acceptance rates (ideal: 0.6–0.8).
+
+    - Divergences (should be rare).
+
+    - Autocorrelation of samples.
+
+!!! warning "Common Pitfalls"
+
+    - **Low Acceptance Rate**: If the acceptance rate is too low, it may indicate that the step size is too large or the number of leapfrog steps is too high. Try reducing the step size or decreasing the number of leapfrog steps.
+
+    - **High Correlation Between Samples**: If samples are highly correlated, it may indicate that the step size is too small or the number of leapfrog steps is too few. Increase the step size or the number of leapfrog steps to improve exploration.
+
+    - **Divergence or NaN Values**: Numerical instability or poor parameter choices can lead to divergent behavior or NaN values. Ensure that the energy function and its gradients are correctly implemented and that parameters are appropriately scaled.
+
+    Use the diagnostic functions provided to identify and address these issues.
+
+---
+
+## Advanced Insights
+
+!!! abstract "Why HMC Outperforms Other MCMC Methods"
+    HMC’s use of gradients and dynamics reduces random-walk behavior, making it particularly effective for:
+
+    - High-dimensional spaces.
+    - Multimodal distributions (with proper tuning).
+    - Models with strong correlations between variables.
+
+???+ info "Further Reading"
+    - Inspired by concepts in [this lecture](https://faculty.washington.edu/yenchic/19A_stat535/Lec9_HMC.pdf).
+    - Neal, R. M. (2011). "MCMC using Hamiltonian dynamics." *Handbook of Markov Chain Monte Carlo*.
 """
 
 from typing import Optional, Union, Tuple
@@ -98,6 +146,51 @@ from torchebm.core.energy_function import EnergyFunction
 
 
 class HamiltonianMonteCarlo(BaseSampler):
+    def __init__(
+        self,
+        energy_function: EnergyFunction,
+        step_size: float = 0.1,
+        n_leapfrog_steps: int = 10,
+        mass: Optional[Tuple[float, torch.Tensor]] = None,
+        dtype: torch.Tensor = torch.float32,
+        device: Optional[Union[Tuple[str, torch.device]]] = None,
+    ):
+        """"""
+        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
+        if step_size <= 0:
+            raise ValueError("step_size must be positive")
+        if n_leapfrog_steps <= 0:
+            raise ValueError("n_leapfrog_steps must be positive")
+
+        self.step_size = step_size
+        self.n_leapfrog_steps = n_leapfrog_steps
+        self.energy_function = energy_function
+        self.device = device
+        self.dtype = torch.float16 if device == "cuda" else torch.float32
+        self.mass = mass  # Mass matrix (can be scalar or diagonal tensor)
+
+    def _initialize_momentum(self, shape: torch.Size) -> torch.Tensor:
+
+        p = torch.randn(shape, dtype=self.dtype, device=self.device)
+
+        if self.mass is not None:
+
+            if isinstance(self.mass, float):
+                p = p * torch.sqrt(
+                    torch.tensor(self.mass, dtype=self.dtype, device=self.device)
+                )
+
+            else:
+                mass_sqrt = torch.sqrt(self.mass)
+                p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1).expand_as(p)
+        return p
+
+    def _initialize_kenitic_energy(self, p: torch.Tensor) -> torch.Tensor:
+
+        k = 0.5 * (torch.transpose(p, 1, 2)) * p
+
+
+class HamiltonianMonteCarloOld(BaseSampler):
     r"""Hamiltonian Monte Carlo sampler implementation.
 
     This method simulates a Hamiltonian Monte Carlo.
@@ -171,7 +264,6 @@ class HamiltonianMonteCarlo(BaseSampler):
             $$
 
             The new state is accepted with probability \( \alpha \).
-
 
     References:
         - Implements the HMC based on https://faculty.washington.edu/yenchic/19A_stat535/Lec9_HMC.pdf
