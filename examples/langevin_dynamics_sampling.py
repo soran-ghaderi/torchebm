@@ -23,30 +23,6 @@ def basic_example():
     simple Langevin dynamics sampling from a 2D Gaussian distribution.
     """
 
-    # Define a simple 2D Gaussian energy function
-    # class GaussianEnergy:
-    #     def __init__(self, mean: torch.Tensor, cov: torch.Tensor, device=None):
-    #         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    #         self.mean = mean.to(self.device)
-    #         self.precision = torch.inverse(cov).to(self.device)
-    #
-    #     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-    #         x = x.to(self.device)
-    #         delta = x - self.mean
-    #         return 0.5 * torch.einsum(
-    #             "...i,...ij,...j->...", delta, self.precision, delta
-    #         )
-    #
-    #     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-    #         x = x.to(self.device)
-    #         return torch.einsum("...ij,...j->...i", self.precision, x - self.mean)
-    #
-    #     def to(self, device):
-    #         self.device = device
-    #         self.mean = self.mean.to(device)
-    #         self.precision = self.precision.to(device)
-    #         return self
-
     # Create energy function for a 2D Gaussian
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dim = 2  # dimension of the state space

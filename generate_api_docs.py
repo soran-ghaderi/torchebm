@@ -451,7 +451,8 @@ def package_to_nav(name, info):
         # If the module has classes, create a subsection
         if modinfo["classes"]:
             module_section = {
-                modinfo["title"]: [{"Module Overview": modinfo["filepath"]}]
+                # modinfo["title"]: [{"Module Overview": modinfo["filepath"]}]
+                modinfo["title"]: [modinfo["filepath"]]
             }
             # Add classes to the module section
             for classname, classinfo in sorted(modinfo["classes"].items()):
