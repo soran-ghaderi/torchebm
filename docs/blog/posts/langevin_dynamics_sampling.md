@@ -6,8 +6,7 @@ authors:
 tags:
   - langevin
   - sampling
-  - trajectory
-draft: false
+draft: true
 ---
 
 

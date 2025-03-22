@@ -190,340 +190,340 @@ class HamiltonianMonteCarlo(BaseSampler):
         k = 0.5 * (torch.transpose(p, 1, 2)) * p
 
 
-class HamiltonianMonteCarloOld(BaseSampler):
-    r"""Hamiltonian Monte Carlo sampler implementation.
-
-    This method simulates a Hamiltonian Monte Carlo.
-
-    Args:
-        energy_function: The energy function to sample from
-        step_size: The step size for leapfrog updates
-        n_leapfrog_steps: Number of leapfrog steps per sample
-        dtype: Tensor dtype to use
-        device: Device to run on
-        mass_matrix: Optional mass matrix for momentum sampling
-
-    Methods:
-        _compute_log_prob(state): Compute the log-probability of a given state
-        _kinetic_energy(momentum): Compute the kinetic energy of a given momentum
-        _compute_hamiltonian(position, momentum): Compute the Hamiltonian of a given position and momentum
-        _setup_diagnostics(): Initialize the diagnostics dictionary
-        _sample_initial_momentum(batch_size, state_shape): Sample the initial momentum for a given state
-        sample(initial_state, n_steps, return_diagnostics): Generate samples using HMC
-        sample_parallel(initial_states, n_steps, return_diagnostics): Implementation of parallel Hamiltonian Monte Carlo sampling
-
-
-    Mathematical Background:
-        Hamiltonian Monte Carlo (HMC) is a method that uses Hamiltonian dynamics to propose new states in the sampling process. The Hamiltonian is defined as:
-
-        $$
-        H(x, p) = U(x) + K(p)
-        $$
-
-        where \( U(x) \) is the potential energy and \( K(p) \) is the kinetic energy. The potential energy is related to the target distribution \( \pi(x) \) by:
-
-        $$
-        U(x) = -\log \pi(x)
-        $$
-
-        The kinetic energy is typically defined as:
-
-        $$
-        K(p) = \frac{1}{2} p^T M^{-1} p
-        $$
-
-        where \( p \) is the momentum and \( M \) is the mass matrix.
-
-            !!! note "Leapfrog Integration"
-
-                The leapfrog integration method is used to simulate the Hamiltonian dynamics. It consists of the following steps:
-
-                1.  Half-step update for momentum:
-
-                    $$
-                    p_{t + 1/2} = p_t - \frac{\epsilon}{2} \nabla U(x_t)
-                    $$
-
-                2.  Full-step update for position:
-
-                    $$
-                    x_{t + 1} = x_t + \epsilon M^{-1} p_{t + \frac{1}{2}}
-                    $$
-
-                3.  Another half-step update for momentum:
-
-                    $$
-                    p_{t + 1} = p_{t + \frac{1}{2}} - \frac{\epsilon}{2} \nabla U(x_{t + 1})
-                    $$
-
-        Acceptance Probability:
-            After proposing a new state using the leapfrog integration, the acceptance probability is computed as:
-
-            $$
-            \alpha = \min \left(1, \exp \left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \right) \right)
-            $$
-
-            The new state is accepted with probability \( \alpha \).
-
-    References:
-        - Implements the HMC based on https://faculty.washington.edu/yenchic/19A_stat535/Lec9_HMC.pdf
-
-    """
-
-    def __init__(
-        self,
-        energy_function: EnergyFunction,
-        step_size: float = 1e-3,
-        n_leapfrog_steps: int = 10,
-        dtype: torch.dtype = torch.float32,
-        device: Optional[Union[str, torch.device]] = None,
-        mass_matrix: Optional[torch.Tensor] = None,
-    ):
-        """Initialize Hamiltonian Monte Carlo sampler."""
-        super().__init__(energy_function, dtype, device)
-        self.step_size = step_size
-        self.n_leapfrog_steps = n_leapfrog_steps
-        self.mass_matrix = (
-            mass_matrix.to(device=self.device) if mass_matrix is not None else None
-        )
-
-    def _compute_log_prob(self, state: torch.Tensor) -> torch.Tensor:
-        """Computes the log-probability for a given state."""
-        state = state.to(device=self.device)
-        if not state.requires_grad:
-            state.requires_grad_(True)
-        return -self.energy_function(state)
-
-    def _kinetic_energy(self, momentum: torch.Tensor) -> torch.Tensor:
-        """Compute kinetic energy."""
-        momentum = momentum.to(device=self.device)
-        if self.mass_matrix is None:
-            return torch.sum(0.5 * momentum**2, dim=tuple(range(1, momentum.dim())))
-
-        mass_matrix_inverse = torch.inverse(self.mass_matrix)
-        return torch.sum(
-            0.5 * torch.matmul(momentum, mass_matrix_inverse) * momentum,
-            dim=tuple(range(1, momentum.dim())),
-        )
-
-    def _compute_hamiltonian(
-        self, position: torch.Tensor, momentum: torch.Tensor
-    ) -> torch.Tensor:
-        """Compute Hamiltonian."""
-        position = position.to(device=self.device)
-        momentum = momentum.to(device=self.device)
-
-        return -self._compute_log_prob(position) + self._kinetic_energy(momentum)
-
-    def _setup_diagnostics(self) -> dict:
-        """Initialize diagnostics dictionary."""
-        return {
-            "energies": torch.empty(0, device=self.device),
-            "acceptance_rate": torch.tensor(0.0, device=self.device),
-        }
-
-    def _sample_initial_momentum(
-        self, batch_size: int, state_shape: tuple
-    ) -> torch.Tensor:
-        """sample initial momentum."""
-        momentum = torch.randn(
-            (batch_size, *state_shape), device=self.device, dtype=self.dtype
-        )
-        if self.mass_matrix is not None:
-            momentum = torch.matmul(self.mass_matrix, momentum)
-        return momentum
-
-    @torch.enable_grad()
-    def sample(
-        self,
-        initial_state: torch.Tensor,
-        n_steps: int,
-        return_diagnostics: bool = False,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
-        """Generate samples using HMC."""
-        # Ensure initial state is on correct device
-        current_position = (
-            initial_state.to(device=self.device).clone().requires_grad_(True)
-        )
-
-        diagnostics = self._setup_diagnostics() if return_diagnostics else None
-
-        batch_size = current_position.shape[0] if len(current_position.shape) > 1 else 1
-        state_shape = (
-            current_position.shape[1:]
-            if len(current_position.shape) > 1
-            else current_position.shape
-        )
-
-        for step in range(n_steps):
-            # sample initial momentum
-            initial_momentum = self._sample_initial_momentum(batch_size, state_shape)
-
-            # Initialize position
-            position = current_position.clone().requires_grad_(True)
-            momentum = initial_momentum.clone()
-
-            # First half-step momentum update
-            log_prob = self._compute_log_prob(position)
-            grad_log_prob = torch.autograd.grad(
-                log_prob.sum(), position, create_graph=True, retain_graph=True
-            )[0].to(device=self.device)
-            momentum = momentum - 0.5 * self.step_size * grad_log_prob
-
-            # Leapfrog integration
-            for _ in range(self.n_leapfrog_steps - 1):
-                position = (position + self.step_size * momentum).requires_grad_(True)
-                log_prob = self._compute_log_prob(position)
-                grad_log_prob = torch.autograd.grad(
-                    log_prob.sum(), position, create_graph=True, retain_graph=True
-                )[0].to(device=self.device)
-                momentum = momentum - self.step_size * grad_log_prob
-
-            # Last position and momentum updates
-            position = (position + self.step_size * momentum).requires_grad_(True)
-            log_prob = self._compute_log_prob(position)
-            grad_log_prob = torch.autograd.grad(
-                log_prob.sum(), position, create_graph=True, retain_graph=True
-            )[0].to(device=self.device)
-            momentum = momentum - 0.5 * self.step_size * grad_log_prob
-
-            # Compute acceptance probability
-            initial_hamiltonian = self._compute_hamiltonian(
-                current_position, initial_momentum
-            )
-            proposed_hamiltonian = self._compute_hamiltonian(position, momentum)
-            energy_diff = proposed_hamiltonian - initial_hamiltonian
-            acceptance_prob = torch.exp(-energy_diff)
-
-            # Accept/reject step
-            uniform_rand = torch.rand_like(acceptance_prob, device=self.device)
-            accepted = uniform_rand < torch.minimum(
-                torch.ones_like(acceptance_prob, device=self.device), acceptance_prob
-            )
-
-            # Update state
-            current_position = torch.where(
-                accepted.unsqueeze(-1), position.detach(), current_position.detach()
-            ).requires_grad_(True)
-
-            # Update diagnostics
-            if return_diagnostics:
-                diagnostics["energies"] = torch.cat(
-                    [
-                        diagnostics["energies"],
-                        initial_hamiltonian.detach().mean().unsqueeze(0),
-                    ]
-                )
-                diagnostics["acceptance_rate"] = (
-                    diagnostics["acceptance_rate"] * step + accepted.float().mean()
-                ) / (step + 1)
-
-        if return_diagnostics:
-            return current_position, diagnostics
-        return current_position
-
-    @torch.enable_grad()
-    def sample_parallel(
-        self,
-        initial_states: torch.Tensor,
-        n_steps: int,
-        return_diagnostics: bool = False,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
-        """Implementation of parallel Hamiltonian Monte Carlo sampling."""
-        # Ensure initial states are on correct device
-        current_states = initial_states.to(
-            device=self.device, dtype=self.dtype
-        ).requires_grad_(True)
-
-        diagnostics = (
-            {
-                "mean_energies": torch.empty(0, device=self.device),
-                "acceptance_rates": torch.empty(0, device=self.device),
-            }
-            if return_diagnostics
-            else None
-        )
-
-        batch_size = current_states.shape[0]
-        state_shape = current_states.shape[1:]
-
-        for step in range(n_steps):
-            # sample initial momentum (already on correct device from _sample_initial_momentum)
-            momenta = self._sample_initial_momentum(batch_size, state_shape)
-
-            # Initialize new states and momenta
-            new_states = current_states.clone().requires_grad_(True)
-            new_momenta = momenta.clone()
-
-            # First half-step for momentum
-            log_prob = self._compute_log_prob(new_states)
-            grad_log_prob = torch.autograd.grad(
-                log_prob.sum(), new_states, create_graph=True, retain_graph=True
-            )[0].to(device=self.device)
-            new_momenta = new_momenta - 0.5 * self.step_size * grad_log_prob
-
-            # Leapfrog steps
-            for _ in range(self.n_leapfrog_steps - 1):
-                # Full step for position
-                new_states = (new_states + self.step_size * new_momenta).requires_grad_(
-                    True
-                )
-
-                # Full step for momentum
-                log_prob = self._compute_log_prob(new_states)
-                grad_log_prob = torch.autograd.grad(
-                    log_prob.sum(), new_states, create_graph=True, retain_graph=True
-                )[0].to(device=self.device)
-                new_momenta = new_momenta - self.step_size * grad_log_prob
-
-            # Last position update
-            new_states = (new_states + self.step_size * new_momenta).requires_grad_(
-                True
-            )
-
-            # Final half-step for momentum
-            log_prob = self._compute_log_prob(new_states)
-            grad_log_prob = torch.autograd.grad(
-                log_prob.sum(), new_states, create_graph=True, retain_graph=True
-            )[0].to(device=self.device)
-            new_momenta = new_momenta - 0.5 * self.step_size * grad_log_prob
-
-            # Compute Hamiltonians (both tensors will be on correct device from _compute_hamiltonian)
-            initial_hamiltonian = self._compute_hamiltonian(current_states, momenta)
-            proposed_hamiltonian = self._compute_hamiltonian(new_states, new_momenta)
-
-            # Metropolis acceptance step
-            energy_diff = proposed_hamiltonian - initial_hamiltonian
-            acceptance_prob = torch.minimum(
-                torch.ones_like(energy_diff, device=self.device),
-                torch.exp(-energy_diff),
-            )
-
-            # Accept/reject step
-            accept = (
-                torch.rand_like(acceptance_prob, device=self.device) < acceptance_prob
-            )
-            current_states = torch.where(
-                accept.unsqueeze(-1), new_states.detach(), current_states.detach()
-            ).requires_grad_(True)
-
-            if return_diagnostics:
-                diagnostics["mean_energies"] = torch.cat(
-                    [
-                        diagnostics["mean_energies"],
-                        initial_hamiltonian.mean().unsqueeze(0),
-                    ]
-                )
-                diagnostics["acceptance_rates"] = torch.cat(
-                    [
-                        diagnostics["acceptance_rates"],
-                        accept.float().mean().unsqueeze(0),
-                    ]
-                )
-
-        if return_diagnostics:
-            return current_states, diagnostics
-        return current_states
+# class HamiltonianMonteCarloOld(BaseSampler):
+#     r"""Hamiltonian Monte Carlo sampler implementation.
+#
+#     This method simulates a Hamiltonian Monte Carlo.
+#
+#     Args:
+#         energy_function: The energy function to sample from
+#         step_size: The step size for leapfrog updates
+#         n_leapfrog_steps: Number of leapfrog steps per sample
+#         dtype: Tensor dtype to use
+#         device: Device to run on
+#         mass_matrix: Optional mass matrix for momentum sampling
+#
+#     Methods:
+#         _compute_log_prob(state): Compute the log-probability of a given state
+#         _kinetic_energy(momentum): Compute the kinetic energy of a given momentum
+#         _compute_hamiltonian(position, momentum): Compute the Hamiltonian of a given position and momentum
+#         _setup_diagnostics(): Initialize the diagnostics dictionary
+#         _sample_initial_momentum(batch_size, state_shape): Sample the initial momentum for a given state
+#         sample(initial_state, n_steps, return_diagnostics): Generate samples using HMC
+#         sample_parallel(initial_states, n_steps, return_diagnostics): Implementation of parallel Hamiltonian Monte Carlo sampling
+#
+#
+#     Mathematical Background:
+#         Hamiltonian Monte Carlo (HMC) is a method that uses Hamiltonian dynamics to propose new states in the sampling process. The Hamiltonian is defined as:
+#
+#         $$
+#         H(x, p) = U(x) + K(p)
+#         $$
+#
+#         where \( U(x) \) is the potential energy and \( K(p) \) is the kinetic energy. The potential energy is related to the target distribution \( \pi(x) \) by:
+#
+#         $$
+#         U(x) = -\log \pi(x)
+#         $$
+#
+#         The kinetic energy is typically defined as:
+#
+#         $$
+#         K(p) = \frac{1}{2} p^T M^{-1} p
+#         $$
+#
+#         where \( p \) is the momentum and \( M \) is the mass matrix.
+#
+#             !!! note "Leapfrog Integration"
+#
+#                 The leapfrog integration method is used to simulate the Hamiltonian dynamics. It consists of the following steps:
+#
+#                 1.  Half-step update for momentum:
+#
+#                     $$
+#                     p_{t + 1/2} = p_t - \frac{\epsilon}{2} \nabla U(x_t)
+#                     $$
+#
+#                 2.  Full-step update for position:
+#
+#                     $$
+#                     x_{t + 1} = x_t + \epsilon M^{-1} p_{t + \frac{1}{2}}
+#                     $$
+#
+#                 3.  Another half-step update for momentum:
+#
+#                     $$
+#                     p_{t + 1} = p_{t + \frac{1}{2}} - \frac{\epsilon}{2} \nabla U(x_{t + 1})
+#                     $$
+#
+#         Acceptance Probability:
+#             After proposing a new state using the leapfrog integration, the acceptance probability is computed as:
+#
+#             $$
+#             \alpha = \min \left(1, \exp \left( H(x_t, p_t) - H(x_{t + 1}, p_{t + 1}) \right) \right)
+#             $$
+#
+#             The new state is accepted with probability \( \alpha \).
+#
+#     References:
+#         - Implements the HMC based on https://faculty.washington.edu/yenchic/19A_stat535/Lec9_HMC.pdf
+#
+#     """
+#
+#     def __init__(
+#         self,
+#         energy_function: EnergyFunction,
+#         step_size: float = 1e-3,
+#         n_leapfrog_steps: int = 10,
+#         dtype: torch.dtype = torch.float32,
+#         device: Optional[Union[str, torch.device]] = None,
+#         mass_matrix: Optional[torch.Tensor] = None,
+#     ):
+#         """Initialize Hamiltonian Monte Carlo sampler."""
+#         super().__init__(energy_function, dtype, device)
+#         self.step_size = step_size
+#         self.n_leapfrog_steps = n_leapfrog_steps
+#         self.mass_matrix = (
+#             mass_matrix.to(device=self.device) if mass_matrix is not None else None
+#         )
+#
+#     def _compute_log_prob(self, state: torch.Tensor) -> torch.Tensor:
+#         """Computes the log-probability for a given state."""
+#         state = state.to(device=self.device)
+#         if not state.requires_grad:
+#             state.requires_grad_(True)
+#         return -self.energy_function(state)
+#
+#     def _kinetic_energy(self, momentum: torch.Tensor) -> torch.Tensor:
+#         """Compute kinetic energy."""
+#         momentum = momentum.to(device=self.device)
+#         if self.mass_matrix is None:
+#             return torch.sum(0.5 * momentum**2, dim=tuple(range(1, momentum.dim())))
+#
+#         mass_matrix_inverse = torch.inverse(self.mass_matrix)
+#         return torch.sum(
+#             0.5 * torch.matmul(momentum, mass_matrix_inverse) * momentum,
+#             dim=tuple(range(1, momentum.dim())),
+#         )
+#
+#     def _compute_hamiltonian(
+#         self, position: torch.Tensor, momentum: torch.Tensor
+#     ) -> torch.Tensor:
+#         """Compute Hamiltonian."""
+#         position = position.to(device=self.device)
+#         momentum = momentum.to(device=self.device)
+#
+#         return -self._compute_log_prob(position) + self._kinetic_energy(momentum)
+#
+#     def _setup_diagnostics(self) -> dict:
+#         """Initialize diagnostics dictionary."""
+#         return {
+#             "energies": torch.empty(0, device=self.device),
+#             "acceptance_rate": torch.tensor(0.0, device=self.device),
+#         }
+#
+#     def _sample_initial_momentum(
+#         self, batch_size: int, state_shape: tuple
+#     ) -> torch.Tensor:
+#         """sample initial momentum."""
+#         momentum = torch.randn(
+#             (batch_size, *state_shape), device=self.device, dtype=self.dtype
+#         )
+#         if self.mass_matrix is not None:
+#             momentum = torch.matmul(self.mass_matrix, momentum)
+#         return momentum
+#
+#     @torch.enable_grad()
+#     def sample(
+#         self,
+#         initial_state: torch.Tensor,
+#         n_steps: int,
+#         return_diagnostics: bool = False,
+#     ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
+#         """Generate samples using HMC."""
+#         # Ensure initial state is on correct device
+#         current_position = (
+#             initial_state.to(device=self.device).clone().requires_grad_(True)
+#         )
+#
+#         diagnostics = self._setup_diagnostics() if return_diagnostics else None
+#
+#         batch_size = current_position.shape[0] if len(current_position.shape) > 1 else 1
+#         state_shape = (
+#             current_position.shape[1:]
+#             if len(current_position.shape) > 1
+#             else current_position.shape
+#         )
+#
+#         for step in range(n_steps):
+#             # sample initial momentum
+#             initial_momentum = self._sample_initial_momentum(batch_size, state_shape)
+#
+#             # Initialize position
+#             position = current_position.clone().requires_grad_(True)
+#             momentum = initial_momentum.clone()
+#
+#             # First half-step momentum update
+#             log_prob = self._compute_log_prob(position)
+#             grad_log_prob = torch.autograd.grad(
+#                 log_prob.sum(), position, create_graph=True, retain_graph=True
+#             )[0].to(device=self.device)
+#             momentum = momentum - 0.5 * self.step_size * grad_log_prob
+#
+#             # Leapfrog integration
+#             for _ in range(self.n_leapfrog_steps - 1):
+#                 position = (position + self.step_size * momentum).requires_grad_(True)
+#                 log_prob = self._compute_log_prob(position)
+#                 grad_log_prob = torch.autograd.grad(
+#                     log_prob.sum(), position, create_graph=True, retain_graph=True
+#                 )[0].to(device=self.device)
+#                 momentum = momentum - self.step_size * grad_log_prob
+#
+#             # Last position and momentum updates
+#             position = (position + self.step_size * momentum).requires_grad_(True)
+#             log_prob = self._compute_log_prob(position)
+#             grad_log_prob = torch.autograd.grad(
+#                 log_prob.sum(), position, create_graph=True, retain_graph=True
+#             )[0].to(device=self.device)
+#             momentum = momentum - 0.5 * self.step_size * grad_log_prob
+#
+#             # Compute acceptance probability
+#             initial_hamiltonian = self._compute_hamiltonian(
+#                 current_position, initial_momentum
+#             )
+#             proposed_hamiltonian = self._compute_hamiltonian(position, momentum)
+#             energy_diff = proposed_hamiltonian - initial_hamiltonian
+#             acceptance_prob = torch.exp(-energy_diff)
+#
+#             # Accept/reject step
+#             uniform_rand = torch.rand_like(acceptance_prob, device=self.device)
+#             accepted = uniform_rand < torch.minimum(
+#                 torch.ones_like(acceptance_prob, device=self.device), acceptance_prob
+#             )
+#
+#             # Update state
+#             current_position = torch.where(
+#                 accepted.unsqueeze(-1), position.detach(), current_position.detach()
+#             ).requires_grad_(True)
+#
+#             # Update diagnostics
+#             if return_diagnostics:
+#                 diagnostics["energies"] = torch.cat(
+#                     [
+#                         diagnostics["energies"],
+#                         initial_hamiltonian.detach().mean().unsqueeze(0),
+#                     ]
+#                 )
+#                 diagnostics["acceptance_rate"] = (
+#                     diagnostics["acceptance_rate"] * step + accepted.float().mean()
+#                 ) / (step + 1)
+#
+#         if return_diagnostics:
+#             return current_position, diagnostics
+#         return current_position
+#
+#     @torch.enable_grad()
+#     def sample_parallel(
+#         self,
+#         initial_states: torch.Tensor,
+#         n_steps: int,
+#         return_diagnostics: bool = False,
+#     ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
+#         """Implementation of parallel Hamiltonian Monte Carlo sampling."""
+#         # Ensure initial states are on correct device
+#         current_states = initial_states.to(
+#             device=self.device, dtype=self.dtype
+#         ).requires_grad_(True)
+#
+#         diagnostics = (
+#             {
+#                 "mean_energies": torch.empty(0, device=self.device),
+#                 "acceptance_rates": torch.empty(0, device=self.device),
+#             }
+#             if return_diagnostics
+#             else None
+#         )
+#
+#         batch_size = current_states.shape[0]
+#         state_shape = current_states.shape[1:]
+#
+#         for step in range(n_steps):
+#             # sample initial momentum (already on correct device from _sample_initial_momentum)
+#             momenta = self._sample_initial_momentum(batch_size, state_shape)
+#
+#             # Initialize new states and momenta
+#             new_states = current_states.clone().requires_grad_(True)
+#             new_momenta = momenta.clone()
+#
+#             # First half-step for momentum
+#             log_prob = self._compute_log_prob(new_states)
+#             grad_log_prob = torch.autograd.grad(
+#                 log_prob.sum(), new_states, create_graph=True, retain_graph=True
+#             )[0].to(device=self.device)
+#             new_momenta = new_momenta - 0.5 * self.step_size * grad_log_prob
+#
+#             # Leapfrog steps
+#             for _ in range(self.n_leapfrog_steps - 1):
+#                 # Full step for position
+#                 new_states = (new_states + self.step_size * new_momenta).requires_grad_(
+#                     True
+#                 )
+#
+#                 # Full step for momentum
+#                 log_prob = self._compute_log_prob(new_states)
+#                 grad_log_prob = torch.autograd.grad(
+#                     log_prob.sum(), new_states, create_graph=True, retain_graph=True
+#                 )[0].to(device=self.device)
+#                 new_momenta = new_momenta - self.step_size * grad_log_prob
+#
+#             # Last position update
+#             new_states = (new_states + self.step_size * new_momenta).requires_grad_(
+#                 True
+#             )
+#
+#             # Final half-step for momentum
+#             log_prob = self._compute_log_prob(new_states)
+#             grad_log_prob = torch.autograd.grad(
+#                 log_prob.sum(), new_states, create_graph=True, retain_graph=True
+#             )[0].to(device=self.device)
+#             new_momenta = new_momenta - 0.5 * self.step_size * grad_log_prob
+#
+#             # Compute Hamiltonians (both tensors will be on correct device from _compute_hamiltonian)
+#             initial_hamiltonian = self._compute_hamiltonian(current_states, momenta)
+#             proposed_hamiltonian = self._compute_hamiltonian(new_states, new_momenta)
+#
+#             # Metropolis acceptance step
+#             energy_diff = proposed_hamiltonian - initial_hamiltonian
+#             acceptance_prob = torch.minimum(
+#                 torch.ones_like(energy_diff, device=self.device),
+#                 torch.exp(-energy_diff),
+#             )
+#
+#             # Accept/reject step
+#             accept = (
+#                 torch.rand_like(acceptance_prob, device=self.device) < acceptance_prob
+#             )
+#             current_states = torch.where(
+#                 accept.unsqueeze(-1), new_states.detach(), current_states.detach()
+#             ).requires_grad_(True)
+#
+#             if return_diagnostics:
+#                 diagnostics["mean_energies"] = torch.cat(
+#                     [
+#                         diagnostics["mean_energies"],
+#                         initial_hamiltonian.mean().unsqueeze(0),
+#                     ]
+#                 )
+#                 diagnostics["acceptance_rates"] = torch.cat(
+#                     [
+#                         diagnostics["acceptance_rates"],
+#                         accept.float().mean().unsqueeze(0),
+#                     ]
+#                 )
+#
+#         if return_diagnostics:
+#             return current_states, diagnostics
+#         return current_states
 
 
 # def visualizing_sampling_trajectory():

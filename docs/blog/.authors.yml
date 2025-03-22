@@ -1,7 +1,15 @@
 authors:
   soran:
     name: Soran Ghaderi
-    description: MSc. In AI
-    email: soran.gdr.cs@gmail.com
+    description: Looking for PhD & Research Opportunities - MSc in AI at the University of Essex
     url: https://soran-ghaderi.github.io/
     avatar: https://github.com/soran-ghaderi.png
+    social:
+      - icon: simple/github
+        link: https://www.github.com/soran-ghaderi
+      - icon: simple/x
+        link: https://www.x.com/soranghadri
+      - icon: fontawesome/brands/linkedin
+        link: https://www.linkedin.com/in/soran-ghaderi
+      - icon: material/link
+        link: https://www.soran-ghaderi.github.io
