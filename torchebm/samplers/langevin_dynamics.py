@@ -310,7 +310,7 @@ class LangevinDynamics(BaseSampler):
         if return_diagnostics:
             diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
-        with torch.amp.autocast("cuda"):
+        with torch.amp.autocast(device_type="cuda" if self.device == "cuda" else "cpu"):
             noise = torch.randn_like(x, device=self.device)
             for i in range(n_steps):
                 x = self.langevin_step(x, noise)

@@ -137,7 +137,8 @@ Classes:
     - Neal, R. M. (2011). "MCMC using Hamiltonian dynamics." *Handbook of Markov Chain Monte Carlo*.
 """
 
-from typing import Optional, Union, Tuple
+from functools import partial
+from typing import Optional, Union, Tuple, Callable
 
 import torch
 
@@ -185,9 +186,166 @@ class HamiltonianMonteCarlo(BaseSampler):
                 p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1).expand_as(p)
         return p
 
-    def _initialize_kenitic_energy(self, p: torch.Tensor) -> torch.Tensor:
+    def _compute_kinetic_energy(self, p: torch.Tensor) -> torch.Tensor:
+        """
+        K(p) = p^T M^(-1) p / 2.
 
-        k = 0.5 * (torch.transpose(p, 1, 2)) * p
+        Args:
+            p:
+
+        Returns:
+        """
+
+        if self.mass is None:
+            return 0.5 * torch.sum(p**2, dim=-1)
+        elif isinstance(self.mass, float):
+            return 0.5 * torch.sum(p**2, dim=-1) / self.mass
+        else:
+            return 0.5 * torch.sum(
+                p**2 / self.mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
+            )
+
+    def _leapfrog_step(
+        self, position: torch.Tensor, momentum: torch.Tensor, gradient_fn: Callable
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        p_half = momentum - 0.5 * self.step_size * gradient_fn(position)
+
+        if self.mass is None:
+            x_new = position + self.step_size * p_half
+        else:
+            if isinstance(self.mass, float):
+                x_new = position + self.step_size * p_half / self.mass
+            else:
+                x_new = position + self.step_size * p_half / self.mass.view(
+                    *([1] * (len(position.shape) - 1)), -1
+                )
+        p_new = p_half - 0.5 * self.step_size * gradient_fn(x_new)
+        return x_new, p_new
+
+    def _leapfrog_integration(
+        self, position: torch.Tensor, momentum: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        gradient_fn = partial(self.energy_function.gradient)
+        x = position
+        p = momentum
+
+        for _ in range(self.n_leapfrog_steps):
+            x, p = self._leapfrog_step(x, p, gradient_fn)
+
+        return x, p
+
+    def hmc_step(
+        self, current_position: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        batch_size = current_position.shape[0]
+
+        current_momentum = self._initialize_momentum(current_position.shape)
+
+        # current h:
+        current_energy = self.energy_function(current_position)
+        curent_kinetic = self._compute_kinetic_energy(current_momentum)
+        current_hamiltonian = current_energy + curent_kinetic
+
+        # leapfrog
+        proposed_position, proposed_momentum = self._leapfrog_integration(
+            current_position, current_momentum
+        )
+
+        proposed_energy = self.energy_function(proposed_position)
+        proposed_kinetic = self._compute_kinetic_energy(proposed_momentum)
+        proposed_hamiltonian = proposed_energy + proposed_kinetic
+
+        # Metropolis-Hastings acceptance
+        hamiltonian_diff = current_hamiltonian - proposed_hamiltonian
+        acceptance_prob = torch.min(
+            torch.ones(batch_size, device=self.device), torch.exp(hamiltonian_diff)
+        )
+
+        # accept/reject
+        random_uniform = torch.rand(batch_size, device=self.device)
+        accepted = random_uniform < acceptance_prob
+        accepted_mask = accepted.float().view(
+            -1, *([1] * (len(current_position.shape) - 1))
+        )
+
+        # update x
+        new_position = (
+            accepted_mask * proposed_position + (1.0 - accepted_mask) * current_position
+        )
+
+        return new_position, acceptance_prob, accepted
+
+    @torch.no_grad()
+    def sample_chain(
+        self,
+        x: Optional[torch.Tensor] = None,
+        dim: int = 10,
+        n_steps: int = 100,
+        n_samples: int = 1,
+        return_trajectory: bool = False,
+        return_diagnostics: bool = False,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if x is None:
+            x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
+        else:
+            x = x.to(self.device)
+
+        if return_trajectory:
+            trajectory = torch.empty(
+                (n_samples, n_steps, dim), dtype=self.dtype, device=self.device
+            )
+
+        if return_diagnostics:
+            diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
+            acceptance_rates = torch.zeros(
+                n_steps, device=self.device, dtype=self.dtype
+            )
+
+            # Ensure we're using the correct precision
+        with torch.amp.autocast(device_type="cuda" if self.device == "cuda" else "cpu"):
+            for i in range(n_steps):
+                # Perform single HMC step
+                x, acceptance_prob, accepted = self.hmc_step(x)
+
+                if return_trajectory:
+                    trajectory[:, i, :] = x
+
+                if return_diagnostics:
+                    mean_x = x.mean(dim=0).unsqueeze(0).expand_as(x)
+                    var_x = x.var(dim=0).unsqueeze(0).expand_as(x)
+                    energy = self.energy_function(
+                        x
+                    )  # assumed to have shape (n_samples,)
+                    energy = energy.unsqueeze(1).expand_as(x)
+                    # acceptance_rates[i] = accepted.float().mean()
+
+                    # Stack diagnostics
+                    diagnostics[i, 0, :, :] = mean_x
+                    diagnostics[i, 1, :, :] = var_x
+                    diagnostics[i, 2, :, :] = energy
+                    diagnostics[i, 3, :, :] = accepted.float().mean()
+
+        if return_trajectory:
+            if return_diagnostics:
+                return trajectory, diagnostics  # , acceptance_rates
+            return trajectory
+
+        if return_diagnostics:
+            return x, diagnostics  # , acceptance_rates
+
+        return x
+
+    def _setup_diagnostics(
+        self, dim: int, n_steps: int, n_samples: int = None
+    ) -> torch.Tensor:
+        if n_samples is not None:
+            return torch.empty(
+                (n_steps, 4, n_samples, dim), device=self.device, dtype=self.dtype
+            )
+        else:
+            return torch.empty((n_steps, 4, dim), device=self.device, dtype=self.dtype)
 
 
 # class HamiltonianMonteCarloOld(BaseSampler):
