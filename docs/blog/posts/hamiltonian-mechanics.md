@@ -11,17 +11,14 @@ pin: true
 links:
   - Google Scholar: https://scholar.google.com/citations?user=-2N2iKcAAAAJ&hl=en&authuser=5
   - ResearchGate: https://www.researchgate.net/profile/Soran-Ghaderi?ev=hdr_xprf
-draft: true
+draft: false
 ---
 
 # Hamiltonian Mechanics :sparkles:
 
+![Pendulum phase space diagram](../../assets/images/blog/hamiltonian/non-L-pendulum.png){ width="600" height="337.5" style="display: block; margin: 0 auto"}
+
 <div style="text-align: justify">
-<figure>
- <img src="../../assets/images/blog/hamiltonian/non-L-pendulum.png" alt="Pendulum phase space diagram" width="600">
-
-</figure>
-
 <p>
 Hamiltonian mechanics is a way to describe how physical systems, like planets or pendulums, move over 
 time, focusing on energy rather than just forces. By reframing complex dynamics through energy lenses, 
@@ -32,7 +29,6 @@ is particularly useful for complex systems with many parts, making it easier to 
 
 
 <!-- more -->
-
 
 
 ## Mathematical Reformation: From Second-Order to Phase Flow :gear:
@@ -690,6 +686,22 @@ Employing Hamiltonian formalism as an inductive bias for the generation of physi
 Imagine generator-discriminator dynamics governed by:
 
 The possibilities make phase space feel infinite...
+
+### <span style="color: orangered;">Want to Team Up on This</span> 🤓
+If you are an ML researcher and are interested in collaborating on researching EBMs, 
+diffusion- and flow-based models, or have other relevant ideas in mind for generalization over out-of-distribution 
+data (downstream tasks can be anything in from molecular design to robotics motion planning to LLMs), please feel free to reach out!
+
+Also follow me on 
+<a href="https://twitter.com/soranghadri" target="_blank"><strong>Twitter</strong></a> / 
+<a href="https://bsky.app/profile/soranghaderi.bsky.social" target="_blank">BlueSky</a> or 
+<a href="https://github.com/soran-ghaderi" target="_blank"><strong>GitHub</strong></a>—I’m usually rambling about this stuff there. 
+Also on <a href="https://www.linkedin.com/in/soran-ghaderi" target="_blank">LinkedIn</a> and 
+<a href="https://soran-ghaderi.medium.com/" target="_blank">Medium</a> / 
+<a href="https://towardsdatascience.com/author/soran-ghaderi/" target="_blank">TDS</a> if you’re curious. 
+To find more about my research interests, check out my 
+<a href="https://soran-ghaderi.github.io/" target="_blank"><strong>personal website</strong></a>.
+
 
 ---
 

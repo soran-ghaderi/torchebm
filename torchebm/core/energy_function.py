@@ -2,49 +2,142 @@ import math
 from abc import ABC, abstractmethod
 import torch
 from torch import nn
+from typing import Optional
 
 
-class EnergyFunction(nn.Module):
+class EnergyFunction(nn.Module, ABC):
     """
-    Base class for the energy functions.
+    Abstract base class for energy functions (Potential Energy U(x)).
 
-    This class provides a template for defining energy functions, which are used
-    in various sampling algorithms such as Hamiltonian Monte Carlo (HMC). It
-    includes methods for computing the energy and its gradient.
+    This class serves as a standard interface for defining energy functions used
+    within the torchebm library. It is compatible with both pre-defined analytical
+    functions (like Gaussian, DoubleWell) and trainable neural network models.
+    It represents the potential energy U(x), often related to a probability
+    distribution p(x) by U(x) = -log p(x) + constant.
 
-    Methods:
-        forward(x: torch.Tensor) -> torch.Tensor:
-            Computes the energy of the input tensor `x`.
+    Core Requirements for Subclasses:
+    1.  Implement the `forward(x)` method to compute the scalar energy per sample.
+    2.  Optionally, override the `gradient(x)` method if an efficient analytical
+        gradient is available. Otherwise, the default implementation using
+        `torch.autograd` will be used.
 
-        gradient(x: torch.Tensor) -> torch.Tensor:
-            Computes the gradient of the energy with respect to the input tensor `x`.
-
-        __call__(x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-            Calls the `forward` method to compute the energy of the input tensor `x`.
-
-        to(device: torch.device) -> 'EnergyFunction':
-            Moves the energy function to the specified device (CPU or GPU).
+    Inheriting from `torch.nn.Module` ensures that:
+    - Subclasses can contain trainable parameters (`nn.Parameter`).
+    - Standard PyTorch methods like `.to(device)`, `.parameters()`, `.state_dict()`,
+      and integration with `torch.optim` work as expected.
     """
 
     def __init__(self):
+        """Initializes the EnergyFunction base class."""
         super().__init__()
+        # Optional: store device, though nn.Module handles parameter/buffer device placement
+        self._device: Optional[torch.device] = None
+
+    @property
+    def device(self) -> Optional[torch.device]:
+        """Returns the device associated with the module's parameters/buffers (if any)."""
+        try:
+            # Attempt to infer device from the first parameter/buffer found
+            return next(self.parameters()).device
+        except StopIteration:
+            try:
+                return next(self.buffers()).device
+            except StopIteration:
+                # If no parameters or buffers, return the explicitly set _device or None
+                return self._device
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the scalar energy value for each input sample.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, *input_dims).
+                               It's recommended that subclasses handle moving `x`
+                               to the correct device if necessary, although callers
+                               should ideally provide `x` on the correct device.
+
+        Returns:
+            torch.Tensor: Tensor of scalar energy values with shape (batch_size,).
+                          Lower values typically indicate higher probability density.
+        """
         pass
 
-    @abstractmethod
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-        x.requires_grad_(True)
-        energy = self.forward(x)
-        return torch.autograd.grad(energy.sum(), x, create_graph=True)[0]
+        """
+        Computes the gradient of the energy function with respect to the input x (∇_x U(x)).
 
-    def __call__(self, x: torch.Tensor, *args, **kwargs):
-        return self.forward(x)
+        This default implementation uses automatic differentiation based on the
+        `forward` method. Subclasses should override this method if a more
+        efficient or numerically stable analytical gradient is available.
 
-    def to(self, device):
-        self.device = device
-        return self
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, *input_dims).
+
+        Returns:
+            torch.Tensor: Gradient tensor of the same shape as x.
+        """
+        # Ensure x is on the same device as the model if possible
+        if self.device and x.device != self.device:
+             x = x.to(self.device)
+
+        # Detach x from any previous computation graph and ensure it requires gradients
+        x_req_grad = x.detach().requires_grad_(True)
+        energy = self.forward(x_req_grad)
+
+        # Validate energy shape - should be one scalar per batch item
+        if energy.shape != (x.shape[0],):
+             raise ValueError(f"EnergyFunction forward() output expected shape ({x.shape[0]},), but got {energy.shape}.")
+
+        if not x_req_grad.grad_fn:
+             # If x_req_grad was not used in computation graph leading to energy
+              raise RuntimeError("Cannot compute gradient: input `x` is not part of the computation graph for the energy.")
+
+
+        # Compute gradient using autograd
+        gradient = torch.autograd.grad(
+            outputs=energy,
+            inputs=x_req_grad,
+            grad_outputs=torch.ones_like(energy, device=energy.device), # Ensure grad_outputs is on the same device
+            create_graph=True,  # Allows for higher-order derivatives if needed later
+            retain_graph=True, # Allows calling gradient multiple times if needed within a larger scope
+                               # Consider setting based on context if performance is critical
+        )[0]
+
+        if gradient is None:
+            # This should theoretically not happen if checks above pass, but good to have.
+            raise RuntimeError("Gradient computation failed unexpectedly. Check the forward pass implementation.")
+
+        return gradient
+
+    def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """Alias for the forward method for standard PyTorch module usage."""
+        # Note: nn.Module.__call__ has hooks; calling forward directly bypasses them.
+        # It's generally better to call the module instance: energy_fn(x)
+        return super().__call__(x, *args, **kwargs) # Use nn.Module's __call__
+
+    # Override the base nn.Module `to` method to also store the device hint
+    def to(self, *args, **kwargs):
+        """Moves and/or casts the parameters and buffers."""
+        new_self = super().to(*args, **kwargs)
+        # Try to update the internal device hint after moving
+        try:
+            # Get device from args/kwargs (handling different ways .to can be called)
+            device = None
+            if args:
+                if isinstance(args[0], torch.device):
+                    device = args[0]
+                elif isinstance(args[0], str):
+                    device = torch.device(args[0])
+            if 'device' in kwargs:
+                device = kwargs['device']
+
+            if device:
+                 new_self._device = device
+        except Exception:
+             # Ignore potential errors in parsing .to args, rely on parameter/buffer device
+             pass
+        return new_self
 
 
 class DoubleWellEnergy(EnergyFunction):
@@ -68,38 +161,68 @@ class DoubleWellEnergy(EnergyFunction):
 
 class GaussianEnergy(EnergyFunction):
     """
-    Energy function for a Gaussian distribution.
+    Energy function for a Gaussian distribution. U(x) = 0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ).
 
     Args:
-        mean (torch.Tensor): Mean of the Gaussian distribution.
-        cov (torch.Tensor): Covariance matrix of the Gaussian distribution.
-        device (torch.device, optional): Device to run the computations on.
+        mean (torch.Tensor): Mean vector (μ) of the Gaussian distribution.
+        cov (torch.Tensor): Covariance matrix (Σ) of the Gaussian distribution.
     """
 
-    def __init__(self, mean: torch.Tensor, cov: torch.Tensor, device=None):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.mean = mean.to(self.device)
-        self.cov = cov.to(device)
-        self.cov_inv = torch.inverse(cov).to(self.device)
+    def __init__(self, mean: torch.Tensor, cov: torch.Tensor):
+        super().__init__()
+        # Validate shapes
+        if mean.ndim != 1:
+            raise ValueError("Mean must be a 1D tensor.")
+        if cov.ndim != 2 or cov.shape[0] != cov.shape[1]:
+            raise ValueError("Covariance must be a 2D square matrix.")
+        if mean.shape[0] != cov.shape[0]:
+            raise ValueError("Mean vector dimension must match covariance matrix dimension.")
+
+        # Register mean and covariance inverse as buffers.
+        # Buffers are part of the module's state (`state_dict`) and moved by `.to()`,
+        # but are not considered parameters by optimizers.
+        self.register_buffer('mean', mean)
+        try:
+            cov_inv = torch.inverse(cov)
+            self.register_buffer('cov_inv', cov_inv)
+        except RuntimeError as e:
+            raise ValueError(f"Failed to invert covariance matrix: {e}. Ensure it is invertible.") from e
+        # Optional: Store original covariance as buffer if needed elsewhere
+        # self.register_buffer('cov', cov)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # assuming the cov is already positive definite and symmetric
-        x = x.to(self.device)
+        """Computes the Gaussian energy: 0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ)."""
+        # Ensure x is compatible shape (batch_size, dim)
+        if x.ndim == 1: # Handle single sample case
+             x = x.unsqueeze(0)
+        if x.ndim != 2 or x.shape[1] != self.mean.shape[0]:
+             raise ValueError(f"Input x expected shape (batch_size, {self.mean.shape[0]}), but got {x.shape}")
+
+        # mean and cov_inv are automatically on the correct device via register_buffer
         delta = x - self.mean
-        # cov_inv = torch.inverse(
-        #     self.cov
-        # )  # it's dynamic here, but see if it's fine to compute it only in the init
-        return 0.5 * torch.einsum("...i,...ij,...j->...", delta, self.cov_inv, delta)
+        # Using einsum for batched matrix-vector product: (B,i) * (i,j) * (B,j) -> (B,)
+        energy = 0.5 * torch.einsum("bi,ij,bj->b", delta, self.cov_inv, delta)
+        return energy
 
+    # Override gradient for efficiency (analytical gradient)
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.to(self.device)
-        return torch.einsum("...ij,...j->...i", self.cov_inv, x - self.mean)
+        """Computes the analytical gradient: Σ⁻¹ (x-μ)."""
+         # Ensure x is compatible shape (batch_size, dim)
+        if x.ndim == 1: # Handle single sample case
+             x = x.unsqueeze(0)
+        if x.ndim != 2 or x.shape[1] != self.mean.shape[0]:
+             raise ValueError(f"Input x expected shape (batch_size, {self.mean.shape[0]}), but got {x.shape}")
 
-    def to(self, device):
-        self.device = device
-        self.mean = self.mean.to(device)
-        self.cov_inv = self.cov_inv.to(device)
-        return self
+        # mean and cov_inv are automatically on the correct device
+        delta = x - self.mean
+        # Using einsum for batched matrix-vector product: (i,j) * (B,j) -> (B,i)
+        grad = torch.einsum("ij,bj->bi", self.cov_inv, delta)
+        # Squeeze if input was single sample
+        if grad.shape[0] == 1 and x.ndim == 1:
+             grad = grad.squeeze(0)
+        return grad
+
+    # No custom `to` method needed - nn.Module handles buffers.
 
 
 class HarmonicEnergy(EnergyFunction):

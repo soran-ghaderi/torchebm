@@ -56,52 +56,51 @@ nav:
   - Home: index.md
   - API Reference:
     - Overview: api/index.md
-    - Torchebm:
-      - Core:
-        - Basesampler:
-          - api/torchebm/core/basesampler.md
-          - BaseSampler: api/torchebm/core/basesampler/classes/BaseSampler.md
-        - Energy_function:
-          - api/torchebm/core/energy_function.md
-          - AckleyEnergy: api/torchebm/core/energy_function/classes/AckleyEnergy.md
-          - DoubleWellEnergy: api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
-          - EnergyFunction: api/torchebm/core/energy_function/classes/EnergyFunction.md
-          - GaussianEnergy: api/torchebm/core/energy_function/classes/GaussianEnergy.md
-          - HarmonicEnergy: api/torchebm/core/energy_function/classes/HarmonicEnergy.md
-          - RastriginEnergy: api/torchebm/core/energy_function/classes/RastriginEnergy.md
-          - RosenbrockEnergy: api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
-        - Losses:
-          - api/torchebm/core/losses.md
-          - Loss: api/torchebm/core/losses/classes/Loss.md
-        - Optimizer:
-          - api/torchebm/core/optimizer.md
-          - Optimizer: api/torchebm/core/optimizer/classes/Optimizer.md
-        - Score_matching:
-          - api/torchebm/core/score_matching.md
-          - ScoreMatching: api/torchebm/core/score_matching/classes/ScoreMatching.md
-        - Trainer:
-          - api/torchebm/core/trainer.md
-          - ContrastiveDivergenceTrainer: api/torchebm/core/trainer/classes/ContrastiveDivergenceTrainer.md
-      - Cuda: api/torchebm/cuda.md
+    - Core:
+      - Basesampler:
+        - api/torchebm/core/basesampler.md
+        - BaseSampler: api/torchebm/core/basesampler/classes/BaseSampler.md
+      - Energy_function:
+        - api/torchebm/core/energy_function.md
+        - AckleyEnergy: api/torchebm/core/energy_function/classes/AckleyEnergy.md
+        - DoubleWellEnergy: api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
+        - EnergyFunction: api/torchebm/core/energy_function/classes/EnergyFunction.md
+        - GaussianEnergy: api/torchebm/core/energy_function/classes/GaussianEnergy.md
+        - HarmonicEnergy: api/torchebm/core/energy_function/classes/HarmonicEnergy.md
+        - RastriginEnergy: api/torchebm/core/energy_function/classes/RastriginEnergy.md
+        - RosenbrockEnergy: api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
       - Losses:
-        - Contrastive_divergence:
-          - api/torchebm/losses/contrastive_divergence.md
-          - ContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
-          - ContrastiveDivergenceBase: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergenceBase.md
-          - ParallelTemperingCD: api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
-          - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
-      - Models:
-        - Base_model:
-          - api/torchebm/models/base_model.md
-          - BaseModel: api/torchebm/models/base_model/classes/BaseModel.md
-      - Samplers:
-        - Langevin_dynamics:
-          - api/torchebm/samplers/langevin_dynamics.md
-          - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
-        - Mcmc:
-          - api/torchebm/samplers/mcmc.md
-          - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
-      - Utils: api/torchebm/utils.md
+        - api/torchebm/core/losses.md
+        - Loss: api/torchebm/core/losses/classes/Loss.md
+      - Optimizer:
+        - api/torchebm/core/optimizer.md
+        - Optimizer: api/torchebm/core/optimizer/classes/Optimizer.md
+      - Score_matching:
+        - api/torchebm/core/score_matching.md
+        - ScoreMatching: api/torchebm/core/score_matching/classes/ScoreMatching.md
+      - Trainer:
+        - api/torchebm/core/trainer.md
+        - ContrastiveDivergenceTrainer: api/torchebm/core/trainer/classes/ContrastiveDivergenceTrainer.md
+    - Cuda: api/torchebm/cuda.md
+    - Losses:
+      - Contrastive_divergence:
+        - api/torchebm/losses/contrastive_divergence.md
+        - ContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
+        - ContrastiveDivergenceBase: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergenceBase.md
+        - ParallelTemperingCD: api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
+        - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
+    - Models:
+      - Base_model:
+        - api/torchebm/models/base_model.md
+        - BaseModel: api/torchebm/models/base_model/classes/BaseModel.md
+    - Samplers:
+      - Langevin_dynamics:
+        - api/torchebm/samplers/langevin_dynamics.md
+        - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
+      - Mcmc:
+        - api/torchebm/samplers/mcmc.md
+        - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
+    - Utils: api/torchebm/utils.md
   - Developer Guide:
       - Contribution Guide: developer_guide/api_generation.md
   - Blog:
