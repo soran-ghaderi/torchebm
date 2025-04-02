@@ -89,9 +89,9 @@ class EnergyFunction(nn.Module, ABC):
         if energy.shape != (x.shape[0],):
              raise ValueError(f"EnergyFunction forward() output expected shape ({x.shape[0]},), but got {energy.shape}.")
 
-        if not x_req_grad.grad_fn:
-             # If x_req_grad was not used in computation graph leading to energy
-              raise RuntimeError("Cannot compute gradient: input `x` is not part of the computation graph for the energy.")
+        if not energy.grad_fn:
+             # If energy wasn't derived from x_req_grad (e.g., forward pass didn't use input)
+              raise RuntimeError("Cannot compute gradient: `forward` method did not use the input `x` in a differentiable way.")
 
 
         # Compute gradient using autograd
