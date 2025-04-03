@@ -204,12 +204,16 @@ class LangevinDynamics(BaseSampler):
         if not 0 <= decay <= 1:
             raise ValueError("decay must be between 0 and 1")
 
+        if device is not None:
+            self.device = torch.device(device)
+            energy_function = energy_function.to(self.device)
+        else:
+            self.device = torch.device("cpu")
+        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        self.energy_function = energy_function
         self.step_size = step_size
         self.noise_scale = noise_scale
         self.decay = decay
-        self.energy_function = energy_function
-        self.device = device
-        self.dtype = torch.float16 if device == "cuda" else torch.float32
 
     def langevin_step(self, prev_x: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
         r"""
@@ -310,7 +314,7 @@ class LangevinDynamics(BaseSampler):
         if return_diagnostics:
             diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
-        with torch.amp.autocast("cuda"):
+        with torch.amp.autocast(device_type="cuda" if self.device == "cuda" else "cpu"):
             noise = torch.randn_like(x, device=self.device)
             for i in range(n_steps):
                 x = self.langevin_step(x, noise)

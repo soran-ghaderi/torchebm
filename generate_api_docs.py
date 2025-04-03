@@ -10,6 +10,7 @@ import sys
 import inspect
 import importlib
 import pkgutil
+import shutil  # Add this import for directory operations
 
 
 def is_package(module_name):
@@ -420,8 +421,15 @@ def hierarchy_to_nav(hierarchy):
     # Process each root package
     packages = []
     for package_name, package_info in sorted(hierarchy.items()):
-        package_nav = package_to_nav(package_name, package_info)
-        packages.append(package_nav)
+        if package_name == "torchebm":
+            # Directly add subpackages and modules of "torchebm" to the navigation structure
+            for subname, subinfo in sorted(package_info["subpackages"].items()):
+                packages.append(package_to_nav(subname, subinfo))
+            for modname, modinfo in sorted(package_info["modules"].items()):
+                packages.append(package_to_nav(modname, modinfo))
+        else:
+            package_nav = package_to_nav(package_name, package_info)
+            packages.append(package_nav)
 
     # Include overview as the first child item, followed by packages
     all_items = [overview_item] + packages
@@ -437,10 +445,6 @@ def package_to_nav(name, info):
 
     # Otherwise, it's a section with sub-entries
     section = {info["title"]: []}
-
-    # Add the package overview first if it exists
-    # if info["filepath"]:
-    #     section[info["title"]].append({"Package Overview": info["filepath"]})
 
     # Add subpackages (recursive)
     for subname, subinfo in sorted(info["subpackages"].items()):
@@ -813,20 +817,63 @@ def process_package(package_name, output_dir):
     return all_modules
 
 
+def clean_api_directory(output_dir, preserve_files=None):
+    """Clean up the API directory while preserving specified files.
+    
+    Args:
+        output_dir (str): Path to the API documentation directory
+        preserve_files (list): List of filenames to preserve (relative to output_dir)
+    """
+    if preserve_files is None:
+        preserve_files = []
+    
+    # Ensure output_dir exists
+    if not os.path.exists(output_dir):
+        return
+        
+    # Convert preserve_files to absolute paths
+    preserve_paths = {os.path.join(output_dir, f) for f in preserve_files}
+    
+    # Walk through directory and remove files/dirs
+    for root, dirs, files in os.walk(output_dir, topdown=False):
+        # Remove files first
+        for name in files:
+            filepath = os.path.join(root, name)
+            if filepath not in preserve_paths:
+                os.remove(filepath)
+                
+        # Then remove empty directories
+        for name in dirs:
+            dirpath = os.path.join(root, name)
+            try:
+                os.rmdir(dirpath)  # This will only remove empty directories
+            except OSError:
+                # Directory not empty (probably contains preserved files)
+                pass
+
+
 def generate_api_docs(package_name, output_dir="docs/api"):
     """Generate documentation for a package and its submodules with hierarchical structure."""
     print(f"Generating API documentation for {package_name}...")
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
+    
+    # Clean up existing files while preserving index.md and package root doc if they exist
+    preserve_files = []
+    if os.path.exists(os.path.join(output_dir, "index.md")):
+        preserve_files.append("index.md")
+    package_doc = f"{package_name}.md"
+    if os.path.exists(os.path.join(output_dir, package_doc)):
+        preserve_files.append(package_doc)
+    
+    clean_api_directory(output_dir, preserve_files)
 
     # Process the entire package
     all_modules = process_package(package_name, output_dir)
 
     if not all_modules:
-        print(
-            "No modules were processed. Please check the package name and permissions."
-        )
+        print("No modules were processed. Please check the package name and permissions.")
         return
 
     print(f"Processed {len(all_modules)} modules and packages.")
@@ -834,8 +881,11 @@ def generate_api_docs(package_name, output_dir="docs/api"):
     # Build hierarchical structure
     hierarchy = build_hierarchical_structure(all_modules)
 
-    # Generate the index page
-    generate_index_page(hierarchy, output_dir)
+    # Generate the index page only if it doesn't exist
+    if "index.md" not in preserve_files:
+        generate_index_page(hierarchy, output_dir)
+    else:
+        print(f"Preserved existing index.md in {output_dir}")
 
     # Convert hierarchy to navigation structure
     nav_structure = hierarchy_to_nav(hierarchy)
@@ -847,7 +897,10 @@ def generate_api_docs(package_name, output_dir="docs/api"):
     print(f"- Generated documentation for {len(all_modules)} modules")
     print(f"- Created class documentation pages for all public classes")
     print(f"- Updated navigation structure in mkdocs.yml")
-    print(f"- Created hierarchical index at {os.path.join(output_dir, 'index.md')}")
+    if "index.md" in preserve_files:
+        print(f"- Preserved existing index at {os.path.join(output_dir, 'index.md')}")
+    else:
+        print(f"- Created hierarchical index at {os.path.join(output_dir, 'index.md')}")
 
 
 if __name__ == "__main__":
