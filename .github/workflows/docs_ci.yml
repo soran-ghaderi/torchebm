@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Configure Git Credentials
         run: |
           git config user.name github-actions[bot]
@@ -30,24 +32,36 @@ jobs:
           pip install -e .
       - name: Generate API Documentation
         run: |
-          # chmod +x generate_api_docs.py
-          # ./generate_api_docs.py
-           python generate_api_docs.py
-          # - run: mkdocs gh-deploy --force
-      - name: Build and Deploy Documentation
+          python generate_api_docs.py
+      - name: Extract Version
         run: |
-          # Build the documentation
+          # Get version from SCM (setuptools_scm)
+          python -c "from torchebm._version import version; print(f'VERSION={version}')" >> $GITHUB_ENV
+      - name: Build Documentation
+        run: |
           mkdocs build
+      - name: Setup gh-pages branch
+        run: |
+          # Initialize gh-pages branch if it doesn't exist locally
+          git fetch origin gh-pages || true
+          if ! git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            # If gh-pages doesn't exist on remote, create it
+            git checkout --orphan gh-pages
+            git rm -rf .
+            touch .nojekyll
+            git add .nojekyll
+            git commit -m "Initialize gh-pages branch"
+            git push -u origin gh-pages
+            git checkout -
+          else
+            # If it exists, make sure we have it locally
+            git fetch origin gh-pages:gh-pages || true
+          fi
+      - name: Deploy with Version
+        run: |
+          # Extract clean version without build metadata
+          CLEAN_VERSION=$(echo $VERSION | cut -d'+' -f1)
+          
           # Deploy with Mike
-          mike deploy --push --update-aliases latest
+          mike deploy --push --rebase --update-aliases $CLEAN_VERSION latest
           mike set-default --push latest
-#      - name: Extract Version and Deploy
-#        run: |
-#          # Get version from SCM (setuptools_scm)
-#          python -c "from torchebm._version import version; print(f'VERSION={version}')" >> $GITHUB_ENV
-#
-#          # Deploy with Mike
-#          mike deploy --push --update-aliases ${VERSION} latest
-#          mike set-default --push latest
-#      - run: mkdocs build
-#      - run: mkdocs gh-deploy --force
