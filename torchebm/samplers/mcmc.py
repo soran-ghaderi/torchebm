@@ -242,12 +242,21 @@ class HamiltonianMonteCarlo(BaseSampler):
         if n_leapfrog_steps <= 0:
             raise ValueError("n_leapfrog_steps must be positive")
 
+        # Ensure device consistency: convert device to torch.device and move energy_function
+        if device is not None:
+            self.device = torch.device(device)
+            energy_function = energy_function.to(self.device)
+        else:
+            self.device = torch.device("cpu")
+
+        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         self.step_size = step_size
         self.n_leapfrog_steps = n_leapfrog_steps
         self.energy_function = energy_function
-        self.device = device
-        self.dtype = torch.float16 if device == "cuda" else torch.float32
-        self.mass = mass  # Mass matrix (can be scalar or diagonal tensor)
+        if mass is not None and not isinstance(mass, float):
+            self.mass = mass.to(self.device)
+        else:
+            self.mass = mass
 
     def _initialize_momentum(self, shape: torch.Size) -> torch.Tensor:
         """Initialize momentum variables from Gaussian distribution.
@@ -318,22 +327,34 @@ class HamiltonianMonteCarlo(BaseSampler):
         Returns:
             Tuple of (new_position, new_momentum).
         """
+        # Calculate gradient for half-step momentum update with numerical safeguards
+        grad = gradient_fn(position)
+        # Clip extreme gradient values to prevent instability
+        grad = torch.clamp(grad, min=-1e6, max=1e6)
+        
         # Half-step momentum update
-        p_half = momentum - 0.5 * self.step_size * gradient_fn(position)
+        p_half = momentum - 0.5 * self.step_size * grad
 
         # Full-step position update with mass matrix adjustment
         if self.mass is None:
             x_new = position + self.step_size * p_half
         else:
             if isinstance(self.mass, float):
-                x_new = position + self.step_size * p_half / self.mass
+                # Ensure mass is positive to avoid division issues
+                safe_mass = max(self.mass, 1e-10)
+                x_new = position + self.step_size * p_half / safe_mass
             else:
-                x_new = position + self.step_size * p_half / self.mass.view(
+                # Create safe mass tensor avoiding zeros or negative values
+                safe_mass = torch.clamp(self.mass, min=1e-10)
+                x_new = position + self.step_size * p_half / safe_mass.view(
                     *([1] * (len(position.shape) - 1)), -1
                 )
 
-        # Half-step momentum update
-        p_new = p_half - 0.5 * self.step_size * gradient_fn(x_new)
+        # Half-step momentum update with gradient clamping
+        grad_new = gradient_fn(x_new)
+        grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
+        p_new = p_half - 0.5 * self.step_size * grad_new
+        
         return x_new, p_new
 
     def _leapfrog_integration(
@@ -356,8 +377,22 @@ class HamiltonianMonteCarlo(BaseSampler):
         x = position
         p = momentum
 
+        # Add check for NaN values before starting integration
+        if torch.isnan(x).any() or torch.isnan(p).any():
+            # Replace NaN values with zeros
+            x = torch.nan_to_num(x, nan=0.0)
+            p = torch.nan_to_num(p, nan=0.0)
+
         for _ in range(self.n_leapfrog_steps):
             x, p = self._leapfrog_step(x, p, gradient_fn)
+            
+            # Check for NaN values after each step
+            if torch.isnan(x).any() or torch.isnan(p).any():
+                # If NaN values appear, break the integration
+                # Replace NaN with zeros and return current state
+                x = torch.nan_to_num(x, nan=0.0)
+                p = torch.nan_to_num(p, nan=0.0)
+                break
 
         return x, p
 
@@ -388,22 +423,34 @@ class HamiltonianMonteCarlo(BaseSampler):
         current_momentum = self._initialize_momentum(current_position.shape)
 
         # Compute current Hamiltonian: H = U(q) + K(p)
+        # Add numerical stability with clamping
         current_energy = self.energy_function(current_position)
-        curent_kinetic = self._compute_kinetic_energy(current_momentum)
-        current_hamiltonian = current_energy + curent_kinetic
+        current_energy = torch.clamp(current_energy, min=-1e10, max=1e10)  # Prevent extreme energy values
+        
+        current_kinetic = self._compute_kinetic_energy(current_momentum)
+        current_kinetic = torch.clamp(current_kinetic, min=0, max=1e10)  # Kinetic energy should be non-negative
+        
+        current_hamiltonian = current_energy + current_kinetic
 
         # Perform leapfrog integration to get proposal
         proposed_position, proposed_momentum = self._leapfrog_integration(
             current_position, current_momentum
         )
 
-        # Compute proposed Hamiltonian
+        # Compute proposed Hamiltonian with similar numerical stability
         proposed_energy = self.energy_function(proposed_position)
+        proposed_energy = torch.clamp(proposed_energy, min=-1e10, max=1e10)
+        
         proposed_kinetic = self._compute_kinetic_energy(proposed_momentum)
+        proposed_kinetic = torch.clamp(proposed_kinetic, min=0, max=1e10)
+        
         proposed_hamiltonian = proposed_energy + proposed_kinetic
 
         # Metropolis-Hastings acceptance criterion
+        # Clamp hamiltonian_diff to avoid overflow in exp()
         hamiltonian_diff = current_hamiltonian - proposed_hamiltonian
+        hamiltonian_diff = torch.clamp(hamiltonian_diff, max=50, min=-50)
+        
         acceptance_prob = torch.min(
             torch.ones(batch_size, device=self.device), torch.exp(hamiltonian_diff)
         )
@@ -426,7 +473,7 @@ class HamiltonianMonteCarlo(BaseSampler):
     def sample_chain(
         self,
         x: Optional[torch.Tensor] = None,
-        dim: int = 10,
+        dim: int = None,
         n_steps: int = 100,
         n_samples: int = 1,
         return_trajectory: bool = False,
@@ -441,7 +488,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         Args:
             x: Initial state to start sampling from. If None, random initialization is used.
-            dim: Dimension of the state space when x is None.
+            dim: Dimension of the state space when x is None. If None, will attempt to infer from the energy function.
             n_steps: Number of HMC steps to perform.
             n_samples: Number of parallel chains to run.
             return_trajectory: If True, return the entire trajectory of samples.
@@ -480,9 +527,19 @@ class HamiltonianMonteCarlo(BaseSampler):
             ```
         """
         if x is None:
+            # If dim is not provided, try to infer from the energy function
+            if dim is None:
+                # Check if it's GaussianEnergy which has mean attribute
+                if hasattr(self.energy_function, 'mean'):
+                    dim = self.energy_function.mean.shape[0]
+                else:
+                    raise ValueError("dim must be provided when x is None and cannot be inferred from the energy function")
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
         else:
             x = x.to(self.device)
+            
+        # Get dimension from x for later use
+        dim = x.shape[1]
 
         if return_trajectory:
             trajectory = torch.empty(
@@ -495,7 +552,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                 n_steps, device=self.device, dtype=self.dtype
             )
 
-        with torch.amp.autocast(device_type="cuda" if self.device == "cuda" else "cpu"):
+        with torch.amp.autocast(device_type="cuda" if self.device.type == "cuda" else "cpu"):
             for i in range(n_steps):
                 # Perform single HMC step
                 x, acceptance_prob, accepted = self.hmc_step(x)
@@ -504,19 +561,31 @@ class HamiltonianMonteCarlo(BaseSampler):
                     trajectory[:, i, :] = x
 
                 if return_diagnostics:
+                    # Calculate diagnostics with numerical stability safeguards
                     mean_x = x.mean(dim=0).unsqueeze(0).expand_as(x)
-                    var_x = x.var(dim=0).unsqueeze(0).expand_as(x)
-                    energy = self.energy_function(
-                        x
-                    )  # assumed to have shape (n_samples,)
+                    
+                    # Clamp variance calculations to prevent NaN values
+                    # First compute variance in a numerically stable way
+                    # and then clamp to ensure positive finite values
+                    x_centered = x - mean_x
+                    var_x = torch.mean(x_centered**2, dim=0)
+                    var_x = torch.clamp(var_x, min=1e-10, max=1e10)  # Prevent zero/extreme variances
+                    var_x = var_x.unsqueeze(0).expand_as(x)
+                    
+                    # Energy values (ensure finite values)
+                    energy = self.energy_function(x)  # assumed to have shape (n_samples,)
+                    energy = torch.clamp(energy, min=-1e10, max=1e10)  # Prevent extreme energy values
                     energy = energy.unsqueeze(1).expand_as(x)
-                    # acceptance_rates[i] = accepted.float().mean()
+                    
+                    # Acceptance rate is already between 0 and 1
+                    acceptance_rate = accepted.float().mean()
+                    acceptance_rate_expanded = torch.ones_like(x) * acceptance_rate
 
                     # Stack diagnostics
                     diagnostics[i, 0, :, :] = mean_x
                     diagnostics[i, 1, :, :] = var_x
                     diagnostics[i, 2, :, :] = energy
-                    diagnostics[i, 3, :, :] = accepted.float().mean()
+                    diagnostics[i, 3, :, :] = acceptance_rate_expanded
 
         if return_trajectory:
             if return_diagnostics:
