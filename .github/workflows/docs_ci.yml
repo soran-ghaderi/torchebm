@@ -70,6 +70,6 @@ jobs:
           
           mike delete --push latest || true  # Delete the existing latest alias if it exists
           # Deploy with Mike
-          mike deploy --push --update-aliases $CLEAN_VERSION latest
+          mike deploy --push --update-aliases --prefix=/{version} $CLEAN_VERSION latest
           
           mike set-default --push latest

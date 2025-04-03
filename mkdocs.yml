@@ -19,18 +19,19 @@ theme:
     logo: simple/pytorch
   features:
     - navigation.footer
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.tabs.sticky
+    - navigation.instant
+    - navigation.top
+    - navigation.sections
+    - navigation.path
+    - navigation.tracking
     - content.action.edit
     - content.action.view
     - content.code.annotate
     - content.code.copy
     - content.tooltips
-    - navigation.tabs
-    - navigation.tabs.sticky
-    - navigation.sections
-    - navigation.indexes
-    - navigation.top
-    - navigation.path
-    - navigation.tracking
     - search.highlight
     - search.share
     - search.suggest
@@ -236,7 +237,8 @@ extra:
           link: https://www.soran-ghaderi.github.io
 
     version:
-      default: stable
+      version: "latest"
+      default: latest
       provider: mike
 
 extra_javascript:
