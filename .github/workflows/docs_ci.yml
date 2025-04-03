@@ -62,6 +62,12 @@ jobs:
           # Extract clean version without build metadata
           CLEAN_VERSION=$(echo $VERSION | cut -d'+' -f1)
           
+          # Ensure gh-pages is up to date
+          git fetch origin gh-pages
+          git checkout gh-pages
+          git pull --rebase origin gh-pages || true
+          git checkout -
+          
           # Deploy with Mike
-          mike deploy --push --rebase --update-aliases $CLEAN_VERSION latest
+          mike deploy --push --update-aliases $CLEAN_VERSION latest
           mike set-default --push latest

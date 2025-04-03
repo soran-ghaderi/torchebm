@@ -1,3 +1,4 @@
+
 # $schema: https://squidfunk.github.io/mkdocs-material/schema.json
 
 site_name: TorchEBM
@@ -133,7 +134,6 @@ plugins:
             docstring_style: google
             docstring_options:
               ignore_init_summary: true
-            extra:
               trim_doctest_flags: true
             docstring_section_style: table
             show_category_heading: true
