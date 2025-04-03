@@ -53,7 +53,8 @@ theme:
       primary: black
       accent: green
 nav:
-  - Home: index.md
+  - Home:
+    - index.md
   - API Reference:
     - Overview: api/index.md
     - Core:
@@ -104,7 +105,7 @@ nav:
   - Developer Guide:
       - Contribution Guide: developer_guide/api_generation.md
   - Blog:
-      Blog: blog
+      - blog
 
 plugins:
   - mkdocstrings:
@@ -150,15 +151,15 @@ plugins:
               modules: true
               classes: true
             parameter_headings: false
-      watch:
-        - torchebm/
+#      watch:
+#        - torchebm/
 
 #  - optimize
   - blog:
       blog_dir: blog
       blog_toc: true
       post_url_format: "{slug}"
-      authors_profiles: true
+#      authors_profiles: true
   - git-revision-date-localized:
       type: date
       fallback_to_build_date: false
@@ -181,7 +182,7 @@ plugins:
       minify_js: true
       minify_css: true
   - tags:
-      tags_file: tags.md
+#      tags_file: tags.md
   - gen-files:
       scripts:
         - generate_api_docs.py
