@@ -1,4 +1,3 @@
-
 # $schema: https://squidfunk.github.io/mkdocs-material/schema.json
 
 site_name: TorchEBM
@@ -8,6 +7,7 @@ site_url: https://soran-ghaderi.github.io/torchebm/
 repo_name: torchebm
 repo_url: https://github.com/soran-ghaderi/torchebm/
 edit_uri: ''  #disables edit button
+use_directory_urls: true
 
 theme:
   name: material
@@ -104,9 +104,9 @@ nav:
         - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
     - Utils: api/torchebm/utils.md
   - Developer Guide:
-      - Contribution Guide: developer_guide/api_generation.md
+    - Contribution Guide: developer_guide/api_generation.md
   - Blog:
-      - blog
+    - blog
 
 plugins:
   - mkdocstrings:
@@ -237,9 +237,8 @@ extra:
           link: https://www.soran-ghaderi.github.io
 
     version:
-      version: "latest"
-      default: latest
       provider: mike
+      default: latest
 
 extra_javascript:
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js

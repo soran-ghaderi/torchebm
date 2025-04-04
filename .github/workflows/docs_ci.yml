@@ -37,13 +37,10 @@ jobs:
         run: |
           # Get version from SCM (setuptools_scm)
           python -c "from torchebm._version import version; print(f'VERSION={version}')" >> $GITHUB_ENV
-      - name: Build Documentation
-        run: |
-          mkdocs build
       - name: Setup gh-pages branch
         run: |
-          # Initialize gh-pages branch if it doesn't exist locally
-          git fetch origin gh-pages || true
+          # Initialize gh-pages branch if it doesn't exist
+          git fetch origin gh-pages || git checkout --orphan gh-pages
           if ! git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
             # If gh-pages doesn't exist on remote, create it
             git checkout --orphan gh-pages
@@ -54,22 +51,27 @@ jobs:
             git push -u origin gh-pages
             git checkout -
           else
-            # If it exists, make sure we have it locally
-            git fetch origin gh-pages:gh-pages || true
+            # If it exists, ensure we have it locally
+            git checkout gh-pages || git checkout -b gh-pages origin/gh-pages
+            # Make sure it's up to date
+            git pull origin gh-pages
+            git checkout -
           fi
-      - name: Deploy with Version
+      - name: Extract clean version
         run: |
-          # Extract clean version without build metadata
+          # Extract clean version without build metadata for mike
           CLEAN_VERSION=$(echo $VERSION | cut -d'+' -f1)
+          echo "CLEAN_VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
+      - name: Deploy with Mike
+        run: |
+          # Ensure .nojekyll exists in the root of site to prevent GitHub from using Jekyll
+          touch site/.nojekyll
           
-          # Ensure gh-pages is up to date
-          git fetch origin gh-pages
-          git checkout gh-pages
-          git pull --rebase origin gh-pages || true
-          git checkout -
+          # Deploy with Mike - first remove latest alias if it exists
+          mike delete --push latest || true
           
-          mike delete --push latest || true  # Delete the existing latest alias if it exists
-          # Deploy with Mike
-          mike deploy --push --update-aliases --prefix=/{version} $CLEAN_VERSION latest
+          # Deploy the new version and set it as latest
+          mike deploy --push --update-aliases ${CLEAN_VERSION} latest
           
+          # Set default version to latest
           mike set-default --push latest
