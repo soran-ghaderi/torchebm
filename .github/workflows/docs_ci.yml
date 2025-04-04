@@ -62,10 +62,60 @@ jobs:
           # Extract clean version without build metadata for mike
           CLEAN_VERSION=$(echo $VERSION | cut -d'+' -f1)
           echo "CLEAN_VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
+      - name: Build Documentation
+        run: |
+          # Print MkDocs configuration
+          echo "MkDocs configuration:"
+          cat mkdocs.yml | grep -E "site_dir|docs_dir" || echo "No site_dir or docs_dir specified in mkdocs.yml"
+          
+          # First build the documentation to generate the site directory
+          mkdocs build -v
+          
+          # Check the output directory after build
+          echo "Directories after build:"
+          ls -la
+          
+          # Create .nojekyll file in the root to prevent GitHub Pages from using Jekyll
+          touch .nojekyll
+          
+          # Make sure the site directory exists before creating .nojekyll inside it
+          if [ -d "site" ]; then
+            touch site/.nojekyll
+            echo "Site directory found, created .nojekyll inside it"
+          else
+            echo "Warning: Site directory not found. Checking alternative directories..."
+            for dir in public/ _site/ build/ docs/site/ site_docs/; do
+              if [ -d "$dir" ]; then
+                echo "Found alternative directory: $dir"
+                touch "$dir/.nojekyll"
+                # Create symlink to make things consistent
+                ln -sf "$dir" site
+                break
+              fi
+            done
+          fi
       - name: Deploy with Mike
         run: |
-          # Ensure .nojekyll exists in the root of site to prevent GitHub from using Jekyll
-          touch site/.nojekyll
+          # Check that we have a valid version to deploy
+          if [ -z "${CLEAN_VERSION}" ]; then
+            echo "Error: No version found to deploy"
+            exit 1
+          fi
+
+          echo "Deploying version: ${CLEAN_VERSION}"
+          
+          # List current mike versions
+          mike list || echo "No versions found yet"
+          
+          # Print mike configuration
+          echo "Mike configuration:"
+          mike --help
+          
+          # Verify site directory exists before deploying
+          if [ ! -d "site" ]; then
+            echo "Error: 'site' directory not found. Cannot deploy with mike."
+            exit 1
+          fi
           
           # Deploy with Mike - first remove latest alias if it exists
           mike delete --push latest || true
@@ -75,3 +125,5 @@ jobs:
           
           # Set default version to latest
           mike set-default --push latest
+          
+          echo "Deployment completed successfully!"

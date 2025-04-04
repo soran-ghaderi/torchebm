@@ -8,6 +8,8 @@ repo_name: torchebm
 repo_url: https://github.com/soran-ghaderi/torchebm/
 edit_uri: ''  #disables edit button
 use_directory_urls: true
+docs_dir: docs
+site_dir: site
 
 theme:
   name: material
