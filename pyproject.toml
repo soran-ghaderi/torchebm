@@ -58,7 +58,6 @@ docs = [
     "mkdocs-gen-files>=0.4.0",
     "mkdocs-literate-nav>=0.4.0",
     "mkdocs-section-index>=0.3.0",
-    "mkdocs-tags-plugin>=0.3.0",
     "pymdown-extensions>=9.0",
     "mkdocs-autorefs",
 ]
