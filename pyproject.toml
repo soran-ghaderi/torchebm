@@ -53,15 +53,14 @@ docs = [
     "tomli>=2.0.0",
     "pyyaml>=6.0",
     "mkdocs-git-revision-date-localized-plugin>=1.0.0",
-    "mkdocs-glightbox>=0.2.0",
-    "mkdocs-minify-plugin>=0.5.0",
+    "mkdocs-glightbox>=0.3.0",
     "mkdocs-blog-plugin>=0.1.0",
-    "mkdocs-autolinks-plugin>=0.5.0",
-    "mkdocs-gen-files",
-    "mkdocs-literate-nav",
-    "mkdocs-section-index",
-    "mkdocs-autorefs",
+    "mkdocs-gen-files>=0.4.0",
+    "mkdocs-literate-nav>=0.4.0",
+    "mkdocs-section-index>=0.3.0",
+    "mkdocs-tags-plugin>=0.3.0",
     "pymdown-extensions>=9.0",
+    "mkdocs-autorefs",
 ]
 
 [project.urls]

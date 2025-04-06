@@ -1,71 +1,97 @@
 # $schema: https://squidfunk.github.io/mkdocs-material/schema.json
 
 site_name: TorchEBM
-site_description: Energy-Based Modeling library for PyTorch, offering tools for sampling, inference, and learning in complex distributions.
-site_author: Soran Ghaderi
 site_url: https://soran-ghaderi.github.io/torchebm/
-repo_name: torchebm
-repo_url: https://github.com/soran-ghaderi/torchebm/
-edit_uri: ''  #disables edit button
-use_directory_urls: true
-docs_dir: docs
-site_dir: site
+site_description: Energy-Based Modeling library for PyTorch
+site_author: Soran Ghaderi
+repo_url: https://github.com/soran-ghaderi/torchebm
+repo_name: soran-ghaderi/torchebm
+edit_uri: edit/main/docs/
 
 theme:
   name: material
-  custom_dir: docs/overrides
+  logo: assets/images/nabla_icon.svg
+  favicon: assets/images/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+#    - navigation.expand
+    - navigation.path
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+    - content.tooltips
+    - header.autohide
+    - announce.dismiss
+    - navigation.footer
+  palette:
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
   font:
     text: Roboto
     code: Roboto Mono
   icon:
-    logo: simple/pytorch
-  features:
-    - navigation.footer
-    - navigation.tabs
-    - navigation.indexes
-    - navigation.tabs.sticky
-    - navigation.instant
-    - navigation.top
-    - navigation.sections
-    - navigation.path
-    - navigation.tracking
-    - content.action.edit
-    - content.action.view
-    - content.code.annotate
-    - content.code.copy
-    - content.tooltips
-    - search.highlight
-    - search.share
-    - search.suggest
-    - toc.follow
-  palette:
-    #light mode:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      toggle:
-        icon: material/weather-night
-        name: Light mode
-      primary: deep orange
-      accent: deep orange
-    #dark mode:
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      toggle:
-        icon: material/weather-sunny
-        name: deep orange
-      primary: black
-      accent: green
+    repo: fontawesome/brands/github
+    admonition:
+      note: fontawesome/solid/note-sticky
+      abstract: fontawesome/solid/book
+      info: fontawesome/solid/circle-info
+      tip: fontawesome/solid/bullhorn
+      success: fontawesome/solid/check
+      question: fontawesome/solid/circle-question
+      warning: fontawesome/solid/triangle-exclamation
+      failure: fontawesome/solid/bomb
+      danger: fontawesome/solid/skull
+      bug: fontawesome/solid/robot
+      example: fontawesome/solid/flask
+      quote: fontawesome/solid/quote-left
+#  logo: simple/pytorch
+  favicon: simple/pytorch
+
 nav:
-  - Home:
-    - index.md
+  - Home: index.md
+  - Getting Started:
+    - Overview: guides/index.md
+    - Introduction: introduction.md
+    - Installation: getting_started.md
+    - Guides:
+      - Energy Functions: guides/energy_functions.md
+      - Samplers: guides/samplers.md
+      - Loss Functions: guides/loss_functions.md
+      - Custom Neural Networks: guides/custom_neural_networks.md
+      - Training EBMs: guides/training.md
+      - Visualization: guides/visualization.md
   - API Reference:
     - Overview: api/index.md
     - Core:
       - Basesampler:
-        - api/torchebm/core/basesampler.md
+        - api/torchebm/core/basesampler/index.md
         - BaseSampler: api/torchebm/core/basesampler/classes/BaseSampler.md
       - Energy_function:
-        - api/torchebm/core/energy_function.md
+        - api/torchebm/core/energy_function/index.md
         - AckleyEnergy: api/torchebm/core/energy_function/classes/AckleyEnergy.md
         - DoubleWellEnergy: api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
         - EnergyFunction: api/torchebm/core/energy_function/classes/EnergyFunction.md
@@ -74,137 +100,148 @@ nav:
         - RastriginEnergy: api/torchebm/core/energy_function/classes/RastriginEnergy.md
         - RosenbrockEnergy: api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
       - Losses:
-        - api/torchebm/core/losses.md
+        - api/torchebm/core/losses/index.md
         - Loss: api/torchebm/core/losses/classes/Loss.md
       - Optimizer:
-        - api/torchebm/core/optimizer.md
+        - api/torchebm/core/optimizer/index.md
         - Optimizer: api/torchebm/core/optimizer/classes/Optimizer.md
       - Score_matching:
-        - api/torchebm/core/score_matching.md
+        - api/torchebm/core/score_matching/index.md
         - ScoreMatching: api/torchebm/core/score_matching/classes/ScoreMatching.md
       - Trainer:
-        - api/torchebm/core/trainer.md
+        - api/torchebm/core/trainer/index.md
         - ContrastiveDivergenceTrainer: api/torchebm/core/trainer/classes/ContrastiveDivergenceTrainer.md
-    - Cuda: api/torchebm/cuda.md
+    - Cuda: api/torchebm/cuda/index.md
     - Losses:
       - Contrastive_divergence:
-        - api/torchebm/losses/contrastive_divergence.md
+        - api/torchebm/losses/contrastive_divergence/index.md
         - ContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
         - ContrastiveDivergenceBase: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergenceBase.md
         - ParallelTemperingCD: api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
         - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
     - Models:
       - Base_model:
-        - api/torchebm/models/base_model.md
+        - api/torchebm/models/base_model/index.md
         - BaseModel: api/torchebm/models/base_model/classes/BaseModel.md
     - Samplers:
       - Langevin_dynamics:
-        - api/torchebm/samplers/langevin_dynamics.md
+        - api/torchebm/samplers/langevin_dynamics/index.md
         - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
       - Mcmc:
-        - api/torchebm/samplers/mcmc.md
+        - api/torchebm/samplers/mcmc/index.md
         - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
-    - Utils: api/torchebm/utils.md
+    - Utils: api/torchebm/utils/index.md
+  - Examples:
+    - Overview: examples/index.md
+    - Energy Landscape Visualization: examples/energy_visualization.md
+    - Langevin Dynamics Sampling: examples/langevin_dynamics.md
+    - Hamiltonian Monte Carlo: examples/hmc.md
+    - Langevin Sampler Trajectory: examples/langevin_trajectory.md
   - Developer Guide:
-    - Contribution Guide: developer_guide/api_generation.md
-  - Blog:
-    - blog
+    - Overview: developer_guide/index.md
+    - Contributing: developer_guide/contributing.md
+    - Commit Conventions: developer_guide/commit_conventions.md
+    - Development Setup: developer_guide/development_setup.md
+    - Code Style: developer_guide/code_style.md
+    - Testing Guide: developer_guide/testing_guide.md
+    - Project Structure: developer_guide/project_structure.md
+    - Design Principles: developer_guide/design_principles.md
+    - Core Components: developer_guide/core_components.md
+    - Implementation Details:
+      - Energy Functions: developer_guide/implementation_energy.md
+      - Samplers: developer_guide/implementation_samplers.md
+#      - Loss Functions: developer_guide/implementation_losses.md
+#      - Model Architecture: developer_guide/implementation_models.md
+#      - CUDA Optimizations: developer_guide/cuda_optimizations.md
+    - Architecture: developer_guide/architecture.md
+    - API Design: developer_guide/api_design.md
+    - API Generation: developer_guide/api_generation.md
+    - Performance Optimization: developer_guide/performance.md
+  - Blog: blog/index.md
+  - FAQ: faq.md
 
 plugins:
-  - mkdocstrings:
-      default_handler: python
-      handlers:
-        python:
-          paths: [ "torchebm" ]
-          options:
-            filters:
-              - "!^_.*"
-              - "!^_[^_]"
-            show_source: true
-            show_docstring_attributes: false
-            show_docstring_functions: true
-            show_docstring_parameters: true
-            show_docstring_modules: true
-            show_docstring_classes: true
-            show_docstring_examples: true
-            show_docstring_description: true
-            show_docstring_other_parameters: true
-            show_symbol_type_heading: true
-            show_symbol_type_toc: true
-            show_inheritance_diagram: true
-            show_submodules: true
-            modernize_annotations: true
-            show_signature: true
-            docstring_style: google
-            docstring_options:
-              ignore_init_summary: true
-              trim_doctest_flags: true
-            docstring_section_style: table
-            show_category_heading: true
-            show_root_heading: true
-            show_if_no_docstring: true
-            show_signature_annotations: true
-            separate_signature: true
-            heading_level: 4
-            group_by_category: true
-            show_overloads: true
-            summary:
-              attributes: false
-              functions: true
-              modules: true
-              classes: true
-            parameter_headings: false
-#      watch:
-#        - torchebm/
-
-#  - optimize
-  - blog:
-      blog_dir: blog
-      blog_toc: true
-      post_url_format: "{slug}"
-#      authors_profiles: true
-  - git-revision-date-localized:
-      type: date
-      fallback_to_build_date: false
-      enable_creation_date: true
-      enabled: true
+  - search
+  - autorefs
   - glightbox:
-      touchNavigation: false
+      touchNavigation: true
       loop: false
       effect: zoom
       width: 100%
       height: auto
       zoomable: true
       draggable: true
-  - search:
-      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-  - autolinks
-  - autorefs
-  - minify:
-      minify_html: true
-      minify_js: true
-      minify_css: true
   - tags:
-#      tags_file: tags.md
-  - gen-files:
-      scripts:
-        - generate_api_docs.py
-  - literate-nav:
-      nav_file: SUMMARY.md
-  - section-index
+      tags_file: tags.md
+  - git-revision-date-localized:
+      type: date
+      enable_creation_date: true
+      fallback_to_build_date: true
+  - blog:
+      blog_dir: blog
+      post_dir: "{blog}/posts"
+      post_date_format: yyyy-MM-dd
+      post_url_format: "{slug}"
+      authors_file: "{blog}/.authors.yml"
+      categories: true
+      categories_name: Categories
+      categories_url_format: "category/{slug}"
+      categories_toc: true
+      categories_sort_by: title
+      categories_sort_reverse: false
+      categories_allowed:
+        - Tutorials
+        - Research
+        - Announcements
+        - Examples
+      pagination: true
+      pagination_per_page: 5
+      pagination_format: "{prev} · {page} · {next}"
+      pagination_if_single_page: false
+      pagination_keep_content: true
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_docstring_functions: true
+            show_root_toc_entry: true
+            heading_level: 3
+            members_order: source
+            separate_signature: true
+            docstring_section_style: table
+  - meta
 
 markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
   - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
   - pymdownx.arithmatex:
       generic: true
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - attr_list
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
   - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - pymdownx.inlinehilite:
-  - pymdownx.snippets:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: soran-ghaderi
+      repo: torchebm
+  - pymdownx.mark
+  - pymdownx.smartsymbols
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -212,43 +249,27 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
-  - admonition
-  - pymdownx.details
-  - pymdownx.superfences
-  - def_list
-  - pymdownx.highlight:
-      anchor_linenums: true
-      line_spans: __span
-      pygments_lang_class: true
-  - markdown.extensions.toc:
-#      baselevel: 2
-      permalink: true
-  - pymdownx.critic
-  - pymdownx.caret
-  - pymdownx.keys
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
 
 extra:
-    social:
-        - icon: simple/github
-          link: https://www.github.com/soran-ghaderi
-        - icon: simple/x
-          link: https://www.x.com/soranghadri
-        - icon: fontawesome/brands/linkedin
-          link: https://www.linkedin.com/in/soran-ghaderi
-        - icon: material/link
-          link: https://www.soran-ghaderi.github.io
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/soran-ghaderi/torchebm
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/torchebm/
+  version:
+    provider: mike
+  analytics:
+    provider: google
+    property: !ENV GOOGLE_ANALYTICS_KEY
 
-    version:
-      provider: mike
-      default: latest
+extra_css:
+  - stylesheets/extra.css
 
 extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
-  - https://unpkg.com/mermaid@10.9.0/dist/mermaid.min.js
-
-#extra_css:
-#  - stylesheets/extra.css
-
-#hooks:
-#  - docs/hooks/socialmedia.py
 

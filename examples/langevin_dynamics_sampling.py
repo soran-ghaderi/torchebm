@@ -11,10 +11,37 @@ from typing import Tuple
 
 from torch.xpu import device
 
-from torchebm.core import DoubleWellEnergy, GaussianEnergy
+import torch
+from torchebm.core import GaussianEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
+# Define a 10D Gaussian energy function
+energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Initialize Langevin dynamics sampler
+langevin_sampler = LangevinDynamics(
+    energy_function=energy_fn, step_size=5e-3, device=device
+).to(device)
+
+# Sample 10,000 points in 10 dimensions
+final_samples = langevin_sampler.sample_chain(
+    dim=10, n_steps=500, n_samples=10000, return_trajectory=False
+)
+print(final_samples.shape)  # Output: (10000, 10) -> (n_samples, dim)
+
+# Sample with trajectory and diagnostics
+n_samples = 250
+n_steps = 500
+dim = 10
+samples, diagnostics = langevin_sampler.sample_chain(
+    dim=dim,
+    n_steps=n_steps,
+    n_samples=n_samples,
+    return_trajectory=True,
+    return_diagnostics=True,
+)
+print(samples.shape)  # Output: (250, 500, 10) -> (samples, n_steps, dim)
 # ===================== Example 1 =====================
 
 
@@ -205,15 +232,15 @@ def langevin_gaussain_sampling():
     print(samples.shape)  # Output: (100, 10)  (final state)
 
 
-if __name__ == "__main__":
-    print("Running sampling from a Gaussian...")
-    langevin_gaussain_sampling()
+# if __name__ == "__main__":
+#     print("Running sampling from a Gaussian...")
+#     langevin_gaussain_sampling()
 
-    # print("Running basic example...")
-    # basic_example()
-    #
-    # print("\nRunning advanced example...")
-    # advanced_example()
-    #
-    # print("\nRunning utilities example...")
-    # sampling_utilities_example()
+# print("Running basic example...")
+# basic_example()
+#
+# print("\nRunning advanced example...")
+# advanced_example()
+#
+# print("\nRunning utilities example...")
+# sampling_utilities_example()

@@ -40,6 +40,8 @@ class BaseSampler(ABC):
         thin: int = 1,  # not supported yet
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        *args,
+        **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         """
         Run the sampling process.
@@ -61,8 +63,11 @@ class BaseSampler(ABC):
             dim=dim,
             n_steps=n_steps,
             n_samples=n_samples,
+            thin=thin,
             return_trajectory=return_trajectory,
             return_diagnostics=return_diagnostics,
+            *args,
+            **kwargs,
         )
 
     @abstractmethod
@@ -74,6 +79,8 @@ class BaseSampler(ABC):
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        *args,
+        **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         raise NotImplementedError
 
