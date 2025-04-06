@@ -1,11 +1,16 @@
 ---
-title: Langevin dynamics sampling
-date: 2025-03-06
-author: Soran Ghaderi
-tags:
-  - langevin
-  - sampling
+title: examples
+draft: true
+date: 2023-03-07
+authors:
+  - soran-ghaderi
+categories:
+  - Examples
 ---
+
+# Code Examples 
+
+Content coming soon.
 
 Langevin dynamics sampling
 <!-- more -->

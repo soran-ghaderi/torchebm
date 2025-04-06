@@ -71,12 +71,13 @@ def create_module_page(module_name, output_dir):
     # Create directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Convert module path to a file path
+    # Convert module path to a directory path
     module_path = module_name.replace(".", "/")
-    file_name = os.path.join(output_dir, f"{module_path}.md")
+    module_dir = os.path.join(output_dir, module_path)
+    os.makedirs(module_dir, exist_ok=True)  # Create the actual module directory
 
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(file_name), exist_ok=True)
+    # Place the index.md file inside the module directory
+    file_name = os.path.join(module_dir, "index.md")
 
     try:
         # Import the module
@@ -101,9 +102,7 @@ def create_module_page(module_name, output_dir):
         header = f"# {module_title}\n\n"
 
     # Get module docstring
-    # module_doc = module.__doc__ or "No description available."
-    # content = header + f"{module_doc.strip()}\n\n"
-    content = ""
+    content = header  # Include the header with module title
 
     # Add table of contents section
     content += "## Contents\n\n"
@@ -135,7 +134,7 @@ def create_module_page(module_name, output_dir):
                         summary = " - " + get_docstring_summary(mod_obj)
                 except ImportError:
                     pass
-                content += f"- [{mod_name.capitalize()}]({mod_name}.md){summary}\n"
+                content += f"- [{mod_name.capitalize()}]({mod_name}.md)\n"  # Changed to use actual module name
             content += "\n"
 
     # Find all classes in the module
@@ -156,10 +155,6 @@ def create_module_page(module_name, output_dir):
         content += "### Classes\n\n"
         for name, cls in sorted(classes):
             summary = get_docstring_summary(cls)
-            # content += f"- [`{name}`](#{name.lower()}) - {summary}\n"
-            # Use fully qualified class name in the anchor link
-            fully_qualified_name = f"{module_name}.{name}"
-            # content += f"- [`{name}`](#{fully_qualified_name.lower()}) - {summary}\n"
             content += f"- [`{name}`](classes/{name}) - {summary}\n"
 
         content += "\n"
@@ -454,10 +449,7 @@ def package_to_nav(name, info):
     for modname, modinfo in sorted(info["modules"].items()):
         # If the module has classes, create a subsection
         if modinfo["classes"]:
-            module_section = {
-                # modinfo["title"]: [{"Module Overview": modinfo["filepath"]}]
-                modinfo["title"]: [modinfo["filepath"]]
-            }
+            module_section = {modinfo["title"]: [modinfo["filepath"]]}
             # Add classes to the module section
             for classname, classinfo in sorted(modinfo["classes"].items()):
                 module_section[modinfo["title"]].append(
@@ -467,11 +459,13 @@ def package_to_nav(name, info):
         else:
             # Simple module with no classes
             section[info["title"]].append({modinfo["title"]: modinfo["filepath"]})
+
         # section[info["title"]].append({modinfo["title"]: modinfo["filepath"]})
-    #
-    # # Add direct classes of the package (if any)
-    # for classname, classinfo in sorted(info["classes"].items()):
-    #     section[info["title"]].append({classinfo["title"]: classinfo["filepath"]})
+        #
+        # # Add direct classes of the package (if any)
+        # for classname, classinfo in sorted(info["classes"].items()):
+        #     section[info["title"]].append({classinfo["title"]: classinfo["filepath"]})
+    return section
 
     return section
 
@@ -713,7 +707,11 @@ def update_mkdocs_nav(nav_structure, tab_name="API Reference"):
 def add_inline_class_references(module_name, output_dir):
     """Add proper inline references to classes in module documentation."""
     module_path = module_name.replace(".", "/")
-    file_name = os.path.join(output_dir, f"{module_path}.md")
+    actual_module_name = module_name.split(".")[-1]
+
+    # Fix: Correctly build the path to the module documentation file
+    module_dir_path = os.path.dirname(os.path.join(output_dir, module_path))
+    file_name = os.path.join(module_dir_path, f"{actual_module_name}.md")
 
     if not os.path.exists(file_name):
         return
@@ -735,10 +733,6 @@ def add_inline_class_references(module_name, output_dir):
                 ):
                     qualified_anchor = f"{module_name}.{name}"
                     anchor_line = f'<a id="{qualified_anchor}"></a>\n'
-                    # content = re.sub(
-                    #     f"### {name}\n", f"### {name}\n{anchor_line}", content
-                    # )
-                    # This fixes the simple anchor names as well
                     simple_anchor_line = f'<a id="{name}"></a>\n'
                     # Add both anchors to support both types of links
                     content = re.sub(
@@ -819,21 +813,21 @@ def process_package(package_name, output_dir):
 
 def clean_api_directory(output_dir, preserve_files=None):
     """Clean up the API directory while preserving specified files.
-    
+
     Args:
         output_dir (str): Path to the API documentation directory
         preserve_files (list): List of filenames to preserve (relative to output_dir)
     """
     if preserve_files is None:
         preserve_files = []
-    
+
     # Ensure output_dir exists
     if not os.path.exists(output_dir):
         return
-        
+
     # Convert preserve_files to absolute paths
     preserve_paths = {os.path.join(output_dir, f) for f in preserve_files}
-    
+
     # Walk through directory and remove files/dirs
     for root, dirs, files in os.walk(output_dir, topdown=False):
         # Remove files first
@@ -841,7 +835,7 @@ def clean_api_directory(output_dir, preserve_files=None):
             filepath = os.path.join(root, name)
             if filepath not in preserve_paths:
                 os.remove(filepath)
-                
+
         # Then remove empty directories
         for name in dirs:
             dirpath = os.path.join(root, name)
@@ -858,7 +852,7 @@ def generate_api_docs(package_name, output_dir="docs/api"):
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Clean up existing files while preserving index.md and package root doc if they exist
     preserve_files = []
     if os.path.exists(os.path.join(output_dir, "index.md")):
@@ -866,14 +860,16 @@ def generate_api_docs(package_name, output_dir="docs/api"):
     package_doc = f"{package_name}.md"
     if os.path.exists(os.path.join(output_dir, package_doc)):
         preserve_files.append(package_doc)
-    
+
     clean_api_directory(output_dir, preserve_files)
 
     # Process the entire package
     all_modules = process_package(package_name, output_dir)
 
     if not all_modules:
-        print("No modules were processed. Please check the package name and permissions.")
+        print(
+            "No modules were processed. Please check the package name and permissions."
+        )
         return
 
     print(f"Processed {len(all_modules)} modules and packages.")

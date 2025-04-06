@@ -1,9 +1,10 @@
-<h1 align="center">TorchEBM</h1>
-
+<p align="center">
+  <img src="docs/assets/images/logo_with_text.svg" alt="TorchEBM Logo" width="350">
+</p>
 
 <p align="center">⚡ Energy-Based Modeling library for PyTorch, offering tools for 🔬 sampling, 🧠 inference, and 📊 learning in complex distributions.</p>
 
-<table>
+<table align="center">
   <tr>
     <td><img src="docs/assets/images/e_functions/gaussian.png" alt="Gaussian" width="250"/></td>
     <td><img src="docs/assets/images/e_functions/double_well.png" alt="Double Well" width="250"/></td>
@@ -20,7 +21,8 @@
 
 ## About
 
-TorchEBM is a CUDA-accelerated parallel library for Energy-Based Models (EBMs) built on PyTorch. It provides efficient implementations of sampling, inference, and learning algorithms for EBMs, with a focus on scalability and performance.
+TorchEBM is a CUDA-accelerated parallel library for Energy-Based Models (EBMs) built on PyTorch. It provides efficient 
+implementations of sampling, inference, and learning algorithms for EBMs, with a focus on scalability and performance.
 
 ## Features
 

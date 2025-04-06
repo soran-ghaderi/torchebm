@@ -1,12 +1,18 @@
 ---
 title: Schrodinger Bridges
-date: 2025-03-12
-authors: 
-  - soran
+date: 2023-03-07
+authors:
+  - soran-ghaderi
+categories:
+  - Research
 tags:
   - schrodinger-bridges
   - sampling
 draft: true
 ---
+
+# Schrödinger Bridges
+
+Content coming soon.
 
 
