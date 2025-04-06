@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gradient definitions -->
+  <defs>
+    <linearGradient id="nablaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF7E5F" />
+      <stop offset="50%" stop-color="#56CCF2" />
+      <stop offset="100%" stop-color="#2ECC71" />
+    </linearGradient>
+    <filter id="textGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="outerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="16" cy="16" r="16" fill="#0a1929" />
+  
+  <!-- Enhanced glow effect -->
+  <circle cx="16" cy="16" r="12" fill="url(#nablaGradient)" opacity="0.2" filter="url(#outerGlow)" />
+  
+  <!-- Nabla symbol with enhanced glow -->
+  <text x="6" y="24" 
+        font-family="Montserrat, sans-serif" 
+        font-size="22" 
+        font-weight="700" 
+        fill="url(#nablaGradient)" 
+        filter="url(#textGlow)">∇</text>
+</svg> 
