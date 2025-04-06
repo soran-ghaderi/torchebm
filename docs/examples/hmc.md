@@ -19,57 +19,54 @@ Hamiltonian Monte Carlo (HMC) is an advanced Markov Chain Monte Carlo (MCMC) met
 
 ## Basic Example
 
-The following example shows how to sample from a 10-dimensional Gaussian distribution using HMC:
+The following example shows how to sample from a 2D Gaussian distribution using HMC:
 
 ```python
 import torch
-import time
+import matplotlib.pyplot as plt
+import numpy as np
 from torchebm.core import GaussianEnergy
 from torchebm.samplers.mcmc import HamiltonianMonteCarlo
 
-def hmc_gaussian_sampling():
-    energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+# Create energy function for a 2D Gaussian
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+dim = 2  # dimension of the state space
+n_steps = 100  # steps between samples
+n_samples = 1000  # num of samples
+mean = torch.tensor([1.0, -1.0], device=device)
+cov = torch.tensor([[1.0, 0.5], [0.5, 2.0]], device=device)
+energy_fn = GaussianEnergy(mean, cov)
 
-    # Initialize HMC sampler
-    hmc_sampler = HamiltonianMonteCarlo(
-        energy_function=energy_fn, 
-        step_size=0.1, 
-        n_leapfrog_steps=10, 
-        device=device
-    )
+# Initialize HMC sampler
+hmc_sampler = HamiltonianMonteCarlo(
+    energy_function=energy_fn,
+    step_size=0.1,
+    n_leapfrog_steps=5,
+    device=device
+)
 
-    # Sample 10,000 points in 10 dimensions
-    ts = time.time()
-    final_x = hmc_sampler.sample_chain(
-        dim=10, 
-        n_steps=500, 
-        n_samples=10000, 
-        return_trajectory=False
-    )
-    print(final_x.shape)  # Output: (10000, 10)
-    print("Time taken: ", time.time() - ts)
+# Generate samples
+initial_state = torch.zeros(n_samples, dim, device=device)
+samples = hmc_sampler.sample_chain(
+    x=initial_state,
+    n_steps=n_steps
+)
 
-    # Sample with diagnostics and trajectory
-    n_samples = 250
-    n_steps = 500
-    dim = 10
-    final_samples, diagnostics = hmc_sampler.sample_chain(
-        n_samples=n_samples,
-        n_steps=n_steps,
-        dim=dim,
-        return_trajectory=True,
-        return_diagnostics=True,
-    )
-    print(final_samples.shape)  # (250, 500, 10)
-    print(diagnostics.shape)  # (500, 3, 250, 10)
-    print(diagnostics[-1].mean())  # Average acceptance rate
-
-    # Sample from a custom initialization
-    x_init = torch.randn(n_samples, dim, dtype=torch.float32, device=device)
-    samples = hmc_sampler.sample_chain(x=x_init, n_steps=100)
-    print(samples.shape)  # (250, 10)
+# Plot results
+samples = samples.cpu().numpy()
+plt.figure(figsize=(10, 5))
+plt.scatter(samples[:, 0], samples[:, 1], alpha=0.1)
+plt.title("Samples from 2D Gaussian using HMC")
+plt.xlabel("x₁")
+plt.ylabel("x₂")
+plt.show()
 ```
+
+### Visualization Result
+
+![HMC Sampling from 2D Gaussian](../assets/images/examples/hmc_basic.png)
+
+*This plot shows 1000 samples from a 2D Gaussian distribution generated using Hamiltonian Monte Carlo. Note how the samples efficiently cover the target distribution's high-probability regions. The samples reflect the covariance structure with the characteristic elliptical shape around the mean [1.0, -1.0].*
 
 ## How HMC Works
 
@@ -237,4 +234,10 @@ hmc_adaptive = HamiltonianMonteCarlo(
 
 ## Conclusion
 
-Hamiltonian Monte Carlo provides efficient sampling for complex, high-dimensional distributions. It leverages gradient information to make informed proposals, resulting in faster mixing and lower autocorrelation compared to simpler methods. While it requires more computation per step than methods like Langevin dynamics, it often requires fewer steps overall to achieve the same sampling quality. 
+Hamiltonian Monte Carlo provides efficient sampling for complex, high-dimensional distributions. It leverages gradient information to make informed proposals, resulting in faster mixing and lower autocorrelation compared to simpler methods. While it requires more computation per step than methods like Langevin dynamics, it often requires fewer steps overall to achieve the same sampling quality.
+
+### Visualization Result
+
+![HMC Sampling from 2D Gaussian](../assets/images/examples/hmc_basic.png)
+
+*This plot shows 1000 samples from a 2D Gaussian distribution generated using Hamiltonian Monte Carlo. Note how the samples efficiently cover the target distribution's high-probability regions. The samples reflect the covariance structure with the characteristic elliptical shape around the mean [1.0, -1.0].* 

@@ -92,7 +92,8 @@ $E(x) = \sum_{i=1}^{n-1} \left[ a(x_{i+1} - x_i^2)^2 + (x_i - 1)^2 \right]$
 The Ackley function is characterized by a nearly flat outer region and a large hole at the center. It has many local minima but only one global minimum at (0,0).
 
 **Mathematical Definition**:
-$E(x) = -a \exp\left(-b\sqrt{\frac{1}{d}\sum_{i=1}^{d}x_i^2}\right) - \exp\left(\frac{1}{d}\sum_{i=1}^{d}\cos(c x_i)\right) + a + \exp(1)$
+$E(x) = -a \exp\left(-b\sqrt{\frac{1}{d}\sum_{i=1}^{d}x_i^2}\right)$ 
+$- \exp\left(\frac{1}{d}\sum_{i=1}^{d}\cos(c x_i)\right) + a + \exp(1)$
 
 </div>
 </div>
@@ -123,11 +124,12 @@ $E(x) = a(x^2 - b)^2$
 <div class="grid" markdown>
 <div markdown>
 
-### Gaussian Energy
+### Gaussian and Harmonic Energy
 
 The Gaussian energy function represents a simple quadratic energy landscape with a single minimum. It corresponds to a multivariate Gaussian distribution in the probability space.
 
 **Mathematical Definition**:
+
 $E(x) = \frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)$
 
 </div>
@@ -135,9 +137,10 @@ $E(x) = \frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)$
 
 ### Harmonic Energy
 
-The Harmonic energy function represents a simple quadratic potential (like a spring). It has a single global minimum at the origin and is convex everywhere.
+The Harmonic energy function represents a simple quadratic potential (like a spring). It has a single global minimum at the origin and is convex everywhere. 
 
 **Mathematical Definition**:
+
 $E(x) = \frac{1}{2}\sum_{i=1}^{d}x_i^2$
 
 </div>
@@ -145,7 +148,44 @@ $E(x) = \frac{1}{2}\sum_{i=1}^{d}x_i^2$
 
 ## Visualization Results
 
-When you run this code, you'll see 3D visualizations of each energy function landscape. The color gradient represents the energy value at each point, with lower energy (more probable states) shown in darker blue.
+Below are the visualizations of the energy functions described above. Each visualization shows both a 3D surface plot and a 2D contour plot to help understand the landscape structure.
+
+### Rosenbrock Energy
+
+![Rosenbrock Energy Function](../assets/images/e_functions/rosenbrock.png)
+*The Rosenbrock function creates a long, narrow, banana-shaped valley. Finding the global minimum at (1,1) is challenging because the valley is very flat and provides little gradient information.*
+
+### Ackley Energy
+
+![Ackley Energy Function](../assets/images/e_functions/ackley.png)
+
+*The Ackley function has a nearly flat outer region and a large hole at the center. It contains many local minima but only one global minimum at (0,0).*
+
+### Rastrigin Energy
+
+![Rastrigin Energy Function](../assets/images/e_functions/rastrigin.png)
+
+*The Rastrigin function's "egg carton" surface has many regularly distributed local minima, making it highly multimodal. The global minimum is at (0,0).*
+
+### Double Well Energy
+
+![Double Well Energy Function](../assets/images/e_functions/double_well.png)
+
+*The Double Well energy features two distinct minima (wells) separated by an energy barrier, making it ideal for testing sampling algorithms' ability to traverse energy barriers.*
+
+### Gaussian Energy
+
+![Gaussian and Harmonic (in this case) Energy Function](../assets/images/e_functions/gaussian.png)
+
+*The Gaussian energy function has a simple quadratic landscape with a single minimum, corresponding to a multivariate Gaussian distribution.*
+
+[//]: # (### Harmonic Energy)
+
+[//]: # ()
+[//]: # (![Harmonic Energy Function]&#40;../assets/images/e_functions/harmonic.png&#41;)
+
+[//]: # ()
+[//]: # (*The Harmonic energy function represents a simple quadratic potential with a single global minimum at the origin.*)
 
 !!! note
     Visualizing these energy functions helps understand why some distributions are more challenging to sample from than others. For instance, the narrow valleys in the Rosenbrock function or the many local minima in the Rastrigin function make it difficult for sampling algorithms to efficiently explore the full distribution.

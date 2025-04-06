@@ -274,4 +274,15 @@ This example can be extended in various ways:
 
 ## Conclusion
 
-Visualizing sampling trajectories provides valuable insights into the behavior of sampling algorithms and the challenges they face when exploring complex energy landscapes. This understanding can help in selecting and tuning appropriate sampling methods for different problems. 
+Visualizing sampling trajectories provides valuable insights into the behavior of sampling algorithms and the challenges they face when exploring complex energy landscapes. This understanding can help in selecting and tuning appropriate sampling methods for different problems.
+
+[//]: # (## Visualization Results)
+
+[//]: # ()
+[//]: # (When running the example, you'll see a visualization of the energy landscape with multiple sampling chains:)
+
+[//]: # ()
+[//]: # (![Energy Landscape and Langevin Sampling Trajectories]&#40;../assets/images/examples/langevin_trajectory.png&#41;)
+
+[//]: # ()
+[//]: # (*This visualization shows a multimodal energy landscape &#40;contour lines&#41; with five independent Langevin dynamics sampling chains &#40;colored trajectories&#41;. Each chain starts from a different random position &#40;marked by a circle&#41; and evolves through 200 steps &#40;ending at the stars&#41;. The trajectories show how the chains are attracted to the four local minima &#40;dark blue regions&#41; of the energy function. Note how some chains get trapped in local minima while others manage to explore multiple modes of the distribution.* )

@@ -226,4 +226,61 @@ When using Langevin dynamics, keep in mind:
 
 Langevin dynamics is a versatile sampling approach suitable for many energy-based models. It combines the efficiency of gradient-based methods with the exploration capability of stochastic methods, making it an excellent choice for complex distributions.
 
-For a more visual exploration of Langevin dynamics, see the [Langevin Sampler Trajectory](langevin_trajectory.md) example that visualizes sampling trajectories overlaid on energy landscapes. 
+For a more visual exploration of Langevin dynamics, see the [Langevin Sampler Trajectory](langevin_trajectory.md) example that visualizes sampling trajectories overlaid on energy landscapes.
+
+### Visualization Result
+
+![Langevin Dynamics Sampling from 2D Gaussian](../assets/images/examples/langevin_basic.png)
+
+*This plot shows 1000 samples from a 2D Gaussian distribution generated using Langevin dynamics. The samples are concentrated around the mean [1.0, -1.0] and reflect the covariance structure with the characteristic elliptical shape.*
+
+## Working with Double Well Energy and Diagnostics
+
+Here's an example showing a trajectory from a Double Well energy function along with energy diagnostics:
+
+```python
+import torch
+import matplotlib.pyplot as plt
+from torchebm.core import DoubleWellEnergy
+from torchebm.samplers.langevin_dynamics import LangevinDynamics
+
+# Create Double Well energy function
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+energy_fn = DoubleWellEnergy(barrier_height=2.0)
+
+# Initialize sampler
+sampler = LangevinDynamics(
+    energy_function=energy_fn,
+    step_size=0.001,
+    noise_scale=0.1,
+    device=device
+)
+
+# Generate samples with trajectory and diagnostics
+initial_state = torch.tensor([0.0], device=device).view(1, 1)
+trajectory, diagnostics = sampler.sample_chain(
+    x=initial_state,
+    n_steps=1000,
+    return_trajectory=True,
+    return_diagnostics=True
+)
+
+# Plot trajectory and energy
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+ax1.plot(trajectory[0, :, 0].cpu().numpy())
+ax1.set_title("Single Chain Trajectory")
+ax1.set_xlabel("Step")
+ax1.set_ylabel("Position")
+ax2.plot(diagnostics[:, 2, 0, 0].cpu().numpy())
+ax2.set_title("Energy Evolution")
+ax2.set_xlabel("Step")
+ax2.set_ylabel("Energy")
+plt.tight_layout()
+plt.show()
+```
+
+### Diagnostics Visualization
+
+![Double Well Trajectory and Energy](../assets/images/examples/double_well_trajectory.png)
+
+*The left plot shows a single sampling chain trajectory in a Double Well energy landscape. The trajectory moves between the two wells over time. The right plot shows the corresponding energy evolution during sampling, with drops indicating transitions between wells.* 

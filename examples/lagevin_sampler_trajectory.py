@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from pathlib import Path
 
 
 class MultimodalEnergy:
@@ -182,7 +183,12 @@ def visualize_energy_landscape_and_sampling():
         plt.ylabel("x₂")
         plt.grid(True)
         plt.legend()
-        plt.show()
+        # Save the figure to the docs assets directory
+        output_dir = Path("docs/assets/images/examples")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_dir / "langevin_trajectory.png", dpi=300, bbox_inches='tight')
+        print(f"Image saved to {output_dir}/langevin_trajectory.png")
+        # plt.show()
 
     except Exception as e:
         print(f"Error during visualization: {str(e)}")
