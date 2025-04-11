@@ -7,6 +7,7 @@ from torchebm.core.energy_function import (
     DoubleWellEnergy,
 )
 from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from tests.conftest import requires_cuda
 
 
 @pytest.fixture
@@ -450,7 +451,7 @@ def test_hmc_large_leapfrog_steps():
     assert torch.all(torch.isfinite(samples))
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+@requires_cuda
 def test_hmc_high_dimensions():
     """Test HMC in high-dimensional spaces."""
     # Create a high-dimensional Gaussian

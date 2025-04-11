@@ -2,6 +2,7 @@ import pytest
 import torch
 from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from tests.conftest import requires_cuda
 
 
 @pytest.fixture
@@ -49,6 +50,7 @@ def test_langevin_dynamics_initialization_invalid_params(energy_function):
         LangevinDynamics(energy_function, step_size=0.1, noise_scale=-0.1)
 
 
+@requires_cuda
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
@@ -73,6 +75,7 @@ def test_langevin_dynamics_sample(langevin_sampler):
     assert torch.all(torch.isfinite(final_state))
 
 
+@requires_cuda
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
@@ -97,6 +100,7 @@ def test_langevin_dynamics_sample_trajectory(langevin_sampler):
     assert torch.all(torch.isfinite(trajectory))
 
 
+@requires_cuda
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
@@ -122,6 +126,7 @@ def test_langevin_dynamics_sample_chain(langevin_sampler):
     assert torch.all(torch.isfinite(samples))
 
 
+@requires_cuda
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
@@ -150,10 +155,10 @@ def test_langevin_dynamics_reproducibility(langevin_sampler):
     assert torch.allclose(result1, result2)
 
 
+@requires_cuda
 @pytest.mark.parametrize(
     "langevin_sampler",
     [
-        ({"device": torch.device("cpu")}),
         ({"device": torch.device("cuda")}),
     ],
     indirect=True,  # This tells pytest to apply parameters to fixtures
@@ -167,3 +172,11 @@ def test_langevin_dynamics_sample_x_input(langevin_sampler):
     samples = langevin_sampler.sample(x=x_init, n_steps=n_steps)
     assert samples.shape == (n_samples, dim)
     assert torch.all(torch.isfinite(samples))
+
+
+@requires_cuda
+def test_cuda_device_available():
+    """Test that CUDA device is available. This will be skipped if no NVIDIA driver is found."""
+    # Create a tensor on CUDA device
+    x = torch.zeros(1, device="cuda")
+    assert x.device.type == "cuda"

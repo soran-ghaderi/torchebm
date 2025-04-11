@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import torch
-from torchebm.core import EnergyFunction
+from torchebm.core.energy_function import EnergyFunction
 from typing import Optional, Tuple, List, Union
 import os
 
@@ -47,47 +47,51 @@ def plot_2d_energy_landscape(
     x = np.linspace(x_range[0], x_range[1], resolution)
     y = np.linspace(y_range[0], y_range[1], resolution)
     X, Y = np.meshgrid(x, y)
-    
+
     # Convert to pytorch tensor
-    grid = torch.tensor(np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32)
+    grid = torch.tensor(
+        np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32
+    )
     if device is not None:
         grid = grid.to(device)
         energy_fn = energy_fn.to(device)
-    
+
     # Compute energy values
     with torch.no_grad():
         Z = energy_fn(grid).cpu().numpy()
     Z = Z.reshape(X.shape)
-    
+
     # Apply log scale if requested
     if log_scale:
         # Add a small constant to avoid log(0)
         Z = np.log(Z + 1e-10)
-    
+
     # Create the figure
     fig, ax = plt.subplots(figsize=fig_size)
-    
+
     # Plot the surface
-    im = ax.pcolormesh(X, Y, Z, cmap=cmap, shading='auto')
-    
+    im = ax.pcolormesh(X, Y, Z, cmap=cmap, shading="auto")
+
     # Overlay contour lines if requested
     if contour:
-        contour_plot = ax.contour(X, Y, Z, levels=contour_levels, colors='white', alpha=0.5, linewidths=0.5)
-    
+        contour_plot = ax.contour(
+            X, Y, Z, levels=contour_levels, colors="white", alpha=0.5, linewidths=0.5
+        )
+
     # Add colorbar if requested
     if show_colorbar:
         fig.colorbar(im, ax=ax, label="Energy" if not log_scale else "Log Energy")
-    
+
     # Set title and labels
     if title:
         ax.set_title(title)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+
     # Save figure if requested
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
     return fig
 
 
@@ -133,48 +137,58 @@ def plot_3d_energy_landscape(
     x = np.linspace(x_range[0], x_range[1], resolution)
     y = np.linspace(y_range[0], y_range[1], resolution)
     X, Y = np.meshgrid(x, y)
-    
+
     # Convert to pytorch tensor
-    grid = torch.tensor(np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32)
+    grid = torch.tensor(
+        np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32
+    )
     if device is not None:
         grid = grid.to(device)
         energy_fn = energy_fn.to(device)
-    
+
     # Compute energy values
     with torch.no_grad():
         Z = energy_fn(grid).cpu().numpy()
     Z = Z.reshape(X.shape)
-    
+
     # Apply log scale if requested
     if log_scale:
         # Add a small constant to avoid log(0)
         Z = np.log(Z + 1e-10)
-    
+
     # Create the figure
     fig = plt.figure(figsize=fig_size)
-    ax = fig.add_subplot(111, projection='3d')
-    
+    ax = fig.add_subplot(111, projection="3d")
+
     # Plot the surface
-    surf = ax.plot_surface(X, Y, Z, cmap=cmap, alpha=alpha, linewidth=0, antialiased=True)
-    
+    surf = ax.plot_surface(
+        X, Y, Z, cmap=cmap, alpha=alpha, linewidth=0, antialiased=True
+    )
+
     # Add colorbar if requested
     if show_colorbar:
-        fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5, label="Energy" if not log_scale else "Log Energy")
-    
+        fig.colorbar(
+            surf,
+            ax=ax,
+            shrink=0.5,
+            aspect=5,
+            label="Energy" if not log_scale else "Log Energy",
+        )
+
     # Set title and labels
     if title:
         ax.set_title(title)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('Energy' if not log_scale else 'Log Energy')
-    
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("Energy" if not log_scale else "Log Energy")
+
     # Set view angle
     ax.view_init(elev=elev, azim=azim)
-    
+
     # Save figure if requested
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
     return fig
 
 
@@ -192,7 +206,7 @@ def plot_samples_on_energy(
     fig_size: Tuple[int, int] = (8, 6),
     contour: bool = True,
     contour_levels: int = 20,
-    sample_color: str = 'red',
+    sample_color: str = "red",
     sample_alpha: float = 0.5,
     sample_size: float = 5,
     device: Optional[str] = None,
@@ -234,20 +248,26 @@ def plot_samples_on_energy(
         fig_size=fig_size,
         contour=contour,
         contour_levels=contour_levels,
-        device=device
+        device=device,
     )
-    
+
     # Get the current axis
     ax = plt.gca()
-    
+
     # Plot the samples
     samples_np = samples.detach().cpu().numpy()
-    ax.scatter(samples_np[:, 0], samples_np[:, 1], color=sample_color, alpha=sample_alpha, s=sample_size)
-    
+    ax.scatter(
+        samples_np[:, 0],
+        samples_np[:, 1],
+        color=sample_color,
+        alpha=sample_alpha,
+        s=sample_size,
+    )
+
     # Save figure if requested
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
     return fig
 
 
@@ -297,75 +317,97 @@ def plot_sample_trajectories(
         data_min = all_data.min(axis=0)
         data_max = all_data.max(axis=0)
         padding = (data_max - data_min) * 0.1  # Add 10% padding
-        
+
         if x_range is None:
             x_range = (data_min[0] - padding[0], data_max[0] + padding[0])
         if y_range is None:
             y_range = (data_min[1] - padding[1], data_max[1] + padding[1])
-    
+
     # Create figure
     fig, ax = plt.subplots(figsize=fig_size)
-    
+
     # Plot energy landscape if provided
     if energy_fn is not None:
         # Create the grid
         x = np.linspace(x_range[0], x_range[1], resolution)
         y = np.linspace(y_range[0], y_range[1], resolution)
         X, Y = np.meshgrid(x, y)
-        
+
         # Convert to pytorch tensor
-        grid = torch.tensor(np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32)
+        grid = torch.tensor(
+            np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32
+        )
         if device is not None:
             grid = grid.to(device)
             energy_fn = energy_fn.to(device)
-        
+
         # Compute energy values
         with torch.no_grad():
             Z = energy_fn(grid).cpu().numpy()
         Z = Z.reshape(X.shape)
-        
+
         # Apply log scale if requested
         if log_scale:
             # Add a small constant to avoid log(0)
             Z = np.log(Z + 1e-10)
-        
+
         # Plot the surface
-        im = ax.pcolormesh(X, Y, Z, cmap=cmap, shading='auto')
-        
+        im = ax.pcolormesh(X, Y, Z, cmap=cmap, shading="auto")
+
         # Add colorbar if requested
         if show_colorbar:
             fig.colorbar(im, ax=ax, label="Energy" if not log_scale else "Log Energy")
-    
+
     # Plot trajectories
     n_chains = trajectories.shape[0]
     if trajectory_colors is None:
         trajectory_colors = plt.cm.tab10(np.linspace(0, 1, n_chains))
-    
+
     trajectories_np = trajectories.detach().cpu().numpy()
     for i, trajectory in enumerate(trajectories_np):
-        color = trajectory_colors[i] if i < len(trajectory_colors) else 'gray'
-        ax.plot(trajectory[:, 0], trajectory[:, 1], color=color, alpha=trajectory_alpha, linewidth=line_width)
-        ax.scatter(trajectory[0, 0], trajectory[0, 1], color=color, marker='o', s=30, label=f'Start {i+1}')
-        ax.scatter(trajectory[-1, 0], trajectory[-1, 1], color=color, marker='x', s=50, label=f'End {i+1}')
-    
+        color = trajectory_colors[i] if i < len(trajectory_colors) else "gray"
+        ax.plot(
+            trajectory[:, 0],
+            trajectory[:, 1],
+            color=color,
+            alpha=trajectory_alpha,
+            linewidth=line_width,
+        )
+        ax.scatter(
+            trajectory[0, 0],
+            trajectory[0, 1],
+            color=color,
+            marker="o",
+            s=30,
+            label=f"Start {i+1}",
+        )
+        ax.scatter(
+            trajectory[-1, 0],
+            trajectory[-1, 1],
+            color=color,
+            marker="x",
+            s=50,
+            label=f"End {i+1}",
+        )
+
     # Set title and labels
     if title:
         ax.set_title(title)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+
     # Set limits
     ax.set_xlim(x_range)
     ax.set_ylim(y_range)
-    
+
     # Add legend for first chain only to avoid cluttering
     handles, labels = ax.get_legend_handles_labels()
     if len(handles) > 0:
         # Only show legend for the first trajectory's start/end
-        ax.legend(handles[:2], labels[:2], loc='best')
-    
+        ax.legend(handles[:2], labels[:2], loc="best")
+
     # Save figure if requested
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
-    return fig 
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
+    return fig

@@ -2,6 +2,10 @@
 
 ## Contents
 
+### Modules
+
+- [Visualization](visualization.md)
+
 ## API Reference
 
 ::: torchebm.utils

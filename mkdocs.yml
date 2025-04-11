@@ -129,7 +129,8 @@ nav:
       - Mcmc:
         - api/torchebm/samplers/mcmc/index.md
         - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
-    - Utils: api/torchebm/utils/index.md
+    - Utils:
+      - Visualization: api/torchebm/utils/visualization/index.md
   - Examples:
     - Overview: examples/index.md
     - Energy Functions:
