@@ -331,7 +331,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         grad = gradient_fn(position)
         # Clip extreme gradient values to prevent instability
         grad = torch.clamp(grad, min=-1e6, max=1e6)
-        
+
         # Half-step momentum update
         p_half = momentum - 0.5 * self.step_size * grad
 
@@ -354,7 +354,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         grad_new = gradient_fn(x_new)
         grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
         p_new = p_half - 0.5 * self.step_size * grad_new
-        
+
         return x_new, p_new
 
     def _leapfrog_integration(
@@ -385,7 +385,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         for _ in range(self.n_leapfrog_steps):
             x, p = self._leapfrog_step(x, p, gradient_fn)
-            
+
             # Check for NaN values after each step
             if torch.isnan(x).any() or torch.isnan(p).any():
                 # If NaN values appear, break the integration
@@ -425,11 +425,15 @@ class HamiltonianMonteCarlo(BaseSampler):
         # Compute current Hamiltonian: H = U(q) + K(p)
         # Add numerical stability with clamping
         current_energy = self.energy_function(current_position)
-        current_energy = torch.clamp(current_energy, min=-1e10, max=1e10)  # Prevent extreme energy values
-        
+        current_energy = torch.clamp(
+            current_energy, min=-1e10, max=1e10
+        )  # Prevent extreme energy values
+
         current_kinetic = self._compute_kinetic_energy(current_momentum)
-        current_kinetic = torch.clamp(current_kinetic, min=0, max=1e10)  # Kinetic energy should be non-negative
-        
+        current_kinetic = torch.clamp(
+            current_kinetic, min=0, max=1e10
+        )  # Kinetic energy should be non-negative
+
         current_hamiltonian = current_energy + current_kinetic
 
         # Perform leapfrog integration to get proposal
@@ -440,17 +444,17 @@ class HamiltonianMonteCarlo(BaseSampler):
         # Compute proposed Hamiltonian with similar numerical stability
         proposed_energy = self.energy_function(proposed_position)
         proposed_energy = torch.clamp(proposed_energy, min=-1e10, max=1e10)
-        
+
         proposed_kinetic = self._compute_kinetic_energy(proposed_momentum)
         proposed_kinetic = torch.clamp(proposed_kinetic, min=0, max=1e10)
-        
+
         proposed_hamiltonian = proposed_energy + proposed_kinetic
 
         # Metropolis-Hastings acceptance criterion
         # Clamp hamiltonian_diff to avoid overflow in exp()
         hamiltonian_diff = current_hamiltonian - proposed_hamiltonian
         hamiltonian_diff = torch.clamp(hamiltonian_diff, max=50, min=-50)
-        
+
         acceptance_prob = torch.min(
             torch.ones(batch_size, device=self.device), torch.exp(hamiltonian_diff)
         )
@@ -530,14 +534,16 @@ class HamiltonianMonteCarlo(BaseSampler):
             # If dim is not provided, try to infer from the energy function
             if dim is None:
                 # Check if it's GaussianEnergy which has mean attribute
-                if hasattr(self.energy_function, 'mean'):
+                if hasattr(self.energy_function, "mean"):
                     dim = self.energy_function.mean.shape[0]
                 else:
-                    raise ValueError("dim must be provided when x is None and cannot be inferred from the energy function")
+                    raise ValueError(
+                        "dim must be provided when x is None and cannot be inferred from the energy function"
+                    )
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
         else:
             x = x.to(self.device)
-            
+
         # Get dimension from x for later use
         dim = x.shape[1]
 
@@ -552,7 +558,9 @@ class HamiltonianMonteCarlo(BaseSampler):
                 n_steps, device=self.device, dtype=self.dtype
             )
 
-        with torch.amp.autocast(device_type="cuda" if self.device.type == "cuda" else "cpu"):
+        with torch.amp.autocast(
+            device_type="cuda" if self.device.type == "cuda" else "cpu"
+        ):
             for i in range(n_steps):
                 # Perform single HMC step
                 x, acceptance_prob, accepted = self.hmc_step(x)
@@ -562,21 +570,35 @@ class HamiltonianMonteCarlo(BaseSampler):
 
                 if return_diagnostics:
                     # Calculate diagnostics with numerical stability safeguards
-                    mean_x = x.mean(dim=0).unsqueeze(0).expand_as(x)
-                    
-                    # Clamp variance calculations to prevent NaN values
-                    # First compute variance in a numerically stable way
-                    # and then clamp to ensure positive finite values
-                    x_centered = x - mean_x
-                    var_x = torch.mean(x_centered**2, dim=0)
-                    var_x = torch.clamp(var_x, min=1e-10, max=1e10)  # Prevent zero/extreme variances
-                    var_x = var_x.unsqueeze(0).expand_as(x)
-                    
+
+                    if n_samples > 1:
+                        # mean_x = x.mean(dim=0).unsqueeze(0).expand_as(x)
+                        mean_x = x.mean(dim=0, keepdim=True)
+
+                        # Clamp variance calculations to prevent NaN values
+                        # First compute variance in a numerically stable way
+                        # and then clamp to ensure positive finite values
+                        # x_centered = x - mean_x
+                        # var_x = torch.mean(x_centered**2, dim=0)
+                        var_x = x.var(dim=0, unbiased=False, keepdim=True)
+                        var_x = torch.clamp(
+                            var_x, min=1e-10, max=1e10
+                        )  # Prevent zero/extreme variances
+                        # var_x = var_x.unsqueeze(0).expand_as(x)
+                    else:
+                        # For single sample, mean and variance are trivial
+                        mean_x = x.clone()
+                        var_x = torch.zeros_like(x)
+
                     # Energy values (ensure finite values)
-                    energy = self.energy_function(x)  # assumed to have shape (n_samples,)
-                    energy = torch.clamp(energy, min=-1e10, max=1e10)  # Prevent extreme energy values
+                    energy = self.energy_function(
+                        x
+                    )  # assumed to have shape (n_samples,)
+                    energy = torch.clamp(
+                        energy, min=-1e10, max=1e10
+                    )  # Prevent extreme energy values
                     energy = energy.unsqueeze(1).expand_as(x)
-                    
+
                     # Acceptance rate is already between 0 and 1
                     acceptance_rate = accepted.float().mean()
                     acceptance_rate_expanded = torch.ones_like(x) * acceptance_rate

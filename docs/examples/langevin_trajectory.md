@@ -76,11 +76,11 @@ class MultimodalEnergy:
 
         # Calculate gradient
         normalizer = torch.sum(weights_exp, dim=-1, keepdim=True)
-        gradient = -torch.sum(
+        gradient = torch.sum(
             weights_exp.unsqueeze(-1) * diff / normalizer.unsqueeze(-1), dim=1
         )
 
-        return gradient.squeeze()  # Ensure consistent output shape
+        return gradient
 
     def to(self, device):
         self.device = device
@@ -89,58 +89,9 @@ class MultimodalEnergy:
         return self
 ```
 
-## Modified Langevin Dynamics Sampler
-
-Next, we create a slightly modified version of the Langevin dynamics sampler to ensure consistent tensor shapes during trajectory tracking:
-
-```python
-class ModifiedLangevinDynamics(LangevinDynamics):
-    """
-    Modified version of LangevinDynamics to ensure consistent tensor shapes
-    """
-
-    def sample(
-        self, initial_state, n_steps, return_trajectory=False, return_diagnostics=False
-    ):
-        current_state = initial_state.clone()
-
-        if return_trajectory:
-            trajectory = [current_state.view(1, -1)]  # Ensure consistent shape
-
-        diagnostics = {"energies": []} if return_diagnostics else None
-
-        for _ in range(n_steps):
-            # Calculate gradient
-            grad = self.energy_function.gradient(current_state)
-
-            # Add noise
-            noise = torch.randn_like(current_state) * self.noise_scale
-
-            # Update state
-            current_state = current_state - self.step_size * grad + noise
-
-            if return_trajectory:
-                trajectory.append(current_state.view(1, -1))  # Ensure consistent shape
-
-            if return_diagnostics:
-                diagnostics["energies"].append(
-                    self.energy_function(current_state).item()
-                )
-
-        if return_trajectory:
-            result = torch.cat(trajectory, dim=0)  # Use cat instead of stack
-        else:
-            result = current_state
-
-        if return_diagnostics:
-            diagnostics["energies"] = torch.tensor(diagnostics["energies"])
-
-        return result, diagnostics if return_diagnostics else None
-```
-
 ## Visualization Function
 
-Finally, we write a function to visualize the energy landscape and sampling trajectories:
+Next, we create a function to visualize the energy landscape and multiple Langevin dynamics sampling trajectories:
 
 ```python
 def visualize_energy_landscape_and_sampling():
@@ -148,67 +99,84 @@ def visualize_energy_landscape_and_sampling():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.float32
 
-    # Create energy function with explicit dtype
+    # Create energy function
     energy_fn = MultimodalEnergy(device=device, dtype=dtype)
 
-    # Create modified sampler
-    sampler = ModifiedLangevinDynamics(
-        energy_function=energy_fn, step_size=0.01, noise_scale=0.1, device=device
+    # Initialize the standard Langevin dynamics sampler from the library
+    sampler = LangevinDynamics(
+        energy_function=energy_fn, 
+        step_size=0.01, 
+        noise_scale=0.1, 
+        device=device
     )
 
     # Create grid for energy landscape visualization
-    x = np.linspace(-2, 2, 100)
-    y = np.linspace(-2, 2, 100)
+    x = np.linspace(-3, 3, 100)
+    y = np.linspace(-3, 3, 100)
     X, Y = np.meshgrid(x, y)
 
-    # Calculate energy values with explicit dtype
+    # Calculate energy values
     grid_points = torch.tensor(
         np.stack([X.flatten(), Y.flatten()], axis=1), device=device, dtype=dtype
     )
-
     energy_values = energy_fn(grid_points).cpu().numpy().reshape(X.shape)
 
-    # Generate samples with trajectory tracking
-    n_chains = 5
-    initial_states = torch.randn(n_chains, 2, device=device, dtype=dtype) * 2
-
-    trajectories = []
-    for init_state in initial_states:
-        trajectory, _ = sampler.sample(
-            initial_state=init_state, n_steps=200, return_trajectory=True
-        )
-        trajectories.append(trajectory.cpu().numpy())
-
-    # Plotting
-    plt.figure(figsize=(12, 10))
-
-    # Plot energy landscape
+    # Set up sampling parameters
+    dim = 2  # 2D energy function
+    n_steps = 200
+    
+    # Create figure
+    plt.figure(figsize=(10, 8))
+    
+    # Plot energy landscape with clear contours
     contour = plt.contour(X, Y, energy_values, levels=20, cmap="viridis")
     plt.colorbar(contour, label="Energy")
-
-    # Plot sampling trajectories
-    colors = plt.cm.rainbow(np.linspace(0, 1, n_chains))
-    for idx, (trajectory, color) in enumerate(zip(trajectories, colors)):
-        plt.plot(
-            trajectory[:, 0],
-            trajectory[:, 1],
-            "o-",
-            color=color,
-            alpha=0.5,
-            markersize=2,
-            label=f"Chain {idx+1}",
+    
+    # Run multiple independent chains from different starting points
+    n_chains = 5
+    
+    # Define distinct colors for the chains
+    colors = plt.cm.tab10(np.linspace(0, 1, n_chains))
+    
+    # Generate seeds for random starting positions to make chains start in different areas
+    seeds = [42, 123, 456, 789, 999]
+    
+    for i, seed in enumerate(seeds):
+        # Set the seed for reproducibility
+        torch.manual_seed(seed)
+        
+        # Run one chain using the standard API
+        trajectory = sampler.sample_chain(
+            dim=dim,              # 2D space
+            n_samples=1,          # Single chain
+            n_steps=n_steps,      # Number of steps
+            return_trajectory=True  # Return full trajectory
         )
-        plt.plot(trajectory[0, 0], trajectory[0, 1], "o", color=color, markersize=8)
+        
+        # Extract trajectory data
+        traj_np = trajectory.cpu().numpy().squeeze(0)  # Remove n_samples dimension
+        
+        # Plot the trajectory
         plt.plot(
-            trajectory[-1, 0], trajectory[-1, 1], "*", color=color, markersize=12
+            traj_np[:, 0], 
+            traj_np[:, 1], 
+            'o-', 
+            color=colors[i], 
+            alpha=0.6, 
+            markersize=3,
+            label=f"Chain {i+1}"
         )
+        
+        # Mark the start and end points
+        plt.plot(traj_np[0, 0], traj_np[0, 1], 'o', color=colors[i], markersize=8)
+        plt.plot(traj_np[-1, 0], traj_np[-1, 1], '*', color=colors[i], markersize=10)
 
+    # Add labels and title
     plt.title("Energy Landscape and Langevin Dynamics Sampling Trajectories")
     plt.xlabel("x₁")
     plt.ylabel("x₂")
-    plt.grid(True)
+    plt.grid(True, alpha=0.3)
     plt.legend()
-    plt.show()
 ```
 
 ## Running the Example
@@ -234,6 +202,8 @@ When you run this example, you'll see a contour plot of the energy landscape wit
 
 </div>
 <div markdown>
+
+![Langevin Dynamics Sampling Trajectories](../assets/images/examples/langevin_trajectory.png)
 
 The key insights from this visualization:
 
@@ -262,6 +232,30 @@ The visualization helps understand these challenges by showing:
 - If certain modes are favored over others
 - The impact of initialization on the final sampling distribution
 
+## API Usage Notes
+
+This example demonstrates several key aspects of using the TorchEBM library:
+
+1. **Creating custom energy functions**: How to implement a custom energy function with gradient support
+2. **Using the Langevin dynamics sampler**: Using the standard library API
+3. **Parallel chain sampling**: Running multiple chains to explore different areas of the space
+4. **Trajectory tracking**: Enabling `return_trajectory=True` to record the full sampling path
+
+The standard pattern for using `LangevinDynamics.sample_chain` is:
+
+```python
+# Initialize the sampler
+sampler = LangevinDynamics(energy_function=my_energy_fn, step_size=0.01)
+
+# Run sampling with trajectory tracking
+trajectory = sampler.sample_chain(
+    dim=2,                 # Dimension of the space
+    n_samples=10,          # Number of parallel chains
+    n_steps=100,           # Number of steps to run
+    return_trajectory=True # Return the full trajectory rather than just final points
+)
+```
+
 ## Extensions and Variations
 
 This example can be extended in various ways:
@@ -269,9 +263,12 @@ This example can be extended in various ways:
 1. **Compare different samplers**: Add HMC or other samplers for comparison
 2. **Vary step size and noise**: Show the impact of different parameters
 3. **Use more complex energy functions**: Create energy functions with more challenging landscapes
-4. **Implement adaptive step sizes**: Show how adaptive methods improve sampling efficiency
-5. **Add diagnostics visualization**: Plot energy evolution and other metrics alongside trajectories
+4. **Add diagnostics visualization**: Plot energy evolution and other metrics alongside trajectories
 
-## Conclusion
+## Visualization Results
 
-Visualizing sampling trajectories provides valuable insights into the behavior of sampling algorithms and the challenges they face when exploring complex energy landscapes. This understanding can help in selecting and tuning appropriate sampling methods for different problems. 
+When running the example, you'll see a visualization of the energy landscape with multiple sampling chains:
+
+![Energy Landscape and Langevin Sampling Trajectories](../assets/images/examples/langevin_trajectory.png)
+
+*This visualization shows a multimodal energy landscape (contour lines) with five independent Langevin dynamics sampling chains (colored trajectories). Each chain starts from a random position (marked by a circle) and evolves through 200 steps (ending at the stars). The trajectories show how the chains are attracted to the energy function's local minima. Note how some chains follow the gradient to the nearest minimum, while others may explore multiple regions of the space.*

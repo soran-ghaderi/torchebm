@@ -108,7 +108,7 @@ pip install torchebm
     <div class="energy-caption energy-caption-bottom">
     **Double Well Energy**
     
-    $E(x) = a(x^2 - b)^2$
+    $E(x) = h \sum_{i=1}^n \left[(x_i^2 - 1)^2\right]$
     </div>
     </div>
     <div class="energy-others" markdown>
@@ -122,8 +122,7 @@ pip install torchebm
     from torchebm.core import DoubleWellEnergy
     
     energy_fn = DoubleWellEnergy(
-        a=1.0, 
-        b=2.0
+        barrier_height=2.0
     )
     ```
 
@@ -136,7 +135,7 @@ pip install torchebm
     <div class="energy-caption energy-caption-bottom">
     **Rastrigin Energy**
     
-    $E(x) = An + \sum_{i=1}^n \left[ x_i^2 - A\cos(2\pi x_i) \right]$
+    $E(x) = an + \sum_{i=1}^n \left[ x_i^2 - a\cos(2\pi x_i) \right]$
     </div>
     </div>
     <div class="energy-others" markdown>
@@ -150,7 +149,7 @@ pip install torchebm
     from torchebm.core import RastriginEnergy
     
     energy_fn = RastriginEnergy(
-        A=10.0
+        a=10.0
     )
     ```
 

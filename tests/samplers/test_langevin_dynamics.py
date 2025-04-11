@@ -19,10 +19,13 @@ def energy_function(request):
 @pytest.fixture
 def langevin_sampler(request, energy_function):
     if not hasattr(request, "param"):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
     else:
         device = request.param.get(
-            "device", "cuda" if torch.cuda.is_available() else "cpu"
+            "device",
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"),
         )
 
     energy_function = energy_function.to(device)
@@ -49,8 +52,14 @@ def test_langevin_dynamics_initialization_invalid_params(energy_function):
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
-        ({"mean": torch.zeros(2), "cov": torch.eye(2)}, {"device": "cuda"}),
-        ({"mean": torch.zeros(2), "cov": 2 * torch.eye(2)}, {"device": "cuda"}),
+        (
+            {"mean": torch.zeros(2), "cov": torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
+        (
+            {"mean": torch.zeros(2), "cov": 2 * torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
     ],
     indirect=True,  # This tells pytest to apply parameters to fixtures
 )
@@ -67,8 +76,14 @@ def test_langevin_dynamics_sample(langevin_sampler):
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
-        ({"mean": torch.zeros(2), "cov": torch.eye(2)}, {"device": "cuda"}),
-        ({"mean": torch.zeros(2), "cov": 2 * torch.eye(2)}, {"device": "cuda"}),
+        (
+            {"mean": torch.zeros(2), "cov": torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
+        (
+            {"mean": torch.zeros(2), "cov": 2 * torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
     ],
     indirect=True,  # This tells pytest to apply parameters to fixtures
 )
@@ -85,8 +100,14 @@ def test_langevin_dynamics_sample_trajectory(langevin_sampler):
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
-        ({"mean": torch.zeros(2), "cov": torch.eye(2)}, {"device": "cuda"}),
-        ({"mean": torch.zeros(2), "cov": 2 * torch.eye(2)}, {"device": "cuda"}),
+        (
+            {"mean": torch.zeros(2), "cov": torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
+        (
+            {"mean": torch.zeros(2), "cov": 2 * torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
     ],
     indirect=True,  # This tells pytest to apply parameters to fixtures
 )
@@ -104,8 +125,14 @@ def test_langevin_dynamics_sample_chain(langevin_sampler):
 @pytest.mark.parametrize(
     "energy_function, langevin_sampler",
     [
-        ({"mean": torch.zeros(2), "cov": torch.eye(2)}, {"device": "cuda"}),
-        ({"mean": torch.zeros(2), "cov": 2 * torch.eye(2)}, {"device": "cuda"}),
+        (
+            {"mean": torch.zeros(2), "cov": torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
+        (
+            {"mean": torch.zeros(2), "cov": 2 * torch.eye(2)},
+            {"device": torch.device("cuda")},
+        ),
     ],
     indirect=True,  # This tells pytest to apply parameters to fixtures
 )
@@ -126,8 +153,8 @@ def test_langevin_dynamics_reproducibility(langevin_sampler):
 @pytest.mark.parametrize(
     "langevin_sampler",
     [
-        ({"device": "cpu"}),
-        ({"device": "cuda"}),
+        ({"device": torch.device("cpu")}),
+        ({"device": torch.device("cuda")}),
     ],
     indirect=True,  # This tells pytest to apply parameters to fixtures
 )

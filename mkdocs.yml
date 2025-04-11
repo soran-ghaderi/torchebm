@@ -83,7 +83,6 @@ nav:
       - Loss Functions: guides/loss_functions.md
       - Custom Neural Networks: guides/custom_neural_networks.md
       - Training EBMs: guides/training.md
-      - Visualization: guides/visualization.md
   - API Reference:
     - Overview: api/index.md
     - Core:
@@ -133,10 +132,13 @@ nav:
     - Utils: api/torchebm/utils/index.md
   - Examples:
     - Overview: examples/index.md
-    - Energy Landscape Visualization: examples/energy_visualization.md
-    - Langevin Dynamics Sampling: examples/langevin_dynamics.md
-    - Hamiltonian Monte Carlo: examples/hmc.md
-    - Langevin Sampler Trajectory: examples/langevin_trajectory.md
+    - Energy Functions:
+      - Overview: examples/core/energy_functions.md
+    - Samplers:
+      - Langevin Dynamics: examples/samplers/langevin.md
+      - Hamiltonian Monte Carlo: examples/samplers/hmc.md
+    - Visualization:
+      - Overview: examples/visualization/index.md
   - Developer Guide:
     - Overview: developer_guide/index.md
     - Contributing: developer_guide/contributing.md
