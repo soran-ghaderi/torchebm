@@ -162,19 +162,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
       with:
-        ref: ${{ needs.update-tag.outputs.new_tag }}
-
-    - name: Update version in pyproject.toml
-      run: |
-        new_version="${{ needs.update-tag.outputs.new_tag }}"
-        # Remove the 'v' prefix for the version number in pyproject.toml
-        version_number="${new_version#v}"
-        sed -i "s/^version = .*/version = \"$version_number\"/" pyproject.toml
-        git config user.name github-actions
-        git config user.email github-actions@github.com
-        git add pyproject.toml
-        git commit -m "Update version to $version_number [skip ci]"
-        git push origin HEAD:master
+        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v4
