@@ -12,7 +12,7 @@ from typing import Tuple
 from torch.xpu import device
 
 import torch
-from torchebm.core import GaussianEnergy
+from torchebm.core import GaussianEnergy, DoubleWellEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 # Define a 10D Gaussian energy function

@@ -239,12 +239,26 @@ class LangevinDynamics(BaseSampler):
             ```
         """
 
-        gradient_fn = partial(self.energy_function.gradient)
+        # gradient_fn = partial(self.energy_function.gradient)
+        # new_x = (
+        #     prev_x
+        #     - self.step_size * gradient_fn(prev_x)
+        #     + torch.sqrt(torch.tensor(2.0 * self.step_size, device=prev_x.device))
+        #     * noise
+        # )
+        # return new_x
+
+        gradient = self.energy_function.gradient(prev_x)
+
+        # Apply noise scaling correctly
+        scaled_noise = self.noise_scale * noise
+
+        # Apply proper step size and noise scaling
         new_x = (
             prev_x
-            - self.step_size * gradient_fn(prev_x)
+            - self.step_size * gradient
             + torch.sqrt(torch.tensor(2.0 * self.step_size, device=prev_x.device))
-            * noise
+            * scaled_noise
         )
         return new_x
 
@@ -314,22 +328,36 @@ class LangevinDynamics(BaseSampler):
         if return_diagnostics:
             diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
-        with torch.amp.autocast(device_type="cuda" if self.device == "cuda" else "cpu"):
-            noise = torch.randn_like(x, device=self.device)
+        with torch.amp.autocast(
+            device_type="cuda" if self.device.type == "cuda" else "cpu"
+        ):
             for i in range(n_steps):
+                # Generate fresh noise for each step
+                noise = torch.randn_like(x, device=self.device)
+
                 x = self.langevin_step(x, noise)
+
                 if return_trajectory:
                     trajectory[:, i, :] = x
 
                 if return_diagnostics:
-                    mean_x = x.mean(dim=0)
-                    var_x = x.var(dim=0)
-                    energy = self.energy_function.gradient(x)
+                    # Handle mean and variance safely regardless of batch size
+                    if n_samples > 1:
+                        mean_x = x.mean(dim=0, keepdim=True)
+                        var_x = x.var(dim=0, unbiased=False, keepdim=True)
+                    else:
+                        # For single sample, just use the value and zeros for variance
+                        mean_x = x.clone()
+                        var_x = torch.zeros_like(x)
 
-                    # Stack the diagnostics along the second dimension (index 1)
-                    diagnostics[i, 0, :, :] = mean_x
-                    diagnostics[i, 1, :, :] = var_x
-                    diagnostics[i, 2, :, :] = energy
+                    # Compute energy values
+                    energy = self.energy_function(x)
+
+                    # Store the diagnostics safely
+                    for b in range(n_samples):
+                        diagnostics[i, 0, b, :] = mean_x[b if n_samples > 1 else 0]
+                        diagnostics[i, 1, b, :] = var_x[b if n_samples > 1 else 0]
+                        diagnostics[i, 2, b, :] = energy[b].reshape(-1)
 
         if return_trajectory:
             if return_diagnostics:

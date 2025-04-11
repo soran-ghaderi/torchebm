@@ -9,21 +9,21 @@ This section contains practical examples that demonstrate how to use TorchEBM fo
 
 <div class="grid cards" markdown>
 
--   :material-terrain:{ .lg .middle } __Energy Landscape Visualization__
+-   :material-terrain:{ .lg .middle } __Energy Functions__
 
     ---
 
-    Visualize energy functions to understand their landscapes and characteristics.
+    Explore and visualize various energy functions and their properties.
 
-    [:octicons-arrow-right-24: Energy Visualization](energy_visualization.md)
+    [:octicons-arrow-right-24: Energy Functions](core/energy_functions.md)
 
--   :material-sigma:{ .lg .middle } __Langevin Dynamics Sampling__
+-   :material-sigma:{ .lg .middle } __Langevin Dynamics__
 
     ---
 
     Sample from various distributions using Langevin dynamics.
 
-    [:octicons-arrow-right-24: Langevin Dynamics](langevin_dynamics.md)
+    [:octicons-arrow-right-24: Langevin Dynamics](samplers/langevin.md)
 
 -   :material-axis-arrow:{ .lg .middle } __Hamiltonian Monte Carlo__
 
@@ -31,15 +31,15 @@ This section contains practical examples that demonstrate how to use TorchEBM fo
 
     Learn to use Hamiltonian Monte Carlo for efficient sampling.
 
-    [:octicons-arrow-right-24: Hamiltonian Monte Carlo](hmc.md)
+    [:octicons-arrow-right-24: Hamiltonian Monte Carlo](samplers/hmc.md)
 
--   :material-chart-line:{ .lg .middle } __Langevin Sampler Trajectory__
+-   :material-chart-line:{ .lg .middle } __Visualization Tools__
 
     ---
 
-    Visualize sampling trajectories on multimodal energy landscapes.
+    Advanced visualization tools for energy landscapes and sampling results.
 
-    [:octicons-arrow-right-24: Langevin Trajectory](langevin_trajectory.md)
+    [:octicons-arrow-right-24: Visualization](visualization/index.md)
 
 </div>
 
@@ -55,7 +55,7 @@ This section contains practical examples that demonstrate how to use TorchEBM fo
 
 ## Running the Examples
 
-All examples can be run directly from the command line:
+All examples can be run using the examples main.py script:
 
 ```bash
 # Clone the repository
@@ -65,8 +65,11 @@ cd torchebm
 # Set up your environment
 pip install -e .
 
-# Run an example
-python examples/energy_fn_visualization.py
+# List all available examples
+python examples/main.py --list
+
+# Run a specific example
+python examples/main.py samplers/langevin/visualization_trajectory
 ```
 
 <div class="grid" markdown>
@@ -98,16 +101,16 @@ energy_fn = GaussianEnergy(mean, cov).to(device)
 </div>
 </div>
 
-## Example Files
+## Key Example Files
 
-You can find all example files in the [examples directory](https://github.com/soran-ghaderi/torchebm/tree/master/examples) of the TorchEBM repository:
+You'll find examples organized into the following categories:
 
-| File | Description |
-|------|-------------|
-| `energy_fn_visualization.py` | Visualizes various energy function landscapes |
-| `langevin_dynamics_sampling.py` | Demonstrates Langevin dynamics sampling |
-| `hmc_examples.py` | Shows usage of Hamiltonian Monte Carlo |
-| `lagevin_sampler_trajectory.py` | Visualizes sampling trajectories |
+| Category | Description | Key Files |
+|----------|-------------|-----------|
+| `core/energy_functions/` | Energy function visualization and properties | `landscape_2d.py`, `multimodal.py`, `parametric.py` |
+| `samplers/langevin/` | Langevin dynamics sampling examples | `gaussian_sampling.py`, `multimodal_sampling.py`, `visualization_trajectory.py` |
+| `samplers/hmc/` | Hamiltonian Monte Carlo examples | `gaussian_sampling.py`, `advanced.py`, `mass_matrix.py` |
+| `visualization/` | Advanced visualization tools | `basic/contour_plots.py`, `advanced/trajectory_animation.py`, `advanced/parallel_chains.py` |
 
 ## Additional Resources
 
