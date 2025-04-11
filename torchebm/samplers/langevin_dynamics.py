@@ -269,8 +269,11 @@ class LangevinDynamics(BaseSampler):
         dim: int = 10,
         n_steps: int = 100,
         n_samples: int = 1,
+        thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        *args,
+        **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         """
         Generate Markov chain samples using Langevin dynamics.
