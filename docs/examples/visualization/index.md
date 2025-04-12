@@ -230,4 +230,3 @@ python examples/main.py visualization/advanced/energy_over_time
 For more information on visualization tools, see:
 
 - [Matplotlib Documentation](https://matplotlib.org/)
-- [API Reference: Utilities](../../api/utils/visualization.md) 

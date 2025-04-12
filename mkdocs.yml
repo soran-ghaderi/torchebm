@@ -83,6 +83,7 @@ nav:
       - Loss Functions: guides/loss_functions.md
       - Custom Neural Networks: guides/custom_neural_networks.md
       - Training EBMs: guides/training.md
+      - Visualization: guides/visualization.md
   - API Reference:
     - Overview: api/index.md
     - Core:

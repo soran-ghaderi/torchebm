@@ -65,7 +65,7 @@ plt.show()
 
 ### Sample Distribution Visualization
 
-![HMC Sampling from 2D Gaussian](../assets/images/examples/hmc_standard.png)
+![HMC Sampling from 2D Gaussian](../../assets/images/examples/hmc_standard.png)
 
 *This plot shows 1000 samples from a 2D Gaussian distribution generated using Hamiltonian Monte Carlo. Note how the samples efficiently cover the target distribution's high-probability regions. The samples reflect the covariance structure with the characteristic elliptical shape around the mean [1.0, -1.0], represented by the red point and dashed ellipse.*
 
@@ -245,7 +245,7 @@ When using a diagonal mass matrix, each dimension can have different momentum sc
 
 ### Custom Mass Matrix Results
 
-![HMC Sampling with Custom Mass Matrix](../assets/images/examples/hmc_custom_mass.png)
+![HMC Sampling with Custom Mass Matrix](../../assets/images/examples/hmc_custom_mass.png)
 
 *This plot shows samples from the same 2D Gaussian distribution using HMC with a custom diagonal mass parameter [0.1, 1.0]. The mass parameter affects the sampling dynamics, allowing more efficient exploration of the distribution. The red point indicates the mean, and the dashed ellipse represents the 2σ confidence region.*
 
@@ -253,7 +253,7 @@ When using a diagonal mass matrix, each dimension can have different momentum sc
 
 The following visualization compares standard HMC with HMC using a custom mass parameter:
 
-![HMC Implementation Comparison](../assets/images/examples/hmc_comparison.png)
+![HMC Implementation Comparison](../../assets/images/examples/hmc_comparison.png)
 
 *This side-by-side comparison shows standard HMC (left) and HMC with a custom mass parameter (right) sampling from the same Gaussian distribution. Both methods effectively sample the distribution, but with slightly different dynamics due to the mass parameter configuration.*
 

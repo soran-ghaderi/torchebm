@@ -114,5 +114,5 @@ python examples/main.py core/energy_functions/parametric
 
 For more information on energy functions, see:
 
-- [API Reference: Energy Functions](../../api/core/energy_functions.md)
+- [API Reference: Energy Functions](../../api/torchebm/core/energy_function/index.md)
 - [Guide: Energy Functions](../../guides/energy_functions.md) 
