@@ -3,14 +3,12 @@ BaseLoss functions for training energy-based models, including contrastive diver
 """
 
 from .contrastive_divergence import (
-    ContrastiveDivergenceBase,
     ContrastiveDivergence,
     PersistentContrastiveDivergence,
     ParallelTemperingCD,
 )
 
 __all__ = [
-    "ContrastiveDivergenceBase",
     "ContrastiveDivergence",
     "PersistentContrastiveDivergence",
     "ParallelTemperingCD",

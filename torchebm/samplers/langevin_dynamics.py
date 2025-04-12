@@ -250,7 +250,7 @@ class LangevinDynamics(BaseSampler):
 
         gradient = self.energy_function.gradient(prev_x)
 
-        # Apply noise scaling correctly
+        # Apply noise scaling
         scaled_noise = self.noise_scale * noise
 
         # Apply proper step size and noise scaling

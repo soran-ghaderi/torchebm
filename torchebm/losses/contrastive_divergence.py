@@ -5,12 +5,7 @@ from torch import nn
 import math
 from abc import abstractmethod
 
-from torch.nn.modules.module import T
-from torch.utils.hooks import RemovableHandle
-
-from torchebm.core import BaseSampler
-from torchebm.core.base_energy_function import BaseEnergyFunction
-from torchebm.core.base_loss import BaseContrastiveDivergence
+from torchebm.core import BaseContrastiveDivergence
 
 
 class ContrastiveDivergence(BaseContrastiveDivergence):
@@ -21,21 +16,33 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
         batch_size = x.shape[0]
 
-        if self.persistent and self.chain is not None:
-            init_samples = self.chain
+        if self.persistent:
+            if self.chain is None or self.chain.shape[0] != batch_size:
+                print(
+                    f"Initializing persistent chain (size {batch_size})..."
+                )  # Logging
+                init_noise = torch.randn_like(x)
+                # self.chain = self.sampler.sample_chain(x=init_noise, n_steps=self.n_stpes).detach() # improve a bit before starting maybe? decide later..
+                self.chain = init_noise.detach()
+
+            start_points = self.chain.to(self.device, dtype=self.dtype)
+
         else:
-            init_samples = torch.randn_like(x)
+            start_points = x.detach()
 
         # generate negative samples
         pred_samples = self.sampler.sample(
-            x=x,
+            x=start_points,
             n_steps=self.n_steps,
-            n_samples=batch_size,
-        )
+            # n_samples=batch_size,
+        ).detach()
+
+        if self.persistent:
+            self.chain = pred_samples.detach()
 
         loss = self.compute_loss(x, pred_samples, *args, **kwargs)
 
-        return loss, pred_samples
+        return loss, pred_samples.detach()
 
     def compute_loss(
         self, x: torch.Tensor, pred_x: torch.Tensor, *args, **kwargs
@@ -45,7 +52,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         pred_x_energy = self.energy_function(pred_x)
 
         # Contrastive Divergence loss: E[data] - E[model]
-        loss = torch.mean(pred_x_energy - x_energy)
+        loss = torch.mean(x_energy - pred_x_energy)
 
         return loss
 
@@ -71,7 +78,7 @@ class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     #     return self.buffer[idx]
 
 
-class ParallelTemperingCD(ContrastiveDivergenceBase):
+class ParallelTemperingCD(BaseContrastiveDivergence):
     def __init__(self, temps=[1.0, 0.5], k=5):
         super().__init__(k)
         self.temps = temps  # List of temperatures

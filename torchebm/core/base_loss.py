@@ -43,7 +43,8 @@ class BaseContrastiveDivergence(BaseLoss):
         self.device = device or (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
-        self.chain = None  # For persistent CD
+        # self.chain = None  # For persistent CD
+        self.register_buffer("chain", None)  # For persistent CD
 
     def __call__(self, x, *args, **kwargs):
         """

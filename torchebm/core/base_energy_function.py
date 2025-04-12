@@ -125,7 +125,7 @@ class BaseEnergyFunction(nn.Module, ABC):
         # Cast gradient back to the original dtype before returning
         gradient = gradient_float32.to(original_dtype)
 
-        return gradient
+        return gradient.detach()
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """Alias for the forward method for standard PyTorch module usage."""

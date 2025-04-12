@@ -13,7 +13,7 @@ from .base_energy_function import (
 )
 
 from .base_sampler import BaseSampler
-from .base_loss import BaseLoss
+from .base_loss import BaseLoss, BaseContrastiveDivergence
 
 # from .trainer import Trainer
 from .base_optimizer import Optimizer
@@ -30,6 +30,7 @@ __all__ = [
     # Base classes and utilities
     "BaseSampler",
     "BaseLoss",
+    "BaseContrastiveDivergence",
     # "Trainer",
     # "get_optimizer",
     # "score_matching_loss",
