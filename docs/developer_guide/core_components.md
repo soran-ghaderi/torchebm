@@ -420,7 +420,7 @@ class ContrastiveDivergence(BaseLoss):
         
         Args:
             sampler: Sampler to generate model samples
-            k: Number of sampling steps (CD-k)
+            k: Number of sampling steps (CD-n_steps)
             batch_size: Optional batch size for sampling
         """
         super().__init__()

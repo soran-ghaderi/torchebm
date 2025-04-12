@@ -273,10 +273,10 @@ class GaussianEnergy(BaseEnergyFunction):
 
 class HarmonicEnergy(BaseEnergyFunction):
     """
-    Energy function for a harmonic oscillator. E(x) = 0.5 * k * Σ(x²).
+    Energy function for a harmonic oscillator. E(x) = 0.5 * n_steps * Σ(x²).
 
     This energy function represents a quadratic potential centered at the origin,
-    equivalent to a Gaussian distribution with zero mean and variance proportional to 1/k.
+    equivalent to a Gaussian distribution with zero mean and variance proportional to 1/n_steps.
 
     Args:
         k (float): Spring constant.
@@ -287,7 +287,7 @@ class HarmonicEnergy(BaseEnergyFunction):
         self.k = k
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Computes the harmonic oscillator energy: 0.5 * k * Σ(x²)."""
+        """Computes the harmonic oscillator energy: 0.5 * n_steps * Σ(x²)."""
         # Ensure x is compatible shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
@@ -296,12 +296,12 @@ class HarmonicEnergy(BaseEnergyFunction):
 
     # Override gradient for efficiency (analytical gradient)
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
-    #     """Computes the analytical gradient: k * x."""
+    #     """Computes the analytical gradient: n_steps * x."""
     #     # Ensure x is compatible shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
     #
-    #     return self.k * x
+    #     return self.n_steps * x
 
 
 class RosenbrockEnergy(BaseEnergyFunction):

@@ -27,7 +27,7 @@ class BaseContrastiveDivergence(BaseLoss):
         self,
         energy_function: BaseEnergyFunction,
         sampler: BaseSampler,
-        k: int = 1,
+        n_steps: int = 1,
         persistent: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
@@ -37,7 +37,7 @@ class BaseContrastiveDivergence(BaseLoss):
         super().__init__()
         self.energy_function = energy_function
         self.sampler = sampler
-        self.k = k
+        self.n_steps = n_steps
         self.persistent = persistent
         self.dtype = dtype
         self.device = device or (
@@ -72,7 +72,7 @@ class BaseContrastiveDivergence(BaseLoss):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
                 - loss: The contrastive divergence loss
-                - neg_x: Generated negative samples
+                - pred_x: Generated negative samples
         """
         pass
 
@@ -93,13 +93,13 @@ class BaseContrastiveDivergence(BaseLoss):
 
     @abstractmethod
     def compute_loss(
-        self, x: torch.Tensor, neg_x: torch.Tensor, *args, **kwargs
+        self, x: torch.Tensor, pred_x: torch.Tensor, *args, **kwargs
     ) -> torch.Tensor:
         """
 
         Args:
             x: Real data samples (positive samples).
-            neg_x: Generated negative samples.
+            pred_x: Generated negative samples.
 
         Returns:
             torch.Tensor: The contrastive divergence loss

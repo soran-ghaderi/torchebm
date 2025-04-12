@@ -14,20 +14,45 @@ from torchebm.core.base_loss import BaseContrastiveDivergence
 
 
 class ContrastiveDivergence(BaseContrastiveDivergence):
-    def __init__(self, k=1):
-        super().__init__()
-        self.k = k  # Number of sampling steps
 
-    def forward(self, energy_model, x_pos):
-        """Compute the CD loss: E(x_pos) - E(x_neg)"""
-        x_neg = self.sample(energy_model, x_pos)
-        loss = energy_model(x_pos).mean() - energy_model(x_neg).mean()
+    def forward(
+        self, x: torch.Tensor, *args, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        batch_size = x.shape[0]
+
+        if self.persistent and self.chain is not None:
+            init_samples = self.chain
+        else:
+            init_samples = torch.randn_like(x)
+
+        # generate negative samples
+        pred_samples = self.sampler.sample(
+            x=x,
+            n_steps=self.n_steps,
+            n_samples=batch_size,
+        )
+
+        loss = self.compute_loss(x, pred_samples, *args, **kwargs)
+
+        return loss, pred_samples
+
+    def compute_loss(
+        self, x: torch.Tensor, pred_x: torch.Tensor, *args, **kwargs
+    ) -> torch.Tensor:
+
+        x_energy = self.energy_function(x)
+        pred_x_energy = self.energy_function(pred_x)
+
+        # Contrastive Divergence loss: E[data] - E[model]
+        loss = torch.mean(pred_x_energy - x_energy)
+
         return loss
 
 
 class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     def __init__(self, buffer_size=100):
-        super().__init__(k=1)
+        super().__init__(n_steps=1)
         self.buffer = None  # Persistent chain state
         self.buffer_size = buffer_size
 
@@ -38,7 +63,7 @@ class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     #                                   device=x_pos.device)
     #
     #     # Update buffer with Gibbs steps
-    #     for _ in range(self.k):
+    #     for _ in range(self.n_steps):
     #         self.buffer = energy_model.gibbs_step(self.buffer)
     #
     #     # Return a subset of the buffer as negative samples
@@ -53,7 +78,7 @@ class ParallelTemperingCD(ContrastiveDivergenceBase):
 
     # def sample(self, energy_model, x_pos):
     #     chains = [x_pos.detach().clone() for _ in self.temps]
-    #     for _ in range(self.k):
+    #     for _ in range(self.n_steps):
     #         # Run Gibbs steps at each temperature
     #         for i, temp in enumerate(self.temps):
     #             chains[i] = energy_model.gibbs_step(chains[i], temp=temp)
