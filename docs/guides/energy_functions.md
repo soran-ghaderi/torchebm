@@ -126,23 +126,24 @@ energy_function = energy_function.to("cpu")
 
 ## Creating Custom Energy Functions
 
-You can create custom energy functions by subclassing the `EnergyFunction` base class:
+You can create custom energy functions by subclassing the `BaseEnergyFunction` base class:
 
 ```python
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 import torch
 
-class MyCustomEnergy(EnergyFunction):
+
+class MyCustomEnergy(BaseEnergyFunction):
     def __init__(self, param1, param2):
         super().__init__()
         self.param1 = param1
         self.param2 = param2
-    
+
     def forward(self, x):
         # Implement your energy function here
         # x shape: [batch_size, dimension]
         # Return shape: [batch_size]
-        return torch.sum(self.param1 * x**2 + self.param2 * torch.sin(x), dim=-1)
+        return torch.sum(self.param1 * x ** 2 + self.param2 * torch.sin(x), dim=-1)
 ```
 
 ## Neural Network Energy Functions
@@ -151,9 +152,10 @@ For more complex energy functions, you can use neural networks:
 
 ```python
 import torch.nn as nn
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 
-class NeuralNetworkEnergy(EnergyFunction):
+
+class NeuralNetworkEnergy(BaseEnergyFunction):
     def __init__(self, input_dim, hidden_dim):
         super().__init__()
         self.network = nn.Sequential(
@@ -163,7 +165,7 @@ class NeuralNetworkEnergy(EnergyFunction):
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
-    
+
     def forward(self, x):
         # x shape: [batch_size, input_dim]
         return self.network(x).squeeze(-1)  # Return shape: [batch_size]

@@ -133,7 +133,7 @@ from typing import Optional, Union, Tuple, Callable
 import torch
 
 from torchebm.core import BaseSampler
-from torchebm.core.energy_function import EnergyFunction
+from torchebm.core.base_energy_function import BaseEnergyFunction
 
 
 class HamiltonianMonteCarlo(BaseSampler):
@@ -166,7 +166,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         - **Adaptability**: Can be adjusted through mass matrices to handle varying scales
 
     Args:
-        energy_function (EnergyFunction): Energy function to sample from.
+        energy_function (BaseEnergyFunction): Energy function to sample from.
         step_size (float): Step size for leapfrog updates.
         n_leapfrog_steps (int): Number of leapfrog steps per proposal.
         mass (Optional[Tuple[float, torch.Tensor]]): Optional mass matrix or scalar for momentum sampling.
@@ -213,7 +213,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         step_size: float = 0.1,
         n_leapfrog_steps: int = 10,
         mass: Optional[Tuple[float, torch.Tensor]] = None,

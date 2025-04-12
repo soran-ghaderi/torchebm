@@ -116,8 +116,8 @@ from functools import partial
 
 import torch
 
-from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
-from torchebm.core.basesampler import BaseSampler
+from torchebm.core.base_energy_function import BaseEnergyFunction, GaussianEnergy
+from torchebm.core.base_sampler import BaseSampler
 
 
 class LangevinDynamics(BaseSampler):
@@ -148,7 +148,7 @@ class LangevinDynamics(BaseSampler):
         4. Optionally collect diagnostics such as mean, variance, and energy gradients.
 
     Args:
-        energy_function (EnergyFunction): Energy function to sample from.
+        energy_function (BaseEnergyFunction): Energy function to sample from.
         step_size (float): Step size for updates.
         noise_scale (float): Scale of the noise.
         decay (float): Damping coefficient (not supported yet).
@@ -190,7 +190,7 @@ class LangevinDynamics(BaseSampler):
 
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         step_size: float = 1e-3,
         noise_scale: float = 1.0,
         decay: float = 0.0,

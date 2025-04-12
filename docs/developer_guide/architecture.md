@@ -17,7 +17,7 @@ TorchEBM is designed around several key components that work together to provide
 
 ### Energy Functions
 
-The `EnergyFunction` base class defines the interface for all energy functions. It provides methods for:
+The `BaseEnergyFunction` base class defines the interface for all energy functions. It provides methods for:
 
 - Computing energy values
 - Computing gradients
@@ -46,9 +46,9 @@ Implemented samplers include Langevin Dynamics and Hamiltonian Monte Carlo.
 <div class="grid" markdown>
 <div markdown>
 
-### Loss Functions
+### BaseLoss Functions
 
-Loss functions are used to train energy-based models. They include:
+BaseLoss functions are used to train energy-based models. They include:
 
 - Contrastive Divergence (CD)
 - Persistent Contrastive Divergence (PCD)
@@ -76,7 +76,7 @@ Neural network models that can be used as energy functions:
 graph TD
     A[Energy Functions] --> C[Samplers]
     B[Models] --> A
-    C --> D[Loss Functions]
+    C --> D[BaseLoss Functions]
     D --> B
     E[CUDA Accelerators] --> A
     E --> C
@@ -113,15 +113,15 @@ gradient = energy_fn.gradient(x)  # Gradient computation
 x_new = x - step_size * gradient + noise
 ```
 
-### Sampler and Loss Function Interaction
+### Sampler and BaseLoss Function Interaction
 
 Samplers are used by loss functions to generate negative samples during training:
 
 ```python
-# Loss function uses sampler to generate negative samples
+# BaseLoss function uses sampler to generate negative samples
 negative_samples = sampler.sample_chain(x_init, n_steps=10)
 
-# Loss computation uses both data samples and negative samples
+# BaseLoss computation uses both data samples and negative samples
 loss = loss_fn(data_samples, negative_samples)
 ```
 
@@ -131,9 +131,9 @@ TorchEBM's codebase is organized into the following modules:
 
 | Module | Description | Key Classes |
 |--------|-------------|------------|
-| `torchebm.core` | Core functionality and base classes | `EnergyFunction`, `BaseSampler` |
+| `torchebm.core` | Core functionality and base classes | `BaseEnergyFunction`, `BaseSampler` |
 | `torchebm.samplers` | Sampling algorithms | `LangevinDynamics`, `HamiltonianMonteCarlo` |
-| `torchebm.losses` | Loss functions | `ContrastiveDivergence`, `PersistentContrastiveDivergence` |
+| `torchebm.losses` | BaseLoss functions | `ContrastiveDivergence`, `PersistentContrastiveDivergence` |
 | `torchebm.models` | Neural network models | `BaseModel` |
 | `torchebm.cuda` | CUDA-accelerated implementations | Various CUDA kernels |
 | `torchebm.utils` | Utility functions and helpers | Visualization tools, diagnostics |
@@ -151,9 +151,9 @@ TorchEBM is designed with performance in mind:
 
 TorchEBM is designed to be extended in several ways:
 
-1. **Custom Energy Functions**: Create your own energy functions by subclassing `EnergyFunction`
+1. **Custom Energy Functions**: Create your own energy functions by subclassing `BaseEnergyFunction`
 2. **Custom Samplers**: Implement new sampling algorithms by subclassing `BaseSampler`
-3. **Custom Loss Functions**: Create new training objectives for energy-based models
+3. **Custom BaseLoss Functions**: Create new training objectives for energy-based models
 4. **Neural Network Energy Functions**: Use neural networks as energy functions
 
 For more details on implementing extensions, see our [API Design](api_design.md) documentation. 

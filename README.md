@@ -110,7 +110,7 @@ print(diagnostics.shape)  # Diagnostics shape: (500, 4, 250, 10) - (n_steps, 3, 
 ### 2. Hamiltonian Monte Carlo (HMC)
 
 ```python
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 
 # Define a 10D Gaussian energy function
 energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
@@ -158,7 +158,7 @@ torchebm/
 │   ├── mcmc.py            # HMC implementation
 │   └── ...
 ├── models/                # Neural network models
-├── losses/                # Loss functions for training
+├── losses/                # BaseLoss functions for training
 ├── utils/                 # Utility functions
 └── cuda/                  # CUDA optimizations
 ```

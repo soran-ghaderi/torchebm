@@ -5,7 +5,7 @@ from matplotlib import cm
 import os
 from pathlib import Path
 
-from torchebm.core.energy_function import (
+from torchebm.core.base_energy_function import (
     RosenbrockEnergy,
     AckleyEnergy,
     RastriginEnergy,

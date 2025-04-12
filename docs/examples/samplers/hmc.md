@@ -27,7 +27,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from torchebm.core import GaussianEnergy
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 
 # Create energy function for a 2D Gaussian
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -130,7 +130,7 @@ We use several tools to automatically format and check our code:
 Use `CamelCase` for class names:
 
 ```python
-class EnergyFunction:
+class BaseEnergyFunction:
     pass
 
 class LangevinDynamics:
@@ -256,7 +256,7 @@ import torch
 import torch.nn as nn
 
 # Local application
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 from torchebm.utils import get_device
 ```
 

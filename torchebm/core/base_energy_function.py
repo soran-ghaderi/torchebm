@@ -5,7 +5,7 @@ from torch import nn
 from typing import Optional
 
 
-class EnergyFunction(nn.Module, ABC):
+class BaseEnergyFunction(nn.Module, ABC):
     """
     Abstract base class for energy functions (Potential Energy E(x)).
 
@@ -28,7 +28,7 @@ class EnergyFunction(nn.Module, ABC):
     """
 
     def __init__(self):
-        """Initializes the EnergyFunction base class."""
+        """Initializes the BaseEnergyFunction base class."""
         super().__init__()
         # Optional: store device, though nn.Module handles parameter/buffer device placement
         self._device: Optional[torch.device] = None
@@ -88,7 +88,9 @@ class EnergyFunction(nn.Module, ABC):
 
         with torch.enable_grad():
             # Detach, convert to float32, and enable gradient tracking
-            x_for_grad = x.detach().to(dtype=torch.float32, device=device).requires_grad_(True)
+            x_for_grad = (
+                x.detach().to(dtype=torch.float32, device=device).requires_grad_(True)
+            )
 
             # Perform forward pass with float32 input
             energy = self.forward(x_for_grad)
@@ -96,7 +98,7 @@ class EnergyFunction(nn.Module, ABC):
             # Validate energy shape - should be one scalar per batch item
             if energy.shape != (x_for_grad.shape[0],):
                 raise ValueError(
-                    f"EnergyFunction forward() output expected shape ({x_for_grad.shape[0]},), but got {energy.shape}."
+                    f"BaseEnergyFunction forward() output expected shape ({x_for_grad.shape[0]},), but got {energy.shape}."
                 )
 
             # Check grad_fn on the float32 energy
@@ -155,10 +157,10 @@ class EnergyFunction(nn.Module, ABC):
         return new_self
 
 
-class DoubleWellEnergy(EnergyFunction):
+class DoubleWellEnergy(BaseEnergyFunction):
     """
     Energy function for a double well potential. E(x) = h * Σ((x²-1)²) where h is the barrier height.
-    
+
     This energy function creates a bimodal distribution with two modes at x = +1 and x = -1
     (in each dimension), separated by a barrier of height h at x = 0.
 
@@ -175,7 +177,7 @@ class DoubleWellEnergy(EnergyFunction):
         # Ensure x is compatible shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
-            
+
         return self.barrier_height * (x.pow(2) - 1).pow(2).sum(dim=-1)
 
     # Override gradient for efficiency (analytical gradient)
@@ -188,7 +190,7 @@ class DoubleWellEnergy(EnergyFunction):
     #     return 4 * self.barrier_height * x * (x.pow(2) - 1)
 
 
-class GaussianEnergy(EnergyFunction):
+class GaussianEnergy(BaseEnergyFunction):
     """
     Energy function for a Gaussian distribution. E(x) = 0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ).
 
@@ -269,10 +271,10 @@ class GaussianEnergy(EnergyFunction):
     # No custom `to` method needed - nn.Module handles buffers.
 
 
-class HarmonicEnergy(EnergyFunction):
+class HarmonicEnergy(BaseEnergyFunction):
     """
     Energy function for a harmonic oscillator. E(x) = 0.5 * k * Σ(x²).
-    
+
     This energy function represents a quadratic potential centered at the origin,
     equivalent to a Gaussian distribution with zero mean and variance proportional to 1/k.
 
@@ -302,11 +304,11 @@ class HarmonicEnergy(EnergyFunction):
     #     return self.k * x
 
 
-class RosenbrockEnergy(EnergyFunction):
+class RosenbrockEnergy(BaseEnergyFunction):
     """
     Energy function for the Rosenbrock function. E(x) = (a-x₁)² + b·(x₂-x₁²)².
-    
-    This energy function creates a challenging valley-shaped distribution with the 
+
+    This energy function creates a challenging valley-shaped distribution with the
     global minimum at (a, a²). It's commonly used as a benchmark for optimization algorithms
     due to its curved, narrow valley which is difficult to traverse.
 
@@ -353,14 +355,14 @@ class RosenbrockEnergy(EnergyFunction):
     #     return grad
 
 
-class AckleyEnergy(EnergyFunction):
+class AckleyEnergy(BaseEnergyFunction):
     """
-    Energy function for the Ackley function. 
-    
+    Energy function for the Ackley function.
+
     The Ackley energy is defined as:
-    
+
     $$E(x) = -a \cdot \exp\left(-b \cdot \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c \cdot x_i)\right) + a + e$$
-    
+
     This function has a global minimum at the origin surrounded by many local minima,
     creating a challenging optimization landscape that tests an algorithm's ability to
     escape local optima.
@@ -380,7 +382,7 @@ class AckleyEnergy(EnergyFunction):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Computes the Ackley energy.
-        
+
         $$E(x) = -a \cdot \exp\left(-b \cdot \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c \cdot x_i)\right) + a + e$$
         """
         # Ensure x is compatible shape
@@ -398,9 +400,9 @@ class AckleyEnergy(EnergyFunction):
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
     #     """
     #     Computes the analytical gradient of the Ackley function.
-    #     
+    #
     #     The gradient components are:
-    #     
+    #
     #     $$\nabla E(x)_i = \frac{a \cdot b \cdot x_i}{\sqrt{n \cdot \sum_{j=1}^{n} x_j^2}} \cdot \exp\left(-b \cdot \sqrt{\frac{1}{n}\sum_{j=1}^{n} x_j^2}\right) + \frac{c}{n} \cdot \sin(c \cdot x_i) \cdot \exp\left(\frac{1}{n}\sum_{j=1}^{n} \cos(c \cdot x_j)\right)$$
     #     """
     #     # Ensure x is compatible shape
@@ -420,15 +422,15 @@ class AckleyEnergy(EnergyFunction):
     #     return term1 + term2
 
 
-class RastriginEnergy(EnergyFunction):
+class RastriginEnergy(BaseEnergyFunction):
     """
     Energy function for the Rastrigin function.
 
     The Rastrigin energy is defined as:
-    
+
     $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$
-    
-    This function is characterized by a large number of local minima arranged in a 
+
+    This function is characterized by a large number of local minima arranged in a
     regular lattice, with a global minimum at the origin. It's a classic test for
     optimization algorithms due to its highly multimodal nature.
 
@@ -443,7 +445,7 @@ class RastriginEnergy(EnergyFunction):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Computes the Rastrigin energy.
-        
+
         $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$
         """
         # Ensure x is compatible shape
@@ -459,11 +461,11 @@ class RastriginEnergy(EnergyFunction):
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
     #     """
     #     Computes the analytical gradient of the Rastrigin function.
-    #     
+    #
     #     $$\nabla E(x)_i = 2x_i + 2\pi a \sin(2\pi x_i)$$
     #     """
     #     # Ensure x is compatible shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
-    #     
+    #
     #     return 2 * x + 2 * math.pi * self.a * torch.sin(2 * math.pi * x)

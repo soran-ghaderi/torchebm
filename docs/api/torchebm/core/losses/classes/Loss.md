@@ -1,6 +1,6 @@
 ## Methods and Attributes
 
-::: torchebm.core.losses.Loss
+::: torchebm.core.losses.BaseLoss
     options:
       show_root_heading: false
       show_source: true

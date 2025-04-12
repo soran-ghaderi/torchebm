@@ -1,12 +1,12 @@
 import torch
-from .energy_function import EnergyFunction
-from .basesampler import BaseSampler
+from .base_energy_function import BaseEnergyFunction
+from .base_sampler import BaseSampler
 
 
 class ContrastiveDivergenceTrainer:
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         sampler: BaseSampler,
         learning_rate: float = 0.01,
     ):

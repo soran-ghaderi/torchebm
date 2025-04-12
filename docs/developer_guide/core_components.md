@@ -61,10 +61,10 @@ Energy functions are the core building block of TorchEBM. They define a scalar e
 
 ### Base Energy Function
 
-The `EnergyFunction` class is the foundation for all energy functions:
+The `BaseEnergyFunction` class is the foundation for all energy functions:
 
 ```python
-class EnergyFunction(nn.Module):
+class BaseEnergyFunction(nn.Module):
     """Base class for all energy functions.
     
     An energy function maps points in the sample space to scalar energy values.
@@ -103,7 +103,7 @@ TorchEBM provides several analytical energy functions for testing and benchmarki
 === "Gaussian Energy"
 
     ```python
-    class GaussianEnergy(EnergyFunction):
+    class GaussianEnergy(BaseEnergyFunction):
         """Gaussian energy function.
         
         Energy function defined by a multivariate Gaussian distribution:
@@ -142,7 +142,7 @@ TorchEBM provides several analytical energy functions for testing and benchmarki
 === "Double Well Energy"
 
     ```python
-    class DoubleWellEnergy(EnergyFunction):
+    class DoubleWellEnergy(BaseEnergyFunction):
         """Double well energy function.
         
         Energy function with two local minima:
@@ -177,13 +177,13 @@ TorchEBM provides several analytical energy functions for testing and benchmarki
 Energy functions can be composed to create more complex landscapes:
 
 ```python
-class CompositeEnergy(EnergyFunction):
+class CompositeEnergy(BaseEnergyFunction):
     """Composite energy function.
     
     Combines multiple energy functions through addition.
     """
     
-    def __init__(self, energy_functions: List[EnergyFunction], weights: Optional[List[float]] = None):
+    def __init__(self, energy_functions: List[BaseEnergyFunction], weights: Optional[List[float]] = None):
         """Initialize composite energy function.
         
         Args:
@@ -223,7 +223,7 @@ class Sampler(ABC):
     A sampler generates samples from an energy-based distribution.
     """
     
-    def __init__(self, energy_function: EnergyFunction):
+    def __init__(self, energy_function: BaseEnergyFunction):
         """Initialize sampler.
         
         Args:
@@ -273,7 +273,7 @@ class LangevinDynamics(Sampler):
     
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         step_size: float = 0.01,
         noise_scale: float = 1.0
     ):
@@ -364,16 +364,16 @@ class LangevinDynamics(Sampler):
         return self.sample_chain(dim=dim, n_steps=n_steps, n_samples=n_samples, **kwargs)
 ```
 
-## Loss Functions
+## BaseLoss Functions
 
-Loss functions are used to train energy-based models from data. They provide methods to compute gradients for model updates.
+BaseLoss functions are used to train energy-based models from data. They provide methods to compute gradients for model updates.
 
-### Base Loss Function
+### Base BaseLoss Function
 
-The `Loss` class is the foundation for all loss functions:
+The `BaseLoss` class is the foundation for all loss functions:
 
 ```python
-class Loss(ABC):
+class BaseLoss(ABC):
     """Base class for all loss functions.
     
     A loss function computes a loss value for an energy-based model.
@@ -404,7 +404,7 @@ class Loss(ABC):
 The `ContrastiveDivergence` loss implements the contrastive divergence algorithm:
 
 ```python
-class ContrastiveDivergence(Loss):
+class ContrastiveDivergence(BaseLoss):
     """Contrastive divergence loss.
     
     Uses contrastive divergence to train energy-based models.
@@ -478,7 +478,7 @@ Models parameterize energy functions using neural networks.
 The `EnergyModel` class wraps a neural network as an energy function:
 
 ```python
-class EnergyModel(EnergyFunction):
+class EnergyModel(BaseEnergyFunction):
     """Neural network-based energy model.
     
     Uses a neural network to parameterize an energy function.
@@ -513,7 +513,7 @@ The following diagram illustrates how the core components interact:
 graph TD
     A[Energy Function] -->|Defines landscape| B[Sampler]
     B -->|Generates samples| C[Training Process]
-    D[Loss Function] -->|Guides training| C
+    D[BaseLoss Function] -->|Guides training| C
     C -->|Updates| E[Energy Model]
     E -->|Parameterizes| A
 ```
@@ -553,9 +553,9 @@ for epoch in range(100):
 
 TorchEBM is designed to be extensible at several points:
 
-* **New Energy Functions** - Create by subclassing `EnergyFunction`
+* **New Energy Functions** - Create by subclassing `BaseEnergyFunction`
 * **New Samplers** - Create by subclassing `Sampler`
-* **New Loss Functions** - Create by subclassing `Loss`
+* **New BaseLoss Functions** - Create by subclassing `BaseLoss`
 * **New Models** - Create by subclassing `EnergyModel` or using custom networks
 
 ## Component Lifecycle
@@ -575,7 +575,7 @@ When working with TorchEBM components, follow these best practices:
 
 * **Energy Functions**: Ensure they're properly normalized for stable training
 * **Samplers**: Check mixing time and adjust parameters accordingly
-* **Loss Functions**: Monitor training stability and adjust hyperparameters
+* **BaseLoss Functions**: Monitor training stability and adjust hyperparameters
 * **Models**: Use appropriate architecture for the problem domain
 
 !!! tip "Performance Optimization"
@@ -605,6 +605,6 @@ When working with TorchEBM components, follow these best practices:
 
     Understand loss function implementation details.
 
-    [:octicons-arrow-right-24: Loss Functions](implementation_losses.md)
+    [:octicons-arrow-right-24: BaseLoss Functions](implementation_losses.md)
 
 </div> 

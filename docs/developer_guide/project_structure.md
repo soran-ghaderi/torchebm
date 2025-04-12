@@ -18,7 +18,7 @@ torchebm/
 ├── torchebm/              # Main package source code
 │   ├── core/              # Core functionality and base classes
 │   ├── samplers/          # Sampling algorithms implementation
-│   ├── losses/            # Loss functions for training
+│   ├── losses/            # BaseLoss functions for training
 │   ├── models/            # Neural network model implementations
 │   ├── cuda/              # CUDA optimized implementations
 │   └── utils/             # Utility functions and helpers
@@ -64,7 +64,7 @@ Implementations of various sampling algorithms:
 <div markdown>
 ### `torchebm.losses`
 
-Loss functions for training energy-based models:
+BaseLoss functions for training energy-based models:
 
 * `base.py` - Base loss class
 * `contrastive_divergence.py` - Contrastive divergence implementations
@@ -204,7 +204,7 @@ Example of typical import patterns:
 
 ```python
 # Import core components
-from torchebm.core import EnergyFunction, GaussianEnergy
+from torchebm.core import BaseEnergyFunction, GaussianEnergy
 
 # Import samplers
 from torchebm.samplers import LangevinDynamics, HamiltonianMC

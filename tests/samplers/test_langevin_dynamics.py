@@ -1,7 +1,7 @@
 import pytest
 import torch
-from torchebm.core.energy_function import EnergyFunction, GaussianEnergy
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torchebm.core.base_energy_function import BaseEnergyFunction, GaussianEnergy
+from torchebm.samplers import LangevinDynamics
 from tests.conftest import requires_cuda
 
 

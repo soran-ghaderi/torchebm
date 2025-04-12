@@ -1,3 +1,17 @@
-from . import visualization
+"""
+Utility functions for working with energy-based models, including visualization tools.
+"""
 
-__all__ = ["visualization"]
+from .visualization import (
+    plot_2d_energy_landscape,
+    plot_3d_energy_landscape,
+    plot_samples_on_energy,
+    plot_sample_trajectories,
+)
+
+__all__ = [
+    "plot_2d_energy_landscape",
+    "plot_3d_energy_landscape",
+    "plot_samples_on_energy",
+    "plot_sample_trajectories",
+]

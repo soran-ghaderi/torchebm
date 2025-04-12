@@ -1,9 +1,9 @@
 import pytest
 import torch
-from torchebm.core.energy_function import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 
 
-class SimpleQuadraticEnergy(EnergyFunction):
+class SimpleQuadraticEnergy(BaseEnergyFunction):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.sum(x**2, dim=-1)
 

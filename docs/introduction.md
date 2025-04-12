@@ -51,7 +51,7 @@ Sampling from EBMs typically involves MCMC methods. TorchEBM implements several 
 - **Hamiltonian Monte Carlo**: Uses Hamiltonian dynamics for efficient exploration
 - **Other samplers**: Various specialized samplers for different applications
 
-### Loss Functions
+### BaseLoss Functions
 
 Training EBMs requires specialized methods to estimate and minimize the difference between the model distribution and the data distribution. TorchEBM implements several loss functions including contrastive divergence and score matching techniques.
 

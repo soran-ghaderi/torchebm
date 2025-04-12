@@ -31,10 +31,11 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
-from torchebm.core.energy_function import (
-    RosenbrockEnergy, AckleyEnergy, RastriginEnergy, 
+from torchebm.core.base_energy_function import (
+    RosenbrockEnergy, AckleyEnergy, RastriginEnergy,
     DoubleWellEnergy, GaussianEnergy, HarmonicEnergy
 )
+
 
 def plot_energy_function(energy_fn, x_range, y_range, title):
     x = np.linspace(x_range[0], x_range[1], 100)
@@ -56,13 +57,14 @@ def plot_energy_function(energy_fn, x_range, y_range, title):
     ax.set_zlabel('Energy')
     plt.show()
 
+
 energy_functions = [
     (RosenbrockEnergy(), [-2, 2], [-1, 3], 'Rosenbrock Energy Function'),
     (AckleyEnergy(), [-5, 5], [-5, 5], 'Ackley Energy Function'),
     (RastriginEnergy(), [-5, 5], [-5, 5], 'Rastrigin Energy Function'),
     (DoubleWellEnergy(), [-2, 2], [-2, 2], 'Double Well Energy Function'),
-    (GaussianEnergy(torch.tensor([0.0, 0.0]), 
-                   torch.tensor([[1.0, 0.0], [0.0, 1.0]])), 
+    (GaussianEnergy(torch.tensor([0.0, 0.0]),
+                    torch.tensor([[1.0, 0.0], [0.0, 1.0]])),
      [-3, 3], [-3, 3], 'Gaussian Energy Function'),
     (HarmonicEnergy(), [-3, 3], [-3, 3], 'Harmonic Energy Function')
 ]
@@ -194,7 +196,7 @@ Below are the visualizations of the energy functions described above. Each visua
 
 You can extend this example to:
 
-1. Create custom energy functions by implementing the `EnergyFunction` interface
+1. Create custom energy functions by implementing the `BaseEnergyFunction` interface
 2. Visualize energy functions in higher dimensions using projection techniques
 3. Animate sampling trajectories on top of these energy landscapes
 

@@ -29,7 +29,7 @@ Contrastive Divergence is one of the most widely used methods for training EBMs.
 
 ```python
 import torch
-from torchebm.core import EnergyFunction, MLPEnergyFunction
+from torchebm.core import BaseEnergyFunction, MLPEnergyFunction
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 # Create energy function
@@ -44,35 +44,36 @@ sampler = LangevinDynamics(
 # Optimizer
 optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.001)
 
+
 # Contrastive Divergence training step
 def train_step_cd(data_batch, k_steps=10):
     optimizer.zero_grad()
-    
+
     # Positive phase: compute energy of real data
     pos_energy = energy_fn(data_batch)
-    
+
     # Negative phase: generate samples from current model
     # Start from random noise
     neg_samples = torch.randn_like(data_batch)
-    
+
     # Sample for k steps
     neg_samples = sampler.sample_chain(
         initial_points=neg_samples,
         n_steps=k_steps,
         return_final=True
     )
-    
+
     # Compute energy of generated samples
     neg_energy = energy_fn(neg_samples)
-    
+
     # Compute loss
     # Minimize energy of real data, maximize energy of generated samples
     loss = pos_energy.mean() - neg_energy.mean()
-    
+
     # Backpropagation
     loss.backward()
     optimizer.step()
-    
+
     return loss.item(), pos_energy.mean().item(), neg_energy.mean().item()
 ```
 
@@ -203,11 +204,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
+
 # Define a neural network energy function
-class MLPEnergyFunction(EnergyFunction):
+class MLPEnergyFunction(BaseEnergyFunction):
     def __init__(self, input_dim=2, hidden_dim=64):
         super().__init__()
         self.network = nn.Sequential(
@@ -217,9 +219,10 @@ class MLPEnergyFunction(EnergyFunction):
             nn.LeakyReLU(0.2),
             nn.Linear(hidden_dim, 1)
         )
-    
+
     def forward(self, x):
         return self.network(x).squeeze(-1)
+
 
 # Create a synthetic dataset (mixture of Gaussians)
 def generate_data(n_samples=10000):
@@ -232,25 +235,26 @@ def generate_data(n_samples=10000):
         (-2, -2)
     ]
     std = 0.3
-    
+
     # Equal number of samples per component
     n_per_component = n_samples // len(centers)
     data = []
-    
+
     for center in centers:
         component_data = torch.randn(n_per_component, 2) * std
         component_data[:, 0] += center[0]
         component_data[:, 1] += center[1]
         data.append(component_data)
-    
+
     # Combine all components
     data = torch.cat(data, dim=0)
-    
+
     # Shuffle
     indices = torch.randperm(data.shape[0])
     data = data[indices]
-    
+
     return data
+
 
 # Generate dataset
 dataset = generate_data(10000)
@@ -279,53 +283,53 @@ for epoch in range(n_epochs):
     # Shuffle dataset
     indices = torch.randperm(dataset.shape[0])
     dataset = dataset[indices]
-    
+
     total_loss = 0
     n_batches = 0
-    
+
     for i in range(0, dataset.shape[0], batch_size):
         # Get batch
-        batch_indices = indices[i:i+batch_size]
+        batch_indices = indices[i:i + batch_size]
         batch = dataset[batch_indices]
-        
+
         # Training step using PCD
         optimizer.zero_grad()
-        
+
         # Positive phase
         pos_energy = energy_fn(batch)
-        
+
         # Negative phase with persistent samples
         pcd_indices = torch.randperm(persistent_samples.shape[0])[:batch_size]
         neg_samples_init = persistent_samples[pcd_indices].clone()
-        
+
         neg_samples = sampler.sample_chain(
             initial_points=neg_samples_init,
             n_steps=k_steps,
             return_final=True
         )
-        
+
         # Update persistent samples
         persistent_samples[pcd_indices] = neg_samples.detach()
-        
+
         # Compute energy of negative samples
         neg_energy = energy_fn(neg_samples)
-        
+
         # Compute loss
         loss = pos_energy.mean() - neg_energy.mean()
-        
+
         # Backpropagation
         loss.backward()
         optimizer.step()
-        
+
         total_loss += loss.item()
         n_batches += 1
-    
+
     # Log progress
     avg_loss = total_loss / n_batches
-    
+
     if (epoch + 1) % log_interval == 0:
-        print(f'Epoch {epoch+1}/{n_epochs}, Loss: {avg_loss:.4f}')
-        
+        print(f'Epoch {epoch + 1}/{n_epochs}, BaseLoss: {avg_loss:.4f}')
+
         # Visualize current energy function
         with torch.no_grad():
             # Create grid
@@ -333,17 +337,17 @@ for epoch in range(n_epochs):
             y = torch.linspace(-4, 4, 100)
             X, Y = torch.meshgrid(x, y, indexing='ij')
             grid_points = torch.stack([X.flatten(), Y.flatten()], dim=1)
-            
+
             # Compute energy values
             energies = energy_fn(grid_points).reshape(100, 100)
-            
+
             # Visualize
             plt.figure(figsize=(10, 8))
             plt.contourf(X.numpy(), Y.numpy(), energies.numpy(), 50, cmap='viridis')
-            
+
             # Plot data points
             plt.scatter(dataset[:500, 0], dataset[:500, 1], s=1, color='red', alpha=0.5)
-            
+
             # Plot samples from model
             sampled = sampler.sample_chain(
                 dim=2,
@@ -352,8 +356,8 @@ for epoch in range(n_epochs):
                 burn_in=100
             )
             plt.scatter(sampled[:, 0], sampled[:, 1], s=1, color='white', alpha=0.5)
-            
-            plt.title(f'Energy Landscape (Epoch {epoch+1})')
+
+            plt.title(f'Energy Landscape (Epoch {epoch + 1})')
             plt.xlim(-4, 4)
             plt.ylim(-4, 4)
             plt.colorbar(label='Energy')
@@ -543,7 +547,7 @@ The training approach may vary depending on the type of data:
 For image data, convolutional architectures are recommended:
 
 ```python
-class ImageEBM(EnergyFunction):
+class ImageEBM(BaseEnergyFunction):
     def __init__(self, input_channels=1, image_size=28):
         super().__init__()
         
@@ -581,7 +585,7 @@ class ImageEBM(EnergyFunction):
 For sequential data, recurrent or transformer architectures may be more appropriate:
 
 ```python
-class SequentialEBM(EnergyFunction):
+class SequentialEBM(BaseEnergyFunction):
     def __init__(self, input_dim=1, hidden_dim=128, seq_len=50):
         super().__init__()
         

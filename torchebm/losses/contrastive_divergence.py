@@ -9,25 +9,14 @@ from torch.nn.modules.module import T
 from torch.utils.hooks import RemovableHandle
 
 from torchebm.core import BaseSampler
-from torchebm.core.energy_function import EnergyFunction
-from torchebm.core.losses import Loss
+from torchebm.core.base_energy_function import BaseEnergyFunction
+from torchebm.core.base_loss import BaseContrastiveDivergence
 
 
-class ContrastiveDivergenceBase(Loss):
+class ContrastiveDivergence(BaseContrastiveDivergence):
     def __init__(self, k=1):
         super().__init__()
         self.k = k  # Number of sampling steps
-
-    @abstractmethod
-    def sample(self, energy_model, x_pos):
-        """Abstract method: Generate negative samples from the energy model.
-        Args:
-            energy_model: Energy-based model (e.g., RBM)
-            x_pos: Positive samples (data)
-        Returns:
-            x_neg: Negative samples (model samples)
-        """
-        raise NotImplementedError
 
     def forward(self, energy_model, x_pos):
         """Compute the CD loss: E(x_pos) - E(x_neg)"""
@@ -36,20 +25,7 @@ class ContrastiveDivergenceBase(Loss):
         return loss
 
 
-class ContrastiveDivergence(ContrastiveDivergenceBase):
-    def __init__(self, k=1):
-        super().__init__(k)
-
-    def sample(self, energy_model, x_pos):
-        x_neg = x_pos.clone().detach()
-        for _ in range(self.k):
-            x_neg = energy_model.gibbs_step(
-                x_neg
-            )  # todo: implement `gibbs_step` in energy_model
-        return x_neg
-
-
-class PersistentContrastiveDivergence(ContrastiveDivergenceBase):
+class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     def __init__(self, buffer_size=100):
         super().__init__(k=1)
         self.buffer = None  # Persistent chain state

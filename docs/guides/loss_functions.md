@@ -1,10 +1,10 @@
 ---
 sidebar_position: 4
-title: Loss Functions
+title: BaseLoss Functions
 description: Understanding and using loss functions for training energy-based models
 ---
 
-# Loss Functions
+# BaseLoss Functions
 
 Training energy-based models involves estimating and minimizing the difference between the model distribution and the data distribution. TorchEBM provides various loss functions to accomplish this.
 
@@ -95,7 +95,7 @@ data_samples = torch.randn(100, 2)  # Your real data
 loss = dsm_loss(model, data_samples)
 ```
 
-## Other Loss Functions
+## Other BaseLoss Functions
 
 ### Maximum Likelihood Estimation (MLE)
 
@@ -134,18 +134,19 @@ data_samples = torch.randn(100, 2)  # Your real data
 loss = nce_loss(model, data_samples)
 ```
 
-## Training with Loss Functions
+## Training with BaseLoss Functions
 
 Here's a general training loop for energy-based models:
 
 ```python
 import torch
 import torch.optim as optim
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 import torch.nn as nn
 
+
 # Define a neural network energy function
-class NeuralNetEBM(EnergyFunction):
+class NeuralNetEBM(BaseEnergyFunction):
     def __init__(self, input_dim, hidden_dim):
         super().__init__()
         self.net = nn.Sequential(
@@ -155,9 +156,10 @@ class NeuralNetEBM(EnergyFunction):
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
-    
+
     def forward(self, x):
         return self.net(x).squeeze(-1)
+
 
 # Create model, loss, and optimizer
 model = NeuralNetEBM(input_dim=10, hidden_dim=64)
@@ -169,19 +171,19 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 for epoch in range(100):
     # Get a batch of real data
     real_data = get_data_batch()
-    
+
     # Compute loss
     loss = loss_fn(model, real_data)
-    
+
     # Optimize
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    
-    print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+    print(f"Epoch {epoch}, BaseLoss: {loss.item()}")
 ```
 
-## Choosing Loss Functions
+## Choosing BaseLoss Functions
 
 Different loss functions are suitable for different scenarios:
 
@@ -191,7 +193,7 @@ Different loss functions are suitable for different scenarios:
 - **Denoising Score Matching**: More stable than standard score matching, good for high dimensions
 - **NCE**: Works well with complex distributions where sampling is difficult
 
-## Loss Function Implementation Details
+## BaseLoss Function Implementation Details
 
 Each loss function in TorchEBM follows a standard pattern:
 
