@@ -184,7 +184,7 @@ class LangevinDynamics(BaseSampler):
         ```
     !!! warning "Parameter Relationships"
         The effective temperature is controlled by:
-        $$\text{Temperature} = \frac{\text{noise_scale}^2}{2 \cdot \text{step_size}}$$
+        \(\text{Temperature} = \frac{\text{noise_scale}^2}{2 \cdot \text{step_size}}\)
         Adjust both parameters together to maintain constant temperature.
     """
 
@@ -287,7 +287,8 @@ class LangevinDynamics(BaseSampler):
             return_diagnostics: Whether to return the diagnostics of the sampling process.
 
         Returns:
-            Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
+            Final samples:
+
                 - If `return_trajectory=False` and `return_diagnostics=False`, returns the final
                   samples of shape `(n_samples, dim)`.
                 - If `return_trajectory=True`, returns a tensor of shape `(n_samples, n_steps, dim)`,

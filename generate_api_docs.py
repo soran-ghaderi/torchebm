@@ -291,7 +291,7 @@ def create_class_page(module_name, class_name, cls, output_dir):
     content += "      trim_doctest_flags: true\n"
     content += "      inherited_members: false\n"
     content += "      filters:\n"
-    content += '        - "!^_[^_]"\n'  # Exclude single underscore methods
+    # content += '        - "!^_[^_]"\n'  # Exclude single underscore methods
     content += '        - "!^__"\n'  # Exclude dunder methods
 
     # Write to file

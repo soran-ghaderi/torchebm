@@ -87,49 +87,49 @@ nav:
   - API Reference:
     - Overview: api/index.md
     - Core:
-      - Basesampler:
-        - api/torchebm/core/basesampler/index.md
-        - BaseSampler: api/torchebm/core/basesampler/classes/BaseSampler.md
-      - Energy_function:
-        - api/torchebm/core/energy_function/index.md
-        - AckleyEnergy: api/torchebm/core/energy_function/classes/AckleyEnergy.md
-        - DoubleWellEnergy: api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
-        - EnergyFunction: api/torchebm/core/energy_function/classes/BaseEnergyFunction.md
-        - GaussianEnergy: api/torchebm/core/energy_function/classes/GaussianEnergy.md
-        - HarmonicEnergy: api/torchebm/core/energy_function/classes/HarmonicEnergy.md
-        - RastriginEnergy: api/torchebm/core/energy_function/classes/RastriginEnergy.md
-        - RosenbrockEnergy: api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
-      - Losses:
-        - api/torchebm/core/losses/index.md
-        - Loss: api/torchebm/core/losses/classes/BaseLoss.md
-      - Optimizer:
-        - api/torchebm/core/optimizer/index.md
-        - Optimizer: api/torchebm/core/optimizer/classes/Optimizer.md
-      - Score_matching:
-        - api/torchebm/core/score_matching/index.md
-        - ScoreMatching: api/torchebm/core/score_matching/classes/ScoreMatching.md
-      - Trainer:
-        - api/torchebm/core/trainer/index.md
-        - ContrastiveDivergenceTrainer: api/torchebm/core/trainer/classes/ContrastiveDivergenceTrainer.md
+      - Base_energy_function:
+        - api/torchebm/core/base_energy_function/index.md
+        - AckleyEnergy: api/torchebm/core/base_energy_function/classes/AckleyEnergy.md
+        - BaseEnergyFunction: api/torchebm/core/base_energy_function/classes/BaseEnergyFunction.md
+        - DoubleWellEnergy: api/torchebm/core/base_energy_function/classes/DoubleWellEnergy.md
+        - GaussianEnergy: api/torchebm/core/base_energy_function/classes/GaussianEnergy.md
+        - HarmonicEnergy: api/torchebm/core/base_energy_function/classes/HarmonicEnergy.md
+        - RastriginEnergy: api/torchebm/core/base_energy_function/classes/RastriginEnergy.md
+        - RosenbrockEnergy: api/torchebm/core/base_energy_function/classes/RosenbrockEnergy.md
+      - Base_loss:
+        - api/torchebm/core/base_loss/index.md
+        - BaseContrastiveDivergence: api/torchebm/core/base_loss/classes/BaseContrastiveDivergence.md
+        - BaseLoss: api/torchebm/core/base_loss/classes/BaseLoss.md
+      - Base_optimizer:
+        - api/torchebm/core/base_optimizer/index.md
+        - Optimizer: api/torchebm/core/base_optimizer/classes/Optimizer.md
+      - Base_sampler:
+        - api/torchebm/core/base_sampler/index.md
+        - BaseSampler: api/torchebm/core/base_sampler/classes/BaseSampler.md
+      - Base_trainer:
+        - api/torchebm/core/base_trainer/index.md
+        - ContrastiveDivergenceTrainer: api/torchebm/core/base_trainer/classes/ContrastiveDivergenceTrainer.md
     - Cuda: api/torchebm/cuda/index.md
     - Losses:
       - Contrastive_divergence:
         - api/torchebm/losses/contrastive_divergence/index.md
         - ContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
-        - ContrastiveDivergenceBase: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergenceBase.md
         - ParallelTemperingCD: api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
         - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
+      - Score_matching:
+        - api/torchebm/losses/score_matching/index.md
+        - ScoreMatching: api/torchebm/losses/score_matching/classes/ScoreMatching.md
     - Models:
       - Base_model:
         - api/torchebm/models/base_model/index.md
         - BaseModel: api/torchebm/models/base_model/classes/BaseModel.md
     - Samplers:
+      - Hmc:
+        - api/torchebm/samplers/hmc/index.md
+        - HamiltonianMonteCarlo: api/torchebm/samplers/hmc/classes/HamiltonianMonteCarlo.md
       - Langevin_dynamics:
         - api/torchebm/samplers/langevin_dynamics/index.md
         - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
-      - Mcmc:
-        - api/torchebm/samplers/mcmc/index.md
-        - HamiltonianMonteCarlo: api/torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md
     - Utils:
       - Visualization: api/torchebm/utils/visualization/index.md
   - Examples:

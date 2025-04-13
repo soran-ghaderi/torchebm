@@ -45,6 +45,7 @@ class BaseSampler(ABC):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         """
         Run the sampling process.
+
         Args:
             x: Initial state to start the sampling from.
             dim: Dimension of the state space.

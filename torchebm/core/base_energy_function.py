@@ -7,21 +7,23 @@ from typing import Optional
 
 class BaseEnergyFunction(nn.Module, ABC):
     """
-    Abstract base class for energy functions (Potential Energy E(x)).
+    Abstract base class for energy functions (Potential Energy \(E(x)\)).
 
     This class serves as a standard interface for defining energy functions used
     within the torchebm library. It is compatible with both pre-defined analytical
     functions (like Gaussian, DoubleWell) and trainable neural network models.
-    It represents the potential energy E(x), often related to a probability
-    distribution p(x) by E(x) = -log p(x) + constant.
+    It represents the potential energy \(E(x)\), often related to a probability
+    distribution \(p(x)\) by \(E(x) = -log p(x) + constant\).
 
     Core Requirements for Subclasses:
+
     1.  Implement the `forward(x)` method to compute the scalar energy per sample.
     2.  Optionally, override the `gradient(x)` method if an efficient analytical
         gradient is available. Otherwise, the default implementation using
         `torch.autograd` will be used.
 
     Inheriting from `torch.nn.Module` ensures that:
+
     - Subclasses can contain trainable parameters (`nn.Parameter`).
     - Standard PyTorch methods like `.to(device)`, `.parameters()`, `.state_dict()`,
       and integration with `torch.optim` work as expected.
@@ -64,8 +66,8 @@ class BaseEnergyFunction(nn.Module, ABC):
         pass
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Computes the gradient of the energy function with respect to the input x (∇_x E(x)).
+        r"""
+        Computes the gradient of the energy function with respect to the input \(x\) \((\nabla_x E(x))\).
 
         This default implementation uses automatic differentiation based on the
         `forward` method. Subclasses should override this method if a more
@@ -158,11 +160,11 @@ class BaseEnergyFunction(nn.Module, ABC):
 
 
 class DoubleWellEnergy(BaseEnergyFunction):
-    """
-    Energy function for a double well potential. E(x) = h * Σ((x²-1)²) where h is the barrier height.
+    r"""
+    Energy function for a double well potential. \( E(x) = h Σ(x²-1)² \) where h is the barrier height.
 
-    This energy function creates a bimodal distribution with two modes at x = +1 and x = -1
-    (in each dimension), separated by a barrier of height h at x = 0.
+    This energy function creates a bimodal distribution with two modes at \( x = +1 \) and \(x = -1\)
+    (in each dimension), separated by a barrier of height h at \(x = 0\).
 
     Args:
         barrier_height (float): Height of the barrier between the wells.
@@ -173,7 +175,7 @@ class DoubleWellEnergy(BaseEnergyFunction):
         self.barrier_height = barrier_height
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Computes the double well energy: h * Σ((x²-1)²)."""
+        r"""Computes the double well energy: \(h Σ(x²-1)²\)."""
         # Ensure x is compatible shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
@@ -191,8 +193,8 @@ class DoubleWellEnergy(BaseEnergyFunction):
 
 
 class GaussianEnergy(BaseEnergyFunction):
-    """
-    Energy function for a Gaussian distribution. E(x) = 0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ).
+    r"""
+    Energy function for a Gaussian distribution. \(E(x) = 0.5 (x-μ)ᵀ Σ⁻¹ (x-μ)\).
 
     Args:
         mean (torch.Tensor): Mean vector (μ) of the Gaussian distribution.
@@ -223,7 +225,7 @@ class GaussianEnergy(BaseEnergyFunction):
             ) from e
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Computes the Gaussian energy: 0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ)."""
+        r"""Computes the Gaussian energy: \(0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ)\)."""
         # Ensure x is compatible shape (batch_size, dim)
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
@@ -272,11 +274,11 @@ class GaussianEnergy(BaseEnergyFunction):
 
 
 class HarmonicEnergy(BaseEnergyFunction):
-    """
-    Energy function for a harmonic oscillator. E(x) = 0.5 * n_steps * Σ(x²).
+    r"""
+    Energy function for a harmonic oscillator. \(E(x) = 0.5 \cdot n\_steps \cdot Σ(x²)\).
 
     This energy function represents a quadratic potential centered at the origin,
-    equivalent to a Gaussian distribution with zero mean and variance proportional to 1/n_steps.
+    equivalent to a Gaussian distribution with zero mean and variance proportional to \(\frac{1}{n\_steps}\).
 
     Args:
         k (float): Spring constant.
@@ -287,7 +289,7 @@ class HarmonicEnergy(BaseEnergyFunction):
         self.k = k
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Computes the harmonic oscillator energy: 0.5 * n_steps * Σ(x²)."""
+        r"""Computes the harmonic oscillator energy: \(0.5 \cdot n\_steps \cdot Σ(x²)\)."""
         # Ensure x is compatible shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
@@ -305,8 +307,8 @@ class HarmonicEnergy(BaseEnergyFunction):
 
 
 class RosenbrockEnergy(BaseEnergyFunction):
-    """
-    Energy function for the Rosenbrock function. E(x) = (a-x₁)² + b·(x₂-x₁²)².
+    r"""
+    Energy function for the Rosenbrock function. \(E(x) = (a-x₁)² + b·(x₂-x₁²)²\).
 
     This energy function creates a challenging valley-shaped distribution with the
     global minimum at (a, a²). It's commonly used as a benchmark for optimization algorithms
@@ -323,7 +325,7 @@ class RosenbrockEnergy(BaseEnergyFunction):
         self.b = b
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Computes the Rosenbrock energy: (a-x₁)² + b·(x₂-x₁²)²."""
+        r"""Computes the Rosenbrock energy: \((a-x₁)² + b·(x₂-x₁²)²\)."""
         # Ensure x is compatible shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
@@ -356,12 +358,17 @@ class RosenbrockEnergy(BaseEnergyFunction):
 
 
 class AckleyEnergy(BaseEnergyFunction):
-    """
+    r"""
     Energy function for the Ackley function.
 
     The Ackley energy is defined as:
 
-    $$E(x) = -a \cdot \exp\left(-b \cdot \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c \cdot x_i)\right) + a + e$$
+    $$
+    \begin{aligned}
+    E(x) &= -a \exp\left(-b \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) \\
+    &\quad - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c x_i)\right) + a + \exp(1)
+    \end{aligned}
+    $$
 
     This function has a global minimum at the origin surrounded by many local minima,
     creating a challenging optimization landscape that tests an algorithm's ability to
@@ -380,10 +387,15 @@ class AckleyEnergy(BaseEnergyFunction):
         self.c = c
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
+        r"""
         Computes the Ackley energy.
 
-        $$E(x) = -a \cdot \exp\left(-b \cdot \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c \cdot x_i)\right) + a + e$$
+        $$
+        \begin{aligned}
+        E(x) &= -a \exp\left(-b \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) \\
+        &\quad - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c x_i)\right) + a + \exp(1)
+        \end{aligned}
+        $$
         """
         # Ensure x is compatible shape
         if x.ndim == 1:  # Handle single sample case
@@ -423,7 +435,7 @@ class AckleyEnergy(BaseEnergyFunction):
 
 
 class RastriginEnergy(BaseEnergyFunction):
-    """
+    r"""
     Energy function for the Rastrigin function.
 
     The Rastrigin energy is defined as:
@@ -443,7 +455,7 @@ class RastriginEnergy(BaseEnergyFunction):
         self.a = a
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
+        r"""
         Computes the Rastrigin energy.
 
         $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$

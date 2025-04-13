@@ -312,12 +312,13 @@ class HamiltonianMonteCarlo(BaseSampler):
     def _leapfrog_step(
         self, position: torch.Tensor, momentum: torch.Tensor, gradient_fn: Callable
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Perform a single leapfrog integration step.
+        r"""Perform a single leapfrog integration step.
 
         Implements the symplectic leapfrog integrator for Hamiltonian dynamics:
-        1. Half-step momentum update: p(t+ε/2) = p(t) - (ε/2)∇U(q(t))
-        2. Full-step position update: q(t+ε) = q(t) + εM^(-1)p(t+ε/2)
-        3. Half-step momentum update: p(t+ε) = p(t+ε/2) - (ε/2)∇U(q(t+ε))
+
+        1. Half-step momentum update: \(p(t+ε/2) = p(t) - (ε/2)∇U(q(t))\)
+        2. Full-step position update: \(q(t+ε) = q(t) + εM^(-1)p(t+ε/2)\)
+        3. Half-step momentum update: \(p(t+ε) = p(t+ε/2) - (ε/2)∇U(q(t+ε))\)
 
         Args:
             position: Current position tensor.
@@ -402,6 +403,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         """Perform a single HMC step with Metropolis-Hastings acceptance.
 
         This implements the core HMC algorithm:
+
         1. Sample initial momentum
         2. Compute initial Hamiltonian
         3. Perform leapfrog integration to propose new state
@@ -412,10 +414,9 @@ class HamiltonianMonteCarlo(BaseSampler):
             current_position: Current position tensor of shape (batch_size, dim).
 
         Returns:
-            Tuple containing:
-            - new_position: Updated position tensor
-            - acceptance_prob: Probability of accepting each proposal
-            - accepted: Boolean mask indicating which proposals were accepted
+            new_position: Updated position tensor
+            acceptance_prob: Probability of accepting each proposal
+            accepted: Boolean mask indicating which proposals were accepted
         """
         batch_size = current_position.shape[0]
 
@@ -499,13 +500,15 @@ class HamiltonianMonteCarlo(BaseSampler):
             return_diagnostics: If True, return diagnostics about the sampling process.
 
         Returns:
-            If return_trajectory=False and return_diagnostics=False:
-                Tensor of shape (n_samples, dim) with final samples.
-            If return_trajectory=True and return_diagnostics=False:
-                Tensor of shape (n_samples, n_steps, dim) with the trajectory of all samples.
-            If return_diagnostics=True:
-                Tuple of (samples, diagnostics) where diagnostics contains information about
-                the sampling process, including mean, variance, energy values, and acceptance rates.
+            Final samples:
+
+                - If return_trajectory=False and return_diagnostics=False:
+                    Tensor of shape (n_samples, dim) with final samples.
+                - If return_trajectory=True and return_diagnostics=False:
+                    Tensor of shape (n_samples, n_steps, dim) with the trajectory of all samples.
+                - If return_diagnostics=True:
+                    Tuple of (samples, diagnostics) where diagnostics contains information about
+                    the sampling process, including mean, variance, energy values, and acceptance rates.
 
         Note:
             This method uses automatic mixed precision when available on CUDA devices
@@ -625,6 +628,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         """Initialize diagnostics tensor to track HMC sampling metrics.
 
         Creates a tensor to store diagnostics information during sampling, including:
+
         - Mean of samples (dimension 0)
         - Variance of samples (dimension 1)
         - Energy values (dimension 2)
