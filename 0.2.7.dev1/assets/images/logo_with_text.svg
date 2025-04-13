@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="300" height="80" viewBox="0 0 300 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gradient definitions -->
+  <defs>
+    <linearGradient id="nablaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF7E5F" />
+      <stop offset="50%" stop-color="#56CCF2" />
+      <stop offset="100%" stop-color="#2ECC71" />
+    </linearGradient>
+    <linearGradient id="torchGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff7e5f" />
+      <stop offset="100%" stop-color="#feb47b" />
+    </linearGradient>
+    <linearGradient id="ebmGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00c6ff" />
+      <stop offset="100%" stop-color="#0072ff" />
+    </linearGradient>
+    <filter id="textGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="outerGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Nabla symbol with gradient -->
+  <g transform="translate(10, 50)">
+    <!-- Enhanced glow effect for the circle -->
+    <circle cx="30" cy="0" r="30" fill="url(#nablaGradient)" opacity="0.2" filter="url(#outerGlow)" />
+    
+    <!-- Nabla symbol with enhanced glow -->
+    <text x="10" y="20" 
+          font-family="Montserrat, sans-serif" 
+          font-size="60" 
+          font-weight="700" 
+          fill="url(#nablaGradient)" 
+          filter="url(#textGlow)">∇</text>
+  </g>
+
+  <!-- TorchEBM text -->
+  <g transform="translate(80, 50)">
+    <!-- Torch text -->
+    <text x="0" y="15" font-family="Raleway, sans-serif" font-size="40" font-weight="600" fill="url(#torchGradient)" letter-spacing="0.5">Torch</text>
+    
+    <!-- EBM text -->
+    <text x="115" y="15" font-family="Raleway, sans-serif" font-size="40" font-weight="700" fill="url(#ebmGradient)" letter-spacing="0.5">EBM</text>
+  </g>
+</svg> 
