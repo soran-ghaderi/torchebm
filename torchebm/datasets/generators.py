@@ -184,6 +184,36 @@ def make_swiss_roll(
     return tensor_data
 
 
+def make_circle(
+    n_samples: int = 2000,
+    noise: float = 0.05,
+    radius: float = 1.0,
+    device: Optional[Union[str, torch.device]] = None,
+) -> torch.Tensor:
+    """
+    Generates points sampled uniformly on a circle with noise.
+
+    Args:
+        n_samples (int): Number of samples.
+        noise (float): Standard deviation of Gaussian noise added.
+        radius (float): Radius of the circle.
+        device (Optional[Union[str, torch.device]]): Device to place the tensor on.
+
+    Returns:
+        torch.Tensor: Tensor of shape (n_samples, 2).
+    """
+    angles = 2 * np.pi * np.random.rand(n_samples)
+    x = radius * np.cos(angles)
+    y = radius * np.sin(angles)
+    X = np.vstack((x, y)).T.astype(np.float32)
+
+    # Add noise using torch
+    tensor_data = _to_tensor(X, device=device)
+    tensor_data += torch.randn_like(tensor_data) * noise
+
+    return tensor_data
+
+
 import matplotlib.pyplot as plt
 
 mixture_data = make_gaussian_mixture(n_samples=500, n_components=4, std=0.1)
