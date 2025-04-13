@@ -85,9 +85,7 @@ class BaseContrastiveDivergence(BaseLoss):
             shape: Shape of the initial chain state.
         """
 
-        if self.chain is not None or (
-            hasattr(self.chain, "shape") and self.chain.shape != shape
-        ):
+        if self.chain is None or self.chain.shape != shape:
             self.chain = torch.randn(*shape, dtype=self.dtype, device=self.device)
 
         return self.chain
