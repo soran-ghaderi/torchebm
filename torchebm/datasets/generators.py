@@ -66,28 +66,121 @@ def make_gaussian_mixture(
     return data
 
 
-def make_two_moons(
-    n_samples: int = 1000,
-    noise: float = 0.1,
+def make_8gaussians(
+    n_samples: int = 2000,
+    std: float = 0.02,
+    scale: float = 2.0,
     device: Optional[Union[str, torch.device]] = None,
 ) -> torch.Tensor:
-    """Generates the 'two moons' dataset."""
+    """
+    Generates samples from the specific '8 Gaussians' mixture.
+
+    Args:
+        n_samples (int): Total number of samples to generate.
+        std (float): Standard deviation of each Gaussian component.
+        scale (float): Scaling factor for the centers (often 2).
+        device (Optional[Union[str, torch.device]]): Device to place the tensor on.
+
+    Returns:
+        torch.Tensor: Tensor of shape (n_samples, 2).
+    """
+    centers = (
+        np.array(
+            [
+                (1, 0),
+                (-1, 0),
+                (0, 1),
+                (0, -1),
+                (1.0 / np.sqrt(2), 1.0 / np.sqrt(2)),
+                (1.0 / np.sqrt(2), -1.0 / np.sqrt(2)),
+                (-1.0 / np.sqrt(2), 1.0 / np.sqrt(2)),
+                (-1.0 / np.sqrt(2), -1.0 / np.sqrt(2)),
+            ],
+            dtype=np.float32,
+        )
+        * scale
+    )
+
+    return make_gaussian_mixture(
+        n_samples=n_samples,
+        n_components=8,  # Fixed at 8
+        std=std,
+        radius=scale,  # Use scale directly (approximation, centers are fixed)
+        device=device,
+    )
+
+
+def make_two_moons(
+    n_samples: int = 2000,
+    noise: float = 0.05,
+    device: Optional[Union[str, torch.device]] = None,
+) -> torch.Tensor:
+    """
+    Generates the 'two moons' dataset.
+
+    Args:
+        n_samples (int): Total number of samples.
+        noise (float): Standard deviation of Gaussian noise added.
+        device (Optional[Union[str, torch.device]]): Device to place the tensor on.
+
+    Returns:
+        torch.Tensor: Tensor of shape (n_samples, 2).
+    """
     n_samples_out = n_samples // 2
     n_samples_in = n_samples - n_samples_out
 
+    # Outer moon
     outer_circ_x = np.cos(np.linspace(0, np.pi, n_samples_out))
     outer_circ_y = np.sin(np.linspace(0, np.pi, n_samples_out))
+    # Inner moon
     inner_circ_x = 1 - np.cos(np.linspace(0, np.pi, n_samples_in))
     inner_circ_y = 1 - np.sin(np.linspace(0, np.pi, n_samples_in)) - 0.5
 
     X = np.vstack(
         [np.append(outer_circ_x, inner_circ_x), np.append(outer_circ_y, inner_circ_y)]
-    ).T
-    X = X + np.random.normal(scale=noise, size=X.shape)
+    ).T.astype(np.float32)
 
-    tensor_data = torch.from_numpy(X).float()
-    if device:
-        tensor_data = tensor_data.to(torch.device(device))
+    # Add noise using torch for potential device efficiency
+    tensor_data = _to_tensor(X, device=device)
+    tensor_data += torch.randn_like(tensor_data) * noise
+
+    return tensor_data
+
+
+def make_swiss_roll(
+    n_samples: int = 2000,
+    noise: float = 0.05,
+    arclength: float = 3.0,  # Controls how many rolls (pi*arclength)
+    device: Optional[Union[str, torch.device]] = None,
+) -> torch.Tensor:
+    """
+    Generates a 2D Swiss roll dataset.
+
+    Args:
+        n_samples (int): Number of samples.
+        noise (float): Standard deviation of Gaussian noise added.
+        arclength (float): Controls the length/tightness of the roll.
+        device (Optional[Union[str, torch.device]]): Device to place the tensor on.
+
+    Returns:
+        torch.Tensor: Tensor of shape (n_samples, 2).
+    """
+    t = arclength * np.pi * (1 + 2 * np.random.rand(n_samples))
+
+    x = t * np.cos(t)
+    y = t * np.sin(t)
+
+    X = np.vstack((x, y)).T.astype(np.float32)
+
+    # Add noise using torch
+    tensor_data = _to_tensor(X, device=device)
+    tensor_data += torch.randn_like(tensor_data) * noise
+
+    # Center and scale slightly
+    tensor_data = (tensor_data - tensor_data.mean(dim=0)) / (
+        tensor_data.std(dim=0).mean() * 2.0
+    )
+
     return tensor_data
 
 
