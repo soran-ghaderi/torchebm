@@ -139,6 +139,8 @@ nav:
     - Samplers:
       - Langevin Dynamics: examples/samplers/langevin.md
       - Hamiltonian Monte Carlo: examples/samplers/hmc.md
+    - Training EBMs:
+      - Learning Gaussian Mixture: examples/training/training_ebm_gaussian.md
     - Visualization:
       - Overview: examples/visualization/index.md
   - Developer Guide:

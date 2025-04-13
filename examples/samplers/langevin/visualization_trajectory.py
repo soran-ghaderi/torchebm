@@ -184,9 +184,11 @@ def visualize_energy_landscape_and_sampling():
         plt.grid(True)
         plt.legend()
         # Save the figure to the docs assets directory
-        output_dir = Path("docs/assets/images/examples")
+        output_dir = Path("../../../docs/assets/images/examples")
         output_dir.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_dir / "langevin_trajectory.png", dpi=300, bbox_inches='tight')
+        plt.savefig(
+            output_dir / "langevin_trajectory.png", dpi=300, bbox_inches="tight"
+        )
         print(f"Image saved to {output_dir}/langevin_trajectory.png")
         # plt.show()
 
