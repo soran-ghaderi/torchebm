@@ -130,13 +130,13 @@ if __name__ == "__main__":
     INPUT_DIM = 2
     HIDDEN_DIM = 16
     BATCH_SIZE = 256
-    EPOCHS = 1000
+    EPOCHS = 200
     LEARNING_RATE = 1e-2
     SAMPLER_STEP_SIZE = 0.1
     SAMPLER_NOISE_SCALE = 0.1  # Adjust carefully with step_size
     CD_K = 10  # Number of steps for CD sampler
     USE_PCD = False  # Set to True to use Persistent CD
-    VISUALIZE_EVERY = 100  # How often to generate plots
+    VISUALIZE_EVERY = 10  # How often to generate plots
 
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
