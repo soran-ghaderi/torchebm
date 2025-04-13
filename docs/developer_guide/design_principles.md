@@ -48,7 +48,7 @@ TorchEBM aims to be:
 TorchEBM is built around a set of extensible base classes that provide common interface:
 
 ```python
-class EnergyFunction(nn.Module):
+class BaseEnergyFunction(nn.Module):
     """Base class for all energy functions."""
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -283,7 +283,7 @@ Status indicators:
     - [ ] Sequential Monte Carlo (SMC) Samplers :sparkles:
     - [ ] Elliptical Slice Sampling :sparkles:
 
-=== "Loss Functions"
+=== "BaseLoss Functions"
 
     - [ ] Contrastive Divergence Methods :construction:
       * [ ] Contrastive Divergence (CD-k) :construction:
@@ -295,17 +295,17 @@ Status indicators:
       * [ ] Denoising Score Matching :sparkles:
       * [ ] Sliced Score Matching :sparkles:
     - [ ] Maximum Likelihood Estimation (MLE) :sparkles:
-    - [ ] Margin Loss :sparkles:
+    - [ ] Margin BaseLoss :sparkles:
     - [ ] Noise Contrastive Estimation (NCE) :sparkles:
     - [ ] Ratio Matching :sparkles:
     - [ ] Minimum Probability Flow :sparkles:
-    - [ ] Adversarial Training Loss :sparkles:
-    - [ ] Kullback-Leibler (KL) Divergence Loss :sparkles:
+    - [ ] Adversarial Training BaseLoss :sparkles:
+    - [ ] Kullback-Leibler (KL) Divergence BaseLoss :sparkles:
     - [ ] Fisher Divergence :sparkles:
-    - [ ] Hinge Embedding Loss :sparkles:
-    - [ ] Cross-Entropy Loss (for discrete outputs) :sparkles:
-    - [ ] Mean Squared Error (MSE) Loss (for continuous outputs) :sparkles:
-    - [ ] Improved Contrastive Divergence Loss :sparkles:
+    - [ ] Hinge Embedding BaseLoss :sparkles:
+    - [ ] Cross-Entropy BaseLoss (for discrete outputs) :sparkles:
+    - [ ] Mean Squared Error (MSE) BaseLoss (for continuous outputs) :sparkles:
+    - [ ] Improved Contrastive Divergence BaseLoss :sparkles:
 
 === "Other Modules"
 

@@ -61,7 +61,7 @@ samples = langevin_sampler.sample_chain(
 HMC uses Hamiltonian dynamics to make more efficient proposals, leading to better exploration of the distribution:
 
 ```python
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 from torchebm.core import DoubleWellEnergy
 import torch
 

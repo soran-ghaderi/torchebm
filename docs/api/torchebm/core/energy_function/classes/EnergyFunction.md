@@ -1,6 +1,6 @@
 ## Methods and Attributes
 
-::: torchebm.core.energy_function.EnergyFunction
+::: torchebm.core.energy_function.BaseEnergyFunction
     options:
       show_root_heading: false
       show_source: true

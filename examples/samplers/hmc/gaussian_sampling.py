@@ -6,7 +6,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from torchebm.core import GaussianEnergy
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 
 # Create output directory
 output_dir = Path("../../../docs/assets/images/examples")

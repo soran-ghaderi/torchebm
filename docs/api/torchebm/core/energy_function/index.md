@@ -6,7 +6,7 @@
 
 - [`AckleyEnergy`](classes/AckleyEnergy) - Energy function for the Ackley function.
 - [`DoubleWellEnergy`](classes/DoubleWellEnergy) - Energy function for a double well potential. E(x) = h * Σ((x²-1)²) where h is the barrier height.
-- [`EnergyFunction`](classes/EnergyFunction) - Abstract base class for energy functions (Potential Energy E(x)).
+- [`BaseEnergyFunction`](classes/EnergyFunction) - Abstract base class for energy functions (Potential Energy E(x)).
 - [`GaussianEnergy`](classes/GaussianEnergy) - Energy function for a Gaussian distribution. E(x) = 0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ).
 - [`HarmonicEnergy`](classes/HarmonicEnergy) - Energy function for a harmonic oscillator. E(x) = 0.5 * k * Σ(x²).
 - [`RastriginEnergy`](classes/RastriginEnergy) - Energy function for the Rastrigin function.

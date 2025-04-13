@@ -2,8 +2,15 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
-from torchebm.core.energy_function import RosenbrockEnergy, AckleyEnergy, RastriginEnergy, DoubleWellEnergy, \
-    GaussianEnergy, HarmonicEnergy
+from torchebm.core.base_energy_function import (
+    RosenbrockEnergy,
+    AckleyEnergy,
+    RastriginEnergy,
+    DoubleWellEnergy,
+    GaussianEnergy,
+    HarmonicEnergy,
+)
+
 
 def plot_energy_function(energy_fn, x_range, y_range, title):
     x = np.linspace(x_range[0], x_range[1], 100)
@@ -17,21 +24,29 @@ def plot_energy_function(energy_fn, x_range, y_range, title):
             Z[i, j] = energy_fn(point).item()
 
     fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot_surface(X, Y, Z, cmap='viridis')
+    ax = fig.add_subplot(111, projection="3d")
+    ax.plot_surface(X, Y, Z, cmap="viridis")
     ax.set_title(title)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('Energy')
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("Energy")
     plt.show()
 
+
 energy_functions = [
-    (RosenbrockEnergy(), [-2, 2], [-1, 3], 'Rosenbrock Energy Function'),
-    (AckleyEnergy(), [-5, 5], [-5, 5], 'Ackley Energy Function'),
-    (RastriginEnergy(), [-5, 5], [-5, 5], 'Rastrigin Energy Function'),
-    (DoubleWellEnergy(), [-2, 2], [-2, 2], 'Double Well Energy Function'),
-    (GaussianEnergy(torch.tensor([0.0, 0.0]), torch.tensor([[1.0, 0.0], [0.0, 1.0]])), [-3, 3], [-3, 3], 'Gaussian Energy Function'),
-    (HarmonicEnergy(), [-3, 3], [-3, 3], 'Harmonic Energy Function')
+    (RosenbrockEnergy(), [-2, 2], [-1, 3], "Rosenbrock Energy Function"),
+    (AckleyEnergy(), [-5, 5], [-5, 5], "Ackley Energy Function"),
+    (RastriginEnergy(), [-5, 5], [-5, 5], "Rastrigin Energy Function"),
+    (DoubleWellEnergy(), [-2, 2], [-2, 2], "Double Well Energy Function"),
+    (
+        GaussianEnergy(
+            torch.tensor([0.0, 0.0]), torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+        ),
+        [-3, 3],
+        [-3, 3],
+        "Gaussian Energy Function",
+    ),
+    (HarmonicEnergy(), [-3, 3], [-3, 3], "Harmonic Energy Function"),
 ]
 
 # Plot each energy function

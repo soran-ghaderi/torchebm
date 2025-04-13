@@ -33,7 +33,7 @@ Welcome to the TorchEBM guides section! These comprehensive guides will help you
 
     Explore different loss functions for training energy-based models.
 
-    [:octicons-arrow-right-24: Loss Functions Guide](loss_functions.md)
+    [:octicons-arrow-right-24: BaseLoss Functions Guide](loss_functions.md)
 
 -   :material-cube-outline:{ .lg .middle } __Custom Neural Networks__
 
@@ -112,15 +112,16 @@ Here are some common patterns you'll encounter throughout the guides:
 ### Energy Function Definition
 
 ```python
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 import torch
 
-class MyEnergyFunction(EnergyFunction):
+
+class MyEnergyFunction(BaseEnergyFunction):
     def __init__(self):
         super().__init__()
-        
+
     def forward(self, x):
-        return torch.sum(x**2, dim=-1)
+        return torch.sum(x ** 2, dim=-1)
 ```
 
 </div>

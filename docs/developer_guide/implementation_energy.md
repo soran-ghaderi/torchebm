@@ -25,10 +25,10 @@ This relationship is fundamental to many sampling and training methods in TorchE
 
 ## Base Energy Function Implementation
 
-The `EnergyFunction` base class provides the foundation for all energy functions:
+The `BaseEnergyFunction` base class provides the foundation for all energy functions:
 
 ```python
-class EnergyFunction(nn.Module):
+class BaseEnergyFunction(nn.Module):
     """Base class for all energy functions."""
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -61,7 +61,7 @@ $$E(x) = \frac{1}{2}(x - \mu)^T\Sigma^{-1}(x - \mu)$$
 Where $\mu$ is the mean vector and $\Sigma$ is the covariance matrix.
 
 ```python
-class GaussianEnergy(EnergyFunction):
+class GaussianEnergy(BaseEnergyFunction):
     """Gaussian energy function."""
     
     def __init__(self, mean: torch.Tensor, cov: torch.Tensor):
@@ -132,7 +132,7 @@ The double well energy function creates a bimodal distribution:
 $$E(x) = a(x^2 - b)^2$$
 
 ```python
-class DoubleWellEnergy(EnergyFunction):
+class DoubleWellEnergy(BaseEnergyFunction):
     """Double well energy function."""
     
     def __init__(self, a: float = 1.0, b: float = 2.0):
@@ -166,7 +166,7 @@ The Rosenbrock function is a challenging test case with a narrow curved valley:
 $$E(x) = \sum_{i=1}^{d-1} \left[ a(x_{i+1} - x_i^2)^2 + (x_i - 1)^2 \right]$$
 
 ```python
-class RosenbrockEnergy(EnergyFunction):
+class RosenbrockEnergy(BaseEnergyFunction):
     """Rosenbrock energy function."""
     
     def __init__(self, a: float = 1.0, b: float = 100.0):
@@ -208,12 +208,12 @@ class RosenbrockEnergy(EnergyFunction):
 TorchEBM supports composing energy functions to create more complex landscapes:
 
 ```python
-class CompositeEnergy(EnergyFunction):
+class CompositeEnergy(BaseEnergyFunction):
     """Composite energy function."""
     
     def __init__(
         self,
-        energy_functions: List[EnergyFunction],
+        energy_functions: List[BaseEnergyFunction],
         weights: Optional[List[float]] = None,
         operation: str = "sum"
     ):
@@ -261,7 +261,7 @@ class CompositeEnergy(EnergyFunction):
 Neural networks can parameterize energy functions for flexibility:
 
 ```python
-class MLPEnergy(EnergyFunction):
+class MLPEnergy(BaseEnergyFunction):
     """Multi-layer perceptron energy function."""
     
     def __init__(
@@ -312,7 +312,7 @@ class MLPEnergy(EnergyFunction):
 For gradients, TorchEBM provides optimized implementations:
 
 ```python
-def efficient_grad(energy_fn: EnergyFunction, x: torch.Tensor, create_graph: bool = False) -> torch.Tensor:
+def efficient_grad(energy_fn: BaseEnergyFunction, x: torch.Tensor, create_graph: bool = False) -> torch.Tensor:
     """Compute gradient of energy function efficiently.
     
     Args:
@@ -389,7 +389,7 @@ def from_samples(cls, samples: torch.Tensor, regularization: float = 1e-4) -> 'G
 Energy functions must be numerically stable:
 
 ```python
-class NumericallyStableEnergy(EnergyFunction):
+class NumericallyStableEnergy(BaseEnergyFunction):
     """Energy function with numerical stability considerations."""
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -411,10 +411,10 @@ class NumericallyStableEnergy(EnergyFunction):
 For multi-modal distributions:
 
 ```python
-class MixtureEnergy(EnergyFunction):
+class MixtureEnergy(BaseEnergyFunction):
     """Mixture of energy functions."""
     
-    def __init__(self, components: List[EnergyFunction], weights: Optional[List[float]] = None):
+    def __init__(self, components: List[BaseEnergyFunction], weights: Optional[List[float]] = None):
         """Initialize mixture energy function.
         
         Args:
@@ -447,7 +447,7 @@ class MixtureEnergy(EnergyFunction):
 TorchEBM includes comprehensive testing utilities for energy functions:
 
 ```python
-def test_energy_function(energy_fn: EnergyFunction, dim: int, n_samples: int = 1000) -> dict:
+def test_energy_function(energy_fn: BaseEnergyFunction, dim: int, n_samples: int = 1000) -> dict:
     """Test an energy function for correctness and properties.
     
     Args:
@@ -513,7 +513,7 @@ When implementing custom energy functions, follow these best practices:
 
 !!! example "Custom Energy Function Example"
     ```python
-    class CustomEnergy(EnergyFunction):
+    class CustomEnergy(BaseEnergyFunction):
         """Custom energy function example."""
         
         def __init__(self, scale: float = 1.0):
@@ -547,7 +547,7 @@ Common issues with energy functions include:
 Debugging techniques:
 
 ```python
-def debug_energy_function(energy_fn: EnergyFunction, x: torch.Tensor) -> None:
+def debug_energy_function(energy_fn: BaseEnergyFunction, x: torch.Tensor) -> None:
     """Debug an energy function for common issues."""
     # Check for NaN/Inf in energy
     energy = energy_fn(x)
@@ -576,10 +576,10 @@ def debug_energy_function(energy_fn: EnergyFunction, x: torch.Tensor) -> None:
 Energy functions on constrained domains:
 
 ```python
-class SphericalEnergy(EnergyFunction):
+class SphericalEnergy(BaseEnergyFunction):
     """Energy function defined on a unit sphere."""
     
-    def __init__(self, base_energy: EnergyFunction):
+    def __init__(self, base_energy: BaseEnergyFunction):
         """Initialize spherical energy function.
         
         Args:
@@ -607,7 +607,7 @@ class SphericalEnergy(EnergyFunction):
 Creating an energy function from a density model:
 
 ```python
-class DensityModelEnergy(EnergyFunction):
+class DensityModelEnergy(BaseEnergyFunction):
     """Energy function from a density model."""
     
     def __init__(self, density_model: Callable):

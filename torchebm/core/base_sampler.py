@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Union, Tuple, List
 
 import torch
-from torchebm.core.energy_function import EnergyFunction
+from torchebm.core.base_energy_function import BaseEnergyFunction
 
 
 class BaseSampler(ABC):
@@ -10,7 +10,7 @@ class BaseSampler(ABC):
     Base class for samplers.
 
     Args:
-        energy_function (EnergyFunction): Energy function to sample from.
+        energy_function (BaseEnergyFunction): Energy function to sample from.
         dtype (torch.dtype): Data type to use for the computations.
         device (str): Device to run the computations on (e.g., "cpu" or "cuda").
 
@@ -23,7 +23,7 @@ class BaseSampler(ABC):
 
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):

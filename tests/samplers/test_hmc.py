@@ -1,12 +1,12 @@
 import pytest
 import torch
 import numpy as np
-from torchebm.core.energy_function import (
-    EnergyFunction,
+from torchebm.core.base_energy_function import (
+    BaseEnergyFunction,
     GaussianEnergy,
     DoubleWellEnergy,
 )
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 from tests.conftest import requires_cuda
 
 
@@ -475,13 +475,15 @@ def test_hmc_high_dimensions():
     # In high dimensions with few samples, some dimensions may have larger deviations
     # Check that the overall mean is close to zero, and most dimensions are within tolerance
     sample_means = samples.mean(dim=0)
-    
+
     # Check overall mean is close to zero
     assert torch.abs(sample_means.mean()) < 0.1, "Overall mean should be close to zero"
-    
+
     # Check that at least 90% of dimensions have means within ±1.0
     within_tolerance = (torch.abs(sample_means) < 1.0).float().mean()
-    assert within_tolerance >= 0.9, f"Only {within_tolerance:.2f} of dimensions within tolerance"
+    assert (
+        within_tolerance >= 0.9
+    ), f"Only {within_tolerance:.2f} of dimensions within tolerance"
 
 
 def test_hmc_custom_initial_state():

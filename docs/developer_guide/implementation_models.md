@@ -199,11 +199,12 @@ class ConvEnergyModel(nn.Module):
 Neural networks can be used to create energy functions:
 
 ```python
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 
-class NeuralEnergyFunction(EnergyFunction):
+
+class NeuralEnergyFunction(BaseEnergyFunction):
     """Energy function implemented using a neural network."""
-    
+
     def __init__(self, model: nn.Module):
         """Initialize neural energy function.
         
@@ -212,7 +213,7 @@ class NeuralEnergyFunction(EnergyFunction):
         """
         super().__init__()
         self.model = model
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute energy values for inputs.
         
@@ -322,10 +323,10 @@ class EBMTrainer:
     
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         sampler: "Sampler",
         optimizer: torch.optim.Optimizer,
-        loss_fn: "Loss"
+        loss_fn: "BaseLoss"
     ):
         """Initialize EBM trainer.
         
@@ -333,7 +334,7 @@ class EBMTrainer:
             energy_function: Energy function to train
             sampler: Sampler for negative samples
             optimizer: Optimizer for model parameters
-            loss_fn: Loss function
+            loss_fn: BaseLoss function
         """
         self.energy_function = energy_function
         self.sampler = sampler

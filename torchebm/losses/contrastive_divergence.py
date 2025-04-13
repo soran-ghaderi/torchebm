@@ -5,53 +5,61 @@ from torch import nn
 import math
 from abc import abstractmethod
 
-from torch.nn.modules.module import T
-from torch.utils.hooks import RemovableHandle
-
-from torchebm.core import BaseSampler
-from torchebm.core.energy_function import EnergyFunction
-from torchebm.core.losses import Loss
+from torchebm.core import BaseContrastiveDivergence
 
 
-class ContrastiveDivergenceBase(Loss):
-    def __init__(self, k=1):
-        super().__init__()
-        self.k = k  # Number of sampling steps
+class ContrastiveDivergence(BaseContrastiveDivergence):
 
-    @abstractmethod
-    def sample(self, energy_model, x_pos):
-        """Abstract method: Generate negative samples from the energy model.
-        Args:
-            energy_model: Energy-based model (e.g., RBM)
-            x_pos: Positive samples (data)
-        Returns:
-            x_neg: Negative samples (model samples)
-        """
-        raise NotImplementedError
+    def forward(
+        self, x: torch.Tensor, *args, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
 
-    def forward(self, energy_model, x_pos):
-        """Compute the CD loss: E(x_pos) - E(x_neg)"""
-        x_neg = self.sample(energy_model, x_pos)
-        loss = energy_model(x_pos).mean() - energy_model(x_neg).mean()
+        batch_size = x.shape[0]
+
+        if self.persistent:
+            if self.chain is None or self.chain.shape[0] != batch_size:
+                print(
+                    f"Initializing persistent chain (size {batch_size})..."
+                )  # Logging
+                init_noise = torch.randn_like(x)
+                # self.chain = self.sampler.sample_chain(x=init_noise, n_steps=self.n_stpes).detach() # improve a bit before starting maybe? decide later..
+                self.chain = init_noise.detach()
+
+            start_points = self.chain.to(self.device, dtype=self.dtype)
+
+        else:
+            start_points = x.detach()
+
+        # generate negative samples
+        pred_samples = self.sampler.sample(
+            x=start_points,
+            n_steps=self.n_steps,
+            # n_samples=batch_size,
+        ).detach()
+
+        if self.persistent:
+            self.chain = pred_samples.detach()
+
+        loss = self.compute_loss(x, pred_samples, *args, **kwargs)
+
+        return loss, pred_samples.detach()
+
+    def compute_loss(
+        self, x: torch.Tensor, pred_x: torch.Tensor, *args, **kwargs
+    ) -> torch.Tensor:
+
+        x_energy = self.energy_function(x)
+        pred_x_energy = self.energy_function(pred_x)
+
+        # Contrastive Divergence loss: E[data] - E[model]
+        loss = torch.mean(x_energy - pred_x_energy)
+
         return loss
 
 
-class ContrastiveDivergence(ContrastiveDivergenceBase):
-    def __init__(self, k=1):
-        super().__init__(k)
-
-    def sample(self, energy_model, x_pos):
-        x_neg = x_pos.clone().detach()
-        for _ in range(self.k):
-            x_neg = energy_model.gibbs_step(
-                x_neg
-            )  # todo: implement `gibbs_step` in energy_model
-        return x_neg
-
-
-class PersistentContrastiveDivergence(ContrastiveDivergenceBase):
+class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     def __init__(self, buffer_size=100):
-        super().__init__(k=1)
+        super().__init__(n_steps=1)
         self.buffer = None  # Persistent chain state
         self.buffer_size = buffer_size
 
@@ -62,7 +70,7 @@ class PersistentContrastiveDivergence(ContrastiveDivergenceBase):
     #                                   device=x_pos.device)
     #
     #     # Update buffer with Gibbs steps
-    #     for _ in range(self.k):
+    #     for _ in range(self.n_steps):
     #         self.buffer = energy_model.gibbs_step(self.buffer)
     #
     #     # Return a subset of the buffer as negative samples
@@ -70,14 +78,14 @@ class PersistentContrastiveDivergence(ContrastiveDivergenceBase):
     #     return self.buffer[idx]
 
 
-class ParallelTemperingCD(ContrastiveDivergenceBase):
+class ParallelTemperingCD(BaseContrastiveDivergence):
     def __init__(self, temps=[1.0, 0.5], k=5):
         super().__init__(k)
         self.temps = temps  # List of temperatures
 
     # def sample(self, energy_model, x_pos):
     #     chains = [x_pos.detach().clone() for _ in self.temps]
-    #     for _ in range(self.k):
+    #     for _ in range(self.n_steps):
     #         # Run Gibbs steps at each temperature
     #         for i, temp in enumerate(self.temps):
     #             chains[i] = energy_model.gibbs_step(chains[i], temp=temp)

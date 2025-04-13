@@ -26,12 +26,13 @@ from abc import ABC, abstractmethod
 import torch
 from typing import Optional, Union, Tuple
 
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
+
 
 class Sampler(ABC):
     """Base class for all sampling algorithms."""
-    
-    def __init__(self, energy_function: EnergyFunction):
+
+    def __init__(self, energy_function: BaseEnergyFunction):
         """Initialize sampler with an energy function.
         
         Args:
@@ -39,12 +40,12 @@ class Sampler(ABC):
         """
         self.energy_function = energy_function
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
+
     def to(self, device):
         """Move sampler to specified device."""
         self.device = device
         return self
-    
+
     @abstractmethod
     def sample(self, n_samples: int, **kwargs) -> torch.Tensor:
         """Generate samples from the energy-based distribution.
@@ -57,7 +58,7 @@ class Sampler(ABC):
             Tensor of shape (n_samples, dim) containing samples
         """
         pass
-    
+
     @abstractmethod
     def sample_chain(self, dim: int, n_steps: int, n_samples: int = 1, **kwargs) -> torch.Tensor:
         """Generate samples using a Markov chain.
@@ -91,17 +92,18 @@ import torch
 import numpy as np
 from typing import Optional, Union, Tuple
 
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 from torchebm.samplers.base import Sampler
+
 
 class LangevinDynamics(Sampler):
     """Langevin dynamics sampler."""
-    
+
     def __init__(
-        self,
-        energy_function: EnergyFunction,
-        step_size: float = 0.01,
-        noise_scale: float = 1.0
+            self,
+            energy_function: BaseEnergyFunction,
+            step_size: float = 0.01,
+            noise_scale: float = 1.0
     ):
         """Initialize Langevin dynamics sampler.
         
@@ -113,7 +115,7 @@ class LangevinDynamics(Sampler):
         super().__init__(energy_function)
         self.step_size = step_size
         self.noise_scale = noise_scale
-    
+
     def sample_step(self, x: torch.Tensor) -> torch.Tensor:
         """Perform one step of Langevin dynamics.
         
@@ -125,20 +127,20 @@ class LangevinDynamics(Sampler):
         """
         # Compute score (gradient of log probability)
         score = -self.energy_function.score(x)
-        
+
         # Add drift term and noise
         noise = torch.randn_like(x) * np.sqrt(2 * self.step_size * self.noise_scale)
         x_new = x + self.step_size * score + noise
-        
+
         return x_new
-    
+
     def sample_chain(
-        self,
-        dim: int,
-        n_steps: int,
-        n_samples: int = 1,
-        initial_samples: Optional[torch.Tensor] = None,
-        return_trajectory: bool = False
+            self,
+            dim: int,
+            n_steps: int,
+            n_samples: int = 1,
+            initial_samples: Optional[torch.Tensor] = None,
+            return_trajectory: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Generate samples using a Langevin dynamics chain.
         
@@ -157,23 +159,23 @@ class LangevinDynamics(Sampler):
             x = torch.randn(n_samples, dim, device=self.device)
         else:
             x = initial_samples.clone().to(self.device)
-        
+
         # Initialize trajectory if needed
         if return_trajectory:
             trajectory = torch.zeros(n_steps + 1, n_samples, dim, device=self.device)
             trajectory[0] = x
-        
+
         # Run sampling chain
         for i in range(n_steps):
             x = self.sample_step(x)
             if return_trajectory:
                 trajectory[i + 1] = x
-        
+
         if return_trajectory:
             return x, trajectory
         else:
             return x
-    
+
     def sample(self, n_samples: int, dim: int, n_steps: int = 100, **kwargs) -> torch.Tensor:
         """Generate samples from the energy-based distribution."""
         return self.sample_chain(dim=dim, n_steps=n_steps, n_samples=n_samples, **kwargs)
@@ -197,7 +199,7 @@ class HamiltonianMonteCarlo(Sampler):
     
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         step_size: float = 0.1,
         n_leapfrog_steps: int = 10,
         mass_matrix: Optional[torch.Tensor] = None
@@ -309,7 +311,7 @@ class MetropolisHastings(Sampler):
     
     def __init__(
         self,
-        energy_function: EnergyFunction,
+        energy_function: BaseEnergyFunction,
         proposal_scale: float = 0.1
     ):
         """Initialize Metropolis-Hastings sampler.
@@ -487,6 +489,6 @@ When implementing custom samplers, follow these best practices:
 
     Understand loss function implementation details.
 
-    [:octicons-arrow-right-24: Loss Functions](implementation_losses.md)
+    [:octicons-arrow-right-24: BaseLoss Functions](implementation_losses.md)
 
 </div> 

@@ -3,7 +3,7 @@ import torch
 from matplotlib import pyplot as plt
 
 from torchebm.core import GaussianEnergy
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 
 
 def hmc_custom_mass_matrix():

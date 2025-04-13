@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 from torchebm.core import GaussianEnergy, DoubleWellEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 
 # Create output directory
 output_dir = Path("../../docs/assets/images/examples")

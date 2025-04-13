@@ -173,7 +173,7 @@ class MySampler(BaseSampler):
 When implementing a new energy function:
 
 1. Create a new class in `torchebm/core/energy_function.py` or a new file in `torchebm/core/`
-2. Extend the `EnergyFunction` class
+2. Extend the `BaseEnergyFunction` class
 3. Implement the required methods:
    - `__init__`: Initialize the energy function with appropriate parameters
    - `forward`: Compute the energy value for a given input
@@ -183,23 +183,24 @@ When implementing a new energy function:
 Example:
 
 ```python
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 import torch
 
-class MyEnergyFunction(EnergyFunction):
+
+class MyEnergyFunction(BaseEnergyFunction):
     def __init__(self, param1, param2):
         super().__init__()
         self.param1 = param1
         self.param2 = param2
-    
+
     def forward(self, x):
         # Implement your energy function here
         # x shape: [batch_size, dimension]
         # Return shape: [batch_size]
-        return torch.sum(self.param1 * x**2 + self.param2 * torch.sin(x), dim=-1)
+        return torch.sum(self.param1 * x ** 2 + self.param2 * torch.sin(x), dim=-1)
 ```
 
-### Loss Functions
+### BaseLoss Functions
 
 When implementing a new loss function:
 

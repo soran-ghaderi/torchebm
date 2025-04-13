@@ -6,7 +6,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from torchebm.core import GaussianEnergy, DoubleWellEnergy
-from torchebm.samplers.mcmc import HamiltonianMonteCarlo
+from torchebm.samplers.hmc import HamiltonianMonteCarlo
 
 import time
 

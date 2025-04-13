@@ -30,7 +30,7 @@ This document outlines the design principles and patterns used in TorchEBM's API
     Energy functions define the energy landscape that characterizes a probability distribution.
 
     ```python
-    class EnergyFunction(nn.Module):
+    class BaseEnergyFunction(nn.Module):
         def forward(self, x):
             # Return energy values for inputs x
             pass
@@ -61,7 +61,7 @@ This document outlines the design principles and patterns used in TorchEBM's API
 
     ---
 
-    Loss functions are used to train energy-based models, often using samplers.
+    BaseLoss functions are used to train energy-based models, often using samplers.
 
     ```python
     class ContrastiveDivergence(nn.Module):
@@ -82,7 +82,7 @@ This document outlines the design principles and patterns used in TorchEBM's API
     Neural network models that can be used as energy functions.
 
     ```python
-    class BaseModel(EnergyFunction):
+    class BaseModel(BaseEnergyFunction):
         def __init__(self):
             super().__init__()
             # Define model architecture

@@ -34,7 +34,7 @@ TorchEBM is organized into several modules:
 
     ---
 
-    Loss functions for training energy-based models.
+    BaseLoss functions for training energy-based models.
 
     [:octicons-arrow-right-24: Losses](./torchebm/losses)
 
@@ -60,7 +60,7 @@ TorchEBM is organized into several modules:
 
 If you're new to TorchEBM, we recommend starting with the following classes:
 
-- [`EnergyFunction`](./torchebm/core/energy_function/classes/EnergyFunction): Base class for all energy functions
+- [`BaseEnergyFunction`](./torchebm/core/energy_function/classes/EnergyFunction): Base class for all energy functions
 - [`BaseSampler`](./torchebm/core/basesampler/classes/BaseSampler): Base class for all sampling algorithms
 - [`LangevinDynamics`](./torchebm/samplers/langevin_dynamics/classes/LangevinDynamics): Implementation of Langevin dynamics sampling
 
@@ -88,11 +88,11 @@ Available sampling algorithms:
 | [`LangevinDynamics`](./torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md) | Langevin dynamics sampling algorithm |
 | [`HamiltonianMonteCarlo`](./torchebm/samplers/mcmc/classes/HamiltonianMonteCarlo.md) | Hamiltonian Monte Carlo sampling |
 
-### Loss Functions
+### BaseLoss Functions
 
 TorchEBM implements several loss functions for training EBMs:
 
-| Loss Function | Description |
+| BaseLoss Function | Description |
 | ------------- | ----------- |
 | [`ContrastiveDivergence`](./torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md) | Standard contrastive divergence (CD-k) |
 | [`PersistentContrastiveDivergence`](./torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md) | Persistent contrastive divergence |

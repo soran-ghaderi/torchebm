@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import torch
-from torchebm.core.energy_function import EnergyFunction
-from torchebm.core.basesampler import BaseSampler
+from torchebm.core.base_energy_function import BaseEnergyFunction
+from torchebm.core.base_sampler import BaseSampler
 
 
 class BaseModel(ABC):
@@ -9,7 +9,7 @@ class BaseModel(ABC):
     Base class for models.
 
     Args:
-        energy_function (EnergyFunction): Energy function to sample from.
+        energy_function (BaseEnergyFunction): Energy function to sample from.
         sampler (BaseSampler): Sampler to use for sampling.
 
     Methods:
@@ -18,7 +18,7 @@ class BaseModel(ABC):
         train_step(real_data): Perform a single training step
     """
 
-    def __init__(self, energy_function: EnergyFunction, sampler: BaseSampler):
+    def __init__(self, energy_function: BaseEnergyFunction, sampler: BaseSampler):
         self.energy_function = energy_function
         self.sampler = sampler
 

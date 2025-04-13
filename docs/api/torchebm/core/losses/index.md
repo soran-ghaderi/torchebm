@@ -4,7 +4,7 @@
 
 ### Classes
 
-- [`Loss`](classes/Loss) - No description available.
+- [`BaseLoss`](classes/Loss) - No description available.
 
 ## API Reference
 

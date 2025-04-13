@@ -1,10 +1,10 @@
 ---
-title: Loss Functions Implementation
+title: BaseLoss Functions Implementation
 description: Detailed implementation details of TorchEBM's loss functions
 icon: material/function-variant
 ---
 
-# Loss Functions Implementation
+# BaseLoss Functions Implementation
 
 !!! abstract "Implementation Details"
     This guide provides detailed information about the implementation of loss functions in TorchEBM, including mathematical foundations, code structure, and optimization techniques.
@@ -13,34 +13,35 @@ icon: material/function-variant
 
 Energy-based models can be trained using various loss functions, each with different properties. The primary goal is to shape the energy landscape such that observed data has low energy while other regions have high energy.
 
-## Base Loss Implementation
+## Base BaseLoss Implementation
 
-The `Loss` base class provides the foundation for all loss functions:
+The `BaseLoss` base class provides the foundation for all loss functions:
 
 ```python
 from abc import ABC, abstractmethod
 import torch
 from typing import Optional, Dict, Any, Tuple
 
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 
-class Loss(ABC):
+
+class BaseLoss(ABC):
     """Base class for all loss functions."""
-    
-    def __init__(self, energy_function: EnergyFunction):
+
+    def __init__(self, energy_function: BaseEnergyFunction):
         """Initialize loss with an energy function.
         
         Args:
             energy_function: The energy function to train
         """
         self.energy_function = energy_function
-        
+
     @abstractmethod
     def __call__(
-        self, 
-        pos_samples: torch.Tensor, 
-        neg_samples: torch.Tensor, 
-        **kwargs
+            self,
+            pos_samples: torch.Tensor,
+            neg_samples: torch.Tensor,
+            **kwargs
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the loss.
         
@@ -69,18 +70,19 @@ $$\mathcal{L}_{\text{MLE}} = \mathbb{E}_{p_{\text{data}}(x)}[E(x)] - \mathbb{E}_
 import torch
 from typing import Dict, Tuple
 
-from torchebm.core import EnergyFunction
-from torchebm.losses.base import Loss
+from torchebm.core import BaseEnergyFunction
+from torchebm.losses.base import BaseLoss
 
-class MLELoss(Loss):
+
+class MLELoss(BaseLoss):
     """Maximum Likelihood Estimation loss."""
-    
+
     def __init__(
-        self, 
-        energy_function: EnergyFunction,
-        alpha: float = 1.0,
-        regularization: Optional[str] = None,
-        reg_strength: float = 0.0
+            self,
+            energy_function: BaseEnergyFunction,
+            alpha: float = 1.0,
+            regularization: Optional[str] = None,
+            reg_strength: float = 0.0
     ):
         """Initialize MLE loss.
         
@@ -94,12 +96,12 @@ class MLELoss(Loss):
         self.alpha = alpha
         self.regularization = regularization
         self.reg_strength = reg_strength
-    
+
     def __call__(
-        self, 
-        pos_samples: torch.Tensor, 
-        neg_samples: torch.Tensor, 
-        **kwargs
+            self,
+            pos_samples: torch.Tensor,
+            neg_samples: torch.Tensor,
+            **kwargs
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the MLE loss.
         
@@ -113,14 +115,14 @@ class MLELoss(Loss):
         # Compute energies
         pos_energy = self.energy_function(pos_samples)
         neg_energy = self.energy_function(neg_samples)
-        
+
         # Compute loss components
         pos_term = pos_energy.mean()
         neg_term = neg_energy.mean()
-        
+
         # Full loss
         loss = pos_term - self.alpha * neg_term
-        
+
         # Add regularization if specified
         reg_loss = torch.tensor(0.0, device=pos_energy.device)
         if self.regularization is not None and self.reg_strength > 0:
@@ -130,9 +132,9 @@ class MLELoss(Loss):
             elif self.regularization == 'l1':
                 for param in self.energy_function.parameters():
                     reg_loss += torch.sum(torch.abs(param))
-            
+
             loss = loss + self.reg_strength * reg_loss
-        
+
         # Metrics to track
         metrics = {
             'pos_energy': pos_term.detach(),
@@ -141,7 +143,7 @@ class MLELoss(Loss):
             'loss': loss.detach(),
             'reg_loss': reg_loss.detach()
         }
-        
+
         return loss, metrics
 ```
 
@@ -161,19 +163,20 @@ where $p_{K}(x|x_{\text{data}})$ is the distribution after $K$ steps of MCMC sta
 import torch
 from typing import Dict, Tuple, Optional
 
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 from torchebm.samplers import Sampler, LangevinDynamics
-from torchebm.losses.base import Loss
+from torchebm.losses.base import BaseLoss
 
-class ContrastiveDivergenceLoss(Loss):
+
+class ContrastiveDivergenceLoss(BaseLoss):
     """Contrastive Divergence loss."""
-    
+
     def __init__(
-        self, 
-        energy_function: EnergyFunction,
-        sampler: Optional[Sampler] = None,
-        n_steps: int = 10,
-        alpha: float = 1.0
+            self,
+            energy_function: BaseEnergyFunction,
+            sampler: Optional[Sampler] = None,
+            n_steps: int = 10,
+            alpha: float = 1.0
     ):
         """Initialize CD loss.
         
@@ -187,12 +190,12 @@ class ContrastiveDivergenceLoss(Loss):
         self.sampler = sampler or LangevinDynamics(energy_function)
         self.n_steps = n_steps
         self.alpha = alpha
-    
+
     def __call__(
-        self, 
-        pos_samples: torch.Tensor, 
-        neg_samples: Optional[torch.Tensor] = None, 
-        **kwargs
+            self,
+            pos_samples: torch.Tensor,
+            neg_samples: Optional[torch.Tensor] = None,
+            **kwargs
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the CD loss.
         
@@ -212,18 +215,18 @@ class ContrastiveDivergenceLoss(Loss):
                     n_samples=pos_samples.shape[0],
                     initial_samples=pos_samples.detach()
                 )
-        
+
         # Compute energies
         pos_energy = self.energy_function(pos_samples)
         neg_energy = self.energy_function(neg_samples)
-        
+
         # Compute loss components
         pos_term = pos_energy.mean()
         neg_term = neg_energy.mean()
-        
+
         # Full loss
         loss = pos_term - self.alpha * neg_term
-        
+
         # Metrics to track
         metrics = {
             'pos_energy': pos_term.detach(),
@@ -231,7 +234,7 @@ class ContrastiveDivergenceLoss(Loss):
             'energy_gap': (neg_term - pos_term).detach(),
             'loss': loss.detach()
         }
-        
+
         return loss, metrics
 ```
 
@@ -252,17 +255,18 @@ import torch
 import torch.nn.functional as F
 from typing import Dict, Tuple
 
-from torchebm.core import EnergyFunction
-from torchebm.losses.base import Loss
+from torchebm.core import BaseEnergyFunction
+from torchebm.losses.base import BaseLoss
 
-class NCELoss(Loss):
+
+class NCELoss(BaseLoss):
     """Noise Contrastive Estimation loss."""
-    
+
     def __init__(
-        self, 
-        energy_function: EnergyFunction,
-        log_partition: float = 0.0,
-        learn_partition: bool = True
+            self,
+            energy_function: BaseEnergyFunction,
+            log_partition: float = 0.0,
+            learn_partition: bool = True
     ):
         """Initialize NCE loss.
         
@@ -277,12 +281,12 @@ class NCELoss(Loss):
         else:
             self.register_buffer('log_z', torch.tensor([log_partition], dtype=torch.float32))
         self.learn_partition = learn_partition
-    
+
     def __call__(
-        self, 
-        pos_samples: torch.Tensor, 
-        neg_samples: torch.Tensor, 
-        **kwargs
+            self,
+            pos_samples: torch.Tensor,
+            neg_samples: torch.Tensor,
+            **kwargs
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the NCE loss.
         
@@ -296,24 +300,24 @@ class NCELoss(Loss):
         # Compute energies
         pos_energy = self.energy_function(pos_samples)
         neg_energy = self.energy_function(neg_samples)
-        
+
         # Compute logits
         pos_logits = -pos_energy - self.log_z
         neg_logits = -neg_energy - self.log_z
-        
+
         # Binary classification loss
         pos_loss = F.binary_cross_entropy_with_logits(
-            pos_logits, 
+            pos_logits,
             torch.ones_like(pos_logits)
         )
         neg_loss = F.binary_cross_entropy_with_logits(
-            neg_logits, 
+            neg_logits,
             torch.zeros_like(neg_logits)
         )
-        
+
         # Full loss
         loss = pos_loss + neg_loss
-        
+
         # Metrics to track
         metrics = {
             'pos_loss': pos_loss.detach(),
@@ -323,7 +327,7 @@ class NCELoss(Loss):
             'pos_energy': pos_energy.mean().detach(),
             'neg_energy': neg_energy.mean().detach()
         }
-        
+
         return loss, metrics
 ```
 
@@ -345,16 +349,17 @@ $$\mathcal{L}_{\text{SM}} = \mathbb{E}_{p_{\text{data}}(x)}\left[\text{tr}(\nabl
 import torch
 from typing import Dict, Tuple
 
-from torchebm.core import EnergyFunction
-from torchebm.losses.base import Loss
+from torchebm.core import BaseEnergyFunction
+from torchebm.losses.base import BaseLoss
 
-class ScoreMatchingLoss(Loss):
+
+class ScoreMatchingLoss(BaseLoss):
     """Score Matching loss."""
-    
+
     def __init__(
-        self, 
-        energy_function: EnergyFunction,
-        implicit: bool = True
+            self,
+            energy_function: BaseEnergyFunction,
+            implicit: bool = True
     ):
         """Initialize Score Matching loss.
         
@@ -364,7 +369,7 @@ class ScoreMatchingLoss(Loss):
         """
         super().__init__(energy_function)
         self.implicit = implicit
-    
+
     def _compute_explicit_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         """Compute explicit score matching loss.
         
@@ -374,18 +379,18 @@ class ScoreMatchingLoss(Loss):
             x: Input samples of shape (n_samples, dim)
             
         Returns:
-            Loss value
+            BaseLoss value
         """
         x.requires_grad_(True)
-        
+
         # Compute energy
         energy = self.energy_function(x)
-        
+
         # Compute score (first derivatives)
         score = torch.autograd.grad(
             energy.sum(), x, create_graph=True
         )[0]
-        
+
         # Compute trace of Hessian (second derivatives)
         trace = 0.0
         for i in range(x.shape[1]):
@@ -393,15 +398,15 @@ class ScoreMatchingLoss(Loss):
                 score[:, i].sum(), x, create_graph=True
             )[0]
             trace += grad_score_i[:, i]
-        
+
         # Compute squared norm of score
         score_norm = torch.sum(score ** 2, dim=1)
-        
+
         # Full loss
         loss = trace + 0.5 * score_norm
-        
+
         return loss.mean()
-    
+
     def _compute_implicit_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         """Compute implicit score matching loss.
         
@@ -411,29 +416,29 @@ class ScoreMatchingLoss(Loss):
             x: Input samples of shape (n_samples, dim)
             
         Returns:
-            Loss value
+            BaseLoss value
         """
         # Add noise to inputs
         x_noise = x + torch.randn_like(x) * 0.01
         x_noise.requires_grad_(True)
-        
+
         # Compute energy and its gradient
         energy = self.energy_function(x_noise)
         score = torch.autograd.grad(
             energy.sum(), x_noise, create_graph=True
         )[0]
-        
+
         # Compute loss as squared difference between gradient and vector field
         vector_field = (x_noise - x) / (0.01 ** 2)
         loss = 0.5 * torch.sum((score + vector_field) ** 2, dim=1)
-        
+
         return loss.mean()
-    
+
     def __call__(
-        self, 
-        pos_samples: torch.Tensor, 
-        neg_samples: torch.Tensor = None, 
-        **kwargs
+            self,
+            pos_samples: torch.Tensor,
+            neg_samples: torch.Tensor = None,
+            **kwargs
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the Score Matching loss.
         
@@ -449,12 +454,12 @@ class ScoreMatchingLoss(Loss):
             loss = self._compute_implicit_score_matching(pos_samples)
         else:
             loss = self._compute_explicit_score_matching(pos_samples)
-        
+
         # Metrics to track
         metrics = {
             'loss': loss.detach()
         }
-        
+
         return loss, metrics
 ```
 
@@ -474,16 +479,17 @@ where $q_\sigma(\tilde{x}|x) = \mathcal{N}(\tilde{x}|x, \sigma^2\mathbf{I})$.
 import torch
 from typing import Dict, Tuple, Union, List
 
-from torchebm.core import EnergyFunction
-from torchebm.losses.base import Loss
+from torchebm.core import BaseEnergyFunction
+from torchebm.losses.base import BaseLoss
 
-class DenoisingScoreMatchingLoss(Loss):
+
+class DenoisingScoreMatchingLoss(BaseLoss):
     """Denoising Score Matching loss."""
-    
+
     def __init__(
-        self, 
-        energy_function: EnergyFunction,
-        sigma: Union[float, List[float]] = 0.01
+            self,
+            energy_function: BaseEnergyFunction,
+            sigma: Union[float, List[float]] = 0.01
     ):
         """Initialize DSM loss.
         
@@ -496,12 +502,12 @@ class DenoisingScoreMatchingLoss(Loss):
             self.sigma = [float(sigma)]
         else:
             self.sigma = sigma
-    
+
     def __call__(
-        self, 
-        pos_samples: torch.Tensor, 
-        neg_samples: torch.Tensor = None, 
-        **kwargs
+            self,
+            pos_samples: torch.Tensor,
+            neg_samples: torch.Tensor = None,
+            **kwargs
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the DSM loss.
         
@@ -514,33 +520,33 @@ class DenoisingScoreMatchingLoss(Loss):
         """
         total_loss = 0.0
         metrics = {}
-        
+
         for i, sigma in enumerate(self.sigma):
             # Add noise to inputs
             noise = torch.randn_like(pos_samples) * sigma
             x_noisy = pos_samples + noise
-            
+
             # Compute score of model
             x_noisy.requires_grad_(True)
             energy = self.energy_function(x_noisy)
             score_model = torch.autograd.grad(
                 energy.sum(), x_noisy, create_graph=True
             )[0]
-            
+
             # Target score (gradient of log density of noise model)
             # For Gaussian noise, this is -(x_noisy - pos_samples) / sigma^2
             score_target = -noise / (sigma ** 2)
-            
+
             # Compute loss
             loss_sigma = 0.5 * torch.sum((score_model + score_target) ** 2, dim=1).mean()
             total_loss += loss_sigma
-            
+
             metrics[f'loss_sigma_{sigma}'] = loss_sigma.detach()
-        
+
         # Average loss over all noise levels
         avg_loss = total_loss / len(self.sigma)
         metrics['loss'] = avg_loss.detach()
-        
+
         return avg_loss, metrics
 ```
 
@@ -550,16 +556,17 @@ class DenoisingScoreMatchingLoss(Loss):
 import torch
 from typing import Dict, Tuple
 
-from torchebm.core import EnergyFunction
-from torchebm.losses.base import Loss
+from torchebm.core import BaseEnergyFunction
+from torchebm.losses.base import BaseLoss
 
-class SlicedScoreMatchingLoss(Loss):
+
+class SlicedScoreMatchingLoss(BaseLoss):
     """Sliced Score Matching loss."""
-    
+
     def __init__(
-        self, 
-        energy_function: EnergyFunction,
-        n_projections: int = 1
+            self,
+            energy_function: BaseEnergyFunction,
+            n_projections: int = 1
     ):
         """Initialize SSM loss.
         
@@ -569,12 +576,12 @@ class SlicedScoreMatchingLoss(Loss):
         """
         super().__init__(energy_function)
         self.n_projections = n_projections
-    
+
     def __call__(
-        self, 
-        pos_samples: torch.Tensor, 
-        neg_samples: torch.Tensor = None, 
-        **kwargs
+            self,
+            pos_samples: torch.Tensor,
+            neg_samples: torch.Tensor = None,
+            **kwargs
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the SSM loss.
         
@@ -586,45 +593,45 @@ class SlicedScoreMatchingLoss(Loss):
             Tuple of (loss value, dictionary of metrics)
         """
         x = pos_samples.detach().requires_grad_(True)
-        
+
         # Compute energy
         energy = self.energy_function(x)
-        
+
         # Compute score (first derivatives)
         score = torch.autograd.grad(
             energy.sum(), x, create_graph=True
         )[0]
-        
+
         total_loss = 0.0
         for _ in range(self.n_projections):
             # Generate random vectors
             v = torch.randn_like(x)
             v = v / torch.norm(v, p=2, dim=1, keepdim=True)
-            
+
             # Compute directional derivative
             Jv = torch.sum(score * v, dim=1)
-            
+
             # Compute second directional derivative
             J2v = torch.autograd.grad(
                 Jv.sum(), x, create_graph=True
             )[0]
-            
+
             # Compute sliced score matching loss terms
             loss_1 = torch.sum(J2v * v, dim=1)
             loss_2 = 0.5 * torch.sum(score ** 2, dim=1)
-            
+
             # Full loss
             loss = loss_1 + loss_2
             total_loss += loss.mean()
-        
+
         # Average loss over projections
         avg_loss = total_loss / self.n_projections
-        
+
         # Metrics to track
         metrics = {
             'loss': avg_loss.detach()
         }
-        
+
         return avg_loss, metrics
 ```
 
@@ -666,18 +673,18 @@ Factory methods simplify loss creation:
 ```python
 def create_loss(
     loss_type: str,
-    energy_function: EnergyFunction,
+    energy_function: BaseEnergyFunction,
     **kwargs
-) -> Loss:
+) -> BaseLoss:
     """Create a loss function instance.
     
     Args:
         loss_type: Type of loss function
         energy_function: Energy function to train
-        **kwargs: Loss-specific parameters
+        **kwargs: BaseLoss-specific parameters
         
     Returns:
-        Loss instance
+        BaseLoss instance
     """
     if loss_type.lower() == 'mle':
         return MLELoss(energy_function, **kwargs)
@@ -695,13 +702,13 @@ def create_loss(
         raise ValueError(f"Unknown loss type: {loss_type}")
 ```
 
-## Testing Loss Functions
+## Testing BaseLoss Functions
 
 For testing loss implementations:
 
 ```python
 def validate_loss_gradients(
-    loss_fn: Loss,
+    loss_fn: BaseLoss,
     dim: int = 2,
     n_samples: int = 10,
     seed: int = 42
@@ -709,7 +716,7 @@ def validate_loss_gradients(
     """Validate that loss function produces valid gradients.
     
     Args:
-        loss_fn: Loss function to test
+        loss_fn: BaseLoss function to test
         dim: Dimensionality of test samples
         n_samples: Number of test samples
         seed: Random seed
@@ -732,7 +739,7 @@ def validate_loss_gradients(
     
     # Check if loss is scalar
     if not isinstance(loss, torch.Tensor) or loss.numel() != 1:
-        print(f"Loss is not a scalar: {loss}")
+        print(f"BaseLoss is not a scalar: {loss}")
         return False
     
     # Check if loss produces gradients
@@ -749,7 +756,7 @@ def validate_loss_gradients(
     return True
 ```
 
-## Best Practices for Custom Loss Functions
+## Best Practices for Custom BaseLoss Functions
 
 When implementing custom loss functions, follow these best practices:
 
@@ -758,7 +765,7 @@ When implementing custom loss functions, follow these best practices:
 <div markdown>
 ### Do
 
-* Subclass the `Loss` base class
+* Subclass the `BaseLoss` base class
 * Return both the loss and metrics dictionary
 * Validate inputs
 * Use autograd for derivatives
@@ -777,9 +784,9 @@ When implementing custom loss functions, follow these best practices:
 
 </div>
 
-!!! example "Custom Loss Example"
+!!! example "Custom BaseLoss Example"
     ```python
-    class CustomLoss(Loss):
+    class CustomLoss(BaseLoss):
         """Custom loss example."""
         
         def __init__(self, energy_function, alpha=1.0, beta=0.5):

@@ -102,7 +102,7 @@ Welcome to the TorchEBM developer guide! This comprehensive resource is designed
 
     Learn about the implementation of various loss functions.
 
-    [:octicons-arrow-right-24: Loss Functions](implementation_losses.md)
+    [:octicons-arrow-right-24: BaseLoss Functions](implementation_losses.md)
 
 -   :material-vector-square:{ .lg .middle } __Model Architecture__
 

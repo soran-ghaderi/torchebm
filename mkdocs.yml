@@ -94,14 +94,14 @@ nav:
         - api/torchebm/core/energy_function/index.md
         - AckleyEnergy: api/torchebm/core/energy_function/classes/AckleyEnergy.md
         - DoubleWellEnergy: api/torchebm/core/energy_function/classes/DoubleWellEnergy.md
-        - EnergyFunction: api/torchebm/core/energy_function/classes/EnergyFunction.md
+        - EnergyFunction: api/torchebm/core/energy_function/classes/BaseEnergyFunction.md
         - GaussianEnergy: api/torchebm/core/energy_function/classes/GaussianEnergy.md
         - HarmonicEnergy: api/torchebm/core/energy_function/classes/HarmonicEnergy.md
         - RastriginEnergy: api/torchebm/core/energy_function/classes/RastriginEnergy.md
         - RosenbrockEnergy: api/torchebm/core/energy_function/classes/RosenbrockEnergy.md
       - Losses:
         - api/torchebm/core/losses/index.md
-        - Loss: api/torchebm/core/losses/classes/Loss.md
+        - Loss: api/torchebm/core/losses/classes/BaseLoss.md
       - Optimizer:
         - api/torchebm/core/optimizer/index.md
         - Optimizer: api/torchebm/core/optimizer/classes/Optimizer.md
@@ -154,7 +154,7 @@ nav:
     - Implementation Details:
       - Energy Functions: developer_guide/implementation_energy.md
       - Samplers: developer_guide/implementation_samplers.md
-#      - Loss Functions: developer_guide/implementation_losses.md
+#      - BaseLoss Functions: developer_guide/implementation_losses.md
 #      - Model Architecture: developer_guide/implementation_models.md
 #      - CUDA Optimizations: developer_guide/cuda_optimizations.md
     - Architecture: developer_guide/architecture.md

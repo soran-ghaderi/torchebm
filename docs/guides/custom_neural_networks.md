@@ -18,17 +18,18 @@ Neural networks provide a powerful way to represent complex energy landscapes th
 
 ## Basic Neural Network Energy Function
 
-To create a neural network-based energy function in TorchEBM, you need to subclass the `EnergyFunction` base class and implement the `forward` method:
+To create a neural network-based energy function in TorchEBM, you need to subclass the `BaseEnergyFunction` base class and implement the `forward` method:
 
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 
-class NeuralNetEnergyFunction(EnergyFunction):
+
+class NeuralNetEnergyFunction(BaseEnergyFunction):
     def __init__(self, input_dim, hidden_dim=128):
         super().__init__()
-        
+
         # Define neural network architecture
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -39,7 +40,7 @@ class NeuralNetEnergyFunction(EnergyFunction):
             nn.Softplus(),
             nn.Linear(hidden_dim, 1)
         )
-    
+
     def forward(self, x):
         # x has shape (batch_size, input_dim)
         # Output should have shape (batch_size,)
@@ -81,15 +82,16 @@ Here's a complete example with a simple MLP energy function:
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 import matplotlib.pyplot as plt
 import numpy as np
 
-class MLPEnergyFunction(EnergyFunction):
+
+class MLPEnergyFunction(BaseEnergyFunction):
     def __init__(self, input_dim=2, hidden_dim=64):
         super().__init__()
-        
+
         # Define neural network architecture
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -100,33 +102,36 @@ class MLPEnergyFunction(EnergyFunction):
             nn.LeakyReLU(0.2),
             nn.Linear(hidden_dim, 1)
         )
-        
+
         # Initialize with small weights
         for m in self.network.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight, gain=0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-    
+
     def forward(self, x):
         # Ensure x is batched
         if x.ndim == 1:
             x = x.unsqueeze(0)
-        
+
         # Forward pass through network
         return self.network(x).squeeze(-1)
+
 
 # Create the energy function
 energy_fn = MLPEnergyFunction()
 
+
 # Define parameters we want the network to learn
 # Let's create a "four peaks" energy landscape
 def target_energy(x, y):
-    return -2.0 * torch.exp(-0.2 * ((x - 2)**2 + (y - 2)**2)) \
-           -3.0 * torch.exp(-0.2 * ((x + 2)**2 + (y - 2)**2)) \
-           -1.0 * torch.exp(-0.3 * ((x - 2)**2 + (y + 2)**2)) \
-           -4.0 * torch.exp(-0.2 * ((x + 2)**2 + (y + 2)**2)) \
-           + 0.1 * (x**2 + y**2)
+    return -2.0 * torch.exp(-0.2 * ((x - 2) ** 2 + (y - 2) ** 2))
+        - 3.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y - 2) ** 2))
+        - 1.0 * torch.exp(-0.3 * ((x - 2) ** 2 + (y + 2) ** 2))
+        - 4.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y + 2) ** 2))
+        + 0.1 * (x ** 2 + y ** 2)
+
 
 # Generate training data from the target distribution
 def generate_training_data(n_samples=10000):
@@ -135,21 +140,22 @@ def generate_training_data(n_samples=10000):
     y = torch.linspace(-4, 4, 100)
     X, Y = torch.meshgrid(x, y, indexing='ij')
     positions = torch.stack([X.flatten(), Y.flatten()], dim=1)
-    
+
     # Calculate target energy
     energies = target_energy(positions[:, 0], positions[:, 1])
-    
+
     # Convert energies to probabilities (unnormalized)
     probs = torch.exp(-energies)
-    
+
     # Normalize to create a distribution
     probs = probs / probs.sum()
-    
+
     # Sample indices based on probability
     indices = torch.multinomial(probs, n_samples, replacement=True)
-    
+
     # Return sampled positions
     return positions[indices]
+
 
 # Generate training data
 train_data = generate_training_data(10000)
@@ -164,35 +170,36 @@ batch_size = 128
 for epoch in range(n_epochs):
     # Generate random noise samples for contrastive divergence
     noise_samples = torch.randn_like(train_data)
-    
+
     # Shuffle data
     indices = torch.randperm(train_data.shape[0])
-    
+
     # Mini-batch training
     for start_idx in range(0, train_data.shape[0], batch_size):
         end_idx = min(start_idx + batch_size, train_data.shape[0])
         batch_indices = indices[start_idx:end_idx]
-        
+
         data_batch = train_data[batch_indices]
         noise_batch = noise_samples[batch_indices]
-        
+
         # Zero gradients
         optimizer.zero_grad()
-        
+
         # Calculate energy for data and noise samples
         data_energy = energy_fn(data_batch)
         noise_energy = energy_fn(noise_batch)
-        
+
         # Contrastive divergence loss: make data energy lower, noise energy higher
         loss = data_energy.mean() - noise_energy.mean()
-        
+
         # Backpropagation
         loss.backward()
         optimizer.step()
-    
+
     # Print progress
     if (epoch + 1) % 100 == 0:
-        print(f'Epoch {epoch+1}/{n_epochs}, Loss: {loss.item():.4f}')
+        print(f'Epoch {epoch + 1}/{n_epochs}, BaseLoss: {loss.item():.4f}')
+
 
 # Visualize learned energy function
 def visualize_energy_function(energy_fn, title="Learned Energy Function"):
@@ -200,11 +207,11 @@ def visualize_energy_function(energy_fn, title="Learned Energy Function"):
     y = torch.linspace(-4, 4, 100)
     X, Y = torch.meshgrid(x, y, indexing='ij')
     positions = torch.stack([X.flatten(), Y.flatten()], dim=1)
-    
+
     # Calculate energies
     with torch.no_grad():
         energies = energy_fn(positions).reshape(100, 100)
-    
+
     # Plot
     plt.figure(figsize=(10, 8))
     plt.contourf(X.numpy(), Y.numpy(), energies.numpy(), 50, cmap='viridis')
@@ -214,6 +221,7 @@ def visualize_energy_function(energy_fn, title="Learned Energy Function"):
     plt.ylabel('y')
     plt.tight_layout()
     plt.show()
+
 
 # Visualize the learned energy function
 visualize_energy_function(energy_fn)
@@ -250,12 +258,13 @@ For image data, convolutional architectures are more appropriate:
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import EnergyFunction
+from torchebm.core import BaseEnergyFunction
 
-class ConvolutionalEnergyFunction(EnergyFunction):
+
+class ConvolutionalEnergyFunction(BaseEnergyFunction):
     def __init__(self, channels=1, width=28, height=28):
         super().__init__()
-        
+
         # Convolutional feature extractor
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(channels, 32, kernel_size=3, stride=1, padding=1),
@@ -271,10 +280,10 @@ class ConvolutionalEnergyFunction(EnergyFunction):
             nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),  # 4x4
             nn.LeakyReLU(0.2),
         )
-        
+
         # Calculate the size of the flattened features
         feature_size = 128 * (width // 8) * (height // 8)
-        
+
         # Final energy output
         self.energy_head = nn.Sequential(
             nn.Flatten(),
@@ -282,18 +291,18 @@ class ConvolutionalEnergyFunction(EnergyFunction):
             nn.LeakyReLU(0.2),
             nn.Linear(128, 1)
         )
-    
+
     def forward(self, x):
         # Ensure x is batched and has correct channel dimension
         if x.ndim == 3:  # Single image with channels
             x = x.unsqueeze(0)
         elif x.ndim == 2:  # Single grayscale image
             x = x.unsqueeze(0).unsqueeze(0)
-        
+
         # Extract features and compute energy
         features = self.feature_extractor(x)
         energy = self.energy_head(features).squeeze(-1)
-        
+
         return energy
 ```
 
@@ -304,18 +313,19 @@ You can combine analytical energy functions with neural networks for best of bot
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import EnergyFunction, GaussianEnergy
+from torchebm.core import BaseEnergyFunction, GaussianEnergy
 
-class HybridEnergyFunction(EnergyFunction):
+
+class HybridEnergyFunction(BaseEnergyFunction):
     def __init__(self, input_dim=2, hidden_dim=64):
         super().__init__()
-        
+
         # Analytical component: Gaussian energy
         self.analytical_component = GaussianEnergy(
             mean=torch.zeros(input_dim),
             cov=torch.eye(input_dim)
         )
-        
+
         # Neural network component
         self.neural_component = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -324,22 +334,22 @@ class HybridEnergyFunction(EnergyFunction):
             nn.GELU(),
             nn.Linear(hidden_dim, 1)
         )
-        
+
         # Weight for combining components
         self.alpha = nn.Parameter(torch.tensor(0.5))
-    
+
     def forward(self, x):
         # Analytical energy
         analytical_energy = self.analytical_component(x)
-        
+
         # Neural network energy
         neural_energy = self.neural_component(x).squeeze(-1)
-        
+
         # Combine using learned weight
         # Use sigmoid to keep alpha between 0 and 1
         alpha = torch.sigmoid(self.alpha)
         combined_energy = alpha * analytical_energy + (1 - alpha) * neural_energy
-        
+
         return combined_energy
 ```
 
@@ -374,7 +384,7 @@ def train_step_contrastive_divergence(energy_fn, optimizer, data_batch, sampler,
     # Model energy
     model_energy = energy_fn(model_samples)
     
-    # Loss: make data energy lower, model energy higher
+    # BaseLoss: make data energy lower, model energy higher
     loss = data_energy.mean() - model_energy.mean()
     
     # Backpropagation

@@ -2,13 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import torch
-from torchebm.core.energy_function import EnergyFunction
+from torchebm.core.base_energy_function import BaseEnergyFunction
 from typing import Optional, Tuple, List, Union
 import os
 
 
 def plot_2d_energy_landscape(
-    energy_fn: EnergyFunction,
+    energy_fn: BaseEnergyFunction,
     x_range: Tuple[float, float] = (-5, 5),
     y_range: Tuple[float, float] = (-5, 5),
     resolution: int = 100,
@@ -96,7 +96,7 @@ def plot_2d_energy_landscape(
 
 
 def plot_3d_energy_landscape(
-    energy_fn: EnergyFunction,
+    energy_fn: BaseEnergyFunction,
     x_range: Tuple[float, float] = (-5, 5),
     y_range: Tuple[float, float] = (-5, 5),
     resolution: int = 50,
@@ -193,7 +193,7 @@ def plot_3d_energy_landscape(
 
 
 def plot_samples_on_energy(
-    energy_fn: EnergyFunction,
+    energy_fn: BaseEnergyFunction,
     samples: torch.Tensor,
     x_range: Tuple[float, float] = (-5, 5),
     y_range: Tuple[float, float] = (-5, 5),
@@ -273,7 +273,7 @@ def plot_samples_on_energy(
 
 def plot_sample_trajectories(
     trajectories: torch.Tensor,
-    energy_fn: Optional[EnergyFunction] = None,
+    energy_fn: Optional[BaseEnergyFunction] = None,
     x_range: Tuple[float, float] = None,
     y_range: Tuple[float, float] = None,
     resolution: int = 100,
