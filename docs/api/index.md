@@ -1,7 +1,7 @@
 ---
 title: API Reference
 description: Detailed API reference for TorchEBM
-icon: material/api
+icon: material/file-document
 ---
 
 # TorchEBM API Reference

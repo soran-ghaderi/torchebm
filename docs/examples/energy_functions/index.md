@@ -105,9 +105,9 @@ To run these examples:
 python examples/main.py --list
 
 # Run a specific example
-python examples/main.py core/energy_functions/landscape_2d
-python examples/main.py core/energy_functions/multimodal
-python examples/main.py core/energy_functions/parametric
+python examples/main.py energy_functions/energy_functions/landscape_2d
+python examples/main.py energy_functions/energy_functions/multimodal
+python examples/main.py energy_functions/energy_functions/parametric
 ```
 
 ## Additional Resources

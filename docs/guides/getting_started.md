@@ -70,10 +70,10 @@ print(f"Generated {samples.shape[0]} samples of dimension {samples.shape[1]}")
 
 ## Next Steps
 
-- Learn about [Energy Functions](./guides/energy_functions.md) available in TorchEBM
-- Explore different [Sampling Algorithms](./guides/samplers.md)
-- Try out the [Examples](./examples/index.md) for visualizations and advanced usage
-- Check the [API Reference](./api/index.md) for detailed documentation
+- Learn about [Energy Functions](energy_functions.md) available in TorchEBM
+- Explore different [Sampling Algorithms](samplers.md)
+- Try out the [Examples](../examples/index.md) for visualizations and advanced usage
+- Check the [API Reference](../api/index.md) for detailed documentation
 
 ## Common Issues
 
@@ -87,6 +87,6 @@ If you encounter CUDA out of memory errors, try:
 ### Support
 
 If you encounter any issues or have questions:
-- Check the [FAQ](./faq.md)
+- Check the [FAQ](../faq.md)
 - Open an issue on [GitHub](https://github.com/soran-ghaderi/torchebm/issues)
 

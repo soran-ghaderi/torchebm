@@ -1,6 +1,7 @@
 ---
 title: Guides
 description: In-depth guides for using TorchEBM
+icon: material/rocket-launch
 ---
 
 # Getting Started with TorchEBM
@@ -65,8 +66,8 @@ Welcome to the TorchEBM guides section! These comprehensive guides will help you
 
 If you're new to energy-based models, we recommend the following learning path:
 
-1. Start with the [Introduction](../introduction.md) to understand basic concepts
-2. Follow the [Installation](../getting_started.md) guide to set up TorchEBM
+1. Start with the [Introduction](introduction.md) to understand basic concepts
+2. Follow the [Installation](getting_started.md) guide to set up TorchEBM
 3. Read the [Energy Functions](energy_functions.md) guide to understand the fundamentals
 4. Explore the [Samplers](samplers.md) guide to learn how to generate samples
 5. Study the [Training](training.md) guide to learn how to train your models

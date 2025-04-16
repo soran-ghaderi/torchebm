@@ -154,30 +154,30 @@ Below are the visualizations of the energy functions described above. Each visua
 
 ### Rosenbrock Energy
 
-![Rosenbrock Energy Function](../assets/images/e_functions/rosenbrock.png)
+![Rosenbrock Energy Function](../../assets/images/e_functions/rosenbrock.png)
 *The Rosenbrock function creates a long, narrow, banana-shaped valley. Finding the global minimum at (1,1) is challenging because the valley is very flat and provides little gradient information.*
 
 ### Ackley Energy
 
-![Ackley Energy Function](../assets/images/e_functions/ackley.png)
+![Ackley Energy Function](../../assets/images/e_functions/ackley.png)
 
 *The Ackley function has a nearly flat outer region and a large hole at the center. It contains many local minima but only one global minimum at (0,0).*
 
 ### Rastrigin Energy
 
-![Rastrigin Energy Function](../assets/images/e_functions/rastrigin.png)
+![Rastrigin Energy Function](../../assets/images/e_functions/rastrigin.png)
 
 *The Rastrigin function's "egg carton" surface has many regularly distributed local minima, making it highly multimodal. The global minimum is at (0,0).*
 
 ### Double Well Energy
 
-![Double Well Energy Function](../assets/images/e_functions/double_well.png)
+![Double Well Energy Function](../../assets/images/e_functions/double_well.png)
 
 *The Double Well energy features two distinct minima (wells) separated by an energy barrier, making it ideal for testing sampling algorithms' ability to traverse energy barriers.*
 
 ### Gaussian Energy
 
-![Gaussian and Harmonic (in this case) Energy Function](../assets/images/e_functions/gaussian.png)
+![Gaussian and Harmonic (in this case) Energy Function](../../assets/images/e_functions/gaussian.png)
 
 *The Gaussian energy function has a simple quadratic landscape with a single minimum, corresponding to a multivariate Gaussian distribution.*
 
@@ -200,4 +200,4 @@ You can extend this example to:
 2. Visualize energy functions in higher dimensions using projection techniques
 3. Animate sampling trajectories on top of these energy landscapes
 
-For more advanced energy landscape visualizations, including contour plots and comparing sampling algorithms, see the [Langevin Sampler Trajectory](langevin_trajectory.md) example. 
+For more advanced energy landscape visualizations, including contour plots and comparing sampling algorithms, see the [Langevin Sampler Trajectory](../samplers/langevin_trajectory.md) example. 

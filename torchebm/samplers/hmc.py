@@ -22,7 +22,7 @@ Classes:
 !!! example "Sampling from a Gaussian Distribution"
     ```python
     from torchebm.samplers.mcmc import HamiltonianMonteCarlo
-    from torchebm.core.energy_function import GaussianEnergy
+    from torchebm.energy_functions.energy_function import GaussianEnergy
     import torch
 
     # Define a 2D Gaussian energy function
@@ -364,7 +364,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         """Perform a full leapfrog integration for n_leapfrog_steps.
 
         Applies multiple leapfrog steps to simulate Hamiltonian dynamics
-        for a trajectory of specified length. This is the core of the HMC
+        for a trajectory of specified length. This is the energy_functions of the HMC
         proposal generation.
 
         Args:
@@ -402,7 +402,7 @@ class HamiltonianMonteCarlo(BaseSampler):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a single HMC step with Metropolis-Hastings acceptance.
 
-        This implements the core HMC algorithm:
+        This implements the energy_functions HMC algorithm:
 
         1. Sample initial momentum
         2. Compute initial Hamiltonian

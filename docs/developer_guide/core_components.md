@@ -1,6 +1,6 @@
 ---
 title: Core Components
-description: Detailed explanation of TorchEBM's core components and their implementation
+description: Detailed explanation of TorchEBM's energy_functions components and their implementation
 icon: material/function
 ---
 
@@ -43,7 +43,7 @@ icon: material/function
     loss = loss_fn(model, data_samples)  # Compute training loss
     ```
 
--   :material-neural-network:{ .lg .middle } __Models__
+-   :material-graph:{ .lg .middle } __Models__
 
     ---
 

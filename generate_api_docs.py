@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# #!/usr/bin/env python3
 """
 Script to automatically generate API documentation files for TorchEBM.
 This creates a structured set of markdown files for each module and submodule.

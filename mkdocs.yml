@@ -69,14 +69,14 @@ theme:
       example: fontawesome/solid/flask
       quote: fontawesome/solid/quote-left
 #  logo: simple/pytorch
-  favicon: simple/pytorch
+#  favicon: simple/pytorch
 
 nav:
   - Home: index.md
   - Getting Started:
     - Overview: guides/index.md
-    - Introduction: introduction.md
-    - Installation: getting_started.md
+    - Introduction: guides/introduction.md
+    - Installation: guides/getting_started.md
     - Guides:
       - Energy Functions: guides/energy_functions.md
       - Samplers: guides/samplers.md
@@ -88,28 +88,40 @@ nav:
     - Overview: api/index.md
     - Core:
       - Base_energy_function:
-        - api/torchebm/core/base_energy_function/index.md
-        - AckleyEnergy: api/torchebm/core/base_energy_function/classes/AckleyEnergy.md
-        - BaseEnergyFunction: api/torchebm/core/base_energy_function/classes/BaseEnergyFunction.md
-        - DoubleWellEnergy: api/torchebm/core/base_energy_function/classes/DoubleWellEnergy.md
-        - GaussianEnergy: api/torchebm/core/base_energy_function/classes/GaussianEnergy.md
-        - HarmonicEnergy: api/torchebm/core/base_energy_function/classes/HarmonicEnergy.md
-        - RastriginEnergy: api/torchebm/core/base_energy_function/classes/RastriginEnergy.md
-        - RosenbrockEnergy: api/torchebm/core/base_energy_function/classes/RosenbrockEnergy.md
+        - api/torchebm/energy_functions/base_energy_function/index.md
+        - AckleyEnergy: api/torchebm/energy_functions/base_energy_function/classes/AckleyEnergy.md
+        - BaseEnergyFunction: api/torchebm/energy_functions/base_energy_function/classes/BaseEnergyFunction.md
+        - DoubleWellEnergy: api/torchebm/energy_functions/base_energy_function/classes/DoubleWellEnergy.md
+        - GaussianEnergy: api/torchebm/energy_functions/base_energy_function/classes/GaussianEnergy.md
+        - HarmonicEnergy: api/torchebm/energy_functions/base_energy_function/classes/HarmonicEnergy.md
+        - RastriginEnergy: api/torchebm/energy_functions/base_energy_function/classes/RastriginEnergy.md
+        - RosenbrockEnergy: api/torchebm/energy_functions/base_energy_function/classes/RosenbrockEnergy.md
       - Base_loss:
-        - api/torchebm/core/base_loss/index.md
-        - BaseContrastiveDivergence: api/torchebm/core/base_loss/classes/BaseContrastiveDivergence.md
-        - BaseLoss: api/torchebm/core/base_loss/classes/BaseLoss.md
+        - api/torchebm/energy_functions/base_loss/index.md
+        - BaseContrastiveDivergence: api/torchebm/energy_functions/base_loss/classes/BaseContrastiveDivergence.md
+        - BaseLoss: api/torchebm/energy_functions/base_loss/classes/BaseLoss.md
       - Base_optimizer:
-        - api/torchebm/core/base_optimizer/index.md
-        - Optimizer: api/torchebm/core/base_optimizer/classes/Optimizer.md
+        - api/torchebm/energy_functions/base_optimizer/index.md
+        - Optimizer: api/torchebm/energy_functions/base_optimizer/classes/Optimizer.md
       - Base_sampler:
-        - api/torchebm/core/base_sampler/index.md
-        - BaseSampler: api/torchebm/core/base_sampler/classes/BaseSampler.md
+        - api/torchebm/energy_functions/base_sampler/index.md
+        - BaseSampler: api/torchebm/energy_functions/base_sampler/classes/BaseSampler.md
       - Base_trainer:
-        - api/torchebm/core/base_trainer/index.md
-        - ContrastiveDivergenceTrainer: api/torchebm/core/base_trainer/classes/ContrastiveDivergenceTrainer.md
+        - api/torchebm/energy_functions/base_trainer/index.md
+        - ContrastiveDivergenceTrainer: api/torchebm/energy_functions/base_trainer/classes/ContrastiveDivergenceTrainer.md
     - Cuda: api/torchebm/cuda/index.md
+    - Datasets:
+      - Generators:
+        - api/torchebm/datasets/generators/index.md
+        - BaseSyntheticDataset: api/torchebm/datasets/generators/classes/BaseSyntheticDataset.md
+        - CheckerboardDataset: api/torchebm/datasets/generators/classes/CheckerboardDataset.md
+        - CircleDataset: api/torchebm/datasets/generators/classes/CircleDataset.md
+        - EightGaussiansDataset: api/torchebm/datasets/generators/classes/EightGaussiansDataset.md
+        - GaussianMixtureDataset: api/torchebm/datasets/generators/classes/GaussianMixtureDataset.md
+        - GridDataset: api/torchebm/datasets/generators/classes/GridDataset.md
+        - PinwheelDataset: api/torchebm/datasets/generators/classes/PinwheelDataset.md
+        - SwissRollDataset: api/torchebm/datasets/generators/classes/SwissRollDataset.md
+        - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
     - Losses:
       - Contrastive_divergence:
         - api/torchebm/losses/contrastive_divergence/index.md
@@ -135,9 +147,12 @@ nav:
   - Examples:
     - Overview: examples/index.md
     - Energy Functions:
-      - Overview: examples/core/energy_functions.md
+      - Overview: examples/energy_functions/index.md
+    - Datasets:
+      - Overview: examples/datasets/index.md
     - Samplers:
-      - Langevin Dynamics: examples/samplers/langevin.md
+      - Langevin Dynamics: examples/samplers/langevin_dynamics.md
+      - Langevin Dynamics Trajectory: examples/samplers/langevin_trajectory.md
       - Hamiltonian Monte Carlo: examples/samplers/hmc.md
     - Training EBMs:
       - Learning Gaussian Mixture: examples/training/training_ebm_gaussian.md

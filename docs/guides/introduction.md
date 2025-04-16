@@ -67,6 +67,6 @@ Energy-Based Models and TorchEBM can be applied to various tasks:
 
 ## Next Steps
 
-- Follow the [Getting Started](./getting_started.md) guide to install TorchEBM and run your first examples
-- Check the [Guides](./guides/index.md) for more detailed information on specific components
-- Explore the [Examples](./examples/index.md) for practical applications 
+- Follow the [Getting Started](getting_started.md) guide to install TorchEBM and run your first examples
+- Check the [Guides](index.md) for more detailed information on specific components
+- Explore the [Examples](../examples/index.md) for practical applications 

@@ -1,68 +1,288 @@
 ---
 #template: home.html
-title: TorchEBM Docs
+title: TorchEBM - Energy-Based Modeling in PyTorch
 social:
   cards_layout_options:
     title: Documentation
 hide:
   - navigation
   - toc
+icon: octicons/home-fill-16
 ---
-# ![TorchEBM Logo](assets/images/logo_with_text.svg){ width="280" } { .animate__animated .animate__fadeIn }
+# ![TorchEBM Logo](assets/images/logo_with_text.svg){ width="300" style="display: block; margin-left: auto; margin-right: auto;" }
 
-<p class="lead" markdown>
-⚡ Energy-Based Modeling library for PyTorch, offering tools for 🔬 sampling, 🧠 inference, and 📊 learning in complex distributions.
+<p align="center" style="margin-bottom: 20px;">
+    <a href="https://pypi.org/project/torchebm/" target="_blank" title="PyPI version">
+        <img alt="PyPI" src="https://img.shields.io/pypi/v/torchebm?style=flat-square&color=blue">
+    </a>
+    <a href="https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE" target="_blank" title="License">
+        <img alt="License" src="https://img.shields.io/github/license/soran-ghaderi/torchebm?style=flat-square&color=brightgreen">
+    </a>
+    <a href="https://github.com/soran-ghaderi/torchebm" target="_blank" title="GitHub Repo Stars">
+        <img alt="GitHub Stars" src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social">
+    </a>
+    <!-- Consider adding: build status, documentation status, code coverage -->
 </p>
+
+<p class="lead" style="text-align: center; font-size: 1.3em; margin-bottom: 30px;" markdown>
+A PyTorch library for **Energy-Based Models**, providing components for <br>
+🔬 sampling, 🧠 inference, and 📊 model training.
+</p>
+
+<div style="text-align: center; margin-bottom: 40px;" markdown>
+[:material-rocket-launch:{ .lg .middle } Getting Started](guides/index.md){ .md-button .md-button--primary }
+[:material-flask-outline:{ .lg .middle } Examples](examples/index.md){ .md-button }
+[:material-file-document:{ .lg .middle } API Reference](api/index.md){ .md-button }
+[:material-tools: Development](developer_guide/contributing.md){ .md-button }
+</div>
+
+---
+
+## What is TorchEBM?
+
+**Energy-Based Models (EBMs)** offer a powerful and flexible framework for generative modeling by assigning an unnormalized probability (or "energy") to each data point. Lower energy corresponds to higher probability.
+
+**TorchEBM** simplifies working with EBMs in [PyTorch](https://pytorch.org/). It provides a suite of tools designed for researchers and practitioners, enabling efficient implementation and exploration of:
+
+*   **Defining complex energy functions:** Easily create custom energy landscapes using PyTorch modules.
+*   **Training:** Loss functions and procedures suitable for EBM parameter estimation including score matching and contrastive divergence variants.
+*   **Sampling:** Algorithms to draw samples from the learned distribution \( p(x) \).
+
+---
+
+## Core Components
+
+TorchEBM is structured around several key components:
 
 <div class="grid cards" markdown>
 
--   :material-rocket-launch:{ .lg .middle } __Getting Started__
+-   :material-function-variant:{ .lg .middle } __Energy Functions__
 
     ---
 
-    Start using TorchEBM in minutes with our quick installation and setup guide.
+    Implement energy functions using `BaseEnergyFunction`. Includes predefined analytical functions (Gaussian, Double Well) and supports custom neural network architectures.
 
-    [:octicons-arrow-right-24: Getting Started](getting_started.md)
+    [:octicons-arrow-right-24: Details](api/torchebm/core/index.md)
 
--   :fontawesome-solid-book:{ .lg .middle } __Introduction__
-
-    ---
-
-    Learn about Energy-Based Models and how TorchEBM can help you work with them.
-
-    [:octicons-arrow-right-24: Introduction](introduction.md)
-
--   :material-tune:{ .lg .middle } __Guides__
+-   :material-chart-scatter-plot:{ .lg .middle } __Samplers__
 
     ---
 
-    Explore in-depth guides for energy functions, samplers, and more.
+    MCMC samplers like Langevin Dynamics (`LangevinDynamics`) are provided for generating samples from the energy distribution. Includes CUDA support where applicable.
 
-    [:octicons-arrow-right-24: Guides](guides/index.md)
+    [:octicons-arrow-right-24: Details](api/torchebm/samplers/index.md)
 
--   :material-code-tags:{ .lg .middle } __Examples__
-
-    ---
-
-    Practical examples to help you apply TorchEBM to your projects.
-
-    [:octicons-arrow-right-24: Examples](examples/index.md)
-    
--   :material-post:{ .lg .middle } __Blog__
+-   :material-calculator-variant:{ .lg .middle } __Loss Functions__
 
     ---
 
-    Stay updated with the latest news, tutorials, and insights about TorchEBM.
+    Includes loss functions commonly used for training EBMs, such as Contrastive Divergence (`ContrastiveDivergence`).
 
-    [:octicons-arrow-right-24: Blog](blog/index.md)
+    [:octicons-arrow-right-24: Details](api/torchebm/losses/index.md)
+
+-   :material-database-search:{ .lg .middle } __Datasets__
+
+    ---
+
+    Helper functions to generate synthetic datasets (e.g., `make_gaussian_mixture`) useful for testing, debugging, and visualization purposes.
+
+    [:octicons-arrow-right-24: Details](api/torchebm/datasets/index.md)
 
 </div>
 
-## Quick Installation
+---
+
+## Quick Start
+
+Install the library using pip:
 
 ```bash
 pip install torchebm
 ```
+
+Here's a minimal example of defining an energy function and a sampler:
+<div class="grid cards" markdown>
+
+-   __Create and Sample from Energy Models__
+
+    ---
+    
+    ```python
+    import torch
+    from torchebm.core import GaussianEnergy
+    from torchebm.samplers import LangevinDynamics
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Define an (analytical) energy function -> next example: trainable
+    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2), device=device)
+    
+    # Define a sampler
+    sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
+        
+    # Generate samples
+    initial_points = torch.randn(500, 2, device=device)
+    samples = sampler.sample_chain(x=initial_points, n_steps=100)
+    
+    print(f"Output shape: {samples.shape}")
+    # Output shape: torch.Size([500, 2])
+    ```
+</div>
+---
+
+## Training and Visualization Example
+
+Training EBMs typically involves adjusting the energy function's parameters so that observed data points have lower energy than samples generated by the model. Contrastive Divergence (CD) is a common approach.
+
+Here's an example of setting up training using `ContrastiveDivergence` and `LangevinDynamics`:
+<div class="grid cards" markdown>
+
+-   __Train an EBM__
+
+    ---
+    ```python
+    import torch.optim as optim
+    from torch.utils.data import DataLoader
+
+    from torchebm.losses import ContrastiveDivergence
+    from torchebm.datasets import GaussianMixtureDataset
+    
+    # A trainable EBM
+    class MLPEnergy(BaseEnergyFunction):
+        def __init__(self, input_dim, hidden_dim=64):
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, 1),
+            )
+    
+        def forward(self, x):
+            return self.net(x).squeeze(-1) # a scalar value
+
+    energy_fn = MLPEnergy(input_dim=2).to(device)
+    
+    cd_loss_fn = ContrastiveDivergence(
+        energy_function=energy_fn,
+        sampler=sampler, # from the previous example
+        n_steps=10 # MCMC steps for negative samples gen
+    )
+    
+    optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+    
+    mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123).get_data()
+    dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
+    
+    # Training Loop
+    for epoch in range(10):
+        epoch_loss = 0.0
+        for i, batch_data in enumerate(dataloader):
+            batch_data = batch_data.to(device)
+    
+            optimizer.zero_grad()
+    
+            loss, neg_samples = cd_loss(batch_data)
+    
+            loss.backward()
+            optimizer.step()
+    
+            epoch_loss += loss.item()
+    
+        avg_loss = epoch_loss / len(dataloader)
+        print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
+    ```
+</div>
+
+Visualizing the learned energy landscape during training can be insightful. Below shows the evolution of an MLP-based energy function trained on a 2D Gaussian mixture:
+
+!!! example "Training Progression (Gaussian Mixture Example)"
+
+    === "Epoch 10"
+        <div class="energy-grid" markdown>
+        <div class="energy-main" markdown>
+
+        <figure markdown>
+          ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
+          <figcaption>Early stage: Model starts identifying modes.</figcaption>
+        </figure>
+        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
+    
+        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
+        
+        </div>
+        <div class="energy-others" markdown>
+        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
+        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
+        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
+        </div>
+        </div>
+
+
+    === "Epoch 20"
+        <div class="energy-grid" markdown>
+        <div class="energy-main" markdown>
+
+        <figure markdown>
+          ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
+          <figcaption>Energy landscape refinement.</figcaption>
+        </figure>
+        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
+    
+        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
+        
+        </div>
+        <div class="energy-others" markdown>
+        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
+        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
+        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
+        </div>
+        </div>
+
+
+    === "Epoch 50"
+        <div class="energy-grid" markdown>
+        <div class="energy-main" markdown>
+        <figure markdown>
+          ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
+          <figcaption>Modes become more distinct.</figcaption>
+        </figure>
+        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
+    
+        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
+        
+        </div>
+        <div class="energy-others" markdown>
+        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
+        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
+        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
+        </div>
+        </div>
+    
+    === "Epoch 100 (Final)"
+        <div class="energy-grid" markdown>
+        <div class="energy-main" markdown>
+        <figure markdown>
+          ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
+          <figcaption>Learned landscape matching the target distribution.</figcaption>
+        </figure>
+
+        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
+    
+        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
+        
+        </div>
+        <div class="energy-others" markdown>
+        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
+        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
+        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
+        </div>
+        </div>
+---
+
+!!! info "Latest Release"
+
+    TorchEBM is currently in early development. Check our [GitHub repository](https://github.com/soran-ghaderi/torchebm) for the latest updates and features.
 
 ## Example Analytical Energy Landscapes
 
@@ -181,168 +401,65 @@ pip install torchebm
     )
     ```
 
-## Quick Example
 
-<div class="grid cards" markdown>
+## Explore Further
 
--   __Create and Sample from Energy Models__
-
-    ---
-    
-    ```python
-    import torch
-    from torchebm.core import GaussianEnergy
-    from torchebm.samplers.langevin_dynamics import LangevinDynamics
-    
-    # Create an energy function
-    energy_fn = GaussianEnergy(
-        mean=torch.zeros(2),
-        cov=torch.eye(2)
-    )
-    
-    # Create a sampler
-    sampler = LangevinDynamics(
-        energy_function=energy_fn,
-        step_size=0.01
-    )
-    
-    # Generate samples
-    samples = sampler.sample_chain(
-        dim=2, n_steps=100, n_samples=1000
-    )
-    ```
-
-</div>
-
-!!! info "Latest Release"
-
-    TorchEBM is currently in early development. Check our [GitHub repository](https://github.com/soran-ghaderi/torchebm) for the latest updates and features.
-
-## Features & Roadmap
-
-Our goal is to create a comprehensive library for energy-based modeling in PyTorch.
-
-Status indicators:
-
-- :white_check_mark: - Completed
-- :construction: - Work in progress
-- :warning: - Needs improvement
-- :sparkles: - Planned feature
-
-### Core Infrastructure
 <div class="grid" markdown>
+
 <div markdown>
-- [x] CUDA-accelerated implementations :white_check_mark:
-- [x] Seamless integration with PyTorch :white_check_mark:
-- [x] Energy function base class :white_check_mark:
-- [x] Sampler base class :white_check_mark:
-</div>
+[:material-school:{ .lg .middle } __Guides__](guides/index.md){ .md-button }
+
+Walkthroughs and explanations of core concepts and library usage.
 </div>
 
-=== "Energy Functions"
+<div markdown>
+[:material-flask-outline:{ .lg .middle } __Examples__](examples/index.md){ .md-button }
 
-    - [x] Gaussian :white_check_mark:
-    - [x] Double well :white_check_mark:
-    - [x] Rastrigin :white_check_mark:
-    - [x] Rosenbrock :white_check_mark:
-    - [x] Ackley :white_check_mark:
+Code examples demonstrating various applications and features.
+</div>
 
-=== "Implemented Samplers"
+<div markdown>
+[:material-api:{ .lg .middle } __API Reference__](api/index.md){ .md-button }
 
-    - [x] Langevin Dynamics :white_check_mark:
-    - [x] Hamiltonian Monte Carlo (HMC) :construction:
-    - [ ] Metropolis-Hastings :warning:
+Detailed documentation of modules, classes, and functions.
+</div>
 
-=== "Diffusion-based Samplers"
+<div markdown>
+[:material-post-outline:{ .lg .middle } __Blog__](blog/index.md){ .md-button }
 
-    - [ ] Denoising Diffusion Probabilistic Models (DDPM) :sparkles:
-    - [ ] Denoising Diffusion Implicit Models (DDIM) :sparkles:
-    - [ ] Generalized Gaussian Diffusion Models (GGDM) :sparkles:
-    - [ ] Differentiable Diffusion Sampler Search (DDSS) :sparkles:
-    - [ ] Euler Method :sparkles:
-    - [ ] Heun's Method :sparkles:
-    - [ ] PLMS (Pseudo Likelihood Multistep) :sparkles:
-    - [ ] DPM (Diffusion Probabilistic Models) :sparkles:
+Updates, tutorials, and discussions related to TorchEBM.
+</div>
 
-=== "MCMC Samplers"
+</div>
 
-    - [ ] Gibbs Sampling :sparkles:
-    - [ ] No-U-Turn Sampler (NUTS) :sparkles:
-    - [ ] Slice Sampling :sparkles:
-    - [ ] Reversible Jump MCMC :sparkles:
-    - [ ] Particle Filters (Sequential Monte Carlo) :sparkles:
-    - [ ] Adaptive Metropolis :sparkles:
-    - [ ] Parallel Tempering (Replica Exchange) :sparkles:
-    - [ ] Stochastic Gradient Langevin Dynamics (SGLD) :sparkles:
-    - [ ] Stein Variational Gradient Descent (SVGD) :sparkles:
-    - [ ] Metropolis-Adjusted Langevin Algorithm (MALA) :sparkles:
-    - [ ] Unadjusted Langevin Algorithm (ULA) :sparkles:
-    - [ ] Bouncy Particle Sampler :sparkles:
-    - [ ] Zigzag Sampler :sparkles:
-    - [ ] Annealed Importance Sampling (AIS) :sparkles:
-    - [ ] Sequential Monte Carlo (SMC) Samplers :sparkles:
-    - [ ] Elliptical Slice Sampling :sparkles:
+---
 
-=== "BaseLoss Functions"
+## Community & Contribution
 
-    - [ ] Contrastive Divergence Methods :construction:
-      * [ ] Contrastive Divergence (CD-k) :construction:
-      * [ ] Persistent Contrastive Divergence (PCD) :sparkles:
-      * [ ] Fast Persistent Contrastive Divergence (FPCD) :sparkles:
-      * [ ] Parallel Tempering Contrastive Divergence (PTCD) :sparkles:
-    - [ ] Score Matching Techniques :sparkles:
-      * [ ] Standard Score Matching :sparkles:
-      * [ ] Denoising Score Matching :sparkles:
-      * [ ] Sliced Score Matching :sparkles:
-    - [ ] Maximum Likelihood Estimation (MLE) :sparkles:
-    - [ ] Margin BaseLoss :sparkles:
-    - [ ] Noise Contrastive Estimation (NCE) :sparkles:
-    - [ ] Ratio Matching :sparkles:
-    - [ ] Minimum Probability Flow :sparkles:
-    - [ ] Adversarial Training BaseLoss :sparkles:
-    - [ ] Kullback-Leibler (KL) Divergence BaseLoss :sparkles:
-    - [ ] Fisher Divergence :sparkles:
-    - [ ] Hinge Embedding BaseLoss :sparkles:
-    - [ ] Cross-Entropy BaseLoss (for discrete outputs) :sparkles:
-    - [ ] Mean Squared Error (MSE) BaseLoss (for continuous outputs) :sparkles:
-    - [ ] Improved Contrastive Divergence BaseLoss :sparkles:
+TorchEBM is an open-source project developed with the research community in mind.
 
-=== "Other Modules"
+*   **Bug Reports & Feature Requests:** Please use the [GitHub Issues](https://github.com/soran-ghaderi/torchebm/issues).
+*   **Contributing Code:** We welcome contributions! Please see the [Contributing Guidelines](developer_guide/contributing.md). Consider following the [Commit Conventions](developer_guide/contributing.md#commit-message-conventions).
+*   **Show Support:** If you find TorchEBM helpful for your work, consider starring the repository on [GitHub](https://github.com/soran-ghaderi/torchebm)! :material-star-outline:
 
-    - [ ] Testing Framework :construction:
-    - [ ] Visualization Tools :construction:
-    - [ ] Performance Benchmarking :sparkles:
-    - [ ] Neural Network Integration :sparkles:
-    - [ ] Hyperparameter Optimization :sparkles:
-    - [ ] Distribution Diagnostics :sparkles:
+---
+
+## Citation
+
+Please consider citing the TorchEBM repository if it contributes to your research:
+
+```bibtex
+@misc{torchebm_library_2025,
+  author       = {Soran Ghaderi and Contributors},
+  title        = {TorchEBM: A PyTorch Library for Training Energy-Based Models},
+  year         = {2025},
+  url          = {https://github.com/soran-ghaderi/torchebm},
+}
+```
+
+---
 
 ## License
 
-TorchEBM is released under the [MIT License](https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE), which is a permissive license that allows for reuse with few restrictions.
-
-## Contributing
-
-We welcome contributions! If you're interested in improving TorchEBM or adding new features, please check our [contributing guidelines](developer_guide/contributing.md).
-
-Our project follows specific [commit message conventions](developer_guide/contributing.md#commit-message-conventions) to maintain a clear project history and generate meaningful changelogs.
-
-<div class="grid" markdown>
-
-<div markdown>
-[:material-github: GitHub](https://github.com/soran-ghaderi/torchebm){ .md-button .md-button--primary target="_blank"}
-</div>
-
-<div markdown>
-[:material-file-document: API Reference](api/index.md){ .md-button }
-</div>
-
-<div markdown>
-[:material-frequently-asked-questions: FAQ](faq.md){ .md-button }
-</div>
-
-<div markdown>
-[:material-tools: Development](developer_guide/contributing.md){ .md-button }
-</div>
-
-</div>
+TorchEBM is available under the **MIT License**. See the [LICENSE file](https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE) for details.
 

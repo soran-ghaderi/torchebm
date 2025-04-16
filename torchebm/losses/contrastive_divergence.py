@@ -28,7 +28,7 @@ Classes:
     ```python
     from torchebm.losses import ContrastiveDivergence
     from torchebm.samplers import LangevinDynamics
-    from torchebm.core import MLPEnergyFunction
+    from torchebm.energy_functions import MLPEnergyFunction
     import torch
 
     # Define the energy function
@@ -222,7 +222,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         """
         Compute the Contrastive Divergence loss and generate negative samples.
 
-        This method implements the core CD algorithm by:
+        This method implements the energy_functions CD algorithm by:
 
         1. Initializing MCMC chains (either from data or persistent state)
         2. Running the sampler for n_steps to generate negative samples

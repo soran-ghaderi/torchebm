@@ -1,6 +1,8 @@
 ---
 title: Langevin Sampler Trajectory
 description: Visualizing sampling trajectories on energy landscapes
+authors: 
+  - soran-ghaderi
 ---
 
 # Langevin Sampler Trajectory
@@ -203,7 +205,10 @@ When you run this example, you'll see a contour plot of the energy landscape wit
 </div>
 <div markdown>
 
-![Langevin Dynamics Sampling Trajectories](../assets/images/examples/langevin_trajectory.png)
+<figure markdown>
+  ![Langevin Dynamics Sampling Trajectories](../../assets/images/examples/langevin_trajectory.png)
+  <figcaption>Langevin Dynamics Sampling Trajectories</figcaption>
+</figure>
 
 The key insights from this visualization:
 
@@ -269,6 +274,12 @@ This example can be extended in various ways:
 
 When running the example, you'll see a visualization of the energy landscape with multiple sampling chains:
 
-![Energy Landscape and Langevin Sampling Trajectories](../assets/images/examples/langevin_trajectory.png)
+<figure markdown>
+  ![Energy Landscape and Langevin Sampling Trajectories](../../assets/images/examples/langevin_trajectory.png)
+  <figcaption>This visualization shows a multimodal energy landscape (contour lines) with five independent 
+    Langevin dynamics sampling chains (colored trajectories). Each chain starts from a random position 
+    (marked by a circle) and evolves through 200 steps (ending at the stars). The trajectories show how the 
+    chains are attracted to the energy function's local minima. Note how some chains follow the gradient to the 
+    nearest minimum, while others may explore multiple regions of the space.</figcaption>
+</figure>
 
-*This visualization shows a multimodal energy landscape (contour lines) with five independent Langevin dynamics sampling chains (colored trajectories). Each chain starts from a random position (marked by a circle) and evolves through 200 steps (ending at the stars). The trajectories show how the chains are attracted to the energy function's local minima. Note how some chains follow the gradient to the nearest minimum, while others may explore multiple regions of the space.*
