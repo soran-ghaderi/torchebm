@@ -1,6 +1,8 @@
 ---
 title: Langevin Dynamics Sampling
 description: Using Langevin dynamics to sample from energy landscapes
+authors: 
+  - soran-ghaderi
 ---
 
 # Langevin Dynamics Sampling
@@ -224,7 +226,11 @@ For a more visual exploration of Langevin dynamics, see the [Langevin Sampler Tr
 
 ### Visualization Result
 
-![Langevin Dynamics Sampling from 2D Gaussian](../assets/images/examples/langevin_basic.png)
+<figure markdown>
+  ![Langevin Dynamics Sampling from 2D Gaussian](../../assets/images/examples/langevin_basic.png)
+  <figcaption>Langevin Dynamics Sampling from 2D Gaussian</figcaption>
+</figure>
+
 
 *This plot shows 1000 samples from a 2D Gaussian distribution generated using Langevin dynamics. The samples are concentrated around the mean [1.0, -1.0] and reflect the covariance structure with the characteristic elliptical shape.*
 
@@ -275,6 +281,9 @@ plt.show()
 
 ### Diagnostics Visualization
 
-![Double Well Trajectory and Energy](../assets/images/examples/double_well_trajectory.png)
+<figure markdown>
+  ![Double Well Trajectory and Energy](../../assets/images/examples/double_well_trajectory.png)
+  <figcaption>Double Well Trajectory and Energy</figcaption>
+</figure>
 
 *The left plot shows a single sampling chain trajectory in a Double Well energy landscape. The trajectory moves between the two wells over time. The right plot shows the corresponding energy evolution during sampling, with drops indicating transitions between wells.* 
