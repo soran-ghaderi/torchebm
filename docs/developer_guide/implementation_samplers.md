@@ -387,24 +387,24 @@ To handle large numbers of samples efficiently:
 
 ```python
 def batch_sample_chain(
-    sampler: Sampler,
-    dim: int,
-    n_steps: int,
-    n_samples: int,
-    batch_size: int = 1000
+        sampler: Sampler,
+        dim: int,
+        n_steps: int,
+        n_samples: int,
+        batch_size: int = 1000
 ) -> torch.Tensor:
     """Sample in batches to avoid memory issues."""
     samples = []
-    
+
     for i in range(0, n_samples, batch_size):
         batch_n = min(batch_size, n_samples - i)
-        batch_samples = sampler.sample_chain(
+        batch_samples = sampler.sample(
             dim=dim,
             n_steps=n_steps,
             n_samples=batch_n
         )
         samples.append(batch_samples)
-    
+
     return torch.cat(samples, dim=0)
 ```
 

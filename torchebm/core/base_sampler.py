@@ -31,49 +31,10 @@ class BaseSampler(ABC):
         self.dtype = dtype
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
+    @abstractmethod
     def sample(
         self,
         x: Optional[torch.Tensor] = None,
-        dim: int = 10,
-        n_steps: int = 100,
-        n_samples: int = 1,
-        thin: int = 1,  # not supported yet
-        return_trajectory: bool = False,
-        return_diagnostics: bool = False,
-        *args,
-        **kwargs,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-        """
-        Run the sampling process.
-
-        Args:
-            x: Initial state to start the sampling from.
-            dim: Dimension of the state space.
-            n_steps: Number of steps to take between samples.
-            n_samples: Number of samples to generate.
-            thin: Thinning factor (not supported yet).
-            return_trajectory: Whether to return the trajectory of the samples.
-            return_diagnostics: Whether to return the diagnostics of the sampling process.
-
-        Returns:
-            torch.Tensor: Samples from the sampler.
-            List[dict]: Diagnostics of the sampling process.
-        """
-        return self.sample_chain(
-            x=x,
-            dim=dim,
-            n_steps=n_steps,
-            n_samples=n_samples,
-            thin=thin,
-            return_trajectory=return_trajectory,
-            return_diagnostics=return_diagnostics,
-            *args,
-            **kwargs,
-        )
-
-    @abstractmethod
-    def sample_chain(
-        self,
         dim: int = 10,
         n_steps: int = 100,
         n_samples: int = 1,
@@ -84,6 +45,23 @@ class BaseSampler(ABC):
         **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
         raise NotImplementedError
+
+    """
+    Run the sampling process.
+
+    Args:
+        x: Initial state to start the sampling from.
+        dim: Dimension of the state space.
+        n_steps: Number of steps to take between samples.
+        n_samples: Number of samples to generate.
+        thin: Thinning factor (not supported yet).
+        return_trajectory: Whether to return the trajectory of the samples.
+        return_diagnostics: Whether to return the diagnostics of the sampling process.
+
+    Returns:
+        torch.Tensor: Samples from the sampler.
+        List[dict]: Diagnostics of the sampling process.
+    """
 
     # @abstractmethod
     def _setup_diagnostics(self) -> dict:

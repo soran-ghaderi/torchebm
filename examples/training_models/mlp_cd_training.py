@@ -1,14 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
+
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Optional
 
 from torchebm.core import BaseEnergyFunction
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import ContrastiveDivergence
+
+from torchebm.datasets import GaussianMixtureDataset, TwoMoonsDataset
 
 
 class MLPEnergy(BaseEnergyFunction):
@@ -25,42 +27,19 @@ class MLPEnergy(BaseEnergyFunction):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Ensure energy is scalar per batch element
         return self.network(x).squeeze(-1)
 
 
-# --- 2. Generate Target Data (2D Gaussian Mixture) ---
-def generate_gaussian_mixture_data(
-    n_samples: int, n_components: int = 4, std: float = 0.1
-) -> torch.Tensor:
-    """Generates data from a 2D Gaussian mixture centered on a circle."""
-    centers = []
-    angles = np.linspace(0, 2 * np.pi, n_components, endpoint=False)
-    radius = 1.5
-    for angle in angles:
-        centers.append([radius * np.cos(angle), radius * np.sin(angle)])
-    centers = torch.tensor(centers, dtype=torch.float32)
-
-    data = []
-    for _ in range(n_samples):
-        comp_idx = np.random.randint(0, n_components)
-        point = torch.randn(2) * std + centers[comp_idx]
-        data.append(point)
-
-    return torch.stack(data)
-
-
-# --- 3. Visualization Function ---
 @torch.no_grad()
 def plot_energy_and_samples(
     energy_fn: BaseEnergyFunction,
-    real_samples: torch.Tensor,
+    real_samples: torch.Tensor,  # Expects the full data tensor
     sampler: LangevinDynamics,
     epoch: int,
     device: torch.device,
     grid_size: int = 100,
     plot_range: float = 3.0,
-    k_sampling: int = 100,  # Number of steps to generate samples for visualization
+    k_sampling: int = 100,
 ):
     """Plots the energy surface, real data, and model samples."""
     plt.figure(figsize=(8, 8))
@@ -72,35 +51,47 @@ def plot_energy_and_samples(
     grid = torch.stack([xv.flatten(), yv.flatten()], dim=1)
 
     # Calculate energy on the grid
+    # Ensure energy_fn is in eval mode if it has dropout/batchnorm, although not strictly needed for this MLP
+    energy_fn.eval()
     energy_values = energy_fn(grid).cpu().numpy().reshape(grid_size, grid_size)
+    energy_fn.train()  # Set back to train mode after plotting
 
-    # Plot energy surface
+    # Plot energy surface (using probability density for better visualization)
+    # Subtract max for numerical stability before exponentiating
+    log_prob_values = -energy_values
+    log_prob_values = log_prob_values - np.max(log_prob_values)
+    prob_density = np.exp(log_prob_values)
+
     plt.contourf(
         xv.cpu().numpy(),
         yv.cpu().numpy(),
-        np.exp(energy_values),
+        prob_density,  # Plot probability density
         levels=50,
         cmap="viridis",
     )
-    plt.colorbar(label="exp(Energy)")
+    plt.colorbar(label="exp(-Energy) (unnormalized density)")
 
     # Generate samples from the current model for visualization
     # Start from random noise for visualization samples
     vis_start_noise = torch.randn(
-        500, real_samples.shape[1], device=device
-    )  # 500 samples, dim=2
-    model_samples = (
-        sampler.sample_chain(x=vis_start_noise, n_steps=k_sampling).cpu().numpy()
+        500, real_samples.shape[1], device=device  # 500 samples, dim matches real data
     )
+    model_samples_tensor = sampler.sample(x=vis_start_noise, n_steps=k_sampling)
+    model_samples = model_samples_tensor.cpu().numpy()
 
     # Plot real and model samples
+    real_samples_np = (
+        real_samples.cpu().numpy()
+    )  # Ensure real samples are on CPU for plotting
     plt.scatter(
-        real_samples[:, 0].cpu().numpy(),
-        real_samples[:, 1].cpu().numpy(),
+        real_samples_np[:, 0],
+        real_samples_np[:, 1],
         s=10,
         alpha=0.5,
         label="Real Data",
         c="white",
+        edgecolors="k",  # Add edge colors for better visibility
+        linewidths=0.5,
     )
     plt.scatter(
         model_samples[:, 0],
@@ -109,6 +100,8 @@ def plot_energy_and_samples(
         alpha=0.5,
         label="Model Samples",
         c="red",
+        edgecolors="darkred",
+        linewidths=0.5,
     )
 
     plt.xlim(-plot_range, plot_range)
@@ -123,7 +116,6 @@ def plot_energy_and_samples(
     plt.close()
 
 
-# --- 4. Training Setup ---
 if __name__ == "__main__":
     # Hyperparameters
     N_SAMPLES = 500
@@ -131,46 +123,73 @@ if __name__ == "__main__":
     HIDDEN_DIM = 16
     BATCH_SIZE = 256
     EPOCHS = 200
-    LEARNING_RATE = 1e-2
+    LEARNING_RATE = 1e-3
     SAMPLER_STEP_SIZE = 0.1
-    SAMPLER_NOISE_SCALE = 0.1  # Adjust carefully with step_size
-    CD_K = 10  # Number of steps for CD sampler
-    USE_PCD = False  # Set to True to use Persistent CD
-    VISUALIZE_EVERY = 10  # How often to generate plots
+    # SAMPLER_NOISE_SCALE = torch.sqrt(torch.Tensor([SAMPLER_STEP_SIZE])).numpy()[0]
+    SAMPLER_NOISE_SCALE = 0.1
+    print(f"Sampler noise scale: {SAMPLER_NOISE_SCALE}")
+    CD_K = 10
+    USE_PCD = False
+    VISUALIZE_EVERY = 20
+    SEED = 42
 
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Data
-    real_data = generate_gaussian_mixture_data(N_SAMPLES)
-    dataset = TensorDataset(real_data)
+    # Data Loading using Dataset Class
+    # Instantiate the dataset object directly
+    # It handles generation and device placement internally
+    # dataset = GaussianMixtureDataset(
+    #     n_samples=N_SAMPLES,
+    #     n_components=4,  # Specific parameters for this dataset
+    #     std=0.1,
+    #     radius=1.5,
+    #     device=device,  # Tell dataset where to place the data
+    #     seed=SEED,  # Pass the seed
+    # )
+    dataset = TwoMoonsDataset(n_samples=3000, noise=0.05, seed=SEED, device=device)
+
+    # Get the full tensor ONLY for visualization purposes
+    # The DataLoader will use the 'dataset' object directly
+    real_data_for_plotting = dataset.get_data()
+    print(f"Data shape: {real_data_for_plotting.shape}")
+
+    # Create DataLoader using the Dataset instance directly
     dataloader = DataLoader(
-        dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True
+        dataset,  # Use the GaussianMixtureDataset object
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        drop_last=True,  # Good practice if batch sizes vary slightly
     )
-    print(f"Data shape: {real_data.shape}")
+    # -----------------------------------------
 
     # Model Components
     energy_model = MLPEnergy(INPUT_DIM, HIDDEN_DIM).to(device)
     sampler = LangevinDynamics(
         energy_function=energy_model,
         step_size=SAMPLER_STEP_SIZE,
-        noise_scale=SAMPLER_NOISE_SCALE,  # Often related to sqrt(2*step_size)
+        noise_scale=SAMPLER_NOISE_SCALE,
         device=device,
     )
     loss_fn = ContrastiveDivergence(
         energy_function=energy_model, sampler=sampler, n_steps=CD_K, persistent=USE_PCD
-    ).to(device)
+    ).to(
+        device
+    )  # Loss function itself can be on device
 
     # Optimizer (Optimizes the parameters of the energy function)
     optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
 
-    # --- 5. Training Loop ---
     print("Starting training...")
     for epoch in range(EPOCHS):
+        energy_model.train()  # Ensure model is in training mode
         epoch_loss = 0.0
-        for i, (data_batch,) in enumerate(dataloader):
-            data_batch = data_batch.to(device)
+        for i, data_batch in enumerate(dataloader):
+            # data_batch should already be on the correct device because
+            # the 'dataset' object was created with device=device.
+            # The .to(device) call below is slightly redundant but safe.
+            # data_batch = data_batch.to(device)
 
             # Zero gradients before calculation
             optimizer.zero_grad()
@@ -182,6 +201,9 @@ if __name__ == "__main__":
             # Backpropagate the loss through the energy function parameters
             loss.backward()
 
+            # Optional: Gradient clipping can help stabilize training
+            torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
+
             # Update the energy function parameters
             optimizer.step()
 
@@ -190,27 +212,31 @@ if __name__ == "__main__":
         avg_epoch_loss = epoch_loss / len(dataloader)
         print(f"Epoch [{epoch+1}/{EPOCHS}], Average Loss: {avg_epoch_loss:.4f}")
 
-        # --- 6. Visualization ---
         if (epoch + 1) % VISUALIZE_EVERY == 0 or epoch == 0:
             print("Generating visualization...")
+            energy_model.eval()  # Set model to evaluation mode for visualization
             plot_energy_and_samples(
                 energy_fn=energy_model,
-                real_samples=real_data,  # Plot all real data for context
+                real_samples=real_data_for_plotting,  # Use the full dataset tensor
                 sampler=sampler,
                 epoch=epoch + 1,
                 device=device,
+                plot_range=2.5,  # Adjusted plot range based on radius=1.5 + std
                 k_sampling=200,  # Use more steps for better visualization samples
             )
+            # No need to set back to train mode here, it's done at the start of the next epoch loop
 
     print("Training finished.")
 
     # Final visualization
     print("Generating final visualization...")
+    energy_model.eval()
     plot_energy_and_samples(
         energy_fn=energy_model,
-        real_samples=real_data,
+        real_samples=real_data_for_plotting,
         sampler=sampler,
         epoch=EPOCHS,
         device=device,
+        plot_range=2.5,
         k_sampling=500,
     )

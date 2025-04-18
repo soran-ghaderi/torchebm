@@ -85,22 +85,22 @@ energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
 
 # Initialize Langevin dynamics sampler
 langevin_sampler = LangevinDynamics(
-    energy_function=energy_fn, step_size=5e-3, device=device
+  energy_function=energy_fn, step_size=5e-3, device=device
 ).to(device)
 
 # Sample 10,000 points in 10 dimensions
-final_samples = langevin_sampler.sample_chain(
-    dim=10, n_steps=500, n_samples=10000, return_trajectory=False
+final_samples = langevin_sampler.sample(
+  dim=10, n_steps=500, n_samples=10000, return_trajectory=False
 )
 print(final_samples.shape)  # Result shape: (10000, 10) - (n_samples, dim)
 
 # Sample with trajectory and diagnostics
-samples, diagnostics = langevin_sampler.sample_chain(
-    dim=dim,
-    n_steps=n_steps,
-    n_samples=n_samples,
-    return_trajectory=True,
-    return_diagnostics=True,
+samples, diagnostics = langevin_sampler.sample(
+  dim=dim,
+  n_steps=n_steps,
+  n_samples=n_samples,
+  return_trajectory=True,
+  return_diagnostics=True,
 )
 print(samples.shape)  # Trajectory shape: (250, 500, 10) - (samples, n_steps, dim)
 print(diagnostics.shape)  # Diagnostics shape: (500, 4, 250, 10) - (n_steps, 3, n_samples, dim)
@@ -117,22 +117,22 @@ energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
 
 # Initialize HMC sampler
 hmc_sampler = HamiltonianMonteCarlo(
-    energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=10, device=device
+  energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=10, device=device
 )
 
 # Sample 10,000 points in 10 dimensions
-final_samples = hmc_sampler.sample_chain(
-    dim=10, n_steps=500, n_samples=10000, return_trajectory=False
+final_samples = hmc_sampler.sample(
+  dim=10, n_steps=500, n_samples=10000, return_trajectory=False
 )
 print(final_samples.shape)  # Result shape: (10000, 10) - (n_samples, dim)
 
 # Sample with diagnostics and trajectory
-final_samples, diagnostics = hmc_sampler.sample_chain(
-    n_samples=n_samples,
-    n_steps=n_steps,
-    dim=dim,
-    return_trajectory=True,
-    return_diagnostics=True,
+final_samples, diagnostics = hmc_sampler.sample(
+  n_samples=n_samples,
+  n_steps=n_steps,
+  dim=dim,
+  return_trajectory=True,
+  return_diagnostics=True,
 )
 
 print(final_samples.shape)  # Trajectory shape: (250, 500, 10) - (n_samples, n_steps, dim)
@@ -141,7 +141,7 @@ print(diagnostics.shape)  # Diagnostics shape: (500, 4, 250, 10) - (n_steps, 4, 
 
 # Sample from a custom initialization
 x_init = torch.randn(n_samples, dim, dtype=torch.float32, device=device)
-samples = hmc_sampler.sample_chain(x=x_init, n_steps=100)
+samples = hmc_sampler.sample(x=x_init, n_steps=100)
 print(samples.shape)  # Result shape: (250, 10) -> (n_samples, dim)
 ```
 

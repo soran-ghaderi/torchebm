@@ -63,7 +63,7 @@ python examples/main.py --list
 python examples/main.py samplers/langevin/gaussian_sampling
 
 # Or run the Python file directly
-python examples/core/energy_functions/landscape_2d.py
+python examples/energy_functions/energy_functions/landscape_2d.py
 ```
 
 ## Example Entry Points

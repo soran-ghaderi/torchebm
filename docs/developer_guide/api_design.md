@@ -125,9 +125,10 @@ Return values are consistently structured:
 - Diagnostic information is returned in a separate dictionary
 
 Example:
+
 ```python
 # Return samples and diagnostics
-samples, diagnostics = sampler.sample_chain(dim=2, n_steps=100)
+samples, diagnostics = sampler.sample(dim=2, n_steps=100)
 
 # Access diagnostic information
 acceptance_rate = diagnostics['acceptance_rate']
@@ -194,7 +195,7 @@ Runtime behavior is controlled through method parameters:
 
 ```python
 # Control sampling behavior through method parameters
-samples = sampler.sample_chain(
+samples = sampler.sample(
     dim=2,
     n_steps=1000,
     n_samples=100,

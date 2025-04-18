@@ -25,7 +25,7 @@ def hmc_gaussian_sampling():
 
     # Sample 10,000 points in 10 dimensions
     ts = time.time()
-    final_x = hmc_sampler.sample_chain(
+    final_x = hmc_sampler.sample(
         dim=10, n_steps=500, n_samples=10000, return_trajectory=False
     )
     print(final_x.shape)  # Output: (10000, 10)
@@ -35,7 +35,7 @@ def hmc_gaussian_sampling():
     n_samples = 250
     n_steps = 500
     dim = 10
-    final_samples, diagnostics = hmc_sampler.sample_chain(
+    final_samples, diagnostics = hmc_sampler.sample(
         n_samples=n_samples,
         n_steps=n_steps,
         dim=dim,
@@ -48,7 +48,7 @@ def hmc_gaussian_sampling():
 
     # Sample from a custom initialization
     x_init = torch.randn(n_samples, dim, dtype=torch.float32, device=device)
-    samples = hmc_sampler.sample_chain(x=x_init, n_steps=100)
+    samples = hmc_sampler.sample(x=x_init, n_steps=100)
     print(samples.shape)  # (250, 10)
 
 
@@ -79,7 +79,7 @@ def hmc_standard_gaussian():
 
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
-    samples = hmc_sampler.sample_chain(x=initial_state, n_steps=n_steps)
+    samples = hmc_sampler.sample(x=initial_state, n_steps=n_steps)
 
     # Plot results
     samples = samples.cpu().numpy()
@@ -183,7 +183,7 @@ def hmc_custom_mass_matrix():
 
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
-    samples = hmc_sampler.sample_chain(x=initial_state, n_steps=n_steps)
+    samples = hmc_sampler.sample(x=initial_state, n_steps=n_steps)
 
     # Plot results
     samples = samples.cpu().numpy()
@@ -302,11 +302,9 @@ def compare_hmc_implementations():
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
 
-    standard_samples = standard_hmc.sample_chain(
-        x=initial_state.clone(), n_steps=n_steps
-    )
+    standard_samples = standard_hmc.sample(x=initial_state.clone(), n_steps=n_steps)
 
-    custom_samples = custom_hmc.sample_chain(x=initial_state.clone(), n_steps=n_steps)
+    custom_samples = custom_hmc.sample(x=initial_state.clone(), n_steps=n_steps)
 
     # Convert to numpy for plotting
     standard_samples = standard_samples.cpu().numpy()

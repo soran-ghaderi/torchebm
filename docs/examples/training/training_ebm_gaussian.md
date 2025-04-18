@@ -32,15 +32,17 @@ pip install torchebm
 We'll also use the following libraries:
 
 ```python
-from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
+
 from torchebm.core import BaseEnergyFunction
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import ContrastiveDivergence
+from torchebm.datasets import GaussianMixtureDataset
 ```
 
 ## Step 1: Define the Energy Function
@@ -49,52 +51,59 @@ We'll create a simple MLP (Multi-Layer Perceptron) energy function by subclassin
 
 ```python
 class MLPEnergy(BaseEnergyFunction):
-    """Simple MLP-based energy function for demonstration."""
+    """A simple MLP to act as the energy function."""
 
-    def __init__(self, input_dim, hidden_dim=64):
+    def __init__(self, input_dim: int, hidden_dim: int = 64):
         super().__init__()
-        self.net = nn.Sequential(
+        self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.SiLU(),  # Sigmoid Linear Unit (SiLU/Swish)
+            nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, 1),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),  # Output a single scalar energy value
         )
 
-    def forward(self, x):
-        """Compute energy values for input samples."""
-        # Energy function should return scalar energy per sample
-        return self.net(x).squeeze(-1)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x).squeeze(-1)
 ```
 
-This energy function maps input points to scalar energy values. Lower energy corresponds to higher probability density. Note that we're using the SiLU activation function (also known as Swish) instead of ReLU for smoother gradients.
+This energy function maps input points to scalar energy values. Lower energy corresponds to higher probability density.
 
-## Step 2: Generate Target Data
+## Step 2: Create the Dataset
 
-Let's create a function to generate synthetic data from a mixture of Gaussians arranged in a circle:
+TorchEBM provides built-in datasets for testing and development. Let's use the `GaussianMixtureDataset`:
 
 ```python
-def generate_mixture_data(n_samples=1000, centers=None, std=0.1):
-    """Generate samples from a mixture of 2D Gaussians."""
-    if centers is None:
-        # Default: 4 Gaussians in a circle
-        radius = 2.0
-        centers = [
-            [radius * np.cos(angle), radius * np.sin(angle)]
-            for angle in [0, np.pi / 2, np.pi, 3 * np.pi / 2]
-        ]
+# Hyperparameters
+N_SAMPLES = 500
+INPUT_DIM = 2
+HIDDEN_DIM = 64
+SEED = 42
 
-    centers = torch.tensor(centers, dtype=torch.float32)
-    n_components = len(centers)
+# Device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Randomly pick components and generate samples
-    data = []
-    for _ in range(n_samples):
-        idx = np.random.randint(0, n_components)
-        sample = torch.randn(2) * std + centers[idx]
-        data.append(sample)
+# Create the dataset
+dataset = GaussianMixtureDataset(
+    n_samples=N_SAMPLES,
+    n_components=4,  # Four Gaussian components
+    std=0.1,
+    radius=1.5,
+    device=device,
+    seed=SEED,
+)
 
-    return torch.stack(data)
+# Get the full tensor for visualization purposes
+real_data_for_plotting = dataset.get_data()
+print(f"Data shape: {real_data_for_plotting.shape}")
+
+# Create DataLoader
+dataloader = DataLoader(
+    dataset,
+    batch_size=256,
+    shuffle=True,
+    drop_last=True,
+)
 ```
 
 <div class="grid" markdown>
@@ -103,10 +112,10 @@ def generate_mixture_data(n_samples=1000, centers=None, std=0.1):
 We can visualize the generated data to see what our target distribution looks like:
 
 ```python
-# Generate and plot data
-real_data = generate_mixture_data(1000)
 plt.figure(figsize=(6, 6))
-plt.scatter(real_data[:, 0], real_data[:, 1], s=10, alpha=0.5)
+plt.scatter(real_data_for_plotting[:, 0].cpu().numpy(), 
+            real_data_for_plotting[:, 1].cpu().numpy(), 
+            s=10, alpha=0.5)
 plt.title("Target Distribution: 2D Gaussian Mixture")
 plt.grid(True, alpha=0.3)
 plt.show()
@@ -122,97 +131,110 @@ plt.show()
 
 </div>
 
-## Step 3: Set Up the Visualization Function
+## Step 3: Define the Visualization Function
 
-Before we set up the training components, let's define a function to visualize the energy landscape and generated samples:
+We'll create a function to visualize the energy landscape and generated samples during training:
 
 ```python
-def visualize_model(
-    energy_fn, real_samples, model_samples=None, title="Energy Landscape", grid_size=100
+@torch.no_grad()
+def plot_energy_and_samples(
+        energy_fn: BaseEnergyFunction,
+        real_samples: torch.Tensor,
+        sampler: LangevinDynamics,
+        epoch: int,
+        device: torch.device,
+        grid_size: int = 100,
+        plot_range: float = 3.0,
+        k_sampling: int = 100,
 ):
-    """Visualize the energy landscape and samples."""
-    # Create a grid for evaluation
-    x = torch.linspace(-4, 4, grid_size)
-    y = torch.linspace(-4, 4, grid_size)
-    xx, yy = torch.meshgrid(x, y, indexing="ij")
-    grid_points = torch.stack([xx.flatten(), yy.flatten()], dim=1)
+    """Plots the energy surface, real data, and model samples."""
+    plt.figure(figsize=(8, 8))
 
-    # Move grid points to the same device as energy_fn
-    device = next(energy_fn.parameters()).device
-    grid_points = grid_points.to(device)
+    # Create grid for energy surface plot
+    x_coords = torch.linspace(-plot_range, plot_range, grid_size, device=device)
+    y_coords = torch.linspace(-plot_range, plot_range, grid_size, device=device)
+    xv, yv = torch.meshgrid(x_coords, y_coords, indexing="xy")
+    grid = torch.stack([xv.flatten(), yv.flatten()], dim=1)
 
-    # Compute energy on the grid
-    with torch.no_grad():
-        energies = energy_fn(grid_points).reshape(grid_size, grid_size).cpu()
+    # Calculate energy on the grid
+    energy_fn.eval()
+    energy_values = energy_fn(grid).cpu().numpy().reshape(grid_size, grid_size)
 
-    # Plot energy as a colormap
-    plt.figure(figsize=(10, 8))
-    energy_plot = plt.contourf(
-        xx.cpu(), yy.cpu(), torch.exp(-energies), 50, cmap="viridis"
+    # Plot energy surface (using probability density for better visualization)
+    log_prob_values = -energy_values
+    log_prob_values = log_prob_values - np.max(log_prob_values)
+    prob_density = np.exp(log_prob_values)
+
+    plt.contourf(
+        xv.cpu().numpy(),
+        yv.cpu().numpy(),
+        prob_density,
+        levels=50,
+        cmap="viridis",
     )
-    plt.colorbar(energy_plot, label="exp(-Energy)")
+    plt.colorbar(label="exp(-Energy) (unnormalized density)")
 
-    # Plot real samples
+    # Generate samples from the current model
+    vis_start_noise = torch.randn(
+        500, real_samples.shape[1], device=device
+    )
+    model_samples_tensor = sampler.sample(x=vis_start_noise, n_steps=k_sampling)
+    model_samples = model_samples_tensor.cpu().numpy()
+
+    # Plot real and model samples
+    real_samples_np = real_samples.cpu().numpy()
     plt.scatter(
-        real_samples[:, 0],
-        real_samples[:, 1],
-        color="white",
-        edgecolor="black",
-        alpha=0.6,
+        real_samples_np[:, 0],
+        real_samples_np[:, 1],
+        s=10,
+        alpha=0.5,
         label="Real Data",
+        c="white",
+        edgecolors="k",
+        linewidths=0.5,
+    )
+    plt.scatter(
+        model_samples[:, 0],
+        model_samples[:, 1],
+        s=10,
+        alpha=0.5,
+        label="Model Samples",
+        c="red",
+        edgecolors="darkred",
+        linewidths=0.5,
     )
 
-    # Plot model samples if provided
-    if model_samples is not None:
-        plt.scatter(
-            model_samples[:, 0],
-            model_samples[:, 1],
-            color="red",
-            alpha=0.4,
-            label="Model Samples",
-        )
-
-    plt.title(title)
+    plt.xlim(-plot_range, plot_range)
+    plt.ylim(-plot_range, plot_range)
+    plt.title(f"Epoch {epoch}")
+    plt.xlabel("X1")
+    plt.ylabel("X2")
     plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    return plt
+    plt.grid(True, alpha=0.3)
+    plt.show()
 ```
+
+!!! tip "Visualizing Analytical Energy Functions"
+    For more detailed information on analytical energy-function visualizations and techniques, see our [Energy Visualization Guide](../visualization/energy_visualization.md).
+    You can find visualized 2D toy datasets in [Datasets](../datasets/index.md) examples.
 
 ## Step 4: Set Up the Training Components
 
-Now we'll set up the sampler, loss function, and optimizer for training:
+Now we'll set up the model, sampler, loss function, and optimizer:
 
 ```python
-# Set random seed for reproducibility
-torch.manual_seed(42)
-np.random.seed(42)
-
-# Set up output directory for saving figures
-output_dir = Path("docs/assets/images/examples")
-output_dir.mkdir(parents=True, exist_ok=True)
-
-# Check for GPU availability
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Hyperparameters
-INPUT_DIM = 2
-HIDDEN_DIM = 64
-BATCH_SIZE = 128
-EPOCHS = 100
-LEARNING_RATE = 0.001
+# Hyperparameters for training
+BATCH_SIZE = 256
+EPOCHS = 200
+LEARNING_RATE = 1e-3
 SAMPLER_STEP_SIZE = 0.1
-SAMPLER_NOISE_SCALE = 0.01  # Smaller noise scale for better stability
-CD_STEPS = 10
-USE_PCD = True  # Persistent Contrastive Divergence
-
-# Generate synthetic data
-real_data = generate_mixture_data(n_samples=1000)
-# Move data to the correct device
-real_data = real_data.to(device)
+SAMPLER_NOISE_SCALE = 0.1
+CD_K = 10  # MCMC steps for CD
+USE_PCD = False  # Whether to use Persistent CD
+VISUALIZE_EVERY = 20
 
 # Create the energy model
-energy_model = MLPEnergy(input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM).to(device)
+energy_model = MLPEnergy(INPUT_DIM, HIDDEN_DIM).to(device)
 
 # Set up the Langevin dynamics sampler
 sampler = LangevinDynamics(
@@ -223,13 +245,12 @@ sampler = LangevinDynamics(
 )
 
 # Set up the Contrastive Divergence loss
-cd_loss = ContrastiveDivergence(
-    energy_function=energy_model,
-    sampler=sampler,
-    n_steps=CD_STEPS,
-    persistent=USE_PCD,
-    device=device,
-)
+loss_fn = ContrastiveDivergence(
+    energy_function=energy_model, 
+    sampler=sampler, 
+    n_steps=CD_K, 
+    persistent=USE_PCD
+).to(device)
 
 # Optimizer
 optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
@@ -246,55 +267,44 @@ optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
 Now we're ready to train our energy-based model:
 
 ```python
-# Create data loader
-dataset = torch.utils.data.TensorDataset(real_data)
-dataloader = torch.utils.data.DataLoader(
-    dataset, batch_size=BATCH_SIZE, shuffle=True
-)
-
-# Training parameters
-VISUALIZE_EVERY = 10
-
-# Training loop
 print("Starting training...")
 for epoch in range(EPOCHS):
+    energy_model.train()  # Ensure model is in training mode
     epoch_loss = 0.0
-    
-    for i, (batch_data,) in enumerate(dataloader):
-        batch_data = batch_data.to(device)
-        
-        # Zero gradients
+    for i, data_batch in enumerate(dataloader):
+        # Zero gradients before calculation
         optimizer.zero_grad()
-        
-        # Compute CD loss and get negative samples
-        loss, neg_samples = cd_loss(batch_data)
-        
-        # Backpropagate and update parameters
+
+        # Calculate Contrastive Divergence loss
+        loss, negative_samples = loss_fn(data_batch)
+
+        # Backpropagate the loss
         loss.backward()
+
+        # Optional: Gradient clipping can help stabilize training
+        torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
+
+        # Update the energy function parameters
         optimizer.step()
-        
+
         epoch_loss += loss.item()
-    
-    # Print progress
-    avg_loss = epoch_loss / len(dataloader)
-    print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
-    
+
+    avg_epoch_loss = epoch_loss / len(dataloader)
+    print(f"Epoch [{epoch+1}/{EPOCHS}], Average Loss: {avg_epoch_loss:.4f}")
+
     # Visualize progress periodically
-    if (epoch + 1) % VISUALIZE_EVERY == 0:
-        # Generate samples from the model for visualization
-        with torch.no_grad():
-            init_noise = torch.randn(500, INPUT_DIM, device=device)
-            model_samples = sampler.sample_chain(init_noise, n_steps=100).cpu()
-        
-        # Visualize
-        plt = visualize_model(
-            energy_model,
-            real_data.cpu(),
-            model_samples.cpu(),
-            title=f"Energy Landscape - Epoch {epoch+1}",
+    if (epoch + 1) % VISUALIZE_EVERY == 0 or epoch == 0:
+        print("Generating visualization...")
+        energy_model.eval()  # Set model to evaluation mode for visualization
+        plot_energy_and_samples(
+            energy_fn=energy_model,
+            real_samples=real_data_for_plotting,
+            sampler=sampler,
+            epoch=epoch + 1,
+            device=device,
+            plot_range=2.5,
+            k_sampling=200,  # More steps for better visualization
         )
-        plt.savefig(output_dir / f"energy_landscape_epoch_{epoch+1}.png")
-        plt.close()
 ```
 
 ## Training Progress Visualization
@@ -343,27 +353,29 @@ After training, we generate a final set of samples from our model for evaluation
 
 ```python
 # Final visualization
-with torch.no_grad():
-    init_noise = torch.randn(1000, INPUT_DIM, device=device)
-    model_samples = sampler.sample_chain(init_noise, n_steps=500).cpu()
-
-plt = visualize_model(
-    energy_model, real_data.cpu(), model_samples.cpu(), title="Final Energy Landscape"
+print("Generating final visualization...")
+energy_model.eval()
+plot_energy_and_samples(
+    energy_fn=energy_model,
+    real_samples=real_data_for_plotting,
+    sampler=sampler,
+    epoch=EPOCHS,
+    device=device,
+    plot_range=2.5,
+    k_sampling=500,  # More steps for better mixing
 )
-plt.savefig(output_dir / "energy_landscape_final.png")
-plt.show()
 ```
 
 ## Understanding the Results
 
-The final energy landscape shows that our model has successfully learned the four-mode structure of the target distribution. The contour plot shows four distinct regions of low energy (high probability) corresponding to the four Gaussian components.
+Our model has successfully learned the four-mode structure of the target distribution. The contour plot shows four distinct regions of low energy (high probability) corresponding to the four Gaussian components.
 
 <div class="grid" markdown>
 
 <div markdown>
 The red points (samples from our model) closely match the distribution of the white points (real data), indicating that our energy-based model has effectively captured the target distribution.
 
-This simple example demonstrates the core workflow for training energy-based models with TorchEBM:
+This example demonstrates the core workflow for training energy-based models with TorchEBM:
 
 1. Define an energy function
 2. Set up a sampler for generating negative samples
@@ -394,8 +406,11 @@ When training your own energy-based models, consider these tips:
 
     ```python
     # Try different step sizes and noise scales
-    step_size = 0.01  # Smaller for stability
-    noise_scale = 0.005  # Smaller for more accurate sampling
+    sampler = LangevinDynamics(
+        energy_function=energy_model,
+        step_size=0.01,  # Smaller for stability
+        noise_scale=0.005  # Smaller for more accurate sampling
+    )
     ```
 
 -   :fontawesome-solid-sliders:{ .lg .middle } __CD Steps__
@@ -406,7 +421,7 @@ When training your own energy-based models, consider these tips:
 
     ```python
     # For complex distributions, use more steps
-    cd_loss = ContrastiveDivergence(
+    loss_fn = ContrastiveDivergence(
         energy_function=energy_model,
         sampler=sampler,
         n_steps=20,  # Increase for better samples
@@ -424,23 +439,25 @@ When training your own energy-based models, consider these tips:
     # Use a smaller learning rate for stability
     optimizer = optim.Adam(
         energy_model.parameters(),
-        lr=0.001,  # Start small
+        lr=0.0005,  # Start small
         weight_decay=1e-5  # Regularization helps
     )
     ```
 
--   :fontawesome-solid-network-wired:{ .lg .middle } __Activation Functions__
+-   :fontawesome-solid-network-wired:{ .lg .middle } __Neural Network Architecture__
 
     ---
 
-    The choice of activation function can affect the smoothness of the energy landscape.
+    The choice of architecture and activation function can affect the smoothness of the energy landscape.
 
     ```python
-    # Try different activation functions
-    self.net = nn.Sequential(
+    # Try different architectures and activations
+    self.network = nn.Sequential(
         nn.Linear(input_dim, hidden_dim),
         nn.SiLU(),  # Smoother than ReLU
-        nn.Linear(hidden_dim, hidden_dim),
+        nn.Linear(hidden_dim, hidden_dim * 2),  # Wider middle layer
+        nn.SiLU(),
+        nn.Linear(hidden_dim * 2, hidden_dim),
         nn.SiLU(),
         nn.Linear(hidden_dim, 1)
     )
@@ -448,244 +465,222 @@ When training your own energy-based models, consider these tips:
 
 </div>
 
-## Conclusion
-
-In this tutorial, we've learned how to:
-
-1. Define a simple energy-based model using an MLP
-2. Generate synthetic data from a 2D Gaussian mixture
-3. Train the model using Contrastive Divergence and Langevin dynamics
-4. Visualize the energy landscape and generated samples
-
-Energy-based models provide a powerful and flexible framework for modeling complex probability distributions. While we've focused on a simple 2D example, the same principles apply to more complex, high-dimensional distributions.
-
 ## Complete Code
 
 Here's the complete code for this example:
 
 ```python
-from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 
 from torchebm.core import BaseEnergyFunction
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import ContrastiveDivergence
+from torchebm.datasets import GaussianMixtureDataset
 
 
-# 1. Define a simple energy function using MLP
 class MLPEnergy(BaseEnergyFunction):
-    """Simple MLP-based energy function for demonstration."""
+    """A simple MLP to act as the energy function."""
 
-    def __init__(self, input_dim, hidden_dim=64):
+    def __init__(self, input_dim: int, hidden_dim: int = 64):
         super().__init__()
-        self.net = nn.Sequential(
+        self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.SiLU(),  # Sigmoid Linear Unit (SiLU/Swish)
+            nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, 1),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),  # Output a single scalar energy value
         )
 
-    def forward(self, x):
-        """Compute energy values for input samples."""
-        # Energy function should return scalar energy per sample
-        return self.net(x).squeeze(-1)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x).squeeze(-1)
 
 
-# 2. Generate synthetic data (mixture of 2D Gaussians)
-def generate_mixture_data(n_samples=1000, centers=None, std=0.1):
-    """Generate samples from a mixture of 2D Gaussians."""
-    if centers is None:
-        # Default: 4 Gaussians in a circle
-        radius = 2.0
-        centers = [
-            [radius * np.cos(angle), radius * np.sin(angle)]
-            for angle in [0, np.pi / 2, np.pi, 3 * np.pi / 2]
-        ]
-
-    centers = torch.tensor(centers, dtype=torch.float32)
-    n_components = len(centers)
-
-    # Randomly pick components and generate samples
-    data = []
-    for _ in range(n_samples):
-        idx = np.random.randint(0, n_components)
-        sample = torch.randn(2) * std + centers[idx]
-        data.append(sample)
-
-    return torch.stack(data)
-
-
-# 3. Utility function for visualization
-def visualize_model(
-    energy_fn, real_samples, model_samples=None, title="Energy Landscape", grid_size=100
+@torch.no_grad()
+def plot_energy_and_samples(
+        energy_fn, real_samples, sampler, epoch, device, grid_size=100, plot_range=3.0, k_sampling=100
 ):
-    """Visualize the energy landscape and samples."""
-    # Create a grid for evaluation
-    x = torch.linspace(-4, 4, grid_size)
-    y = torch.linspace(-4, 4, grid_size)
-    xx, yy = torch.meshgrid(x, y, indexing="ij")
-    grid_points = torch.stack([xx.flatten(), yy.flatten()], dim=1)
+    """Plots the energy surface, real data, and model samples."""
+    plt.figure(figsize=(8, 8))
 
-    # Move grid points to the same device as energy_fn
-    device = next(energy_fn.parameters()).device
-    grid_points = grid_points.to(device)
+    # Create grid for energy surface plot
+    x_coords = torch.linspace(-plot_range, plot_range, grid_size, device=device)
+    y_coords = torch.linspace(-plot_range, plot_range, grid_size, device=device)
+    xv, yv = torch.meshgrid(x_coords, y_coords, indexing="xy")
+    grid = torch.stack([xv.flatten(), yv.flatten()], dim=1)
 
-    # Compute energy on the grid
-    with torch.no_grad():
-        energies = energy_fn(grid_points).reshape(grid_size, grid_size).cpu()
+    # Calculate energy on the grid
+    energy_fn.eval()
+    energy_values = energy_fn(grid).cpu().numpy().reshape(grid_size, grid_size)
 
-    # Plot energy as a colormap
-    plt.figure(figsize=(10, 8))
-    energy_plot = plt.contourf(
-        xx.cpu(), yy.cpu(), torch.exp(-energies), 50, cmap="viridis"
+    # Plot energy surface (using probability density for better visualization)
+    log_prob_values = -energy_values
+    log_prob_values = log_prob_values - np.max(log_prob_values)
+    prob_density = np.exp(log_prob_values)
+
+    plt.contourf(
+        xv.cpu().numpy(),
+        yv.cpu().numpy(),
+        prob_density,
+        levels=50,
+        cmap="viridis",
     )
-    plt.colorbar(energy_plot, label="exp(-Energy)")
+    plt.colorbar(label="exp(-Energy) (unnormalized density)")
 
-    # Plot real samples
+    # Generate samples from the current model
+    vis_start_noise = torch.randn(500, real_samples.shape[1], device=device)
+    model_samples_tensor = sampler.sample(x=vis_start_noise, n_steps=k_sampling)
+    model_samples = model_samples_tensor.cpu().numpy()
+
+    # Plot real and model samples
+    real_samples_np = real_samples.cpu().numpy()
     plt.scatter(
-        real_samples[:, 0],
-        real_samples[:, 1],
-        color="white",
-        edgecolor="black",
-        alpha=0.6,
+        real_samples_np[:, 0],
+        real_samples_np[:, 1],
+        s=10,
+        alpha=0.5,
         label="Real Data",
+        c="white",
+        edgecolors="k",
+        linewidths=0.5,
+    )
+    plt.scatter(
+        model_samples[:, 0],
+        model_samples[:, 1],
+        s=10,
+        alpha=0.5,
+        label="Model Samples",
+        c="red",
+        edgecolors="darkred",
+        linewidths=0.5,
     )
 
-    # Plot model samples if provided
-    if model_samples is not None:
-        plt.scatter(
-            model_samples[:, 0],
-            model_samples[:, 1],
-            color="red",
-            alpha=0.4,
-            label="Model Samples",
-        )
-
-    plt.title(title)
+    plt.xlim(-plot_range, plot_range)
+    plt.ylim(-plot_range, plot_range)
+    plt.title(f"Epoch {epoch}")
+    plt.xlabel("X1")
+    plt.ylabel("X2")
     plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    return plt
+    plt.grid(True, alpha=0.3)
+    plt.savefig(f"energy_landscape_epoch_{epoch}.png")
+    plt.show()
 
 
 def main():
-    # Set random seed for reproducibility
-    torch.manual_seed(42)
-    np.random.seed(42)
+    # Hyperparameters
+    N_SAMPLES = 500
+    INPUT_DIM = 2
+    HIDDEN_DIM = 64
+    BATCH_SIZE = 256
+    EPOCHS = 200
+    LEARNING_RATE = 1e-3
+    SAMPLER_STEP_SIZE = 0.1
+    SAMPLER_NOISE_SCALE = 0.1
+    CD_K = 10
+    USE_PCD = False
+    VISUALIZE_EVERY = 20
+    SEED = 42
 
-    # Ensure output directory exists
-    output_dir = Path("docs/assets/images/examples")
-    output_dir.parent.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(exist_ok=True)
-
-    # Check for GPU availability
+    # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Generate synthetic data
-    real_data = generate_mixture_data(n_samples=1000)
-    # Move data to the correct device
-    real_data = real_data.to(device)
+    # Data Loading
+    dataset = GaussianMixtureDataset(
+        n_samples=N_SAMPLES,
+        n_components=4,
+        std=0.1,
+        radius=1.5,
+        device=device,
+        seed=SEED,
+    )
 
-    print(f"Generated {len(real_data)} samples from mixture of Gaussians")
+    # Get the full tensor for visualization purposes
+    real_data_for_plotting = dataset.get_data()
+    print(f"Data shape: {real_data_for_plotting.shape}")
 
-    # Define model components
-    input_dim = 2
-    hidden_dim = 64
+    # Create DataLoader
+    dataloader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        drop_last=True,
+    )
 
-    # Create the energy function
-    energy_fn = MLPEnergy(input_dim=input_dim, hidden_dim=hidden_dim).to(device)
-
-    # Create the sampler (Langevin dynamics)
+    # Model Components
+    energy_model = MLPEnergy(INPUT_DIM, HIDDEN_DIM).to(device)
     sampler = LangevinDynamics(
-        energy_function=energy_fn,
-        step_size=0.1,  # Step size for Langevin updates
-        noise_scale=0.01,  # Noise scale for stochastic gradient Langevin dynamics
+        energy_function=energy_model,
+        step_size=SAMPLER_STEP_SIZE,
+        noise_scale=SAMPLER_NOISE_SCALE,
         device=device,
     )
+    loss_fn = ContrastiveDivergence(
+        energy_function=energy_model, sampler=sampler, n_steps=CD_K, persistent=USE_PCD
+    ).to(device)
 
-    # Create the Contrastive Divergence loss
-    cd_loss = ContrastiveDivergence(
-        energy_function=energy_fn,
-        sampler=sampler,
-        n_steps=10,  # Run MCMC for 10 steps per iteration
-        persistent=True,  # Use persistent chains for better mixing
-        device=device,
-    )
+    # Optimizer
+    optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
 
-    # Create optimizer
-    optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
-
-    # Training parameters
-    num_epochs = 100
-    batch_size = 128
-
-    # Create data loader
-    dataset = torch.utils.data.TensorDataset(real_data)
-    dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, shuffle=True
-    )
-
-    # Training loop
     print("Starting training...")
-    for epoch in range(num_epochs):
+    for epoch in range(EPOCHS):
+        energy_model.train()
         epoch_loss = 0.0
-
-        for i, (batch_data,) in enumerate(dataloader):
-            batch_data = batch_data.to(device)
-
-            # Zero gradients
+        for i, data_batch in enumerate(dataloader):
             optimizer.zero_grad()
-
-            # Compute CD loss and get negative samples
-            loss, neg_samples = cd_loss(batch_data)
-
-            # Backpropagate and update parameters
+            loss, negative_samples = loss_fn(data_batch)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
             optimizer.step()
-
             epoch_loss += loss.item()
 
-        # Print progress
-        avg_loss = epoch_loss / len(dataloader)
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.6f}")
+        avg_epoch_loss = epoch_loss / len(dataloader)
+        print(f"Epoch [{epoch + 1}/{EPOCHS}], Average Loss: {avg_epoch_loss:.4f}")
 
-        # Visualize intermediate results every 10 epochs
-        if (epoch + 1) % 10 == 0:
-            # Generate samples from the model for visualization
-            with torch.no_grad():
-                init_noise = torch.randn(500, input_dim, device=device)
-                model_samples = sampler.sample_chain(init_noise, n_steps=100).cpu()
-
-            # Visualize
-            plt = visualize_model(
-                energy_fn,
-                real_data.cpu(),
-                model_samples.cpu(),
-                title=f"Energy Landscape - Epoch {epoch+1}",
+        if (epoch + 1) % VISUALIZE_EVERY == 0 or epoch == 0:
+            print("Generating visualization...")
+            energy_model.eval()
+            plot_energy_and_samples(
+                energy_fn=energy_model,
+                real_samples=real_data_for_plotting,
+                sampler=sampler,
+                epoch=epoch + 1,
+                device=device,
+                plot_range=2.5,
+                k_sampling=200,
             )
-            plt.savefig(output_dir / f"energy_landscape_epoch_{epoch+1}.png")
-            plt.close()
 
-    print("Training complete!")
+    print("Training finished.")
 
     # Final visualization
-    with torch.no_grad():
-        init_noise = torch.randn(1000, input_dim, device=device)
-        model_samples = sampler.sample_chain(init_noise, n_steps=500).cpu()
-
-    plt = visualize_model(
-        energy_fn, real_data.cpu(), model_samples.cpu(), title="Final Energy Landscape"
+    print("Generating final visualization...")
+    energy_model.eval()
+    plot_energy_and_samples(
+        energy_fn=energy_model,
+        real_samples=real_data_for_plotting,
+        sampler=sampler,
+        epoch=EPOCHS,
+        device=device,
+        plot_range=2.5,
+        k_sampling=500,
     )
-    plt.savefig(output_dir / "energy_landscape_final.png")
-    plt.show()
 
 
 if __name__ == "__main__":
     main()
 ```
+
+## Conclusion
+
+In this tutorial, we've learned how to:
+
+1. Define a simple energy-based model using an MLP
+2. Generate synthetic data from a 2D Gaussian mixture using TorchEBM's dataset utilities
+3. Train the model using Contrastive Divergence and Langevin dynamics
+4. Visualize the energy landscape and generated samples throughout training
+
+Energy-based models provide a powerful and flexible framework for modeling complex probability distributions. While we've focused on a simple 2D example, the same principles apply to more complex, high-dimensional distributions.

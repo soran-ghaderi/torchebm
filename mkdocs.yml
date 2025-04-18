@@ -7,13 +7,12 @@ site_author: Soran Ghaderi
 repo_url: https://github.com/soran-ghaderi/torchebm
 repo_name: soran-ghaderi/torchebm
 edit_uri: edit/main/docs/
+copyright: Copyright © 2025 Soran Ghaderi. Licensed under the MIT License.
 
 theme:
   name: material
   logo: assets/images/nabla_icon.svg
   favicon: assets/images/favicon.svg
-  icon:
-    repo: fontawesome/brands/github
   features:
     - navigation.tabs
     - navigation.sections
@@ -34,14 +33,6 @@ theme:
     - announce.dismiss
     - navigation.footer
   palette:
-    # Palette toggle for light mode
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: deep orange
-      accent: deep orange
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
     # Palette toggle for dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
@@ -50,6 +41,15 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
   font:
     text: Roboto
     code: Roboto Mono
@@ -69,14 +69,14 @@ theme:
       example: fontawesome/solid/flask
       quote: fontawesome/solid/quote-left
 #  logo: simple/pytorch
-  favicon: simple/pytorch
+#  favicon: simple/pytorch
 
 nav:
   - Home: index.md
   - Getting Started:
     - Overview: guides/index.md
-    - Introduction: introduction.md
-    - Installation: getting_started.md
+    - Introduction: guides/introduction.md
+    - Installation: guides/getting_started.md
     - Guides:
       - Energy Functions: guides/energy_functions.md
       - Samplers: guides/samplers.md
@@ -87,6 +87,7 @@ nav:
   - API Reference:
     - Overview: api/index.md
     - Core:
+      - api/torchebm/core/index.md
       - Base_energy_function:
         - api/torchebm/core/base_energy_function/index.md
         - AckleyEnergy: api/torchebm/core/base_energy_function/classes/AckleyEnergy.md
@@ -110,7 +111,21 @@ nav:
         - api/torchebm/core/base_trainer/index.md
         - ContrastiveDivergenceTrainer: api/torchebm/core/base_trainer/classes/ContrastiveDivergenceTrainer.md
     - Cuda: api/torchebm/cuda/index.md
+    - Datasets:
+      - api/torchebm/datasets/index.md
+      - Generators:
+        - api/torchebm/datasets/generators/index.md
+        - BaseSyntheticDataset: api/torchebm/datasets/generators/classes/BaseSyntheticDataset.md
+        - CheckerboardDataset: api/torchebm/datasets/generators/classes/CheckerboardDataset.md
+        - CircleDataset: api/torchebm/datasets/generators/classes/CircleDataset.md
+        - EightGaussiansDataset: api/torchebm/datasets/generators/classes/EightGaussiansDataset.md
+        - GaussianMixtureDataset: api/torchebm/datasets/generators/classes/GaussianMixtureDataset.md
+        - GridDataset: api/torchebm/datasets/generators/classes/GridDataset.md
+        - PinwheelDataset: api/torchebm/datasets/generators/classes/PinwheelDataset.md
+        - SwissRollDataset: api/torchebm/datasets/generators/classes/SwissRollDataset.md
+        - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
     - Losses:
+      - api/torchebm/losses/index.md
       - Contrastive_divergence:
         - api/torchebm/losses/contrastive_divergence/index.md
         - ContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
@@ -120,10 +135,12 @@ nav:
         - api/torchebm/losses/score_matching/index.md
         - ScoreMatching: api/torchebm/losses/score_matching/classes/ScoreMatching.md
     - Models:
+      - api/torchebm/models/index.md
       - Base_model:
         - api/torchebm/models/base_model/index.md
         - BaseModel: api/torchebm/models/base_model/classes/BaseModel.md
     - Samplers:
+      - api/torchebm/samplers/index.md
       - Hmc:
         - api/torchebm/samplers/hmc/index.md
         - HamiltonianMonteCarlo: api/torchebm/samplers/hmc/classes/HamiltonianMonteCarlo.md
@@ -131,13 +148,17 @@ nav:
         - api/torchebm/samplers/langevin_dynamics/index.md
         - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
     - Utils:
+      - api/torchebm/utils/index.md
       - Visualization: api/torchebm/utils/visualization/index.md
   - Examples:
     - Overview: examples/index.md
     - Energy Functions:
-      - Overview: examples/core/energy_functions.md
+      - Overview: examples/energy_functions/index.md
+    - Datasets:
+      - Overview: examples/datasets/index.md
     - Samplers:
-      - Langevin Dynamics: examples/samplers/langevin.md
+      - Langevin Dynamics: examples/samplers/langevin_dynamics.md
+      - Langevin Dynamics Trajectory: examples/samplers/langevin_trajectory.md
       - Hamiltonian Monte Carlo: examples/samplers/hmc.md
     - Training EBMs:
       - Learning Gaussian Mixture: examples/training/training_ebm_gaussian.md
@@ -265,11 +286,26 @@ extra:
       link: https://github.com/soran-ghaderi/torchebm
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/torchebm/
+    - icon: fontawesome/brands/bluesky
+      link: https://bsky.app/profile/soranghaderi.bsky.social
+    - icon: fontawesome/brands/x-twitter
+      link: https://twitter.com/soranghadri
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/soran-ghaderi/
+    - icon: fontawesome/brands/google-scholar
+      link: https://scholar.google.com/citations?user=-2N2iKcAAAAJ&hl=en
+    - icon: fontawesome/brands/researchgate
+      link: https://www.researchgate.net/profile/Soran-Ghaderi
+    - icon: fontawesome/brands/orcid
+      link: https://orcid.org/0009-0004-6564-4517
+    - icon: material/web
+      link: https://soran-ghaderi.github.io/
   version:
     provider: mike
   analytics:
     provider: google
     property: !ENV GOOGLE_ANALYTICS_KEY
+  generator: false
 
 extra_css:
   - stylesheets/extra.css

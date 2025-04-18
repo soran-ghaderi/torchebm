@@ -41,7 +41,7 @@ langevin_sampler = LangevinDynamics(
 )
 
 # Generate samples
-samples = langevin_sampler.sample_chain(
+samples = langevin_sampler.sample(
     dim=10,
     n_steps=1000,
     n_samples=100,
@@ -77,7 +77,7 @@ hmc_sampler = HamiltonianMonteCarlo(
 )
 
 # Generate samples
-samples = hmc_sampler.sample_chain(
+samples = hmc_sampler.sample(
     dim=2,
     n_steps=500,
     n_samples=100,
@@ -99,7 +99,7 @@ samples = hmc_sampler.sample_chain(
 You can track diagnostics during sampling by setting `return_diagnostics=True`:
 
 ```python
-samples, diagnostics = sampler.sample_chain(
+samples, diagnostics = sampler.sample(
     dim=10,
     n_steps=1000,
     n_samples=100,
@@ -118,7 +118,7 @@ You can start the sampling chain from a specific point:
 ```python
 # Custom initialization
 x_init = torch.randn(100, 10)  # [n_samples, dim]
-samples = sampler.sample_chain(
+samples = sampler.sample(
     x=x_init,
     n_steps=1000,
     return_trajectory=False
@@ -131,7 +131,7 @@ For better samples, you can implement burn-in and thinning:
 
 ```python
 # Perform burn-in and thinning manually
-samples, trajectory = sampler.sample_chain(
+samples, trajectory = sampler.sample(
     dim=10,
     n_steps=2000,
     n_samples=100,

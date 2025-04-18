@@ -15,10 +15,8 @@ Content coming soon.
 Langevin dynamics sampling
 <!-- more -->
 
-
 ```py title="Langevin dynamics sampling" linenums="1"
 def langevin_gaussain_sampling():
-
     energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -30,7 +28,7 @@ def langevin_gaussain_sampling():
     # Initial state: batch of 100 samples, 10-dimensional space
     ts = time.time()
     # Run Langevin sampling for 500 steps
-    final_x = langevin_sampler.sample_chain(
+    final_x = langevin_sampler.sample(
         dim=10, n_steps=500, n_samples=10000, return_trajectory=False
     )
 
@@ -41,7 +39,7 @@ def langevin_gaussain_sampling():
     n_samples = 250
     n_steps = 500
     dim = 10
-    final_samples, diagnostics = langevin_sampler.sample_chain(
+    final_samples, diagnostics = langevin_sampler.sample(
         n_samples=n_samples,
         n_steps=n_steps,
         dim=dim,

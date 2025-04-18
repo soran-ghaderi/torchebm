@@ -22,7 +22,7 @@ Classes:
 !!! example "Sampling from a Custom Energy Function"
     ```python
     from torchebm.samplers.mcmc.langevin import LangevinDynamics
-    from torchebm.core.energy_function import GaussianEnergy
+    from torchebm.energy_functions.energy_function import GaussianEnergy
     import torch
 
     # Define a 2D Gaussian energy function
@@ -263,7 +263,7 @@ class LangevinDynamics(BaseSampler):
         return new_x
 
     @torch.no_grad()
-    def sample_chain(
+    def sample(
         self,
         x: Optional[torch.Tensor] = None,
         dim: int = 10,

@@ -1,11 +1,11 @@
 ---
-title: Visualization Tools
-description: Examples of visualization tools for energy functions and sampling
+title: Visualizatio Examples
+description: Examples of visualization for energy functions and sampling
 ---
 
-# Visualization Tools
+# Visualizatio Examples
 
-This section demonstrates various visualization tools and techniques available in TorchEBM for visualizing energy functions and sampling processes.
+This section demonstrates various Visualizatio Examples and techniques available for visualizing energy functions and sampling processes.
 
 ## Basic Visualizations
 
@@ -151,60 +151,6 @@ plt.xlabel("Step")
 plt.ylabel("Energy")
 plt.title("Energy Evolution During Sampling")
 plt.grid(True, alpha=0.3)
-```
-
-## Common Visualization Utilities
-
-The `utils.py` file provides common visualization functions that can be reused across examples:
-
-```python
-def plot_2d_energy_landscape(
-    energy_fn, 
-    title=None, 
-    x_range=(-3, 3), 
-    y_range=(-3, 3), 
-    resolution=100,
-    device="cpu",
-    save_path=None
-):
-    """
-    Plot a 2D energy landscape as a contour plot.
-    
-    Args:
-        energy_fn: The energy function to visualize
-        title: Optional title for the plot
-        x_range: Range for x-axis (min, max)
-        y_range: Range for y-axis (min, max)
-        resolution: Number of points along each axis
-        device: Device for tensor calculations
-        save_path: Optional path to save the figure
-    
-    Returns:
-        The figure object
-    """
-    # Implementation details...
-    
-def plot_sample_trajectories(
-    trajectories, 
-    energy_fn=None, 
-    title=None,
-    device="cpu",
-    save_path=None
-):
-    """
-    Plot sample trajectories on an energy landscape.
-    
-    Args:
-        trajectories: Tensor of shape (n_samples, n_steps, dim)
-        energy_fn: Optional energy function for background
-        title: Optional title for the plot
-        device: Device for tensor calculations
-        save_path: Optional path to save the figure
-    
-    Returns:
-        The figure object
-    """
-    # Implementation details...
 ```
 
 ## Running the Examples

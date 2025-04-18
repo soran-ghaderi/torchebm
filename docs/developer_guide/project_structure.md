@@ -171,7 +171,7 @@ TorchEBM has the following dependencies:
 
     Primary framework for tensor operations and automatic differentiation.
 
--   :material-numpy:{ .lg .middle } __NumPy__
+-   :simple-numpy:{ .lg .middle } __NumPy__
 
     ---
 
@@ -203,7 +203,7 @@ The main entry points to the library are:
 Example of typical import patterns:
 
 ```python
-# Import core components
+# Import energy_functions components
 from torchebm.core import BaseEnergyFunction, GaussianEnergy
 
 # Import samplers

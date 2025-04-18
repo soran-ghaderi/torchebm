@@ -2,6 +2,7 @@
 sidebar_position: 1
 title: Contributing Guidelines
 description: How to contribute to TorchEBM
+icon: fontawesome/solid/users
 ---
 
 # Contributing to TorchEBM

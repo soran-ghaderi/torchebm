@@ -48,7 +48,7 @@ hmc_sampler = HamiltonianMonteCarlo(
 
 # Generate samples
 initial_state = torch.zeros(n_samples, dim, device=device)
-samples = hmc_sampler.sample_chain(
+samples = hmc_sampler.sample(
     x=initial_state,
     n_steps=n_steps
 )
@@ -65,7 +65,11 @@ plt.show()
 
 ### Sample Distribution Visualization
 
-![HMC Sampling from 2D Gaussian](../../assets/images/examples/hmc_standard.png)
+
+<figure markdown>
+  ![HMC Sampling from 2D Gaussian](../../assets/images/examples/hmc_standard.png)
+  <figcaption>HMC Sampling from 2D Gaussian</figcaption>
+</figure>
 
 *This plot shows 1000 samples from a 2D Gaussian distribution generated using Hamiltonian Monte Carlo. Note how the samples efficiently cover the target distribution's high-probability regions. The samples reflect the covariance structure with the characteristic elliptical shape around the mean [1.0, -1.0], represented by the red point and dashed ellipse.*
 
@@ -111,7 +115,7 @@ The HMC sampler has several important parameters:
 HMC provides several diagnostic metrics to monitor sampling quality. The diagnostics tensor includes information about the sampling process:
 
 ```python
-final_samples, diagnostics = hmc_sampler.sample_chain(
+final_samples, diagnostics = hmc_sampler.sample(
     n_samples=n_samples,
     n_steps=n_steps,
     dim=dim,
@@ -166,36 +170,36 @@ overall_acceptance_rate = acceptance_rates[-1].mean()
     step_size = min(0.1, 0.5 * dim**(-0.25))
     ```
 
--   :fontawesome-solid-gauge-high:{ .lg .middle } __Warm-up Period__
+- :fontawesome-solid-gauge-high:{ .lg .middle } __Warm-up Period__
 
     ---
 
     Consider discarding initial samples to allow the chain to reach the target distribution.
 
-    ```python
-    # Run 100 warm-up steps before collecting samples
-    warm_up_samples = hmc_sampler.sample_chain(
-        x=initial_state, n_steps=100
-    )
-    # Use the final state as the starting point
-    samples = hmc_sampler.sample_chain(
-        x=warm_up_samples, n_steps=1000
-    )
-    ```
+  ```python
+  # Run 100 warm-up steps before collecting samples
+  warm_up_samples = hmc_sampler.sample(
+      x=initial_state, n_steps=100
+  )
+  # Use the final state as the starting point
+  samples = hmc_sampler.sample(
+      x=warm_up_samples, n_steps=1000
+  )
+  ```
 
--   :fontawesome-solid-chart-line:{ .lg .middle } __Parallel Chains__
+- :fontawesome-solid-chart-line:{ .lg .middle } __Parallel Chains__
 
     ---
 
     Run multiple chains in parallel to improve exploration and assess convergence.
 
-    ```python
-    # Run 10 chains in parallel
-    n_chains = 10
-    samples = hmc_sampler.sample_chain(
-        dim=dim, n_steps=1000, n_samples=n_chains
-    )
-    ```
+  ```python
+  # Run 10 chains in parallel
+  n_chains = 10
+  samples = hmc_sampler.sample(
+      dim=dim, n_steps=1000, n_samples=n_chains
+  )
+  ```
 
 </div>
 
@@ -230,7 +234,7 @@ hmc_sampler = HamiltonianMonteCarlo(
 
 # Generate samples
 initial_state = torch.zeros(n_samples, dim, device=device)
-samples = hmc_sampler.sample_chain(
+samples = hmc_sampler.sample(
     x=initial_state,
     n_steps=n_steps
 )
@@ -245,7 +249,11 @@ When using a diagonal mass matrix, each dimension can have different momentum sc
 
 ### Custom Mass Matrix Results
 
-![HMC Sampling with Custom Mass Matrix](../../assets/images/examples/hmc_custom_mass.png)
+
+<figure markdown>
+  ![HMC Sampling with Custom Mass Matrix](../../assets/images/examples/hmc_custom_mass.png)
+  <figcaption>HMC Sampling with Custom Mass Matrix</figcaption>
+</figure>
 
 *This plot shows samples from the same 2D Gaussian distribution using HMC with a custom diagonal mass parameter [0.1, 1.0]. The mass parameter affects the sampling dynamics, allowing more efficient exploration of the distribution. The red point indicates the mean, and the dashed ellipse represents the 2σ confidence region.*
 
@@ -253,7 +261,11 @@ When using a diagonal mass matrix, each dimension can have different momentum sc
 
 The following visualization compares standard HMC with HMC using a custom mass parameter:
 
-![HMC Implementation Comparison](../../assets/images/examples/hmc_comparison.png)
+<figure markdown>
+  ![HMC Implementation Comparison](../../assets/images/examples/hmc_comparison.png)
+  <figcaption>HMC Implementation Comparison</figcaption>
+</figure>
+
 
 *This side-by-side comparison shows standard HMC (left) and HMC with a custom mass parameter (right) sampling from the same Gaussian distribution. Both methods effectively sample the distribution, but with slightly different dynamics due to the mass parameter configuration.*
 

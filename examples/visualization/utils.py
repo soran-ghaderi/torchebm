@@ -104,7 +104,7 @@ initial_states = torch.tensor(
 )
 
 # Run sampling with trajectory tracking
-samples, trajectories = sampler.sample_chain(
+samples, trajectories = sampler.sample(
     x=initial_states, n_steps=200, return_trajectory=True
 )
 
@@ -129,7 +129,7 @@ initial_states = torch.tensor(
 )
 
 # Run sampling with trajectory tracking
-samples, trajectories = sampler.sample_chain(
+samples, trajectories = sampler.sample(
     x=initial_states, n_steps=300, return_trajectory=True
 )
 
@@ -154,7 +154,7 @@ initial_states = torch.tensor(
 )
 
 # Run sampling with trajectory tracking
-samples, trajectories = sampler.sample_chain(
+samples, trajectories = sampler.sample(
     x=initial_states, n_steps=400, return_trajectory=True
 )
 

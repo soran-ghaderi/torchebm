@@ -119,7 +119,7 @@ Samplers are used by loss functions to generate negative samples during training
 
 ```python
 # BaseLoss function uses sampler to generate negative samples
-negative_samples = sampler.sample_chain(x_init, n_steps=10)
+negative_samples = sampler.sample(x_init, n_steps=10)
 
 # BaseLoss computation uses both data samples and negative samples
 loss = loss_fn(data_samples, negative_samples)

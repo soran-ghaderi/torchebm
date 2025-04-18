@@ -487,23 +487,23 @@ def distribute_sampling(energy_fn, n_samples, n_steps, device_ids):
     """Distribute sampling across multiple GPUs."""
     # Distribute samples across devices
     samples_per_device = n_samples // len(device_ids)
-    
+
     results = []
     for i, device_id in enumerate(device_ids):
         device = torch.device(f"cuda:{device_id}")
-        
+
         # Create sampler on device
         sampler = LangevinDynamics(energy_fn).to(device)
-        
+
         # Compute samples for this device
-        samples = sampler.sample_chain(
+        samples = sampler.sample(
             dim=energy_fn.dim,
             n_steps=n_steps,
             n_samples=samples_per_device
         )
-        
+
         results.append(samples)
-        
+
     # Gather results from all devices
     return torch.cat(results, dim=0)
 ```

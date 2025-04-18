@@ -1,6 +1,7 @@
 ---
 title: Examples
 description: Practical examples demonstrating how to use TorchEBM
+icon: fontawesome/regular/image
 ---
 
 # TorchEBM Examples
@@ -15,7 +16,7 @@ This section contains practical examples that demonstrate how to use TorchEBM fo
 
     Explore and visualize various energy functions and their properties.
 
-    [:octicons-arrow-right-24: Energy Functions](core/energy_functions.md)
+    [:octicons-arrow-right-24: Energy Functions](energy_functions/index.md)
 
 -   :material-sigma:{ .lg .middle } __Langevin Dynamics__
 
@@ -23,7 +24,7 @@ This section contains practical examples that demonstrate how to use TorchEBM fo
 
     Sample from various distributions using Langevin dynamics.
 
-    [:octicons-arrow-right-24: Langevin Dynamics](samplers/langevin.md)
+    [:octicons-arrow-right-24: Langevin Dynamics](samplers/langevin_dynamics)
 
 -   :material-axis-arrow:{ .lg .middle } __Hamiltonian Monte Carlo__
 
@@ -84,7 +85,7 @@ To run these examples, you'll need:
 - NumPy
 - Matplotlib
 
-If you haven't installed TorchEBM yet, see the [Installation](../getting_started.md) guide.
+If you haven't installed TorchEBM yet, see the [Installation](../guides/index.md) guide.
 
 </div>
 <div markdown>
