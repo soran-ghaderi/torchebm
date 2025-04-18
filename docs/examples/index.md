@@ -16,7 +16,7 @@ This section contains practical examples that demonstrate how to use TorchEBM fo
 
     Explore and visualize various energy functions and their properties.
 
-    [:octicons-arrow-right-24: Energy Functions](energy_functions/index)
+    [:octicons-arrow-right-24: Energy Functions](energy_functions/index.md)
 
 -   :material-sigma:{ .lg .middle } __Langevin Dynamics__
 

@@ -1,11 +1,15 @@
+---
+icon: octicons/package-24
+---
+
 # Torchebm > Samplers
 
 ## Contents
 
 ### Modules
 
-- [Hmc](hmc.md)
-- [Langevin_dynamics](langevin_dynamics.md)
+- [Hmc](hmc/index.md)
+- [Langevin_dynamics](langevin_dynamics/index.md)
 
 ## API Reference
 

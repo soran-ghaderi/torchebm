@@ -2,11 +2,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# Removed TensorDataset import as it's no longer needed here
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Optional
 
 from torchebm.core import BaseEnergyFunction
 from torchebm.samplers import LangevinDynamics
@@ -41,7 +39,7 @@ def plot_energy_and_samples(
     device: torch.device,
     grid_size: int = 100,
     plot_range: float = 3.0,
-    k_sampling: int = 100,  # Number of steps to generate samples for visualization
+    k_sampling: int = 100,
 ):
     """Plots the energy surface, real data, and model samples."""
     plt.figure(figsize=(8, 8))
@@ -118,7 +116,6 @@ def plot_energy_and_samples(
     plt.close()
 
 
-# --- 4. Training Setup ---
 if __name__ == "__main__":
     # Hyperparameters
     N_SAMPLES = 500
@@ -140,7 +137,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # --- Data Loading using Dataset Class ---
+    # Data Loading using Dataset Class
     # Instantiate the dataset object directly
     # It handles generation and device placement internally
     # dataset = GaussianMixtureDataset(
@@ -184,7 +181,6 @@ if __name__ == "__main__":
     # Optimizer (Optimizes the parameters of the energy function)
     optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
 
-    # --- 5. Training Loop ---
     print("Starting training...")
     for epoch in range(EPOCHS):
         energy_model.train()  # Ensure model is in training mode
@@ -216,7 +212,6 @@ if __name__ == "__main__":
         avg_epoch_loss = epoch_loss / len(dataloader)
         print(f"Epoch [{epoch+1}/{EPOCHS}], Average Loss: {avg_epoch_loss:.4f}")
 
-        # --- 6. Visualization ---
         if (epoch + 1) % VISUALIZE_EVERY == 0 or epoch == 0:
             print("Generating visualization...")
             energy_model.eval()  # Set model to evaluation mode for visualization

@@ -1,10 +1,14 @@
+---
+icon: octicons/package-24
+---
+
 # Torchebm > Models
 
 ## Contents
 
 ### Modules
 
-- [Base_model](base_model.md)
+- [Base_model](base_model/index.md)
 
 ## API Reference
 

@@ -1,10 +1,14 @@
+---
+icon: octicons/package-24
+---
+
 # Torchebm > Datasets
 
 ## Contents
 
 ### Modules
 
-- [Generators](generators.md)
+- [Generators](generators/index.md)
 
 ## API Reference
 

@@ -94,12 +94,20 @@ def create_module_page(module_name, output_dir):
     module_parts = module_name.split(".")
     module_title = module_parts[-1].capitalize()
 
+    # Add icon to the module title
+
+    is_package = hasattr(module, "__path__")
+    header = ""
+    if is_package:
+        # submodules = get_submodules(module_name)
+        # subpackages = [name for name, is_pkg in submodules if is_pkg]
+        header += "---\nicon: octicons/package-24\n---\n\n"
     # Create breadcrumb navigation
     if len(module_parts) > 1:
         breadcrumb = " > ".join([p.capitalize() for p in module_parts[:-1]])
-        header = f"# {breadcrumb} > {module_title}\n\n"
+        header += f"# {breadcrumb} > {module_title}\n\n"
     else:
-        header = f"# {module_title}\n\n"
+        header += f"# {module_title}\n\n"
 
     # Get module docstring
     content = header  # Include the header with module title
@@ -134,7 +142,7 @@ def create_module_page(module_name, output_dir):
                         summary = " - " + get_docstring_summary(mod_obj)
                 except ImportError:
                     pass
-                content += f"- [{mod_name.capitalize()}]({mod_name}.md)\n"  # Changed to use actual module name
+                content += f"- [{mod_name.capitalize()}]({mod_name}/index.md)\n"  # Changed to use actual module name
             content += "\n"
 
     # Find all classes in the module
@@ -438,8 +446,13 @@ def package_to_nav(name, info):
     if not info["subpackages"] and not info["modules"] and not info["classes"]:
         return {info["title"]: info["filepath"]}
 
-    # Otherwise, it's a section with sub-entries
-    section = {info["title"]: []}
+    # # Otherwise, it's a section with sub-entries
+    # section = {info["title"]: []}
+
+    if info["filepath"]:
+        section = {info["title"]: [info["filepath"]]}
+    else:
+        section = {info["title"]: []}
 
     # Add subpackages (recursive)
     for subname, subinfo in sorted(info["subpackages"].items()):

@@ -1,3 +1,7 @@
+---
+icon: octicons/package-24
+---
+
 # Torchebm
 
 ## Contents

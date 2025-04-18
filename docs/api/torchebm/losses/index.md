@@ -1,11 +1,15 @@
+---
+icon: octicons/package-24
+---
+
 # Torchebm > Losses
 
 ## Contents
 
 ### Modules
 
-- [Contrastive_divergence](contrastive_divergence.md)
-- [Score_matching](score_matching.md)
+- [Contrastive_divergence](contrastive_divergence/index.md)
+- [Score_matching](score_matching/index.md)
 
 ## API Reference
 

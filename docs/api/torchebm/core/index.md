@@ -1,14 +1,18 @@
+---
+icon: octicons/package-24
+---
+
 # Torchebm > Core
 
 ## Contents
 
 ### Modules
 
-- [Base_energy_function](base_energy_function.md)
-- [Base_loss](base_loss.md)
-- [Base_optimizer](base_optimizer.md)
-- [Base_sampler](base_sampler.md)
-- [Base_trainer](base_trainer.md)
+- [Base_energy_function](base_energy_function/index.md)
+- [Base_loss](base_loss/index.md)
+- [Base_optimizer](base_optimizer/index.md)
+- [Base_sampler](base_sampler/index.md)
+- [Base_trainer](base_trainer/index.md)
 
 ## API Reference
 

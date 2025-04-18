@@ -1,10 +1,14 @@
+---
+icon: octicons/package-24
+---
+
 # Torchebm > Utils
 
 ## Contents
 
 ### Modules
 
-- [Visualization](visualization.md)
+- [Visualization](visualization/index.md)
 
 ## API Reference
 
