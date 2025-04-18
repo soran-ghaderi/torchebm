@@ -69,7 +69,7 @@ energy_fn = GaussianEnergy(mean, cov).to(device)
 sampler = LangevinDynamics(energy_fn, device=device)
 
 # Generate samples (automatically on the correct device)
-samples, _ = sampler.sample_chain(dim=2, n_steps=1000, n_samples=10000)
+samples, _ = sampler.sample(dim=2, n_steps=1000, n_samples=10000)
 ```
 
 ### Memory Management
@@ -163,20 +163,20 @@ Sampling efficiency can be improved using several techniques:
             samples.append(x.clone())
     ```
 
--   :material-chart-bell-curve:{ .lg .middle } __Warm Starting__
+- :material-chart-bell-curve:{ .lg .middle } __Warm Starting__
 
     ---
 
     Initialize sampling from a distribution close to the target.
 
-    ```python
-    # Warm start from approximate distribution
-    x = approximate_sampler.sample(n_samples, dim)
-    samples = sampler.sample_chain(
-        n_steps=n_steps, 
-        initial_samples=x
-    )
-    ```
+  ```python
+  # Warm start from approximate distribution
+  x = approximate_sampler.sample(n_samples, dim)
+  samples = sampler.sample(
+      n_steps=n_steps, 
+      initial_samples=x
+  )
+  ```
 
 </div>
 

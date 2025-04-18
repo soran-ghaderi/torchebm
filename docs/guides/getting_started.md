@@ -58,7 +58,7 @@ sampler = LangevinDynamics(
 ).to(device)
 
 # Generate 1000 samples
-samples = sampler.sample_chain(
+samples = sampler.sample(
     dim=2,
     n_steps=100,
     n_samples=1000,

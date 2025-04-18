@@ -116,7 +116,7 @@ def visualize_energy_landscape_and_sampling():
         torch.manual_seed(seed)
 
         # Run one chain using the standard API
-        trajectory = sampler.sample_chain(
+        trajectory = sampler.sample(
             dim=dim,  # 2D space
             n_samples=1,  # Single chain
             n_steps=n_steps,  # Number of steps

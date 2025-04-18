@@ -94,7 +94,7 @@ sampler = LangevinDynamics(
 )
 
 # Generate samples
-samples = sampler.sample_chain(
+samples = sampler.sample(
     dim=2, n_steps=100, n_samples=1000
 )
 
@@ -138,7 +138,7 @@ sampler = LangevinDynamics(
     step_size=0.01
 )
 
-samples = sampler.sample_chain(
+samples = sampler.sample(
     dim=2, n_steps=100, n_samples=1000
 )
 ```

@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 from torchebm.core import GaussianEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
+
 def basic_example():
     """
     Simple Langevin dynamics sampling from a 2D Gaussian distribution.
@@ -52,7 +53,7 @@ def basic_example():
 
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
-    samples = sampler.sample_chain(
+    samples = sampler.sample(
         x=initial_state,
         n_steps=n_steps,
         n_samples=n_samples,
@@ -78,6 +79,7 @@ import time
 from torchebm.core import GaussianEnergy
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
+
 def langevin_gaussain_sampling():
     energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -90,7 +92,7 @@ def langevin_gaussain_sampling():
     # Initial state: batch of 100 samples, 10-dimensional space
     ts = time.time()
     # Run Langevin sampling for 500 steps
-    final_x = langevin_sampler.sample_chain(
+    final_x = langevin_sampler.sample(
         dim=10, n_steps=500, n_samples=10000, return_trajectory=False
     )
 
@@ -101,7 +103,7 @@ def langevin_gaussain_sampling():
     n_samples = 250
     n_steps = 500
     dim = 10
-    final_samples, diagnostics = langevin_sampler.sample_chain(
+    final_samples, diagnostics = langevin_sampler.sample(
         n_samples=n_samples,
         n_steps=n_steps,
         dim=dim,
@@ -122,6 +124,7 @@ import torch
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 from torchebm.core import HarmonicEnergy
 
+
 def sampling_utilities_example():
     """
     Example demonstrating various utility features:
@@ -139,7 +142,7 @@ def sampling_utilities_example():
 
     # Generate samples with diagnostics
     initial_state = torch.tensor([2.0], device=device)
-    samples, diagnostics = sampler.sample_chain(
+    samples, diagnostics = sampler.sample(
         x=initial_state,
         n_steps=50,
         n_samples=1000,
@@ -148,7 +151,7 @@ def sampling_utilities_example():
 
     # Custom analysis of results
     def analyze_convergence(
-        samples: torch.Tensor, diagnostics: list
+            samples: torch.Tensor, diagnostics: list
     ) -> Tuple[float, float]:
         """Example utility function to analyze convergence."""
         mean = samples.mean().item()
@@ -186,9 +189,9 @@ The sampler automatically handles parallel sampling when you specify `n_samples 
 
 ```python
 # Generate 1000 samples in parallel
-samples = sampler.sample_chain(
-    dim=10, 
-    n_steps=100, 
+samples = sampler.sample(
+    dim=10,
+    n_steps=100,
     n_samples=1000
 )
 ```
@@ -258,7 +261,7 @@ sampler = LangevinDynamics(
 
 # Generate samples with trajectory and diagnostics
 initial_state = torch.tensor([-1.5], device=device).view(1, 1)
-trajectory, diagnostics = sampler.sample_chain(
+trajectory, diagnostics = sampler.sample(
     x=initial_state,
     n_steps=5000,
     return_trajectory=True,

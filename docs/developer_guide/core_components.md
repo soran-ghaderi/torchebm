@@ -409,12 +409,12 @@ class ContrastiveDivergence(BaseLoss):
     
     Uses contrastive divergence to train energy-based models.
     """
-    
+
     def __init__(
-        self,
-        sampler: Sampler,
-        k: int = 1,
-        batch_size: Optional[int] = None
+            self,
+            sampler: Sampler,
+            k: int = 1,
+            batch_size: Optional[int] = None
     ):
         """Initialize contrastive divergence loss.
         
@@ -427,12 +427,12 @@ class ContrastiveDivergence(BaseLoss):
         self.sampler = sampler
         self.k = k
         self.batch_size = batch_size
-        
+
     def __call__(
-        self,
-        model: nn.Module,
-        data_samples: torch.Tensor,
-        **kwargs
+            self,
+            model: nn.Module,
+            data_samples: torch.Tensor,
+            **kwargs
     ) -> torch.Tensor:
         """Compute contrastive divergence loss.
         
@@ -447,25 +447,25 @@ class ContrastiveDivergence(BaseLoss):
         # Get data statistics
         batch_size = self.batch_size or data_samples.size(0)
         dim = data_samples.size(1)
-        
+
         # Set the model as the sampler's energy function
         self.sampler.energy_function = model
-        
+
         # Generate model samples
-        model_samples = self.sampler.sample_chain(
+        model_samples = self.sampler.sample(
             dim=dim,
             n_steps=self.k,
             n_samples=batch_size,
             **kwargs
         )
-        
+
         # Compute energies
         data_energy = model(data_samples).mean()
         model_energy = model(model_samples).mean()
-        
+
         # Compute loss
         loss = data_energy - model_energy
-        
+
         return loss
 ```
 
@@ -534,7 +534,7 @@ energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
 sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01)
 
 # Generate samples
-samples = sampler.sample_chain(dim=2, n_steps=1000, n_samples=100)
+samples = sampler.sample(dim=2, n_steps=1000, n_samples=100)
 
 # Create and train a model
 model = EnergyModel(network=MLP(input_dim=2, hidden_dims=[32, 32], output_dim=1))

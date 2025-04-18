@@ -106,7 +106,7 @@ result = (
     sampler
     .set_device("cuda" if torch.cuda.is_available() else "cpu")
     .set_seed(42)
-    .sample_chain(dim=2, n_steps=1000)
+    .sample(dim=2, n_steps=1000)
 )
 ```
 

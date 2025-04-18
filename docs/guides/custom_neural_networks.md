@@ -127,10 +127,10 @@ energy_fn = MLPEnergyFunction()
 # Let's create a "four peaks" energy landscape
 def target_energy(x, y):
     return -2.0 * torch.exp(-0.2 * ((x - 2) ** 2 + (y - 2) ** 2))
-        - 3.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y - 2) ** 2))
-        - 1.0 * torch.exp(-0.3 * ((x - 2) ** 2 + (y + 2) ** 2))
-        - 4.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y + 2) ** 2))
-        + 0.1 * (x ** 2 + y ** 2)
+    - 3.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y - 2) ** 2))
+    - 1.0 * torch.exp(-0.3 * ((x - 2) ** 2 + (y + 2) ** 2))
+    - 4.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y + 2) ** 2))
+    + 0.1 * (x ** 2 + y ** 2)
 
 
 # Generate training data from the target distribution
@@ -232,7 +232,7 @@ sampler = LangevinDynamics(
     step_size=0.01
 )
 
-samples = sampler.sample_chain(
+samples = sampler.sample(
     dim=2,
     n_steps=1000,
     n_samples=2000,
@@ -365,32 +365,32 @@ A common approach is contrastive divergence, which minimizes the energy of data 
 def train_step_contrastive_divergence(energy_fn, optimizer, data_batch, sampler, n_sampling_steps=10):
     # Zero gradients
     optimizer.zero_grad()
-    
+
     # Data energy
     data_energy = energy_fn(data_batch)
-    
+
     # Generate negative samples (model samples)
     with torch.no_grad():
         # Start from random noise
         model_samples = torch.randn_like(data_batch)
-        
+
         # Run MCMC for a few steps
-        model_samples = sampler.sample_chain(
+        model_samples = sampler.sample(
             initial_points=model_samples,
             n_steps=n_sampling_steps,
             return_final=True
         )
-    
+
     # Model energy
     model_energy = energy_fn(model_samples)
-    
+
     # BaseLoss: make data energy lower, model energy higher
     loss = data_energy.mean() - model_energy.mean()
-    
+
     # Backpropagation
     loss.backward()
     optimizer.step()
-    
+
     return loss.item()
 ```
 

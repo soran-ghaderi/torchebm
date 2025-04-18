@@ -389,29 +389,29 @@ pip install torchebm
 Here's a minimal example of defining an energy function and a sampler:
 <div class="grid cards" markdown>
 
--   __Create and Sample from Energy Models__
+- __Create and Sample from Energy Models__
 
     ---
-    
-    ```python
-    import torch
-    from torchebm.core import GaussianEnergy
-    from torchebm.samplers import LangevinDynamics
-    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Define an (analytical) energy function -> next example: trainable
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2), device=device)
-    
-    # Define a sampler
-    sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
-        
-    # Generate samples
-    initial_points = torch.randn(500, 2, device=device)
-    samples = sampler.sample_chain(x=initial_points, n_steps=100)
-    
-    print(f"Output shape: {samples.shape}")
-    # Output shape: torch.Size([500, 2])
-    ```
+
+  ```python
+  import torch
+  from torchebm.core import GaussianEnergy
+  from torchebm.samplers import LangevinDynamics
+  
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  # Define an (analytical) energy function -> next example: trainable
+  energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2), device=device)
+  
+  # Define a sampler
+  sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
+      
+  # Generate samples
+  initial_points = torch.randn(500, 2, device=device)
+  samples = sampler.sample(x=initial_points, n_steps=100)
+  
+  print(f"Output shape: {samples.shape}")
+  # Output shape: torch.Size([500, 2])
+  ```
 </div>
 ---
 

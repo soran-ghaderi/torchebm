@@ -475,7 +475,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         return new_position, acceptance_prob, accepted
 
     @torch.no_grad()
-    def sample_chain(
+    def sample(
         self,
         x: Optional[torch.Tensor] = None,
         dim: int = None,

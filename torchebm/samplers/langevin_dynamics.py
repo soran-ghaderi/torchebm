@@ -263,7 +263,7 @@ class LangevinDynamics(BaseSampler):
         return new_x
 
     @torch.no_grad()
-    def sample_chain(
+    def sample(
         self,
         x: Optional[torch.Tensor] = None,
         dim: int = 10,

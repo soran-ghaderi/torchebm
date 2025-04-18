@@ -209,7 +209,7 @@ class ContrastiveDivergenceLoss(BaseLoss):
         # Generate negative samples if not provided
         if neg_samples is None:
             with torch.no_grad():
-                neg_samples = self.sampler.sample_chain(
+                neg_samples = self.sampler.sample(
                     pos_samples.shape[1],
                     self.n_steps,
                     n_samples=pos_samples.shape[0],

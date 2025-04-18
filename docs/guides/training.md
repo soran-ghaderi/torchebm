@@ -57,7 +57,7 @@ def train_step_cd(data_batch, k_steps=10):
     neg_samples = torch.randn_like(data_batch)
 
     # Sample for n_steps steps
-    neg_samples = sampler.sample_chain(
+    neg_samples = sampler.sample(
         initial_points=neg_samples,
         n_steps=k_steps,
         return_final=True
@@ -85,39 +85,40 @@ PCD improves on standard CD by maintaining a persistent chain of samples that ar
 # Initialize persistent samples
 persistent_samples = torch.randn(1000, 2)  # Shape: [n_persistent, data_dim]
 
+
 # PCD training step
 def train_step_pcd(data_batch, k_steps=10):
     global persistent_samples
     optimizer.zero_grad()
-    
+
     # Positive phase: compute energy of real data
     pos_energy = energy_fn(data_batch)
-    
+
     # Negative phase: continue sampling from persistent chains
     # Start from existing persistent samples (select a random subset)
     indices = torch.randperm(persistent_samples.shape[0])[:data_batch.shape[0]]
     initial_samples = persistent_samples[indices].clone()
-    
+
     # Sample for n_steps steps
-    neg_samples = sampler.sample_chain(
+    neg_samples = sampler.sample(
         initial_points=initial_samples,
         n_steps=k_steps,
         return_final=True
     )
-    
+
     # Update persistent samples
     persistent_samples[indices] = neg_samples.detach()
-    
+
     # Compute energy of generated samples
     neg_energy = energy_fn(neg_samples)
-    
+
     # Compute loss
     loss = pos_energy.mean() - neg_energy.mean()
-    
+
     # Backpropagation
     loss.backward()
     optimizer.step()
-    
+
     return loss.item(), pos_energy.mean().item(), neg_energy.mean().item()
 ```
 
@@ -302,7 +303,7 @@ for epoch in range(n_epochs):
         pcd_indices = torch.randperm(persistent_samples.shape[0])[:batch_size]
         neg_samples_init = persistent_samples[pcd_indices].clone()
 
-        neg_samples = sampler.sample_chain(
+        neg_samples = sampler.sample(
             initial_points=neg_samples_init,
             n_steps=k_steps,
             return_final=True
@@ -349,7 +350,7 @@ for epoch in range(n_epochs):
             plt.scatter(dataset[:500, 0], dataset[:500, 1], s=1, color='red', alpha=0.5)
 
             # Plot samples from model
-            sampled = sampler.sample_chain(
+            sampled = sampler.sample(
                 dim=2,
                 n_samples=500,
                 n_steps=500,
@@ -368,7 +369,7 @@ for epoch in range(n_epochs):
 print("Training complete. Generating samples...")
 
 # Generate final samples
-final_samples = sampler.sample_chain(
+final_samples = sampler.sample(
     dim=2,
     n_samples=5000,
     n_steps=1000,
@@ -405,32 +406,32 @@ Adding regularization can help stabilize training and prevent the energy functio
 ```python
 def train_step_with_regularization(data_batch, k_steps=10, l2_reg=0.001):
     optimizer.zero_grad()
-    
+
     # Positive phase
     pos_energy = energy_fn(data_batch)
-    
+
     # Negative phase
     neg_samples = torch.randn_like(data_batch)
-    neg_samples = sampler.sample_chain(
+    neg_samples = sampler.sample(
         initial_points=neg_samples,
         n_steps=k_steps,
         return_final=True
     )
     neg_energy = energy_fn(neg_samples)
-    
+
     # Contrastive divergence loss
     cd_loss = pos_energy.mean() - neg_energy.mean()
-    
+
     # L2 regularization on parameters
     l2_norm = sum(p.pow(2).sum() for p in energy_fn.parameters())
-    
+
     # Total loss
     loss = cd_loss + l2_reg * l2_norm
-    
+
     # Backpropagation
     loss.backward()
     optimizer.step()
-    
+
     return loss.item()
 ```
 
@@ -441,30 +442,30 @@ Gradient clipping can prevent explosive gradients during training:
 ```python
 def train_step_with_gradient_clipping(data_batch, k_steps=10, max_norm=1.0):
     optimizer.zero_grad()
-    
+
     # Positive phase
     pos_energy = energy_fn(data_batch)
-    
+
     # Negative phase
     neg_samples = torch.randn_like(data_batch)
-    neg_samples = sampler.sample_chain(
+    neg_samples = sampler.sample(
         initial_points=neg_samples,
         n_steps=k_steps,
         return_final=True
     )
     neg_energy = energy_fn(neg_samples)
-    
+
     # Contrastive divergence loss
     loss = pos_energy.mean() - neg_energy.mean()
-    
+
     # Backpropagation
     loss.backward()
-    
+
     # Gradient clipping
     torch.nn.utils.clip_grad_norm_(energy_fn.parameters(), max_norm)
-    
+
     optimizer.step()
-    
+
     return loss.item()
 ```
 
@@ -475,51 +476,51 @@ It's important to monitor various metrics during training to ensure the model is
 ```python
 def visualize_training_progress(energy_fn, data, sampler, epoch):
     # Generate samples from current model
-    samples = sampler.sample_chain(
+    samples = sampler.sample(
         dim=data.shape[1],
         n_samples=1000,
         n_steps=500,
         burn_in=100
     )
-    
+
     # Compute energy statistics
     with torch.no_grad():
         data_energy = energy_fn(data[:1000]).mean().item()
         sample_energy = energy_fn(samples).mean().item()
-    
+
     print(f"Epoch {epoch}: Data Energy: {data_energy:.4f}, Sample Energy: {sample_energy:.4f}")
-    
+
     # Create visualization
     plt.figure(figsize=(15, 5))
-    
+
     # Plot data
     plt.subplot(1, 3, 1)
     plt.scatter(data[:1000, 0].numpy(), data[:1000, 1].numpy(), s=2, alpha=0.5)
     plt.title('Data')
     plt.xlim(-4, 4)
     plt.ylim(-4, 4)
-    
+
     # Plot samples
     plt.subplot(1, 3, 2)
     plt.scatter(samples[:, 0].numpy(), samples[:, 1].numpy(), s=2, alpha=0.5)
     plt.title('Samples')
     plt.xlim(-4, 4)
     plt.ylim(-4, 4)
-    
+
     # Plot energy landscape
     plt.subplot(1, 3, 3)
     x = torch.linspace(-4, 4, 100)
     y = torch.linspace(-4, 4, 100)
     X, Y = torch.meshgrid(x, y, indexing='ij')
     grid_points = torch.stack([X.flatten(), Y.flatten()], dim=1)
-    
+
     with torch.no_grad():
         energies = energy_fn(grid_points).reshape(100, 100)
-    
+
     plt.contourf(X.numpy(), Y.numpy(), energies.numpy(), 50, cmap='viridis')
     plt.colorbar(label='Energy')
     plt.title('Energy Landscape')
-    
+
     plt.tight_layout()
     plt.savefig(f"training_progress_epoch_{epoch}.png")
     plt.close()

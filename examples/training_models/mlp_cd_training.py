@@ -76,7 +76,7 @@ def plot_energy_and_samples(
     vis_start_noise = torch.randn(
         500, real_samples.shape[1], device=device  # 500 samples, dim matches real data
     )
-    model_samples_tensor = sampler.sample_chain(x=vis_start_noise, n_steps=k_sampling)
+    model_samples_tensor = sampler.sample(x=vis_start_noise, n_steps=k_sampling)
     model_samples = model_samples_tensor.cpu().numpy()
 
     # Plot real and model samples

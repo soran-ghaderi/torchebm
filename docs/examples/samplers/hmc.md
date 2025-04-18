@@ -48,7 +48,7 @@ hmc_sampler = HamiltonianMonteCarlo(
 
 # Generate samples
 initial_state = torch.zeros(n_samples, dim, device=device)
-samples = hmc_sampler.sample_chain(
+samples = hmc_sampler.sample(
     x=initial_state,
     n_steps=n_steps
 )
@@ -115,7 +115,7 @@ The HMC sampler has several important parameters:
 HMC provides several diagnostic metrics to monitor sampling quality. The diagnostics tensor includes information about the sampling process:
 
 ```python
-final_samples, diagnostics = hmc_sampler.sample_chain(
+final_samples, diagnostics = hmc_sampler.sample(
     n_samples=n_samples,
     n_steps=n_steps,
     dim=dim,
@@ -170,36 +170,36 @@ overall_acceptance_rate = acceptance_rates[-1].mean()
     step_size = min(0.1, 0.5 * dim**(-0.25))
     ```
 
--   :fontawesome-solid-gauge-high:{ .lg .middle } __Warm-up Period__
+- :fontawesome-solid-gauge-high:{ .lg .middle } __Warm-up Period__
 
     ---
 
     Consider discarding initial samples to allow the chain to reach the target distribution.
 
-    ```python
-    # Run 100 warm-up steps before collecting samples
-    warm_up_samples = hmc_sampler.sample_chain(
-        x=initial_state, n_steps=100
-    )
-    # Use the final state as the starting point
-    samples = hmc_sampler.sample_chain(
-        x=warm_up_samples, n_steps=1000
-    )
-    ```
+  ```python
+  # Run 100 warm-up steps before collecting samples
+  warm_up_samples = hmc_sampler.sample(
+      x=initial_state, n_steps=100
+  )
+  # Use the final state as the starting point
+  samples = hmc_sampler.sample(
+      x=warm_up_samples, n_steps=1000
+  )
+  ```
 
--   :fontawesome-solid-chart-line:{ .lg .middle } __Parallel Chains__
+- :fontawesome-solid-chart-line:{ .lg .middle } __Parallel Chains__
 
     ---
 
     Run multiple chains in parallel to improve exploration and assess convergence.
 
-    ```python
-    # Run 10 chains in parallel
-    n_chains = 10
-    samples = hmc_sampler.sample_chain(
-        dim=dim, n_steps=1000, n_samples=n_chains
-    )
-    ```
+  ```python
+  # Run 10 chains in parallel
+  n_chains = 10
+  samples = hmc_sampler.sample(
+      dim=dim, n_steps=1000, n_samples=n_chains
+  )
+  ```
 
 </div>
 
@@ -234,7 +234,7 @@ hmc_sampler = HamiltonianMonteCarlo(
 
 # Generate samples
 initial_state = torch.zeros(n_samples, dim, device=device)
-samples = hmc_sampler.sample_chain(
+samples = hmc_sampler.sample(
     x=initial_state,
     n_steps=n_steps
 )

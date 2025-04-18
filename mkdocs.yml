@@ -33,14 +33,6 @@ theme:
     - announce.dismiss
     - navigation.footer
   palette:
-    # Palette toggle for light mode
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: deep orange
-      accent: deep orange
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
     # Palette toggle for dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
@@ -49,6 +41,15 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
   font:
     text: Roboto
     code: Roboto Mono
@@ -285,8 +286,20 @@ extra:
       link: https://github.com/soran-ghaderi/torchebm
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/torchebm/
-    - icon: fontawesome/brands/twitter
+    - icon: fontawesome/brands/bluesky
+      link: https://bsky.app/profile/soranghaderi.bsky.social
+    - icon: fontawesome/brands/x-twitter
       link: https://twitter.com/soranghadri
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/soran-ghaderi/
+    - icon: fontawesome/brands/google-scholar
+      link: https://scholar.google.com/citations?user=-2N2iKcAAAAJ&hl=en
+    - icon: fontawesome/brands/researchgate
+      link: https://www.researchgate.net/profile/Soran-Ghaderi
+    - icon: fontawesome/brands/orcid
+      link: https://orcid.org/0009-0004-6564-4517
+    - icon: material/web
+      link: https://soran-ghaderi.github.io/
   version:
     provider: mike
   analytics:

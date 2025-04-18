@@ -70,7 +70,7 @@ def test_langevin_dynamics_sample(langevin_sampler):
     n_steps = 100
     # langevin_sampler.mean = torch.zeros(dim)
     # langevin_sampler.cov = torch.eye(dim)
-    final_state = langevin_sampler.sample_chain(dim=dim, n_steps=n_steps)
+    final_state = langevin_sampler.sample(dim=dim, n_steps=n_steps)
     assert final_state.shape == (1, dim)  # (n_samples, dim)
     assert torch.all(torch.isfinite(final_state))
 
@@ -93,7 +93,7 @@ def test_langevin_dynamics_sample(langevin_sampler):
 def test_langevin_dynamics_sample_trajectory(langevin_sampler):
     dim = 2
     n_steps = 100
-    trajectory = langevin_sampler.sample_chain(
+    trajectory = langevin_sampler.sample(
         dim=dim, n_steps=n_steps, return_trajectory=True
     )
     assert trajectory.shape == (1, n_steps, dim)  # (n_samples, n_steps, dim)
@@ -119,9 +119,7 @@ def test_langevin_dynamics_sample_chain(langevin_sampler):
     dim = 2
     n_steps = 100
     n_samples = 10
-    samples = langevin_sampler.sample_chain(
-        dim=dim, n_steps=n_steps, n_samples=n_samples
-    )
+    samples = langevin_sampler.sample(dim=dim, n_steps=n_steps, n_samples=n_samples)
     assert samples.shape == (n_samples, dim)
     assert torch.all(torch.isfinite(samples))
 

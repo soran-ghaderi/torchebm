@@ -106,9 +106,9 @@ def visualize_energy_landscape_and_sampling():
 
     # Initialize the standard Langevin dynamics sampler from the library
     sampler = LangevinDynamics(
-        energy_function=energy_fn, 
-        step_size=0.01, 
-        noise_scale=0.1, 
+        energy_function=energy_fn,
+        step_size=0.01,
+        noise_scale=0.1,
         device=device
     )
 
@@ -126,49 +126,49 @@ def visualize_energy_landscape_and_sampling():
     # Set up sampling parameters
     dim = 2  # 2D energy function
     n_steps = 200
-    
+
     # Create figure
     plt.figure(figsize=(10, 8))
-    
+
     # Plot energy landscape with clear contours
     contour = plt.contour(X, Y, energy_values, levels=20, cmap="viridis")
     plt.colorbar(contour, label="Energy")
-    
+
     # Run multiple independent chains from different starting points
     n_chains = 5
-    
+
     # Define distinct colors for the chains
     colors = plt.cm.tab10(np.linspace(0, 1, n_chains))
-    
+
     # Generate seeds for random starting positions to make chains start in different areas
     seeds = [42, 123, 456, 789, 999]
-    
+
     for i, seed in enumerate(seeds):
         # Set the seed for reproducibility
         torch.manual_seed(seed)
-        
+
         # Run one chain using the standard API
-        trajectory = sampler.sample_chain(
-            dim=dim,              # 2D space
-            n_samples=1,          # Single chain
-            n_steps=n_steps,      # Number of steps
+        trajectory = sampler.sample(
+            dim=dim,  # 2D space
+            n_samples=1,  # Single chain
+            n_steps=n_steps,  # Number of steps
             return_trajectory=True  # Return full trajectory
         )
-        
+
         # Extract trajectory data
         traj_np = trajectory.cpu().numpy().squeeze(0)  # Remove n_samples dimension
-        
+
         # Plot the trajectory
         plt.plot(
-            traj_np[:, 0], 
-            traj_np[:, 1], 
-            'o-', 
-            color=colors[i], 
-            alpha=0.6, 
+            traj_np[:, 0],
+            traj_np[:, 1],
+            'o-',
+            color=colors[i],
+            alpha=0.6,
             markersize=3,
-            label=f"Chain {i+1}"
+            label=f"Chain {i + 1}"
         )
-        
+
         # Mark the start and end points
         plt.plot(traj_np[0, 0], traj_np[0, 1], 'o', color=colors[i], markersize=8)
         plt.plot(traj_np[-1, 0], traj_np[-1, 1], '*', color=colors[i], markersize=10)
@@ -246,18 +246,18 @@ This example demonstrates several key aspects of using the TorchEBM library:
 3. **Parallel chain sampling**: Running multiple chains to explore different areas of the space
 4. **Trajectory tracking**: Enabling `return_trajectory=True` to record the full sampling path
 
-The standard pattern for using `LangevinDynamics.sample_chain` is:
+The standard pattern for using `LangevinDynamics.sample` is:
 
 ```python
 # Initialize the sampler
 sampler = LangevinDynamics(energy_function=my_energy_fn, step_size=0.01)
 
 # Run sampling with trajectory tracking
-trajectory = sampler.sample_chain(
-    dim=2,                 # Dimension of the space
-    n_samples=10,          # Number of parallel chains
-    n_steps=100,           # Number of steps to run
-    return_trajectory=True # Return the full trajectory rather than just final points
+trajectory = sampler.sample(
+    dim=2,  # Dimension of the space
+    n_samples=10,  # Number of parallel chains
+    n_steps=100,  # Number of steps to run
+    return_trajectory=True  # Return the full trajectory rather than just final points
 )
 ```
 

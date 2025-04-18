@@ -42,7 +42,7 @@ def hmc_custom_mass_matrix():
 
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
-    samples = hmc_sampler.sample_chain(x=initial_state, n_steps=n_steps)
+    samples = hmc_sampler.sample(x=initial_state, n_steps=n_steps)
 
     # Plot results
     samples = samples.cpu().numpy()

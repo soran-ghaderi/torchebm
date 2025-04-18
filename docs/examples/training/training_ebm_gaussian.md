@@ -138,14 +138,14 @@ We'll create a function to visualize the energy landscape and generated samples 
 ```python
 @torch.no_grad()
 def plot_energy_and_samples(
-    energy_fn: BaseEnergyFunction,
-    real_samples: torch.Tensor,
-    sampler: LangevinDynamics,
-    epoch: int,
-    device: torch.device,
-    grid_size: int = 100,
-    plot_range: float = 3.0,
-    k_sampling: int = 100,
+        energy_fn: BaseEnergyFunction,
+        real_samples: torch.Tensor,
+        sampler: LangevinDynamics,
+        epoch: int,
+        device: torch.device,
+        grid_size: int = 100,
+        plot_range: float = 3.0,
+        k_sampling: int = 100,
 ):
     """Plots the energy surface, real data, and model samples."""
     plt.figure(figsize=(8, 8))
@@ -178,7 +178,7 @@ def plot_energy_and_samples(
     vis_start_noise = torch.randn(
         500, real_samples.shape[1], device=device
     )
-    model_samples_tensor = sampler.sample_chain(x=vis_start_noise, n_steps=k_sampling)
+    model_samples_tensor = sampler.sample(x=vis_start_noise, n_steps=k_sampling)
     model_samples = model_samples_tensor.cpu().numpy()
 
     # Plot real and model samples
@@ -502,7 +502,7 @@ class MLPEnergy(BaseEnergyFunction):
 
 @torch.no_grad()
 def plot_energy_and_samples(
-    energy_fn, real_samples, sampler, epoch, device, grid_size=100, plot_range=3.0, k_sampling=100
+        energy_fn, real_samples, sampler, epoch, device, grid_size=100, plot_range=3.0, k_sampling=100
 ):
     """Plots the energy surface, real data, and model samples."""
     plt.figure(figsize=(8, 8))
@@ -533,7 +533,7 @@ def plot_energy_and_samples(
 
     # Generate samples from the current model
     vis_start_noise = torch.randn(500, real_samples.shape[1], device=device)
-    model_samples_tensor = sampler.sample_chain(x=vis_start_noise, n_steps=k_sampling)
+    model_samples_tensor = sampler.sample(x=vis_start_noise, n_steps=k_sampling)
     model_samples = model_samples_tensor.cpu().numpy()
 
     # Plot real and model samples
@@ -639,7 +639,7 @@ def main():
             epoch_loss += loss.item()
 
         avg_epoch_loss = epoch_loss / len(dataloader)
-        print(f"Epoch [{epoch+1}/{EPOCHS}], Average Loss: {avg_epoch_loss:.4f}")
+        print(f"Epoch [{epoch + 1}/{EPOCHS}], Average Loss: {avg_epoch_loss:.4f}")
 
         if (epoch + 1) % VISUALIZE_EVERY == 0 or epoch == 0:
             print("Generating visualization...")

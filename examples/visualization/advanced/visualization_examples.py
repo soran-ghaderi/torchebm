@@ -35,7 +35,7 @@ def generate_langevin_gaussian():
 
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
-    samples = sampler.sample_chain(
+    samples = sampler.sample(
         x=initial_state,
         n_steps=n_steps,
     )
@@ -69,7 +69,7 @@ def generate_hmc_gaussian():
 
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
-    samples = sampler.sample_chain(x=initial_state, n_steps=n_steps)
+    samples = sampler.sample(x=initial_state, n_steps=n_steps)
 
     # Plot results
     samples = samples.cpu().numpy()
@@ -102,7 +102,7 @@ def generate_double_well_trajectory():
 
     # Run for more steps to ensure we observe transitions
     n_steps = 5000
-    trajectory, diagnostics = sampler.sample_chain(
+    trajectory, diagnostics = sampler.sample(
         x=initial_state,
         n_steps=n_steps,
         return_trajectory=True,

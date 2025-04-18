@@ -125,7 +125,7 @@ def test_hmc_sample_chain_basic(hmc_sampler):
     """Test basic sampling functionality."""
     dim = 2
     n_steps = 50
-    final_state = hmc_sampler.sample_chain(dim=dim, n_steps=n_steps)
+    final_state = hmc_sampler.sample(dim=dim, n_steps=n_steps)
 
     # Check output shape and validity
     assert final_state.shape == (1, dim)  # (n_samples, dim)
@@ -146,9 +146,7 @@ def test_hmc_sample_chain_with_trajectory(hmc_sampler):
     """Test sampling with trajectory return."""
     dim = 2
     n_steps = 50
-    trajectory = hmc_sampler.sample_chain(
-        dim=dim, n_steps=n_steps, return_trajectory=True
-    )
+    trajectory = hmc_sampler.sample(dim=dim, n_steps=n_steps, return_trajectory=True)
 
     # Check trajectory shape and validity
     assert trajectory.shape == (1, n_steps, dim)  # (n_samples, n_steps, dim)
@@ -169,7 +167,7 @@ def test_hmc_sample_chain_with_diagnostics(hmc_sampler):
     """Test sampling with diagnostics return."""
     dim = 2
     n_steps = 50
-    final_state, diagnostics = hmc_sampler.sample_chain(
+    final_state, diagnostics = hmc_sampler.sample(
         dim=dim, n_steps=n_steps, return_diagnostics=True
     )
 
@@ -202,7 +200,7 @@ def test_hmc_sample_chain_multiple_samples(hmc_sampler):
     dim = 2
     n_steps = 50
     n_samples = 10
-    samples = hmc_sampler.sample_chain(dim=dim, n_steps=n_steps, n_samples=n_samples)
+    samples = hmc_sampler.sample(dim=dim, n_steps=n_steps, n_samples=n_samples)
 
     # Check output shape and validity for multiple samples
     assert samples.shape == (n_samples, dim)
@@ -224,10 +222,10 @@ def test_hmc_reproducibility(hmc_sampler):
     torch.manual_seed(42)
     dim = 2
     n_steps = 50
-    result1 = hmc_sampler.sample_chain(dim=dim, n_steps=n_steps)
+    result1 = hmc_sampler.sample(dim=dim, n_steps=n_steps)
 
     torch.manual_seed(42)
-    result2 = hmc_sampler.sample_chain(dim=dim, n_steps=n_steps)
+    result2 = hmc_sampler.sample(dim=dim, n_steps=n_steps)
 
     # Should get identical results with the same seed
     assert torch.allclose(result1, result2)
@@ -247,7 +245,7 @@ def test_hmc_device_consistency(hmc_sampler):
     device = hmc_sampler.device
 
     # Sample and check device - don't specify dim to use the inferred dimension
-    samples = hmc_sampler.sample_chain(n_steps=n_steps)
+    samples = hmc_sampler.sample(n_steps=n_steps)
     assert samples.device.type == device.type
 
     # Test with custom input and check device consistency
@@ -256,7 +254,7 @@ def test_hmc_device_consistency(hmc_sampler):
     else:
         dim = 2  # Fallback dimension for other energy functions
     x_init = torch.randn(5, dim, device=device)
-    samples = hmc_sampler.sample_chain(x=x_init, n_steps=n_steps)
+    samples = hmc_sampler.sample(x=x_init, n_steps=n_steps)
     assert samples.device.type == device.type
 
 
@@ -279,7 +277,7 @@ def test_hmc_with_double_well(hmc_sampler):
     dim = 2
     n_steps = 100
     n_samples = 50
-    samples = hmc_sampler.sample_chain(dim=dim, n_steps=n_steps, n_samples=n_samples)
+    samples = hmc_sampler.sample(dim=dim, n_steps=n_steps, n_samples=n_samples)
 
     # Check basic properties
     assert samples.shape == (n_samples, dim)
@@ -311,7 +309,7 @@ def test_hmc_with_scalar_mass(hmc_sampler):
     """Test HMC with scalar mass parameter."""
     dim = 2
     n_steps = 50
-    samples = hmc_sampler.sample_chain(dim=dim, n_steps=n_steps)
+    samples = hmc_sampler.sample(dim=dim, n_steps=n_steps)
 
     assert samples.shape == (1, dim)
     assert torch.all(torch.isfinite(samples))
@@ -337,7 +335,7 @@ def test_hmc_with_tensor_mass(hmc_sampler):
     """Test HMC with tensor mass parameter."""
     dim = 2
     n_steps = 50
-    samples = hmc_sampler.sample_chain(dim=dim, n_steps=n_steps)
+    samples = hmc_sampler.sample(dim=dim, n_steps=n_steps)
 
     assert samples.shape == (1, dim)
     assert torch.all(torch.isfinite(samples))
@@ -404,7 +402,7 @@ def test_hmc_gaussian_sampling_statistics():
     # Run HMC for many steps to collect statistics
     n_samples = 1000
     n_steps = 200  # Run for more steps to ensure good mixing
-    samples = hmc.sample_chain(n_samples=n_samples, n_steps=n_steps, dim=2)
+    samples = hmc.sample(n_samples=n_samples, n_steps=n_steps, dim=2)
 
     # Compute sample mean and covariance
     sample_mean = samples.mean(dim=0)
@@ -428,7 +426,7 @@ def test_hmc_small_step_size():
     )
 
     # Sample and ensure we get valid results
-    samples = hmc.sample_chain(dim=2, n_steps=20, n_samples=5)
+    samples = hmc.sample(dim=2, n_steps=20, n_samples=5)
     assert samples.shape == (5, 2)
     assert torch.all(torch.isfinite(samples))
 
@@ -446,7 +444,7 @@ def test_hmc_large_leapfrog_steps():
     )
 
     # Sample and ensure we get valid results
-    samples = hmc.sample_chain(dim=2, n_steps=20, n_samples=5)
+    samples = hmc.sample(dim=2, n_steps=20, n_samples=5)
     assert samples.shape == (5, 2)
     assert torch.all(torch.isfinite(samples))
 
@@ -467,7 +465,7 @@ def test_hmc_high_dimensions():
     )
 
     # Sample and ensure we get valid results
-    samples = hmc.sample_chain(dim=dim, n_steps=50, n_samples=10)
+    samples = hmc.sample(dim=dim, n_steps=50, n_samples=10)
     assert samples.shape == (10, dim)
     assert torch.all(torch.isfinite(samples))
 
@@ -497,7 +495,7 @@ def test_hmc_custom_initial_state():
     initial_state = torch.tensor([[10.0, -10.0]], device=hmc.device)
 
     # Sample and check that we move toward the mean
-    samples = hmc.sample_chain(x=initial_state, n_steps=200)
+    samples = hmc.sample(x=initial_state, n_steps=200)
 
     # After many steps, should be closer to mean than starting point
     final_dist_to_mean = torch.norm(samples)
@@ -516,7 +514,7 @@ def test_hmc_numerical_stability():
     extreme_position = torch.tensor([[1e5, 1e5]], device=hmc.device)
 
     # This should not produce NaN or infinite values
-    result = hmc.sample_chain(x=extreme_position, n_steps=10)
+    result = hmc.sample(x=extreme_position, n_steps=10)
     assert torch.all(torch.isfinite(result))
 
 

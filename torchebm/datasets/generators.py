@@ -101,6 +101,8 @@ Classes:
     provide a `seed` argument during instantiation.
 """
 
+import warnings
+
 import torch
 import numpy as np
 from torch.utils.data import Dataset
@@ -307,6 +309,8 @@ class GaussianMixtureDataset(BaseSyntheticDataset):
     ):
         if n_components <= 0:
             raise ValueError("n_components must be positive")
+        if std < 0:
+            raise ValueError("std must be non-negative")
         self.n_components = n_components
         self.std = std
         self.radius = radius

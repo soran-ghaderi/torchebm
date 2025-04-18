@@ -49,7 +49,7 @@ sampler = LangevinDynamics(
 
 # Generate samples
 initial_state = torch.zeros(n_samples, dim, device=device)
-samples = sampler.sample_chain(
+samples = sampler.sample(
     x=initial_state,
     n_steps=n_steps,
     n_samples=n_samples,

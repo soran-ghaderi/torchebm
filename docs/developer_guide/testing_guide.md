@@ -243,23 +243,24 @@ import torch
 from torchebm.samplers import LangevinDynamics
 from torchebm.core import GaussianEnergy
 
+
 @pytest.mark.performance
 def test_langevin_performance():
     """Test the performance of Langevin dynamics sampling."""
     energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
     sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01)
-    
+
     # Warm-up
-    sampler.sample_chain(dim=10, n_steps=10, n_samples=100)
-    
+    sampler.sample(dim=10, n_steps=10, n_samples=100)
+
     # Timed test
     start_time = time.time()
-    sampler.sample_chain(dim=10, n_steps=1000, n_samples=1000)
+    sampler.sample(dim=10, n_steps=1000, n_samples=1000)
     end_time = time.time()
-    
+
     elapsed = end_time - start_time
     print(f"Sampling took {elapsed:.4f} seconds")
-    
+
     # Ensure performance meets requirements
     assert elapsed < 2.0  # Adjust threshold as needed
 ```

@@ -25,7 +25,7 @@ langevin_sampler = LangevinDynamics(
 ).to(device)
 
 # Sample 10,000 points in 10 dimensions
-final_samples = langevin_sampler.sample_chain(
+final_samples = langevin_sampler.sample(
     dim=10, n_steps=500, n_samples=10000, return_trajectory=False
 )
 print(final_samples.shape)  # Output: (10000, 10) -> (n_samples, dim)
@@ -34,7 +34,7 @@ print(final_samples.shape)  # Output: (10000, 10) -> (n_samples, dim)
 n_samples = 250
 n_steps = 500
 dim = 10
-samples, diagnostics = langevin_sampler.sample_chain(
+samples, diagnostics = langevin_sampler.sample(
     dim=dim,
     n_steps=n_steps,
     n_samples=n_samples,
@@ -69,7 +69,7 @@ def basic_example():
 
     # Generate samples
     initial_state = torch.zeros(n_samples, dim, device=device)
-    samples = sampler.sample_chain(
+    samples = sampler.sample(
         x=initial_state,
         n_steps=n_steps,  # steps between samples
         n_samples=n_samples,  # number of samples to collect
@@ -172,7 +172,7 @@ def sampling_utilities_example():
 
     # Generate samples with thinning
     initial_state = torch.tensor([2.0], device=device)
-    samples, diagnostics = sampler.sample_chain(
+    samples, diagnostics = sampler.sample(
         x=initial_state,
         n_steps=50,  # steps between samples
         n_samples=1000,  # number of samples
@@ -206,7 +206,7 @@ def langevin_gaussain_sampling():
     # Initial state: batch of 100 samples, 10-dimensional space
     ts = time.time()
     # Run Langevin sampling for 500 steps
-    final_x = langevin_sampler.sample_chain(
+    final_x = langevin_sampler.sample(
         dim=10, n_steps=500, n_samples=10000, return_trajectory=False
     )
 
@@ -217,7 +217,7 @@ def langevin_gaussain_sampling():
     n_samples = 250
     n_steps = 500
     dim = 10
-    final_samples, diagnostics = langevin_sampler.sample_chain(
+    final_samples, diagnostics = langevin_sampler.sample(
         n_samples=n_samples,
         n_steps=n_steps,
         dim=dim,
