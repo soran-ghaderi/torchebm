@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gradient definitions -->
+  <defs>
+    <linearGradient id="nablaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF7E5F" />
+      <stop offset="50%" stop-color="#56CCF2" />
+      <stop offset="100%" stop-color="#2ECC71" />
+    </linearGradient>
+    <filter id="textGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="outerGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background circle with gradient -->
+  <circle cx="50" cy="50" r="40" fill="url(#nablaGradient)" opacity="0.2" filter="url(#outerGlow)" />
+
+  <!-- Nabla symbol with enhanced glow -->
+  <text x="20" y="70"
+        font-family="Montserrat, sans-serif"
+        font-size="70"
+        font-weight="700"
+        fill="url(#nablaGradient)"
+        filter="url(#textGlow)">∇</text>
+</svg>
+
+<!--<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">-->
+<!--  &lt;!&ndash; Enhanced gradient definitions &ndash;&gt;-->
+<!--  <defs>-->
+<!--    <linearGradient id="nablaGradient" x1="0%" y1="0%" x2="100%" y2="100%">-->
+<!--      <stop offset="0%" stop-color="#FF7E5F">-->
+<!--        <animate attributeName="stop-color"-->
+<!--                 values="#FF7E5F;#FF5F8F;#FF7E5F"-->
+<!--                 dur="8s"-->
+<!--                 repeatCount="indefinite" />-->
+<!--      </stop>-->
+<!--      <stop offset="50%" stop-color="#56CCF2">-->
+<!--        <animate attributeName="stop-color"-->
+<!--                 values="#56CCF2;#5F8FFF;#56CCF2"-->
+<!--                 dur="8s"-->
+<!--                 repeatCount="indefinite" />-->
+<!--      </stop>-->
+<!--      <stop offset="100%" stop-color="#2ECC71">-->
+<!--        <animate attributeName="stop-color"-->
+<!--                 values="#2ECC71;#AACC2E;#2ECC71"-->
+<!--                 dur="8s"-->
+<!--                 repeatCount="indefinite" />-->
+<!--      </stop>-->
+<!--    </linearGradient>-->
+
+<!--    &lt;!&ndash; Animated filters &ndash;&gt;-->
+<!--    <filter id="textGlow" x="-50%" y="-50%" width="200%" height="200%">-->
+<!--      <feGaussianBlur stdDeviation="4" result="blur">-->
+<!--        <animate attributeName="stdDeviation"-->
+<!--                 values="2;4;2"-->
+<!--                 dur="3s"-->
+<!--                 repeatCount="indefinite" />-->
+<!--      </feGaussianBlur>-->
+<!--      <feComposite in="SourceGraphic" in2="blur" operator="over" />-->
+<!--    </filter>-->
+
+<!--    <filter id="outerGlow" x="-100%" y="-100%" width="300%" height="300%">-->
+<!--      <feGaussianBlur stdDeviation="8" result="blur">-->
+<!--        <animate attributeName="stdDeviation"-->
+<!--                 values="6;10;6"-->
+<!--                 dur="5s"-->
+<!--                 repeatCount="indefinite" />-->
+<!--      </feGaussianBlur>-->
+<!--      <feComposite in="SourceGraphic" in2="blur" operator="over" />-->
+<!--    </filter>-->
+
+<!--    &lt;!&ndash; Particle effect for nabla &ndash;&gt;-->
+<!--    <radialGradient id="particleGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">-->
+<!--      <stop offset="0%" stop-color="white" stop-opacity="0.8" />-->
+<!--      <stop offset="100%" stop-color="white" stop-opacity="0" />-->
+<!--    </radialGradient>-->
+<!--  </defs>-->
+
+<!--  &lt;!&ndash; Background circle with animated gradient and pulse &ndash;&gt;-->
+<!--  <circle cx="50" cy="50" r="40" fill="url(#nablaGradient)" opacity="0.2" filter="url(#outerGlow)">-->
+<!--    <animate attributeName="r"-->
+<!--             values="38;42;38"-->
+<!--             dur="4s"-->
+<!--             repeatCount="indefinite" />-->
+<!--  </circle>-->
+
+<!--  &lt;!&ndash; Rotating halo behind nabla &ndash;&gt;-->
+<!--  <g>-->
+<!--    <circle cx="50" cy="50" r="35" fill="none" stroke="url(#nablaGradient)" stroke-width="1" stroke-dasharray="3,3" opacity="0.5">-->
+<!--      <animateTransform attributeName="transform"-->
+<!--                        type="rotate"-->
+<!--                        from="0 50 50"-->
+<!--                        to="360 50 50"-->
+<!--                        dur="20s"-->
+<!--                        repeatCount="indefinite" />-->
+<!--    </circle>-->
+<!--  </g>-->
+
+<!--  &lt;!&ndash; Particle effects around nabla &ndash;&gt;-->
+<!--  <g id="particles">-->
+<!--    <circle cx="50" cy="45" r="1" fill="url(#particleGradient)">-->
+<!--      <animate attributeName="cy" values="45;35;45" dur="3s" repeatCount="indefinite" />-->
+<!--      <animate attributeName="opacity" values="0;1;0" dur="3s" repeatCount="indefinite" />-->
+<!--    </circle>-->
+<!--    <circle cx="60" cy="50" r="1.2" fill="url(#particleGradient)">-->
+<!--      <animate attributeName="cx" values="60;65;60" dur="4s" repeatCount="indefinite" />-->
+<!--      <animate attributeName="opacity" values="0;0.8;0" dur="4s" repeatCount="indefinite" />-->
+<!--    </circle>-->
+<!--    <circle cx="40" cy="50" r="0.8" fill="url(#particleGradient)">-->
+<!--      <animate attributeName="cx" values="40;35;40" dur="3.5s" repeatCount="indefinite" />-->
+<!--      <animate attributeName="opacity" values="0;0.7;0" dur="3.5s" repeatCount="indefinite" />-->
+<!--    </circle>-->
+<!--  </g>-->
+
+<!--  &lt;!&ndash; Nabla symbol with animations &ndash;&gt;-->
+<!--  <text x="20" y="70"-->
+<!--        font-family="Montserrat, sans-serif"-->
+<!--        font-size="70"-->
+<!--        font-weight="700"-->
+<!--        fill="url(#nablaGradient)"-->
+<!--        filter="url(#textGlow)">∇-->
+<!--    &lt;!&ndash; Scale animation for nabla &ndash;&gt;-->
+<!--    <animateTransform attributeName="transform"-->
+<!--                      type="scale"-->
+<!--                      values="1;1.05;1"-->
+<!--                      additive="sum"-->
+<!--                      dur="2s"-->
+<!--                      repeatCount="indefinite" />-->
+<!--    &lt;!&ndash; Subtle rotation for nabla &ndash;&gt;-->
+<!--    <animateTransform attributeName="transform"-->
+<!--                      type="rotate"-->
+<!--                      values="-2 50 50;2 50 50;-2 50 50"-->
+<!--                      additive="sum"-->
+<!--                      dur="6s"-->
+<!--                      repeatCount="indefinite" />-->
+<!--  </text>-->
+
+<!--  &lt;!&ndash; Energy flow lines emanating from nabla &ndash;&gt;-->
+<!--  <path d="M 50,50 Q 60,40 70,35" stroke="url(#nablaGradient)" stroke-width="0.5" fill="none" opacity="0.6">-->
+<!--    <animate attributeName="d"-->
+<!--             values="M 50,50 Q 60,40 70,35; M 50,50 Q 65,45 75,40; M 50,50 Q 60,40 70,35"-->
+<!--             dur="4s"-->
+<!--             repeatCount="indefinite" />-->
+<!--    <animate attributeName="opacity"-->
+<!--             values="0;0.6;0"-->
+<!--             dur="4s"-->
+<!--             repeatCount="indefinite" />-->
+<!--  </path>-->
+
+<!--  <path d="M 50,50 Q 40,40 30,35" stroke="url(#nablaGradient)" stroke-width="0.5" fill="none" opacity="0.6">-->
+<!--    <animate attributeName="d"-->
+<!--             values="M 50,50 Q 40,40 30,35; M 50,50 Q 35,45 25,40; M 50,50 Q 40,40 30,35"-->
+<!--             dur="4.5s"-->
+<!--             repeatCount="indefinite" />-->
+<!--    <animate attributeName="opacity"-->
+<!--             values="0;0.6;0"-->
+<!--             dur="4.5s"-->
+<!--             repeatCount="indefinite" />-->
+<!--  </path>-->
+
+<!--  <path d="M 50,50 Q 50,65 50,75" stroke="url(#nablaGradient)" stroke-width="0.5" fill="none" opacity="0.6">-->
+<!--    <animate attributeName="d"-->
+<!--             values="M 50,50 Q 50,65 50,75; M 50,50 Q 45,70 45,80; M 50,50 Q 50,65 50,75"-->
+<!--             dur="5s"-->
+<!--             repeatCount="indefinite" />-->
+<!--    <animate attributeName="opacity"-->
+<!--             values="0;0.6;0"-->
+<!--             dur="5s"-->
+<!--             repeatCount="indefinite" />-->
+<!--  </path>-->
+<!--</svg>-->
