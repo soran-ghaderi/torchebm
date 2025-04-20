@@ -3,13 +3,17 @@
   <!-- Gradient definitions -->
   <defs>
     <linearGradient id="nablaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF7E5F" />
-      <stop offset="50%" stop-color="#56CCF2" />
+      <stop offset="0%" stop-color="#C7FF00" />
+<!--      <stop offset="50%" stop-color="#56CCF2" />-->
+      <stop offset="50%" stop-color="#7affF2" />
       <stop offset="100%" stop-color="#2ECC71" />
     </linearGradient>
     <linearGradient id="torchGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#ff7e5f" />
-      <stop offset="100%" stop-color="#feb47b" />
+      <stop offset="0%" stop-color="#C7FF00" />
+      <stop offset="100%" stop-color="#C7FF4C" />
+
+<!--      <stop offset="0%" stop-color="#ff7e5f" />-->
+<!--      <stop offset="100%" stop-color="#feb47b" />-->
     </linearGradient>
     <linearGradient id="ebmGradient" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#00c6ff" />

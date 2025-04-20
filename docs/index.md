@@ -296,7 +296,7 @@ icon: octicons/home-fill-16
 </p>
 
 <p class="lead" style="text-align: center; font-size: 1.3em; margin-bottom: 30px;" markdown>
-**TorcheBM** provides components for 🔬 sampling, 🧠 inference, and 📊 model training.
+**TorchEBM** provides components for 🔬 sampling, 🧠 inference, and 📊 model training.
 </p>
 
 <div style="text-align: center; margin-bottom: 40px;" markdown>
