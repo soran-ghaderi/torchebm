@@ -4,6 +4,27 @@
 
 <p align="center">⚡ Energy-Based Modeling library for PyTorch, offering tools for 🔬 sampling, 🧠 inference, and 📊 learning in complex distributions.</p>
 
+![ebm_training_animation.gif](docs/assets/animations/ebm_training_animation.gif)
+
+## About
+
+TorchEBM is a CUDA-accelerated parallel library for Energy-Based Models (EBMs) built on PyTorch. It provides efficient 
+implementations of sampling, inference, and learning algorithms for EBMs, with a focus on scalability and performance.
+
+## Features
+
+- **Core Components**:
+  - Energy functions: Standard energy landscapes (Gaussian, Double Well, Rosenbrock, etc.)
+  - Datasets: Data generators for training and evaluation
+  - Loss functions: Contrastive Divergence, Score Matching, and more
+  - Sampling algorithms: Langevin Dynamics, Hamiltonian Monte Carlo (HMC), and more
+  - Evaluation metrics: Diagnostics for sampling and training
+   
+- **Performance Optimizations**:
+  - CUDA-accelerated implementations
+  - Parallel sampling capabilities
+  - Extensive diagnostics
+
 <table align="center">
   <tr>
     <td><img src="docs/assets/images/e_functions/gaussian.png" alt="Gaussian" width="250"/></td>
@@ -18,27 +39,6 @@
     <td align="center">Rosenbrock Function</td>
   </tr>
 </table>
-
-## About
-
-TorchEBM is a CUDA-accelerated parallel library for Energy-Based Models (EBMs) built on PyTorch. It provides efficient 
-implementations of sampling, inference, and learning algorithms for EBMs, with a focus on scalability and performance.
-
-## Features
-
-- **Core Components**:
-  - Energy functions: Standard energy landscapes (Gaussian, Double Well, Rosenbrock, etc.)
-  - Base sampler interfaces and common utilities
-
-- **Advanced Samplers**:
-  - **Langevin Dynamics**: Gradient-based MCMC with stochastic updates
-  - **Hamiltonian Monte Carlo (HMC)**: Efficient exploration using Hamiltonian dynamics
-  
-- **Performance Optimizations**:
-  - CUDA-accelerated implementations
-  - Parallel sampling capabilities
-  - Extensive diagnostics
-
 ## Installation
 
 ```bash
@@ -75,36 +75,48 @@ gaussian_energy = GaussianEnergy(
 double_well_energy = DoubleWellEnergy(barrier_height=2.0)
 ```
 
-### 1. Langevin Dynamics Sampling
+### 1. Training a simple EBM Over a Gaussian Mixture Using Langevin Dynamics Sampler
 
 ```python
+import torch.optim as optim
+from torch.utils.data import DataLoader
+
+from torchebm.losses import ContrastiveDivergence
+from torchebm.datasets import GaussianMixtureDataset
 from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 # Define a 10D Gaussian energy function
-energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
+energy_fn = MLPEnergy(input_dim=2).to(device)
+sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
 
-# Initialize Langevin dynamics sampler
-langevin_sampler = LangevinDynamics(
-  energy_function=energy_fn, step_size=5e-3, device=device
-).to(device)
-
-# Sample 10,000 points in 10 dimensions
-final_samples = langevin_sampler.sample(
-  dim=10, n_steps=500, n_samples=10000, return_trajectory=False
+cd_loss_fn = ContrastiveDivergence(
+    energy_function=energy_fn,
+    sampler=sampler, 
+    n_steps=10 # MCMC steps for negative samples gen
 )
-print(final_samples.shape)  # Result shape: (10000, 10) - (n_samples, dim)
 
-# Sample with trajectory and diagnostics
-samples, diagnostics = langevin_sampler.sample(
-  dim=dim,
-  n_steps=n_steps,
-  n_samples=n_samples,
-  return_trajectory=True,
-  return_diagnostics=True,
-)
-print(samples.shape)  # Trajectory shape: (250, 500, 10) - (samples, n_steps, dim)
-print(diagnostics.shape)  # Diagnostics shape: (500, 4, 250, 10) - (n_steps, 3, n_samples, dim)
-# The diagnostics contain: Mean (dim=0), Variance (dim=1), Energy (dim=2)
+optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+
+mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123).get_data()
+dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
+
+# Training Loop
+for epoch in range(10):
+    epoch_loss = 0.0
+    for i, batch_data in enumerate(dataloader):
+        batch_data = batch_data.to(device)
+
+        optimizer.zero_grad()
+
+        loss, neg_samples = cd_loss(batch_data)
+
+        loss.backward()
+        optimizer.step()
+
+        epoch_loss += loss.item()
+
+    avg_loss = epoch_loss / len(dataloader)
+    print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
 ```
 
 ### 2. Hamiltonian Monte Carlo (HMC)
@@ -158,6 +170,9 @@ torchebm/
 │   ├── mcmc.py            # HMC implementation
 │   └── ...
 ├── models/                # Neural network models
+├── evaluation/            # Evaluation metrics and utilities
+├── datasets/
+│   └── generators.py      # Data generators for training
 ├── losses/                # BaseLoss functions for training
 ├── utils/                 # Utility functions
 └── cuda/                  # CUDA optimizations
