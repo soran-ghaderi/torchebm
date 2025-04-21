@@ -6,10 +6,15 @@
 
 ![ebm_training_animation.gif](docs/assets/animations/ebm_training_animation.gif)
 
-## About
+## What is TorchEBM?
 
-TorchEBM is a CUDA-accelerated parallel library for Energy-Based Models (EBMs) built on PyTorch. It provides efficient 
-implementations of sampling, inference, and learning algorithms for EBMs, with a focus on scalability and performance.
+**Energy-Based Models (EBMs)** offer a powerful and flexible framework for generative modeling by assigning an unnormalized probability (or "energy") to each data point. Lower energy corresponds to higher probability.
+
+**TorchEBM** simplifies working with EBMs in [PyTorch](https://pytorch.org/). It provides a suite of tools designed for researchers and practitioners, enabling efficient implementation and exploration of:
+
+*   **Defining complex energy functions:** Easily create custom energy landscapes using PyTorch modules.
+*   **Training:** Loss functions and procedures suitable for EBM parameter estimation including score matching and contrastive divergence variants.
+*   **Sampling:** Algorithms to draw samples from the learned distribution \( p(x) \).
 
 ## Features
 
