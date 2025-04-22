@@ -158,7 +158,7 @@ def validate_dimensions(tensor: torch.Tensor, expected_dims: int) -> None:
     if tensor.dim() != expected_dims:
         raise ValueError(
             f"Expected tensor with {expected_dims} dimensions, "
-            f"but got tensor with shape {tensor.shape}"
+            f"but got tensor with batch_shape {tensor.shape}"
         )
 ```
 

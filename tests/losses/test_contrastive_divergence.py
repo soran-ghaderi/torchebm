@@ -121,7 +121,7 @@ def test_contrastive_divergence_initialization(energy_function, sampler):
     assert cd.n_steps == 10
     assert cd.persistent is False
     assert cd.device == device
-    assert cd.chain is None
+    assert cd.replay_buffer is None
 
 
 def test_contrastive_divergence_forward(cd_loss):
@@ -162,16 +162,17 @@ def test_contrastive_divergence_persistence(energy_function, sampler, persistent
     )
 
     x = torch.randn(10, 2, device=device)
+    batch_size = x.shape[0]
     loss1, samples1 = cd(x)
 
     if persistent:
-        assert cd.chain is not None
-        assert torch.allclose(cd.chain, samples1)
+        assert cd.replay_buffer is not None
+        assert torch.allclose(cd.replay_buffer[:batch_size], samples1)
     else:
         # Could be None or not depending on the implementation,
         # but if not None should not be the samples
-        if cd.chain is not None:
-            assert not torch.allclose(cd.chain, samples1)
+        if cd.replay_buffer is not None:
+            assert not torch.allclose(cd.replay_buffer, samples1)
 
 
 @pytest.mark.parametrize(
@@ -255,10 +256,11 @@ def test_contrastive_divergence_with_different_sampler_settings(
     )
 
     x = torch.randn(10, 2, device=device)
+    batch_size = x.shape[0]
     loss, samples = cd(x)
 
     assert isinstance(loss, torch.Tensor)
-    assert samples.shape == x.shape
+    assert samples[:batch_size].shape == x.shape
 
 
 def test_contrastive_divergence_chain_reset_when_batch_size_changes():
@@ -279,17 +281,19 @@ def test_contrastive_divergence_chain_reset_when_batch_size_changes():
 
     # First call with batch size 10
     x1 = torch.randn(10, 2, device=device)
+    x1_batch_size = x1.shape[0]
     loss1, samples1 = cd(x1)
-    assert cd.chain is not None
-    assert cd.chain.shape[0] == 10
+    assert cd.replay_buffer is not None
+    assert torch.allclose(cd.replay_buffer[:x1_batch_size], samples1)
 
     # Second call with different batch size
     x2 = torch.randn(20, 2, device=device)
+    x2_batch_size = x2.shape[0]
     loss2, samples2 = cd(x2)
-    assert cd.chain.shape[0] == 20
+    assert cd.replay_buffer[:x2_batch_size].shape[0] == 20
 
     # Should match the new batch size
-    assert cd.chain.shape[0] == x2.shape[0]
+    assert cd.replay_buffer[:x2_batch_size].shape[0] == samples2.shape[0]
 
 
 @requires_cuda

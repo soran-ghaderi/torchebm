@@ -92,7 +92,7 @@ Energy functions in TorchEBM implement these key methods:
 Calculate the energy of a batch of samples:
 
 ```python
-# x shape: [batch_size, dimension]
+# x batch_shape: [batch_size, dimension]
 energy_values = energy_function(x)  # returns [batch_size]
 ```
 
@@ -109,7 +109,7 @@ energy_values = energy_function(x)
 # Calculate gradients
 gradients = torch.autograd.grad(
     energy_values.sum(), x, create_graph=True
-)[0]  # shape: [batch_size, dimension]
+)[0]  # batch_shape: [batch_size, dimension]
 ```
 
 ### Device Management
@@ -141,8 +141,8 @@ class MyCustomEnergy(BaseEnergyFunction):
 
     def forward(self, x):
         # Implement your energy function here
-        # x shape: [batch_size, dimension]
-        # Return shape: [batch_size]
+        # x batch_shape: [batch_size, dimension]
+        # Return batch_shape: [batch_size]
         return torch.sum(self.param1 * x ** 2 + self.param2 * torch.sin(x), dim=-1)
 ```
 
@@ -167,8 +167,8 @@ class NeuralNetworkEnergy(BaseEnergyFunction):
         )
 
     def forward(self, x):
-        # x shape: [batch_size, input_dim]
-        return self.network(x).squeeze(-1)  # Return shape: [batch_size]
+        # x batch_shape: [batch_size, input_dim]
+        return self.network(x).squeeze(-1)  # Return batch_shape: [batch_size]
 ```
 
 ## Best Practices

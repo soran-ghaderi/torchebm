@@ -80,7 +80,7 @@ class TestAllDatasets:
         assert len(dataset) == expected_samples
 
     def test_dataset_get_data(self, dataset_class, required_params):
-        """Test that get_data() returns a tensor with expected shape."""
+        """Test that get_data() returns a tensor with expected batch_shape."""
         dataset = dataset_class(**required_params)
         data = dataset.get_data()
 
@@ -97,7 +97,7 @@ class TestAllDatasets:
         assert data.shape[0] == expected_samples
 
     def test_dataset_getitem(self, dataset_class, required_params):
-        """Test that __getitem__ returns individual points with expected shape."""
+        """Test that __getitem__ returns individual points with expected batch_shape."""
         dataset = dataset_class(**required_params)
 
         # Test first item
@@ -250,7 +250,7 @@ class TestDatasetSpecifics:
     """Test specific characteristics of each dataset type."""
 
     def test_two_moons_shape(self):
-        """Test that TwoMoonsDataset has expected moon shape."""
+        """Test that TwoMoonsDataset has expected moon batch_shape."""
         dataset = TwoMoonsDataset(n_samples=2000, noise=0.01, seed=42)
         data = dataset.get_data().cpu().numpy()
 

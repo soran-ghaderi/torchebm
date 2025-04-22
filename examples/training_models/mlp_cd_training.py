@@ -129,7 +129,7 @@ if __name__ == "__main__":
     SAMPLER_NOISE_SCALE = 0.1
     print(f"Sampler noise scale: {SAMPLER_NOISE_SCALE}")
     CD_K = 10
-    USE_PCD = False
+    USE_PCD = True
     VISUALIZE_EVERY = 20
     SEED = 42
 

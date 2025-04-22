@@ -95,7 +95,7 @@ class EnergySampleMetric(BaseMetric):
 
         Args:
             energy_fn: The energy function to evaluate
-            samples: Tensor of samples, shape (n_samples, *dim)
+            samples: Tensor of samples, batch_shape (n_samples, *dim)
 
         Returns:
             Dict[str, torch.Tensor]: Dictionary containing the computed metric values
@@ -129,8 +129,8 @@ class SampleQualityMetric(BaseMetric):
         Compute the metric value for samples against reference data.
 
         Args:
-            samples: Tensor of samples to evaluate, shape (n_samples, *dim)
-            reference: Tensor of reference data, shape (n_reference, *dim)
+            samples: Tensor of samples to evaluate, batch_shape (n_samples, *dim)
+            reference: Tensor of reference data, batch_shape (n_reference, *dim)
 
         Returns:
             Dict[str, torch.Tensor]: Dictionary containing the computed metric values

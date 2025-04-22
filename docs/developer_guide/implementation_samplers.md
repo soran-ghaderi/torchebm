@@ -55,7 +55,7 @@ class Sampler(ABC):
             **kwargs: Additional sampler-specific parameters
             
         Returns:
-            Tensor of shape (n_samples, dim) containing samples
+            Tensor of batch_shape (n_samples, dim) containing samples
         """
         pass
 
@@ -70,7 +70,7 @@ class Sampler(ABC):
             **kwargs: Additional sampler-specific parameters
             
         Returns:
-            Tensor of shape (n_samples, dim) containing final samples
+            Tensor of batch_shape (n_samples, dim) containing final samples
         """
         pass
 ```
@@ -120,10 +120,10 @@ class LangevinDynamics(Sampler):
         """Perform one step of Langevin dynamics.
         
         Args:
-            x: Current samples of shape (n_samples, dim)
+            x: Current samples of batch_shape (n_samples, dim)
             
         Returns:
-            Updated samples of shape (n_samples, dim)
+            Updated samples of batch_shape (n_samples, dim)
         """
         # Compute score (gradient of log probability)
         score = -self.energy_function.score(x)
@@ -221,8 +221,8 @@ class HamiltonianMonteCarlo(Sampler):
         """Perform one leapfrog step.
         
         Args:
-            x: Position tensor of shape (n_samples, dim)
-            p: Momentum tensor of shape (n_samples, dim)
+            x: Position tensor of batch_shape (n_samples, dim)
+            p: Momentum tensor of batch_shape (n_samples, dim)
             
         Returns:
             New position and momentum
@@ -247,11 +247,11 @@ class HamiltonianMonteCarlo(Sampler):
         """Compute the Hamiltonian value.
         
         Args:
-            x: Position tensor of shape (n_samples, dim)
-            p: Momentum tensor of shape (n_samples, dim)
+            x: Position tensor of batch_shape (n_samples, dim)
+            p: Momentum tensor of batch_shape (n_samples, dim)
             
         Returns:
-            Hamiltonian value of shape (n_samples,)
+            Hamiltonian value of batch_shape (n_samples,)
         """
         energy = self.energy_function(x)
         
@@ -266,10 +266,10 @@ class HamiltonianMonteCarlo(Sampler):
         """Perform one step of HMC.
         
         Args:
-            x: Current samples of shape (n_samples, dim)
+            x: Current samples of batch_shape (n_samples, dim)
             
         Returns:
-            Updated samples of shape (n_samples, dim)
+            Updated samples of batch_shape (n_samples, dim)
         """
         # Sample initial momentum
         p = torch.randn_like(x)
@@ -327,10 +327,10 @@ class MetropolisHastings(Sampler):
         """Perform one step of Metropolis-Hastings.
         
         Args:
-            x: Current samples of shape (n_samples, dim)
+            x: Current samples of batch_shape (n_samples, dim)
             
         Returns:
-            Updated samples of shape (n_samples, dim)
+            Updated samples of batch_shape (n_samples, dim)
         """
         # Compute energy of current state
         energy_x = self.energy_function(x)

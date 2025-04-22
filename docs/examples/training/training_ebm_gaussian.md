@@ -95,7 +95,7 @@ dataset = GaussianMixtureDataset(
 
 # Get the full tensor for visualization purposes
 real_data_for_plotting = dataset.get_data()
-print(f"Data shape: {real_data_for_plotting.shape}")
+print(f"Data batch_shape: {real_data_for_plotting.shape}")
 
 # Create DataLoader
 dataloader = DataLoader(
@@ -601,7 +601,7 @@ def main():
 
     # Get the full tensor for visualization purposes
     real_data_for_plotting = dataset.get_data()
-    print(f"Data shape: {real_data_for_plotting.shape}")
+    print(f"Data batch_shape: {real_data_for_plotting.shape}")
 
     # Create DataLoader
     dataloader = DataLoader(

@@ -94,11 +94,11 @@ def cuda_score(energy_fn, x, create_graph=False):
     
     Args:
         energy_fn: Energy function
-        x: Input tensor of shape (batch_size, dim)
+        x: Input tensor of batch_shape (batch_size, dim)
         create_graph: Whether to create gradient graph
         
     Returns:
-        Score tensor of shape (batch_size, dim)
+        Score tensor of batch_shape (batch_size, dim)
     """
     # Check if energy function has custom CUDA implementation
     if hasattr(energy_fn, "cuda_score_impl") and torch.cuda.is_available():

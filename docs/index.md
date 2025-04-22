@@ -408,8 +408,8 @@ Here's a minimal example of defining an energy function and a sampler:
     initial_points = torch.randn(500, 2, device=device)
     samples = sampler.sample(x=initial_points, n_steps=100)
     
-    print(f"Output shape: {samples.shape}")
-    # Output shape: torch.Size([500, 2])
+    print(f"Output batch_shape: {samples.shape}")
+    # Output batch_shape: torch.Size([500, 2])
     ```
 </div>
 ---

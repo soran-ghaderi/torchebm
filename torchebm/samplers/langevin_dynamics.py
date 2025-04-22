@@ -38,8 +38,8 @@ Classes:
     samples, diagnostics = sampler.sample_chain(
         x=initial_state, n_steps=100, n_samples=5, return_diagnostics=True
     )
-    print(f"Samples shape: {samples.shape}")
-    print(f"Diagnostics keys: {diagnostics.shape}")
+    print(f"Samples batch_shape: {samples.batch_shape}")
+    print(f"Diagnostics keys: {diagnostics.batch_shape}")
     ```
 
 ---
@@ -224,11 +224,11 @@ class LangevinDynamics(BaseSampler):
         $$x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t$$
 
         Args:
-            prev_x (torch.Tensor): Current state tensor of shape (batch_size, dim)
-            noise (torch.Tensor): Gaussian noise tensor of shape (batch_size, dim)
+            prev_x (torch.Tensor): Current state tensor of batch_shape (batch_size, dim)
+            noise (torch.Tensor): Gaussian noise tensor of batch_shape (batch_size, dim)
 
         Returns:
-            torch.Tensor: Updated state tensor of same shape as prev_x
+            torch.Tensor: Updated state tensor of same batch_shape as prev_x
 
         Example:
             ```python
@@ -238,15 +238,6 @@ class LangevinDynamics(BaseSampler):
             next_state = langevin.langevin_step(current_state, noise)
             ```
         """
-
-        # gradient_fn = partial(self.energy_function.gradient)
-        # new_x = (
-        #     prev_x
-        #     - self.step_size * gradient_fn(prev_x)
-        #     + torch.sqrt(torch.tensor(2.0 * self.step_size, device=prev_x.device))
-        #     * noise
-        # )
-        # return new_x
 
         gradient = self.energy_function.gradient(prev_x)
 
@@ -290,8 +281,8 @@ class LangevinDynamics(BaseSampler):
             Final samples:
 
                 - If `return_trajectory=False` and `return_diagnostics=False`, returns the final
-                  samples of shape `(n_samples, dim)`.
-                - If `return_trajectory=True`, returns a tensor of shape `(n_samples, n_steps, dim)`,
+                  samples of batch_shape `(n_samples, dim)`.
+                - If `return_trajectory=True`, returns a tensor of batch_shape `(n_samples, n_steps, dim)`,
                   containing the sampled trajectory.
                 - If `return_diagnostics=True`, returns a tuple `(samples, diagnostics)`, where
                   `diagnostics` is a list of dictionaries storing per-step statistics.
@@ -336,6 +327,9 @@ class LangevinDynamics(BaseSampler):
             device_type="cuda" if self.device.type == "cuda" else "cpu"
         ):
             for i in range(n_steps):
+                # todo: Add decay logic
+                # fixme: retrieve from replay buffer 95% of the time and generate randomly 5% of the time
+                # todo: adaptive step size and scheduling
                 # Generate fresh noise for each step
                 noise = torch.randn_like(x, device=self.device)
 

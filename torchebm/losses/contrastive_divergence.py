@@ -127,7 +127,7 @@ Classes:
 
 ---
 
-## Advanced Insights
+## Useful Insights
 
 !!! abstract "Why CD May Outperform MLE"
     In some cases, CD might actually lead to better models than exact maximum likelihood:
@@ -245,20 +245,28 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         """
 
         batch_size = x.shape[0]
+        data_shape = x.shape[1:]
 
-        if self.persistent:
-            if self.chain is None or self.chain.shape[0] != batch_size:
-                print(
-                    f"Initializing persistent chain (size {batch_size})..."
-                )  # Logging
-                init_noise = torch.randn_like(x)
-                # self.chain = self.sampler.sample_chain(x=init_noise, n_steps=self.n_stpes).detach() # improve a bit before starting maybe? decide later..
-                self.chain = init_noise.detach()
+        if self.persistent and (
+            not hasattr(self, "buffer_initialized") or not self.buffer_initialized
+        ):
+            self.initialize_buffer(x.shape)
 
-            start_points = self.chain.to(self.device, dtype=self.dtype)
+        # if self.persistent:
+        #     if self.chain is None or self.chain.shape[0] != batch_size:
+        #         print(
+        #             f"Initializing persistent chain (size {batch_size})..."
+        #         )  # Logging
+        #         init_noise = torch.randn_like(x)
+        #         # self.chain = self.sampler.sample(x=init_noise, n_steps=self.n_stpes).detach() # improve a bit before starting maybe? decide later..
+        #         self.chain = init_noise.detach()
+        #
+        #     start_points = self.chain.to(self.device, dtype=self.dtype)
 
-        else:
-            start_points = x.detach()
+        # else:
+        #     start_points = x.detach()
+
+        start_points = self.get_negative_samples(batch_size, data_shape)
 
         # generate negative samples
         pred_samples = self.sampler.sample(
@@ -268,7 +276,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         ).detach()
 
         if self.persistent:
-            self.chain = pred_samples.detach()
+            self.update_buffer(pred_samples.detach())
 
         loss = self.compute_loss(x, pred_samples, *args, **kwargs)
 
@@ -316,7 +324,7 @@ class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     # def sample(self, energy_model, x_pos):
     #     if self.buffer is None or len(self.buffer) != self.buffer_size:
     #         # Initialize buffer with random noise
-    #         self.buffer = torch.randn(self.buffer_size, *x_pos.shape[1:],
+    #         self.buffer = torch.randn(self.buffer_size, *x_pos.batch_shape[1:],
     #                                   device=x_pos.device)
     #
     #     # Update buffer with Gibbs steps
@@ -324,7 +332,7 @@ class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     #         self.buffer = energy_model.gibbs_step(self.buffer)
     #
     #     # Return a subset of the buffer as negative samples
-    #     idx = torch.randint(0, self.buffer_size, (x_pos.shape[0],))
+    #     idx = torch.randint(0, self.buffer_size, (x_pos.batch_shape[0],))
     #     return self.buffer[idx]
 
 

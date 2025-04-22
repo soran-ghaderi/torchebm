@@ -50,7 +50,7 @@ class MultimodalEnergy:
         )
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        # Ensure input has correct dtype and shape
+        # Ensure input has correct dtype and batch_shape
         x = x.to(dtype=self.dtype)
         if x.dim() == 1:
             x = x.view(1, -1)
@@ -66,7 +66,7 @@ class MultimodalEnergy:
         return energy
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-        # Ensure input has correct dtype and shape
+        # Ensure input has correct dtype and batch_shape
         x = x.to(dtype=self.dtype)
         if x.dim() == 1:
             x = x.view(1, -1)

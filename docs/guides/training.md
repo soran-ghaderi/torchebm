@@ -605,7 +605,7 @@ class SequentialEBM(BaseEnergyFunction):
         )
     
     def forward(self, x):
-        # x shape: [batch_size, seq_len, input_dim]
+        # x batch_shape: [batch_size, seq_len, input_dim]
         lstm_out, _ = self.lstm(x)
         
         # Use final hidden state

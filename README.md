@@ -141,7 +141,7 @@ hmc_sampler = HamiltonianMonteCarlo(
 final_samples = hmc_sampler.sample(
   dim=10, n_steps=500, n_samples=10000, return_trajectory=False
 )
-print(final_samples.shape)  # Result shape: (10000, 10) - (n_samples, dim)
+print(final_samples.shape)  # Result batch_shape: (10000, 10) - (n_samples, dim)
 
 # Sample with diagnostics and trajectory
 final_samples, diagnostics = hmc_sampler.sample(
@@ -152,14 +152,14 @@ final_samples, diagnostics = hmc_sampler.sample(
   return_diagnostics=True,
 )
 
-print(final_samples.shape)  # Trajectory shape: (250, 500, 10) - (n_samples, n_steps, dim)
-print(diagnostics.shape)  # Diagnostics shape: (500, 4, 250, 10) - (n_steps, 4, n_samples, dim)
+print(final_samples.shape)  # Trajectory batch_shape: (250, 500, 10) - (n_samples, n_steps, dim)
+print(diagnostics.shape)  # Diagnostics batch_shape: (500, 4, 250, 10) - (n_steps, 4, n_samples, dim)
 # The diagnostics contain: Mean (dim=0), Variance (dim=1), Energy (dim=2), Acceptance rates (dim=3)
 
 # Sample from a custom initialization
 x_init = torch.randn(n_samples, dim, dtype=torch.float32, device=device)
 samples = hmc_sampler.sample(x=x_init, n_steps=100)
-print(samples.shape)  # Result shape: (250, 10) -> (n_samples, dim)
+print(samples.shape)  # Result batch_shape: (250, 10) -> (n_samples, dim)
 ```
 
 ## Library Structure

@@ -168,7 +168,7 @@ def test_base_contrastive_divergence_init_chain():
 
     # Initialize the chain
     shape = (32, 2)  # batch_size, input_dim
-    chain = loss.initialize_persistent_chain(shape)
+    chain = loss.initialize_buffer(shape)
 
     assert chain.shape == shape
     assert chain.device.type == device

@@ -75,10 +75,10 @@ class BaseEnergyFunction(nn.Module):
         """Compute energy for input points.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         raise NotImplementedError
         
@@ -86,10 +86,10 @@ class BaseEnergyFunction(nn.Module):
         """Compute score function (gradient of energy) for input points.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size, dim) containing score values
+            Tensor of batch_shape (batch_size, dim) containing score values
         """
         x = x.requires_grad_(True)
         energy = self.forward(x)
@@ -200,10 +200,10 @@ class CompositeEnergy(BaseEnergyFunction):
         """Compute composite energy.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         return sum(w * f(x) for w, f in zip(self.weights, self.energy_functions))
 ```
@@ -240,7 +240,7 @@ class Sampler(ABC):
             **kwargs: Additional sampler-specific parameters
             
         Returns:
-            Tensor of shape (n_samples, dim) containing samples
+            Tensor of batch_shape (n_samples, dim) containing samples
         """
         pass
         
@@ -255,7 +255,7 @@ class Sampler(ABC):
             **kwargs: Additional sampler-specific parameters
             
         Returns:
-            Tensor of shape (n_samples, dim) containing final samples
+            Tensor of batch_shape (n_samples, dim) containing final samples
         """
         pass
 ```
@@ -292,10 +292,10 @@ class LangevinDynamics(Sampler):
         """Perform one step of Langevin dynamics.
         
         Args:
-            x: Current samples of shape (n_samples, dim)
+            x: Current samples of batch_shape (n_samples, dim)
             
         Returns:
-            Updated samples of shape (n_samples, dim)
+            Updated samples of batch_shape (n_samples, dim)
         """
         # Compute score (gradient of energy)
         score = self.energy_function.score(x)
@@ -324,7 +324,7 @@ class LangevinDynamics(Sampler):
             return_trajectory: Whether to return the full trajectory
             
         Returns:
-            Tensor of shape (n_samples, dim) containing final samples,
+            Tensor of batch_shape (n_samples, dim) containing final samples,
             or a tuple of (samples, trajectory) if return_trajectory is True
         """
         # Initialize samples
@@ -359,7 +359,7 @@ class LangevinDynamics(Sampler):
             **kwargs: Additional parameters passed to sample_chain
             
         Returns:
-            Tensor of shape (n_samples, dim) containing samples
+            Tensor of batch_shape (n_samples, dim) containing samples
         """
         return self.sample_chain(dim=dim, n_steps=n_steps, n_samples=n_samples, **kwargs)
 ```
@@ -497,10 +497,10 @@ class EnergyModel(BaseEnergyFunction):
         """Compute energy using the neural network.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         return self.network(x).squeeze(-1)
 ```

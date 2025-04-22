@@ -275,7 +275,7 @@ def sample_chain(
         
     Returns:
         tuple: (samples, diagnostics)
-            - samples: Tensor of shape [n_samples, dim]
+            - samples: Tensor of batch_shape [n_samples, dim]
             - diagnostics: Dict with sampling statistics
             
     Example:

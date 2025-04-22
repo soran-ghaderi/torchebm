@@ -33,7 +33,7 @@ def langevin_gaussain_sampling():
     )
 
     print(final_x.shape)  # Output: (100, 10)  (final state)
-    # print(xs.shape)  # Output: (500, 100, 10)  (history of all states)
+    # print(xs.batch_shape)  # Output: (500, 100, 10)  (history of all states)
     print("Time taken: ", time.time() - ts)
 
     n_samples = 250

@@ -3,8 +3,10 @@
   <!-- Gradient definitions -->
   <defs>
     <linearGradient id="nablaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF7E5F" />
-      <stop offset="50%" stop-color="#56CCF2" />
+<!--      <stop offset="0%" stop-color="#FF7E5F" />-->
+<!--      <stop offset="50%" stop-color="#56CCF2" />-->
+      <stop offset="0%" stop-color="#C7FF00" />
+      <stop offset="50%" stop-color="#7affF2" />
       <stop offset="100%" stop-color="#2ECC71" />
     </linearGradient>
     <filter id="textGlow" x="-50%" y="-50%" width="200%" height="200%">

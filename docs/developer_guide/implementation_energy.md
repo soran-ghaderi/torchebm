@@ -68,8 +68,8 @@ class GaussianEnergy(BaseEnergyFunction):
         """Initialize Gaussian energy function.
         
         Args:
-            mean: Mean vector of shape (dim,)
-            cov: Covariance matrix of shape (dim, dim)
+            mean: Mean vector of batch_shape (dim,)
+            cov: Covariance matrix of batch_shape (dim, dim)
         """
         super().__init__()
         self.register_buffer("mean", mean)
@@ -84,12 +84,12 @@ class GaussianEnergy(BaseEnergyFunction):
         """Compute Gaussian energy.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
-        # Ensure x has the right shape
+        # Ensure x has the right batch_shape
         if x.dim() == 1:
             x = x.unsqueeze(0)
             
@@ -108,10 +108,10 @@ class GaussianEnergy(BaseEnergyFunction):
         This is more efficient than using automatic differentiation.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size, dim) containing score values
+            Tensor of batch_shape (batch_size, dim) containing score values
         """
         if x.dim() == 1:
             x = x.unsqueeze(0)
@@ -150,10 +150,10 @@ class DoubleWellEnergy(BaseEnergyFunction):
         """Compute double well energy.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         # Compute (x^2 - b)^2 for each dimension, then sum
         return self.a * torch.sum((x**2 - self.b)**2, dim=1)
@@ -184,10 +184,10 @@ class RosenbrockEnergy(BaseEnergyFunction):
         """Compute Rosenbrock energy.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         if x.dim() == 1:
             x = x.unsqueeze(0)
@@ -239,10 +239,10 @@ class CompositeEnergy(BaseEnergyFunction):
         """Compute composite energy.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         energies = [f(x) * w for f, w in zip(self.energy_functions, self.weights)]
         
@@ -297,10 +297,10 @@ class MLPEnergy(BaseEnergyFunction):
         """Compute energy using the MLP.
         
         Args:
-            x: Input tensor of shape (batch_size, input_dim)
+            x: Input tensor of batch_shape (batch_size, input_dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         return self.network(x).squeeze(-1)
 ```
@@ -317,11 +317,11 @@ def efficient_grad(energy_fn: BaseEnergyFunction, x: torch.Tensor, create_graph:
     
     Args:
         energy_fn: Energy function
-        x: Input tensor of shape (batch_size, dim)
+        x: Input tensor of batch_shape (batch_size, dim)
         create_graph: Whether to create gradient graph (for higher-order gradients)
         
     Returns:
-        Gradient tensor of shape (batch_size, dim)
+        Gradient tensor of batch_shape (batch_size, dim)
     """
     x.requires_grad_(True)
     with torch.enable_grad():
@@ -371,7 +371,7 @@ def from_samples(cls, samples: torch.Tensor, regularization: float = 1e-4) -> 'G
     """Create a Gaussian energy function from data samples.
     
     Args:
-        samples: Data samples of shape (n_samples, dim)
+        samples: Data samples of batch_shape (n_samples, dim)
         regularization: Small value added to diagonal for numerical stability
         
     Returns:
@@ -592,10 +592,10 @@ class SphericalEnergy(BaseEnergyFunction):
         """Compute energy on unit sphere.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         # Project to unit sphere
         x_normalized = F.normalize(x, p=2, dim=1)
@@ -623,10 +623,10 @@ class DensityModelEnergy(BaseEnergyFunction):
         """Compute energy as negative log probability.
         
         Args:
-            x: Input tensor of shape (batch_size, dim)
+            x: Input tensor of batch_shape (batch_size, dim)
             
         Returns:
-            Tensor of shape (batch_size,) containing energy values
+            Tensor of batch_shape (batch_size,) containing energy values
         """
         log_prob = self.density_model.log_prob(x)
         return -log_prob

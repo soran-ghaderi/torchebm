@@ -160,7 +160,7 @@ class MySampler(BaseSampler):
     
     def sample_chain(self, x, step_idx=None):
         # Implement your sampling algorithm here
-        # x shape: [n_samples, dim]
+        # x batch_shape: [n_samples, dim]
         
         # Your sampler logic
         x_new = ...
@@ -196,8 +196,8 @@ class MyEnergyFunction(BaseEnergyFunction):
 
     def forward(self, x):
         # Implement your energy function here
-        # x shape: [batch_size, dimension]
-        # Return shape: [batch_size]
+        # x batch_shape: [batch_size, dimension]
+        # Return batch_shape: [batch_size]
         return torch.sum(self.param1 * x ** 2 + self.param2 * torch.sin(x), dim=-1)
 ```
 

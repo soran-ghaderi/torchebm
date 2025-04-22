@@ -26,7 +26,7 @@ class MultimodalEnergy:
         )
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        # Ensure input has correct dtype and shape
+        # Ensure input has correct dtype and batch_shape
         x = x.to(dtype=self.dtype)
         if x.dim() == 1:
             x = x.view(1, -1)
@@ -48,7 +48,7 @@ class MultimodalEnergy:
         return energy
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-        # Ensure input has correct dtype and shape
+        # Ensure input has correct dtype and batch_shape
         x = x.to(dtype=self.dtype)
         if x.dim() == 1:
             x = x.view(1, -1)
@@ -64,7 +64,7 @@ class MultimodalEnergy:
             weights_exp.unsqueeze(-1) * diff / normalizer.unsqueeze(-1), dim=1
         )
 
-        return gradient.squeeze()  # Ensure consistent output shape
+        return gradient.squeeze()  # Ensure consistent output batch_shape
 
     def to(self, device):
         self.device = device
@@ -84,7 +84,7 @@ class ModifiedLangevinDynamics(LangevinDynamics):
         current_state = initial_state.clone()
 
         if return_trajectory:
-            trajectory = [current_state.view(1, -1)]  # Ensure consistent shape
+            trajectory = [current_state.view(1, -1)]  # Ensure consistent batch_shape
 
         diagnostics = {"energies": []} if return_diagnostics else None
 
@@ -99,7 +99,9 @@ class ModifiedLangevinDynamics(LangevinDynamics):
             current_state = current_state - self.step_size * grad + noise
 
             if return_trajectory:
-                trajectory.append(current_state.view(1, -1))  # Ensure consistent shape
+                trajectory.append(
+                    current_state.view(1, -1)
+                )  # Ensure consistent batch_shape
 
             if return_diagnostics:
                 diagnostics["energies"].append(

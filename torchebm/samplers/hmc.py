@@ -36,7 +36,7 @@ Classes:
 
     # Run sampling
     samples, diagnostics = hmc.sample_chain(initial_state, n_steps=100, return_diagnostics=True)
-    print(f"Samples: {samples.shape}")
+    print(f"Samples: {samples.batch_shape}")
     print(f"Diagnostics: {diagnostics.keys()}")
     ```
 
@@ -114,7 +114,7 @@ Classes:
 
 ---
 
-## Advanced Insights
+## Useful Insights
 
 !!! abstract "Why HMC Outperforms Other MCMC Methods"
     HMC's use of gradients and dynamics reduces random-walk behavior, making it particularly effective for:
@@ -177,7 +177,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         ValueError: For invalid parameter ranges
 
     Methods:
-        _initialize_momentum(shape): Generate initial momentum from Gaussian distribution.
+        _initialize_momentum(batch_shape): Generate initial momentum from Gaussian distribution.
         _compute_kinetic_energy(p): Compute the kinetic energy of the momentum.
         _leapfrog_step(position, momentum, gradient_fn): Perform a single leapfrog step.
         _leapfrog_integration(position, momentum): Perform full leapfrog integration.
@@ -411,7 +411,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         5. Accept/reject based on Metropolis-Hastings criterion
 
         Args:
-            current_position: Current position tensor of shape (batch_size, dim).
+            current_position: Current position tensor of batch_shape (batch_size, dim).
 
         Returns:
             new_position: Updated position tensor
@@ -503,9 +503,9 @@ class HamiltonianMonteCarlo(BaseSampler):
             Final samples:
 
                 - If return_trajectory=False and return_diagnostics=False:
-                    Tensor of shape (n_samples, dim) with final samples.
+                    Tensor of batch_shape (n_samples, dim) with final samples.
                 - If return_trajectory=True and return_diagnostics=False:
-                    Tensor of shape (n_samples, n_steps, dim) with the trajectory of all samples.
+                    Tensor of batch_shape (n_samples, n_steps, dim) with the trajectory of all samples.
                 - If return_diagnostics=True:
                     Tuple of (samples, diagnostics) where diagnostics contains information about
                     the sampling process, including mean, variance, energy values, and acceptance rates.
@@ -596,7 +596,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                     # Energy values (ensure finite values)
                     energy = self.energy_function(
                         x
-                    )  # assumed to have shape (n_samples,)
+                    )  # assumed to have batch_shape (n_samples,)
                     energy = torch.clamp(
                         energy, min=-1e10, max=1e10
                     )  # Prevent extreme energy values
@@ -640,7 +640,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             n_samples: Number of parallel chains (if None, assumed to be 1).
 
         Returns:
-            Empty tensor of shape (n_steps, 4, n_samples, dim) to store diagnostics.
+            Empty tensor of batch_shape (n_steps, 4, n_samples, dim) to store diagnostics.
         """
         if n_samples is not None:
             return torch.empty(
