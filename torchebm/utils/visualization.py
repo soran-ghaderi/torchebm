@@ -292,7 +292,7 @@ def plot_sample_trajectories(
     Plot sample trajectories, optionally on an energy landscape background.
 
     Args:
-        trajectories: Tensor of trajectories with batch_shape [n_chains, n_steps, 2]
+        trajectories: Tensor of trajectories with batch_shape [n_chains, k_steps, 2]
         energy_fn: The energy function to visualize as background (optional)
         x_range: Range for the x-axis (if None, determined from data)
         y_range: Range for the y-axis (if None, determined from data)

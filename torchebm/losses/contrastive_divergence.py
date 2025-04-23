@@ -45,7 +45,7 @@ Classes:
     cd_loss = ContrastiveDivergence(
         energy_function=energy_fn,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False
     )
 
@@ -108,7 +108,7 @@ Classes:
 ## Practical Considerations
 
 !!! warning "Tuning Parameters"
-    - **n_steps**: More steps improves quality of negative samples but increases computational cost.
+    - **k_steps**: More steps improves quality of negative samples but increases computational cost.
     - **persistent**: Setting to True enables PCD, which often improves learning for complex distributions.
     - **sampler parameters**: The quality of CD depends heavily on the underlying MCMC sampler parameters.
 
@@ -184,7 +184,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
     Args:
         energy_function (BaseEnergyFunction): Energy function to train
         sampler (BaseSampler): MCMC sampler for generating negative samples
-        n_steps (int): Number of MCMC steps (k in CD-k)
+        k_steps (int): Number of MCMC steps (k in CD-k)
         persistent (bool): Whether to use persistent Contrastive Divergence
         dtype (torch.dtype): Data type for computations
         device (torch.device): Device to run computations on
@@ -197,7 +197,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         cd_loss = ContrastiveDivergence(
             energy_function=energy_fn,
             sampler=sampler,
-            n_steps=10,
+            k_steps=10,
             persistent=False
         )
 
@@ -225,7 +225,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         This method implements the energy_functions CD algorithm by:
 
         1. Initializing MCMC chains (either from data or persistent state)
-        2. Running the sampler for n_steps to generate negative samples
+        2. Running the sampler for k_steps to generate negative samples
         3. Computing the CD loss using the energy difference
 
         Args:
@@ -252,26 +252,12 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         ):
             self.initialize_buffer(x.shape)
 
-        # if self.persistent:
-        #     if self.chain is None or self.chain.shape[0] != batch_size:
-        #         print(
-        #             f"Initializing persistent chain (size {batch_size})..."
-        #         )  # Logging
-        #         init_noise = torch.randn_like(x)
-        #         # self.chain = self.sampler.sample(x=init_noise, n_steps=self.n_stpes).detach() # improve a bit before starting maybe? decide later..
-        #         self.chain = init_noise.detach()
-        #
-        #     start_points = self.chain.to(self.device, dtype=self.dtype)
-
-        # else:
-        #     start_points = x.detach()
-
         start_points = self.get_negative_samples(batch_size, data_shape)
 
         # generate negative samples
         pred_samples = self.sampler.sample(
             x=start_points,
-            n_steps=self.n_steps,
+            n_steps=self.k_steps,
             # n_samples=batch_size,
         ).detach()
 
@@ -317,7 +303,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
 class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     def __init__(self, buffer_size=100):
-        super().__init__(n_steps=1)
+        super().__init__(k_steps=1)
         self.buffer = None  # Persistent chain state
         self.buffer_size = buffer_size
 
@@ -328,7 +314,7 @@ class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     #                                   device=x_pos.device)
     #
     #     # Update buffer with Gibbs steps
-    #     for _ in range(self.n_steps):
+    #     for _ in range(self.k_steps):
     #         self.buffer = energy_model.gibbs_step(self.buffer)
     #
     #     # Return a subset of the buffer as negative samples
@@ -343,7 +329,7 @@ class ParallelTemperingCD(BaseContrastiveDivergence):
 
     # def sample(self, energy_model, x_pos):
     #     chains = [x_pos.detach().clone() for _ in self.temps]
-    #     for _ in range(self.n_steps):
+    #     for _ in range(self.k_steps):
     #         # Run Gibbs steps at each temperature
     #         for i, temp in enumerate(self.temps):
     #             chains[i] = energy_model.gibbs_step(chains[i], temp=temp)

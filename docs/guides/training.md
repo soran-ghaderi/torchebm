@@ -56,7 +56,7 @@ def train_step_cd(data_batch, k_steps=10):
     # Start from random noise
     neg_samples = torch.randn_like(data_batch)
 
-    # Sample for n_steps steps
+    # Sample for k_steps steps
     neg_samples = sampler.sample(
         initial_points=neg_samples,
         n_steps=k_steps,
@@ -99,7 +99,7 @@ def train_step_pcd(data_batch, k_steps=10):
     indices = torch.randperm(persistent_samples.shape[0])[:data_batch.shape[0]]
     initial_samples = persistent_samples[indices].clone()
 
-    # Sample for n_steps steps
+    # Sample for k_steps steps
     neg_samples = sampler.sample(
         initial_points=initial_samples,
         n_steps=k_steps,

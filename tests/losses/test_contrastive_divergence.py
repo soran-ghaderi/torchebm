@@ -85,20 +85,20 @@ def cd_loss(request, energy_function, sampler):
         return ContrastiveDivergence(
             energy_function=energy_function,
             sampler=sampler,
-            n_steps=10,
+            k_steps=10,
             persistent=False,
             device=device,
         )
 
     params = request.param
     device = params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
-    n_steps = params.get("n_steps", 10)
+    k_steps = params.get("k_steps", 10)
     persistent = params.get("persistent", False)
 
     return ContrastiveDivergence(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=n_steps,
+        k_steps=k_steps,
         persistent=persistent,
         device=device,
     )
@@ -110,7 +110,7 @@ def test_contrastive_divergence_initialization(energy_function, sampler):
     cd = ContrastiveDivergence(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
@@ -118,7 +118,7 @@ def test_contrastive_divergence_initialization(energy_function, sampler):
     assert isinstance(cd, ContrastiveDivergence)
     assert cd.energy_function == energy_function
     assert cd.sampler == sampler
-    assert cd.n_steps == 10
+    assert cd.k_steps == 10
     assert cd.persistent is False
     assert cd.device == device
     assert cd.replay_buffer is None
@@ -156,7 +156,7 @@ def test_contrastive_divergence_persistence(energy_function, sampler, persistent
     cd = ContrastiveDivergence(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=persistent,
         device=device,
     )
@@ -181,22 +181,22 @@ def test_contrastive_divergence_persistence(energy_function, sampler, persistent
         (
             {"type": "gaussian", "mean": torch.zeros(2), "cov": torch.eye(2)},
             {"device": "cuda" if torch.cuda.is_available() else "cpu"},
-            {"n_steps": 5, "persistent": False},
+            {"k_steps": 5, "persistent": False},
         ),
         (
             {"type": "gaussian", "mean": torch.zeros(2), "cov": 2 * torch.eye(2)},
             {"device": "cuda" if torch.cuda.is_available() else "cpu"},
-            {"n_steps": 10, "persistent": True},
+            {"k_steps": 10, "persistent": True},
         ),
         (
             {"type": "double_well", "barrier_height": 2.0},
             {"device": "cuda" if torch.cuda.is_available() else "cpu"},
-            {"n_steps": 20, "persistent": False},
+            {"k_steps": 20, "persistent": False},
         ),
         (
             {"type": "mlp", "input_dim": 2, "hidden_dim": 16},
             {"device": "cuda" if torch.cuda.is_available() else "cpu"},
-            {"n_steps": 15, "persistent": True},
+            {"k_steps": 15, "persistent": True},
         ),
     ],
     indirect=True,
@@ -212,16 +212,16 @@ def test_contrastive_divergence_with_different_energy_functions(cd_loss):
     assert samples.shape == x.shape
 
 
-@pytest.mark.parametrize("n_steps", [1, 5, 20])
-def test_contrastive_divergence_n_steps_effect(energy_function, sampler, n_steps):
+@pytest.mark.parametrize("k_steps", [1, 5, 20])
+def test_contrastive_divergence_k_steps_effect(energy_function, sampler, k_steps):
     """Test the effect of different numbers of MCMC steps."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Create CD with specific n_steps
+    # Create CD with specific k_steps
     cd = ContrastiveDivergence(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=n_steps,
+        k_steps=k_steps,
         persistent=False,
         device=device,
     )
@@ -250,7 +250,7 @@ def test_contrastive_divergence_with_different_sampler_settings(
     cd = ContrastiveDivergence(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
@@ -274,7 +274,7 @@ def test_contrastive_divergence_chain_reset_when_batch_size_changes():
     cd = ContrastiveDivergence(
         energy_function=energy_fn,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=True,
         device=device,
     )
@@ -313,7 +313,7 @@ def test_contrastive_divergence_cuda():
     cd = ContrastiveDivergence(
         energy_function=energy_fn,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
@@ -338,7 +338,7 @@ def test_contrastive_divergence_deterministic():
     cd1 = ContrastiveDivergence(
         energy_function=energy_fn,
         sampler=sampler1,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
@@ -354,7 +354,7 @@ def test_contrastive_divergence_deterministic():
     cd2 = ContrastiveDivergence(
         energy_function=energy_fn,
         sampler=sampler2,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
@@ -379,7 +379,7 @@ def test_contrastive_divergence_gradient_flow():
     cd = ContrastiveDivergence(
         energy_function=energy_fn,
         sampler=sampler,
-        n_steps=5,
+        k_steps=5,
         persistent=False,
         device=device,
     )

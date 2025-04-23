@@ -298,12 +298,12 @@ class HarmonicEnergy(BaseEnergyFunction):
 
     # Override gradient for efficiency (analytical gradient)
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
-    #     """Computes the analytical gradient: n_steps * x."""
+    #     """Computes the analytical gradient: k_steps * x."""
     #     # Ensure x is compatible batch_shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
     #
-    #     return self.n_steps * x
+    #     return self.k_steps * x
 
 
 class RosenbrockEnergy(BaseEnergyFunction):

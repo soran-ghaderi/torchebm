@@ -96,8 +96,8 @@ sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=dev
 
 cd_loss_fn = ContrastiveDivergence(
     energy_function=energy_fn,
-    sampler=sampler, 
-    n_steps=10 # MCMC steps for negative samples gen
+    sampler=sampler,
+    k_steps=10  # MCMC steps for negative samples gen
 )
 
 optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
@@ -121,7 +121,7 @@ for epoch in range(10):
         epoch_loss += loss.item()
 
     avg_loss = epoch_loss / len(dataloader)
-    print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
+    print(f"Epoch {epoch + 1}/{EPOCHS}, Loss: {avg_loss:.6f}")
 ```
 
 ### 2. Hamiltonian Monte Carlo (HMC)
@@ -152,8 +152,8 @@ final_samples, diagnostics = hmc_sampler.sample(
   return_diagnostics=True,
 )
 
-print(final_samples.shape)  # Trajectory batch_shape: (250, 500, 10) - (n_samples, n_steps, dim)
-print(diagnostics.shape)  # Diagnostics batch_shape: (500, 4, 250, 10) - (n_steps, 4, n_samples, dim)
+print(final_samples.shape)  # Trajectory batch_shape: (250, 500, 10) - (n_samples, k_steps, dim)
+print(diagnostics.shape)  # Diagnostics batch_shape: (500, 4, 250, 10) - (k_steps, 4, n_samples, dim)
 # The diagnostics contain: Mean (dim=0), Variance (dim=1), Energy (dim=2), Acceptance rates (dim=3)
 
 # Sample from a custom initialization

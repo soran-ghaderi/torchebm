@@ -107,7 +107,7 @@ samples, diagnostics = sampler.sample(
     return_diagnostics=True
 )
 
-# Diagnostics batch_shape: [n_steps, n_diagnostics, n_samples, dim]
+# Diagnostics batch_shape: [k_steps, n_diagnostics, n_samples, dim]
 # Includes: Mean, Variance, Energy, Acceptance rate (for HMC)
 ```
 

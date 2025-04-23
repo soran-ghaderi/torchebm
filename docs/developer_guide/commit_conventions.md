@@ -2,7 +2,7 @@
 sidebar_position: 2
 title: Commit Message Conventions
 description: Guidelines for writing standardized commit messages
-icon: fontawesome/brands/git
+icon: octicons/git-commit-16
 ---
 
 # Commit Message Conventions

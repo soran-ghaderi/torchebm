@@ -149,7 +149,7 @@ def test_hmc_sample_chain_with_trajectory(hmc_sampler):
     trajectory = hmc_sampler.sample(dim=dim, n_steps=n_steps, return_trajectory=True)
 
     # Check trajectory batch_shape and validity
-    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, n_steps, dim)
+    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, k_steps, dim)
     assert torch.all(torch.isfinite(trajectory))
 
 
@@ -178,7 +178,7 @@ def test_hmc_sample_chain_with_diagnostics(hmc_sampler):
         4,
         1,
         dim,
-    )  # (n_steps, n_diagnostics, n_samples, dim)
+    )  # (k_steps, n_diagnostics, n_samples, dim)
     assert torch.all(torch.isfinite(diagnostics))
 
 

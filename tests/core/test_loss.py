@@ -37,7 +37,7 @@ class MockCD(BaseContrastiveDivergence):
 
         # Generate negative samples
         pred_samples = self.sampler.sample(
-            x=start_points, n_steps=self.n_steps
+            x=start_points, n_steps=self.k_steps
         ).detach()
 
         # Update persistent chain if needed
@@ -84,7 +84,7 @@ def mock_cd(energy_function, sampler):
     return MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
@@ -121,14 +121,14 @@ def test_base_contrastive_divergence_initialization(energy_function, sampler):
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
     assert isinstance(cd, BaseContrastiveDivergence)
     assert cd.energy_function == energy_function
     assert cd.sampler == sampler
-    assert cd.n_steps == 10
+    assert cd.k_steps == 10
     assert cd.persistent is False
     assert cd.device == device
     assert cd.chain is None
@@ -142,7 +142,7 @@ def test_base_contrastive_divergence_initialization_persistent(
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=True,
         device=device,
     )
@@ -161,7 +161,7 @@ def test_base_contrastive_divergence_init_chain():
             noise_scale=0.01,
             device=device,
         ),
-        n_steps=10,
+        k_steps=10,
         persistent=True,
         device=device,
     )
@@ -199,14 +199,14 @@ def test_contrastive_divergence_call_forward(mock_cd):
     assert result_call[0].shape == torch.Size([])
 
 
-@pytest.mark.parametrize("n_steps", [1, 5, 10])
+@pytest.mark.parametrize("k_steps", [1, 5, 10])
 def test_contrastive_divergence_n_steps(energy_function, sampler, n_steps):
     """Test CD with different numbers of sampling steps."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=n_steps,
+        k_steps=n_steps,
         persistent=False,
         device=device,
     )
@@ -224,7 +224,7 @@ def test_contrastive_divergence_persistent(energy_function, sampler):
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=True,
         device=device,
     )
@@ -262,7 +262,7 @@ def test_contrastive_divergence_cuda():
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         device=device,
     )
@@ -291,7 +291,7 @@ def test_contrastive_divergence_dtype():
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=False,
         dtype=dtype,
         device=device,
@@ -321,7 +321,7 @@ def test_different_batch_sizes(energy_function, sampler):
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        n_steps=10,
+        k_steps=10,
         persistent=True,
         device=device,
     )

@@ -96,7 +96,7 @@ def test_langevin_dynamics_sample_trajectory(langevin_sampler):
     trajectory = langevin_sampler.sample(
         dim=dim, n_steps=n_steps, return_trajectory=True
     )
-    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, n_steps, dim)
+    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, k_steps, dim)
     assert torch.all(torch.isfinite(trajectory))
 
 

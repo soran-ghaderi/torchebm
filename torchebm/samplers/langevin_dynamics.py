@@ -36,7 +36,7 @@ Classes:
 
     # Run sampling
     samples, diagnostics = sampler.sample_chain(
-        x=initial_state, n_steps=100, n_samples=5, return_diagnostics=True
+        x=initial_state, k_steps=100, n_samples=5, return_diagnostics=True
     )
     print(f"Samples batch_shape: {samples.batch_shape}")
     print(f"Diagnostics keys: {diagnostics.batch_shape}")
@@ -143,7 +143,7 @@ class LangevinDynamics(BaseSampler):
     !!! note "Algorithm Summary"
 
         1. If `x` is not provided, initialize it with Gaussian noise.
-        2. Iteratively update `x` for `n_steps` using `self.langevin_step()`.
+        2. Iteratively update `x` for `k_steps` using `self.langevin_step()`.
         3. Optionally track trajectory (`return_trajectory=True`).
         4. Optionally collect diagnostics such as mean, variance, and energy gradients.
 
@@ -160,8 +160,8 @@ class LangevinDynamics(BaseSampler):
 
     Methods:
         langevin_step(prev_x, noise): Perform a Langevin step.
-        sample_chain(x, dim, n_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
-        _setup_diagnostics(dim, n_steps, n_samples): Initialize the diagnostics
+        sample_chain(x, dim, k_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
+        _setup_diagnostics(dim, k_steps, n_samples): Initialize the diagnostics
 
     !!! example "Basic Usage"
         ```python
@@ -178,7 +178,7 @@ class LangevinDynamics(BaseSampler):
         # Sample 100 points from 5 parallel chains
         samples = sampler.sample_chain(
             dim=2,
-            n_steps=50,
+            k_steps=50,
             n_samples=100
         )
         ```
@@ -282,7 +282,7 @@ class LangevinDynamics(BaseSampler):
 
                 - If `return_trajectory=False` and `return_diagnostics=False`, returns the final
                   samples of batch_shape `(n_samples, dim)`.
-                - If `return_trajectory=True`, returns a tensor of batch_shape `(n_samples, n_steps, dim)`,
+                - If `return_trajectory=True`, returns a tensor of batch_shape `(n_samples, k_steps, dim)`,
                   containing the sampled trajectory.
                 - If `return_diagnostics=True`, returns a tuple `(samples, diagnostics)`, where
                   `diagnostics` is a list of dictionaries storing per-step statistics.
@@ -303,7 +303,7 @@ class LangevinDynamics(BaseSampler):
             # Generate 100 samples from 5 parallel chains
             samples = sampler.sample_chain(
                 dim=32,
-                n_steps=500,
+                k_steps=500,
                 n_samples=100,
                 return_diagnostics=True
             )
@@ -328,7 +328,6 @@ class LangevinDynamics(BaseSampler):
         ):
             for i in range(n_steps):
                 # todo: Add decay logic
-                # fixme: retrieve from replay buffer 95% of the time and generate randomly 5% of the time
                 # todo: adaptive step size and scheduling
                 # Generate fresh noise for each step
                 noise = torch.randn_like(x, device=self.device)

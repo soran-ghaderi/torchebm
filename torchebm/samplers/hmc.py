@@ -35,7 +35,7 @@ Classes:
     initial_state = torch.randn(10, 2)
 
     # Run sampling
-    samples, diagnostics = hmc.sample_chain(initial_state, n_steps=100, return_diagnostics=True)
+    samples, diagnostics = hmc.sample_chain(initial_state, k_steps=100, return_diagnostics=True)
     print(f"Samples: {samples.batch_shape}")
     print(f"Diagnostics: {diagnostics.keys()}")
     ```
@@ -182,8 +182,8 @@ class HamiltonianMonteCarlo(BaseSampler):
         _leapfrog_step(position, momentum, gradient_fn): Perform a single leapfrog step.
         _leapfrog_integration(position, momentum): Perform full leapfrog integration.
         hmc_step(current_position): Perform one HMC step with Metropolis-Hastings acceptance.
-        sample_chain(x, dim, n_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
-        _setup_diagnostics(dim, n_steps, n_samples): Initialize the diagnostics.
+        sample_chain(x, dim, k_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
+        _setup_diagnostics(dim, k_steps, n_samples): Initialize the diagnostics.
 
     !!! example "Basic Usage"
         ```python
@@ -200,7 +200,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         # Sample 100 points from 5 parallel chains
         samples = sampler.sample_chain(
             dim=2,
-            n_steps=100,
+            k_steps=100,
             n_samples=5
         )
         ```
@@ -505,7 +505,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                 - If return_trajectory=False and return_diagnostics=False:
                     Tensor of batch_shape (n_samples, dim) with final samples.
                 - If return_trajectory=True and return_diagnostics=False:
-                    Tensor of batch_shape (n_samples, n_steps, dim) with the trajectory of all samples.
+                    Tensor of batch_shape (n_samples, k_steps, dim) with the trajectory of all samples.
                 - If return_diagnostics=True:
                     Tuple of (samples, diagnostics) where diagnostics contains information about
                     the sampling process, including mean, variance, energy values, and acceptance rates.
@@ -520,7 +520,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             # Run 10 parallel chains for 1000 steps
             samples, diagnostics = hmc.sample_chain(
                 dim=10,
-                n_steps=1000,
+                k_steps=1000,
                 n_samples=10,
                 return_diagnostics=True
             )
@@ -640,7 +640,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             n_samples: Number of parallel chains (if None, assumed to be 1).
 
         Returns:
-            Empty tensor of batch_shape (n_steps, 4, n_samples, dim) to store diagnostics.
+            Empty tensor of batch_shape (k_steps, 4, n_samples, dim) to store diagnostics.
         """
         if n_samples is not None:
             return torch.empty(

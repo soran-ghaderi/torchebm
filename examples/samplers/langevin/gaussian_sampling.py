@@ -41,7 +41,7 @@ samples, diagnostics = langevin_sampler.sample(
     return_trajectory=True,
     return_diagnostics=True,
 )
-print(samples.shape)  # Output: (250, 500, 10) -> (samples, n_steps, dim)
+print(samples.shape)  # Output: (250, 500, 10) -> (samples, k_steps, dim)
 # ===================== Example 1 =====================
 
 

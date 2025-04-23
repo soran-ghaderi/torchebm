@@ -113,7 +113,7 @@ class BaseContrastiveDivergence(BaseLoss):
     Args:
         energy_function: The energy function being trained
         sampler: MCMC sampler for generating negative samples
-        n_steps: Number of MCMC steps to perform for each update
+        k_steps: Number of MCMC steps to perform for each update
         persistent: Whether to use replay buffer (PCD)
         buffer_size: Size of the buffer for storing replay buffer
         new_sample_ratio: Ratio of new samples (default 5%)
@@ -128,7 +128,7 @@ class BaseContrastiveDivergence(BaseLoss):
         self,
         energy_function: BaseEnergyFunction,
         sampler: BaseSampler,
-        n_steps: int = 1,
+        k_steps: int = 1,
         persistent: bool = False,
         buffer_size: int = 100,
         new_sample_ratio: float = 0.05,
@@ -141,7 +141,7 @@ class BaseContrastiveDivergence(BaseLoss):
         super().__init__()
         self.energy_function = energy_function
         self.sampler = sampler
-        self.n_steps = n_steps
+        self.k_steps = k_steps
         self.persistent = persistent
         self.buffer_size = buffer_size
         self.new_sample_ratio = new_sample_ratio
@@ -184,6 +184,11 @@ class BaseContrastiveDivergence(BaseLoss):
             or self.replay_buffer.batch_shape[1:] != batch_shape[1:]
         ):
 
+            if self.buffer_size < batch_shape[0]:
+                raise ValueError(
+                    f"Replay buffer size {self.buffer_size} is smaller than batch size {batch_shape[0]}, please increase the replay buffer size. "
+                    f"Hint: ContrastiveDivergence(...,buffer_size=BATCH_SIZE,...)."
+                )
             buffer_shape = (self.buffer_size,) + tuple(
                 batch_shape[1:]
             )  # shape: [buffer_size, *data_shape]
@@ -204,15 +209,15 @@ class BaseContrastiveDivergence(BaseLoss):
                     )  # Adjust based on your GPU memory
                     for i in range(0, self.buffer_size, chunk_size):
                         end = min(i + chunk_size, self.buffer_size)
-                        self.sample_buffer[i:end] = self.sampler.sample(
-                            x=self.sample_buffer[i:end], n_steps=self.init_steps
+                        self.replay_buffer[i:end] = self.sampler.sample(
+                            x=self.replay_buffer[i:end], n_steps=self.init_steps
                         ).detach()
 
             self.buffer_ptr = torch.tensor(0, dtype=torch.long, device=self.device)
             self.buffer_initialized = True
             print(f"Replay buffer initialized with {self.buffer_size} samples")
 
-        return self.replay_buffer  # not used anymore
+        return self.replay_buffer
 
     def get_negative_samples(self, batch_size, data_shape) -> torch.Tensor:
         """Get negative samples using the replay buffer strategy.

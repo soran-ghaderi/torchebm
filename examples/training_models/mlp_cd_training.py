@@ -173,7 +173,11 @@ if __name__ == "__main__":
         device=device,
     )
     loss_fn = ContrastiveDivergence(
-        energy_function=energy_model, sampler=sampler, n_steps=CD_K, persistent=USE_PCD
+        energy_function=energy_model,
+        sampler=sampler,
+        k_steps=CD_K,
+        persistent=USE_PCD,
+        buffer_size=BATCH_SIZE,
     ).to(
         device
     )  # Loss function itself can be on device

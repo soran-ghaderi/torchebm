@@ -15,8 +15,8 @@ class BaseSampler(ABC):
         device (str): Device to run the computations on (e.g., "cpu" or "cuda").
 
     Methods:
-        sample(x, dim, n_steps, n_samples, thin, return_trajectory, return_diagnostics): Run the sampling process.
-        sample_chain(dim, n_steps, n_samples, thin, return_trajectory, return_diagnostics): Run the sampling process.
+        sample(x, dim, k_steps, n_samples, thin, return_trajectory, return_diagnostics): Run the sampling process.
+        sample_chain(dim, k_steps, n_samples, thin, return_trajectory, return_diagnostics): Run the sampling process.
         _setup_diagnostics(): Initialize the diagnostics dictionary.
         to(device): Move sampler to specified device.
     """
@@ -52,7 +52,7 @@ class BaseSampler(ABC):
     Args:
         x: Initial state to start the sampling from.
         dim: Dimension of the state space.
-        n_steps: Number of steps to take between samples.
+        k_steps: Number of steps to take between samples.
         n_samples: Number of samples to generate.
         thin: Thinning factor (not supported yet).
         return_trajectory: Whether to return the trajectory of the samples.
