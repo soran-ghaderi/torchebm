@@ -11,7 +11,7 @@ output_dir.mkdir(parents=True, exist_ok=True)
 
 # Create energy function and sampler
 energy_fn = RastriginEnergy(a=10.0)
-sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01)
+sampler = LangevinDynamics(energy_function=energy_fn, step_size_scheduler=0.01)
 
 # Set random seed for reproducibility
 torch.manual_seed(42)

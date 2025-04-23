@@ -4,9 +4,6 @@ Scheduler classes for MCMC samplers and related algorithms.
 
 import math
 from abc import ABC, abstractmethod
-from typing import Callable, Optional, Union
-
-import torch
 
 
 class BaseScheduler(ABC):
@@ -130,30 +127,4 @@ class CosineScheduler(BaseScheduler):
                 self.final_value
                 + (self.initial_value - self.final_value) * cosine_factor
             )
-        return self.current_value
-
-
-class CustomScheduler(BaseScheduler):
-    """Scheduler with custom function.
-
-    This scheduler allows for a user-defined function to determine the value at each step.
-    """
-
-    def __init__(
-        self, initial_value: float, schedule_fn: Callable[[int, float], float]
-    ):
-        """
-        Initialize scheduler with custom function.
-
-        Args:
-            initial_value: Initial parameter value
-            schedule_fn: Custom function that takes (step_count, initial_value) and returns new value
-        """
-        super().__init__(initial_value)
-        self.schedule_fn = schedule_fn
-
-    def step(self) -> float:
-        """Update value using custom function."""
-        self.step_count += 1
-        self.current_value = self.schedule_fn(self.step_count, self.initial_value)
         return self.current_value

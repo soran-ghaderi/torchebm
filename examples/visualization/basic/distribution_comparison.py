@@ -20,7 +20,7 @@ cov = torch.tensor([[1.0, 0.5], [0.5, 1.0]])
 energy_fn = GaussianEnergy(mean=mean, cov=cov)
 
 # Sample using Langevin dynamics
-sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01)
+sampler = LangevinDynamics(energy_function=energy_fn, step_size_scheduler=0.01)
 
 # Generate samples
 n_samples = 5000

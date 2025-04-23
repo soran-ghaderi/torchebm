@@ -29,7 +29,7 @@ Classes:
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
 
     # Initialize HMC sampler
-    hmc = HamiltonianMonteCarlo(energy_fn, step_size=0.1, n_leapfrog_steps=10)
+    hmc = HamiltonianMonteCarlo(energy_fn, step_size_scheduler=0.1, n_leapfrog_steps=10)
 
     # Starting points for 10 chains
     initial_state = torch.randn(10, 2)
@@ -193,7 +193,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         # Initialize HMC sampler
         sampler = HamiltonianMonteCarlo(
             energy_function=energy_fn,
-            step_size=0.1,
+            step_size_scheduler=0.1,
             n_leapfrog_steps=10
         )
 
@@ -206,7 +206,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         ```
 
     !!! warning "Parameter Relationships"
-        - Decreasing `step_size` improves stability but may reduce mixing.
+        - Decreasing `step_size_scheduler` improves stability but may reduce mixing.
         - Increasing `n_leapfrog_steps` allows exploring more distant regions but increases computation.
         - The `mass` parameter can be tuned to match the geometry of the target distribution.
     """
@@ -234,11 +234,11 @@ class HamiltonianMonteCarlo(BaseSampler):
             device: Device to run computations on ("cpu" or "cuda").
 
         Raises:
-            ValueError: If step_size or n_leapfrog_steps is non-positive.
+            ValueError: If step_size_scheduler or n_leapfrog_steps is non-positive.
         """
         super().__init__(energy_function=energy_function, dtype=dtype, device=device)
         if step_size <= 0:
-            raise ValueError("step_size must be positive")
+            raise ValueError("step_size_scheduler must be positive")
         if n_leapfrog_steps <= 0:
             raise ValueError("n_leapfrog_steps must be positive")
 

@@ -67,7 +67,10 @@ def sampler(energy_function):
     """Fixture to create a Langevin dynamics sampler for testing."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return LangevinDynamics(
-        energy_function=energy_function, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_function,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
 
 
@@ -157,8 +160,8 @@ def test_base_contrastive_divergence_init_chain():
         energy_function=GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)),
         sampler=LangevinDynamics(
             energy_function=GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)),
-            step_size=0.1,
-            noise_scale=0.01,
+            step_size_scheduler=0.1,
+            noise_scale_scheduler=0.01,
             device=device,
         ),
         k_steps=10,
@@ -256,7 +259,10 @@ def test_contrastive_divergence_cuda():
         mean=torch.zeros(2, device=device), cov=torch.eye(2, device=device)
     )
     sampler = LangevinDynamics(
-        energy_function=energy_function, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_function,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
 
     cd = MockCD(
@@ -285,7 +291,10 @@ def test_contrastive_divergence_dtype():
     )
 
     sampler = LangevinDynamics(
-        energy_function=energy_function, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_function,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
 
     cd = MockCD(

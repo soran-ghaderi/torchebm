@@ -13,7 +13,7 @@ torch.manual_seed(42)
 
 # Create energy function and sampler
 energy_fn = DoubleWellEnergy(barrier_height=2.0)
-sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01)
+sampler = LangevinDynamics(energy_function=energy_fn, step_size_scheduler=0.01)
 
 # Parameters for sampling
 dim = 2

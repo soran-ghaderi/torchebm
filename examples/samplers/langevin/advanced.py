@@ -21,7 +21,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Initialize Langevin dynamics sampler
 langevin_sampler = LangevinDynamics(
-    energy_function=energy_fn, step_size=5e-3, device=device
+    energy_function=energy_fn, step_size_scheduler=5e-3, device=device
 ).to(device)
 
 # Sample 10,000 points in 10 dimensions
@@ -62,8 +62,8 @@ def basic_example():
     # Initialize sampler
     sampler = LangevinDynamics(
         energy_function=energy_fn,
-        step_size=0.01,
-        noise_scale=0.1,
+        step_size_scheduler=0.01,
+        noise_scale_scheduler=0.1,
         device=device,  # Make sure to pass the same device
     )
 
@@ -103,8 +103,8 @@ def advanced_example():
     energy_fn = DoubleWellEnergy(barrier_height=2.0)
     sampler = LangevinDynamics(
         energy_function=energy_fn,
-        step_size=0.001,
-        noise_scale=0.1,
+        step_size_scheduler=0.001,
+        noise_scale_scheduler=0.1,
         decay=0.1,  # for stability
         device=device,
     )
@@ -167,7 +167,9 @@ def sampling_utilities_example():
     # Initialize sampler with GPU support if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     sampler = LangevinDynamics(
-        energy_function=HarmonicEnergy(), step_size=0.01, noise_scale=0.1
+        energy_function=HarmonicEnergy(),
+        step_size_scheduler=0.01,
+        noise_scale_scheduler=0.1,
     ).to(device)
 
     # Generate samples with thinning
@@ -200,7 +202,7 @@ def langevin_gaussain_sampling():
 
     # Initialize Langevin dynamics model
     langevin_sampler = LangevinDynamics(
-        energy_function=energy_fn, step_size=5e-3, device=device
+        energy_function=energy_fn, step_size_scheduler=5e-3, device=device
     ).to(device)
 
     # Initial state: batch of 100 samples, 10-dimensional space

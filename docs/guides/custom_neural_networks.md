@@ -229,7 +229,7 @@ visualize_energy_function(energy_fn)
 # Sample from the learned energy function using Langevin dynamics
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size=0.01
+    step_size_scheduler=0.01
 )
 
 samples = sampler.sample(

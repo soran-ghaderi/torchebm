@@ -46,8 +46,8 @@ def hmc_sampler(request, energy_function):
     params = request.param
     device = params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
 
-    # Configure step_size and n_leapfrog_steps
-    step_size = params.get("step_size", 0.1)
+    # Configure step_size_scheduler and n_leapfrog_steps
+    step_size = params.get("step_size_scheduler", 0.1)
     n_leapfrog_steps = params.get("n_leapfrog_steps", 10)
 
     # Configure mass (optional)
@@ -265,7 +265,7 @@ def test_hmc_device_consistency(hmc_sampler):
             {"type": "double_well", "barrier_height": 2.0},
             {
                 "device": "cuda" if torch.cuda.is_available() else "cpu",
-                "step_size": 0.05,
+                "step_size_scheduler": 0.05,
                 "n_leapfrog_steps": 20,
             },
         ),

@@ -38,7 +38,7 @@ energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
 # Create sampler for generating negative samples
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size=0.01
+    step_size_scheduler=0.01
 )
 
 # Optimizer
@@ -264,7 +264,7 @@ dataset = generate_data(10000)
 energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=128)
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size=0.01
+    step_size_scheduler=0.01
 )
 
 # Optimizer

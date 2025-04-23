@@ -56,23 +56,23 @@ def sampler(request, energy_function):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         return LangevinDynamics(
             energy_function=energy_function,
-            step_size=0.1,
-            noise_scale=0.01,
+            step_size_scheduler=0.1,
+            noise_scale_scheduler=0.01,
             device=device,
         )
 
     params = request.param
     device = params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
-    step_size = params.get("step_size", 0.1)
-    noise_scale = params.get("noise_scale", 0.01)
+    step_size = params.get("step_size_scheduler", 0.1)
+    noise_scale = params.get("noise_scale_scheduler", 0.01)
 
     # Ensure energy function is on the correct device
     energy_function = energy_function.to(device)
 
     return LangevinDynamics(
         energy_function=energy_function,
-        step_size=step_size,
-        noise_scale=noise_scale,
+        step_size_scheduler=step_size,
+        noise_scale_scheduler=noise_scale,
         device=device,
     )
 
@@ -236,9 +236,9 @@ def test_contrastive_divergence_k_steps_effect(energy_function, sampler, k_steps
 @pytest.mark.parametrize(
     "sampler",
     [
-        ({"step_size": 0.01, "noise_scale": 0.001}),
-        ({"step_size": 0.1, "noise_scale": 0.01}),
-        ({"step_size": 0.5, "noise_scale": 0.05}),
+        ({"step_size_scheduler": 0.01, "noise_scale_scheduler": 0.001}),
+        ({"step_size_scheduler": 0.1, "noise_scale_scheduler": 0.01}),
+        ({"step_size_scheduler": 0.5, "noise_scale_scheduler": 0.05}),
     ],
     indirect=True,
 )
@@ -268,7 +268,10 @@ def test_contrastive_divergence_chain_reset_when_batch_size_changes():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
     sampler = LangevinDynamics(
-        energy_function=energy_fn, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_fn,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
 
     cd = ContrastiveDivergence(
@@ -307,7 +310,10 @@ def test_contrastive_divergence_cuda():
         mean=torch.zeros(2, device=device), cov=torch.eye(2, device=device)
     )
     sampler = LangevinDynamics(
-        energy_function=energy_fn, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_fn,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
 
     cd = ContrastiveDivergence(
@@ -333,7 +339,10 @@ def test_contrastive_divergence_deterministic():
     # First run
     torch.manual_seed(42)
     sampler1 = LangevinDynamics(
-        energy_function=energy_fn, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_fn,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
     cd1 = ContrastiveDivergence(
         energy_function=energy_fn,
@@ -349,7 +358,10 @@ def test_contrastive_divergence_deterministic():
     # Second run with same seeds
     torch.manual_seed(42)
     sampler2 = LangevinDynamics(
-        energy_function=energy_fn, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_fn,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
     cd2 = ContrastiveDivergence(
         energy_function=energy_fn,
@@ -373,7 +385,10 @@ def test_contrastive_divergence_gradient_flow():
     # Create a trainable energy function (MLP)
     energy_fn = MLPEnergy(input_dim=2, hidden_dim=8).to(device)
     sampler = LangevinDynamics(
-        energy_function=energy_fn, step_size=0.1, noise_scale=0.01, device=device
+        energy_function=energy_fn,
+        step_size_scheduler=0.1,
+        noise_scale_scheduler=0.01,
+        device=device,
     )
 
     cd = ContrastiveDivergence(

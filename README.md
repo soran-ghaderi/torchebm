@@ -92,12 +92,12 @@ from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 # Define a 10D Gaussian energy function
 energy_fn = MLPEnergy(input_dim=2).to(device)
-sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
+sampler = LangevinDynamics(energy_function=energy_fn, step_size_scheduler=0.01, device=device)
 
 cd_loss_fn = ContrastiveDivergence(
-    energy_function=energy_fn,
-    sampler=sampler,
-    k_steps=10  # MCMC steps for negative samples gen
+  energy_function=energy_fn,
+  sampler=sampler,
+  k_steps=10  # MCMC steps for negative samples gen
 )
 
 optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
@@ -107,21 +107,21 @@ dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
 
 # Training Loop
 for epoch in range(10):
-    epoch_loss = 0.0
-    for i, batch_data in enumerate(dataloader):
-        batch_data = batch_data.to(device)
+  epoch_loss = 0.0
+  for i, batch_data in enumerate(dataloader):
+    batch_data = batch_data.to(device)
 
-        optimizer.zero_grad()
+    optimizer.zero_grad()
 
-        loss, neg_samples = cd_loss(batch_data)
+    loss, neg_samples = cd_loss(batch_data)
 
-        loss.backward()
-        optimizer.step()
+    loss.backward()
+    optimizer.step()
 
-        epoch_loss += loss.item()
+    epoch_loss += loss.item()
 
-    avg_loss = epoch_loss / len(dataloader)
-    print(f"Epoch {epoch + 1}/{EPOCHS}, Loss: {avg_loss:.6f}")
+  avg_loss = epoch_loss / len(dataloader)
+  print(f"Epoch {epoch + 1}/{EPOCHS}, Loss: {avg_loss:.6f}")
 ```
 
 ### 2. Hamiltonian Monte Carlo (HMC)

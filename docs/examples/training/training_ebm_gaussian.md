@@ -615,8 +615,8 @@ def main():
     energy_model = MLPEnergy(INPUT_DIM, HIDDEN_DIM).to(device)
     sampler = LangevinDynamics(
         energy_function=energy_model,
-        step_size=SAMPLER_STEP_SIZE,
-        noise_scale=SAMPLER_NOISE_SCALE,
+        step_size_scheduler=SAMPLER_STEP_SIZE,
+        noise_scale_scheduler=SAMPLER_NOISE_SCALE,
         device=device,
     )
     loss_fn = ContrastiveDivergence(

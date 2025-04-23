@@ -79,6 +79,7 @@ class BaseEnergyFunction(nn.Module, ABC):
         Returns:
             torch.Tensor: Gradient tensor of the same batch_shape as x.
         """
+
         # Store original dtype and device
         original_dtype = x.dtype
         device = x.device

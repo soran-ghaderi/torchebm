@@ -53,7 +53,7 @@ energy_fn = GaussianEnergy(
 # Initialize Langevin dynamics sampler
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size=0.01,
+    step_size_scheduler=0.01,
     device=device
 ).to(device)
 
