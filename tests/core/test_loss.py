@@ -29,9 +29,9 @@ class MockCD(BaseContrastiveDivergence):
 
         # Use the sampler to generate negative samples
         if self.persistent:
-            if self.chain is None or self.chain.shape[0] != batch_size:
-                self.chain = torch.randn_like(x).detach()
-            start_points = self.chain.to(self.device, dtype=self.dtype)
+            if self.replay_buffer is None or self.replay_buffer.shape[0] != batch_size:
+                self.replay_buffer = torch.randn_like(x).detach()
+            start_points = self.replay_buffer.to(self.device, dtype=self.dtype)
         else:
             start_points = x.detach()
 
@@ -42,7 +42,7 @@ class MockCD(BaseContrastiveDivergence):
 
         # Update persistent chain if needed
         if self.persistent:
-            self.chain = pred_samples.detach()
+            self.replay_buffer = pred_samples.detach()
 
         # Compute loss
         loss = self.compute_loss(x, pred_samples)
@@ -134,7 +134,7 @@ def test_base_contrastive_divergence_initialization(energy_function, sampler):
     assert cd.k_steps == 10
     assert cd.persistent is False
     assert cd.device == device
-    assert cd.chain is None
+    assert cd.replay_buffer is None
 
 
 def test_base_contrastive_divergence_initialization_persistent(
@@ -150,10 +150,10 @@ def test_base_contrastive_divergence_initialization_persistent(
         device=device,
     )
     assert cd.persistent is True
-    assert cd.chain is None  # Should start as None even when persistent=True
+    assert cd.replay_buffer is None  # Should start as None even when persistent=True
 
 
-def test_base_contrastive_divergence_init_chain():
+def test_base_contrastive_divergence_initialize_buffer():
     """Test the initialization of the persistent chain."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     loss = MockCD(
@@ -166,16 +166,17 @@ def test_base_contrastive_divergence_init_chain():
         ),
         k_steps=10,
         persistent=True,
+        buffer_size=32,
         device=device,
     )
 
-    # Initialize the chain
+    # Initialize the replay buffer
     shape = (32, 2)  # batch_size, input_dim
-    chain = loss.initialize_buffer(shape)
+    replay_buffer = loss.initialize_buffer(shape)
 
-    assert chain.shape == shape
-    assert chain.device.type == device
-    assert chain.dtype == torch.float32
+    assert replay_buffer.shape == shape
+    assert replay_buffer.device.type == device
+    assert replay_buffer.dtype == torch.float32
 
 
 def test_base_contrastive_divergence_to_device(mock_cd):
@@ -203,13 +204,13 @@ def test_contrastive_divergence_call_forward(mock_cd):
 
 
 @pytest.mark.parametrize("k_steps", [1, 5, 10])
-def test_contrastive_divergence_n_steps(energy_function, sampler, n_steps):
+def test_contrastive_divergence_k_steps(energy_function, sampler, k_steps):
     """Test CD with different numbers of sampling steps."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,
-        k_steps=n_steps,
+        k_steps=k_steps,
         persistent=False,
         device=device,
     )
@@ -232,20 +233,20 @@ def test_contrastive_divergence_persistent(energy_function, sampler):
         device=device,
     )
 
-    # First call should initialize the chain
+    # First call should initialize the replay buffer
     x = torch.randn(10, 2, device=device)
     loss1, samples1 = cd(x)
 
-    # Chain should now be set
-    assert cd.chain is not None
-    assert cd.chain.shape == x.shape
+    # replay buffer should now be set
+    assert cd.replay_buffer is not None
+    assert cd.replay_buffer.shape == x.shape
 
-    # Second call should use the existing chain
+    # Second call should use the existing replay_buffer
     loss2, samples2 = cd(x)
 
-    # The chain should have been updated
-    assert torch.any(torch.ne(cd.chain, samples1))
-    assert torch.allclose(cd.chain, samples2)
+    # The replay_buffer should have been updated
+    assert torch.any(torch.ne(cd.replay_buffer, samples1))
+    assert torch.allclose(cd.replay_buffer, samples2)
 
 
 @requires_cuda
@@ -338,12 +339,12 @@ def test_different_batch_sizes(energy_function, sampler):
     # First batch size
     x1 = torch.randn(10, 2, device=device)
     loss1, samples1 = cd(x1)
-    assert cd.chain.shape == (10, 2)
+    assert cd.replay_buffer.shape == (10, 2)
 
     # Different batch size
     x2 = torch.randn(20, 2, device=device)
     loss2, samples2 = cd(x2)
-    assert cd.chain.shape == (20, 2)
+    assert cd.replay_buffer.shape == (20, 2)
 
-    # The chain should have been re-initialized for the new batch size
-    assert cd.chain.shape[0] == x2.shape[0]
+    # The replay_buffer should have been re-initialized for the new batch size
+    assert cd.replay_buffer.shape[0] == x2.shape[0]
