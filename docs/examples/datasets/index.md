@@ -324,8 +324,8 @@ dataloader = DataLoader(
 
 # Iterate through batches
 for batch in dataloader:
-    # Each batch is a tensor of shape [batch_size, 2]
-    print(f"Batch shape: {batch.shape}")
+    # Each batch is a tensor of batch_shape [batch_size, 2]
+    print(f"Batch batch_shape: {batch.shape}")
     # Process the batch...
     break  # Just showing the first batch
 ```

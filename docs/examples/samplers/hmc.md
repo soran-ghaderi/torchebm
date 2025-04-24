@@ -123,7 +123,7 @@ final_samples, diagnostics = hmc_sampler.sample(
     return_diagnostics=True,
 )
 
-# The diagnostics tensor has shape (n_steps, 4, n_samples, dim) and contains:
+# The diagnostics tensor has batch_shape (k_steps, 4, n_samples, dim) and contains:
 mean_values = diagnostics[:, 0, :, :]  # Mean of samples at each step
 variance_values = diagnostics[:, 1, :, :]  # Variance of samples at each step 
 energy_values = diagnostics[:, 2, :, :]  # Energy values of samples

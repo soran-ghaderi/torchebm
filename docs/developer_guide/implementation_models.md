@@ -56,7 +56,7 @@ class BaseModel(nn.Module):
         """Forward pass through the network.
         
         Args:
-            x: Input tensor of shape (batch_size, input_dim)
+            x: Input tensor of batch_shape (batch_size, input_dim)
             
         Returns:
             Output tensor
@@ -106,10 +106,10 @@ class MLPEnergyModel(BaseModel):
         """Forward pass to compute energy.
         
         Args:
-            x: Input tensor of shape (batch_size, input_dim)
+            x: Input tensor of batch_shape (batch_size, input_dim)
             
         Returns:
-            Energy values of shape (batch_size,)
+            Energy values of batch_shape (batch_size,)
         """
         features = super().forward(x)
         energy = self.output_layer(features)
@@ -180,12 +180,12 @@ class ConvEnergyModel(nn.Module):
         """Forward pass to compute energy.
         
         Args:
-            x: Input tensor of shape (batch_size, channels, height, width)
+            x: Input tensor of batch_shape (batch_size, channels, height, width)
             
         Returns:
-            Energy values of shape (batch_size,)
+            Energy values of batch_shape (batch_size,)
         """
-        # Ensure correct input shape
+        # Ensure correct input batch_shape
         if len(x.shape) == 2:
             x = x.view(-1, self.input_channels, self.image_size, self.image_size)
         

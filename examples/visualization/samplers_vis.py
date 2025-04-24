@@ -64,7 +64,10 @@ def generate_hmc_gaussian():
 
     # Initialize HMC sampler
     sampler = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=5, device=device
+        energy_function=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=5,
+        device=device,
     )
 
     # Generate samples

@@ -95,7 +95,7 @@ dataset = GaussianMixtureDataset(
 
 # Get the full tensor for visualization purposes
 real_data_for_plotting = dataset.get_data()
-print(f"Data shape: {real_data_for_plotting.shape}")
+print(f"Data batch_shape: {real_data_for_plotting.shape}")
 
 # Create DataLoader
 dataloader = DataLoader(
@@ -601,7 +601,7 @@ def main():
 
     # Get the full tensor for visualization purposes
     real_data_for_plotting = dataset.get_data()
-    print(f"Data shape: {real_data_for_plotting.shape}")
+    print(f"Data batch_shape: {real_data_for_plotting.shape}")
 
     # Create DataLoader
     dataloader = DataLoader(
@@ -620,7 +620,7 @@ def main():
         device=device,
     )
     loss_fn = ContrastiveDivergence(
-        energy_function=energy_model, sampler=sampler, n_steps=CD_K, persistent=USE_PCD
+        energy_function=energy_model, sampler=sampler, k_steps=CD_K, persistent=USE_PCD
     ).to(device)
 
     # Optimizer

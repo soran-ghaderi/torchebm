@@ -164,7 +164,7 @@ traj_y = trajectory[0, :, 1].numpy()
 
 # Plot trajectory with colormap based on step number
 points = plt.scatter(
-    traj_x, traj_y, 
+    traj_x, traj_y,
     c=np.arange(len(traj_x)),
     cmap='plasma',
     s=5,
@@ -215,7 +215,7 @@ n_steps = 1000
 num_chains = 5
 
 # Generate random starting points
-initial_points = torch.randn(num_chains, dim) * 3  
+initial_points = torch.randn(num_chains, dim) * 3
 
 # Track the trajectories manually
 trajectories = torch.zeros((num_chains, n_steps, dim))
@@ -247,10 +247,10 @@ colors = ['red', 'blue', 'green', 'orange', 'purple']
 for i in range(num_chains):
     traj_x = trajectories[i, :, 0].numpy()
     traj_y = trajectories[i, :, 1].numpy()
-    
-    plt.plot(traj_x, traj_y, alpha=0.7, linewidth=1, c=colors[i], 
-             label=f'Chain {i+1}')
-    
+
+    plt.plot(traj_x, traj_y, alpha=0.7, linewidth=1, c=colors[i],
+             label=f'Chain {i + 1}')
+
     # Mark start and end points
     plt.scatter(traj_x[0], traj_y[0], c='black', s=50, marker='o')
     plt.scatter(traj_x[-1], traj_y[-1], c=colors[i], s=100, marker='*')

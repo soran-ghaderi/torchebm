@@ -218,7 +218,7 @@ Example:
 ```python
 def sample_chain(self, dim, n_steps, n_samples=1):
     if n_steps <= 0:
-        raise ValueError("n_steps must be positive")
+        raise ValueError("k_steps must be positive")
         
     if dim <= 0:
         raise ValueError("dim must be positive")
@@ -275,13 +275,13 @@ def sample_chain(
         
     Returns:
         tuple: (samples, diagnostics)
-            - samples: Tensor of shape [n_samples, dim]
+            - samples: Tensor of batch_shape [n_samples, dim]
             - diagnostics: Dict with sampling statistics
             
     Example:
         >>> energy_fn = GaussianEnergy(torch.zeros(2), torch.eye(2))
         >>> sampler = LangevinDynamics(energy_fn, step_size=0.1)
-        >>> samples, _ = sampler.sample_chain(dim=2, n_steps=100, n_samples=10)
+        >>> samples, _ = sampler.sample_chain(dim=2, k_steps=100, n_samples=10)
     """
     # Implementation
 ```

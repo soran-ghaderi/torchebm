@@ -95,9 +95,9 @@ energy_fn = MLPEnergy(input_dim=2).to(device)
 sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
 
 cd_loss_fn = ContrastiveDivergence(
-    energy_function=energy_fn,
-    sampler=sampler, 
-    n_steps=10 # MCMC steps for negative samples gen
+  energy_function=energy_fn,
+  sampler=sampler,
+  k_steps=10  # MCMC steps for negative samples gen
 )
 
 optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
@@ -107,21 +107,21 @@ dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
 
 # Training Loop
 for epoch in range(10):
-    epoch_loss = 0.0
-    for i, batch_data in enumerate(dataloader):
-        batch_data = batch_data.to(device)
+  epoch_loss = 0.0
+  for i, batch_data in enumerate(dataloader):
+    batch_data = batch_data.to(device)
 
-        optimizer.zero_grad()
+    optimizer.zero_grad()
 
-        loss, neg_samples = cd_loss(batch_data)
+    loss, neg_samples = cd_loss(batch_data)
 
-        loss.backward()
-        optimizer.step()
+    loss.backward()
+    optimizer.step()
 
-        epoch_loss += loss.item()
+    epoch_loss += loss.item()
 
-    avg_loss = epoch_loss / len(dataloader)
-    print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
+  avg_loss = epoch_loss / len(dataloader)
+  print(f"Epoch {epoch + 1}/{EPOCHS}, Loss: {avg_loss:.6f}")
 ```
 
 ### 2. Hamiltonian Monte Carlo (HMC)
@@ -141,7 +141,7 @@ hmc_sampler = HamiltonianMonteCarlo(
 final_samples = hmc_sampler.sample(
   dim=10, n_steps=500, n_samples=10000, return_trajectory=False
 )
-print(final_samples.shape)  # Result shape: (10000, 10) - (n_samples, dim)
+print(final_samples.shape)  # Result batch_shape: (10000, 10) - (n_samples, dim)
 
 # Sample with diagnostics and trajectory
 final_samples, diagnostics = hmc_sampler.sample(
@@ -152,14 +152,14 @@ final_samples, diagnostics = hmc_sampler.sample(
   return_diagnostics=True,
 )
 
-print(final_samples.shape)  # Trajectory shape: (250, 500, 10) - (n_samples, n_steps, dim)
-print(diagnostics.shape)  # Diagnostics shape: (500, 4, 250, 10) - (n_steps, 4, n_samples, dim)
+print(final_samples.shape)  # Trajectory batch_shape: (250, 500, 10) - (n_samples, k_steps, dim)
+print(diagnostics.shape)  # Diagnostics batch_shape: (500, 4, 250, 10) - (k_steps, 4, n_samples, dim)
 # The diagnostics contain: Mean (dim=0), Variance (dim=1), Energy (dim=2), Acceptance rates (dim=3)
 
 # Sample from a custom initialization
 x_init = torch.randn(n_samples, dim, dtype=torch.float32, device=device)
 samples = hmc_sampler.sample(x=x_init, n_steps=100)
-print(samples.shape)  # Result shape: (250, 10) -> (n_samples, dim)
+print(samples.shape)  # Result batch_shape: (250, 10) -> (n_samples, dim)
 ```
 
 ## Library Structure

@@ -376,7 +376,7 @@ class ScoreMatchingLoss(BaseLoss):
         This requires computing both the score and the Hessian trace.
         
         Args:
-            x: Input samples of shape (n_samples, dim)
+            x: Input samples of batch_shape (n_samples, dim)
             
         Returns:
             BaseLoss value
@@ -413,7 +413,7 @@ class ScoreMatchingLoss(BaseLoss):
         This avoids computing the Hessian trace.
         
         Args:
-            x: Input samples of shape (n_samples, dim)
+            x: Input samples of batch_shape (n_samples, dim)
             
         Returns:
             BaseLoss value

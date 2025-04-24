@@ -35,8 +35,8 @@ Classes:
     initial_state = torch.randn(10, 2)
 
     # Run sampling
-    samples, diagnostics = hmc.sample_chain(initial_state, n_steps=100, return_diagnostics=True)
-    print(f"Samples: {samples.shape}")
+    samples, diagnostics = hmc.sample_chain(initial_state, k_steps=100, return_diagnostics=True)
+    print(f"Samples: {samples.batch_shape}")
     print(f"Diagnostics: {diagnostics.keys()}")
     ```
 
@@ -114,7 +114,7 @@ Classes:
 
 ---
 
-## Advanced Insights
+## Useful Insights
 
 !!! abstract "Why HMC Outperforms Other MCMC Methods"
     HMC's use of gradients and dynamics reduces random-walk behavior, making it particularly effective for:
@@ -177,13 +177,13 @@ class HamiltonianMonteCarlo(BaseSampler):
         ValueError: For invalid parameter ranges
 
     Methods:
-        _initialize_momentum(shape): Generate initial momentum from Gaussian distribution.
+        _initialize_momentum(batch_shape): Generate initial momentum from Gaussian distribution.
         _compute_kinetic_energy(p): Compute the kinetic energy of the momentum.
         _leapfrog_step(position, momentum, gradient_fn): Perform a single leapfrog step.
         _leapfrog_integration(position, momentum): Perform full leapfrog integration.
         hmc_step(current_position): Perform one HMC step with Metropolis-Hastings acceptance.
-        sample_chain(x, dim, n_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
-        _setup_diagnostics(dim, n_steps, n_samples): Initialize the diagnostics.
+        sample_chain(x, dim, k_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
+        _setup_diagnostics(dim, k_steps, n_samples): Initialize the diagnostics.
 
     !!! example "Basic Usage"
         ```python
@@ -200,7 +200,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         # Sample 100 points from 5 parallel chains
         samples = sampler.sample_chain(
             dim=2,
-            n_steps=100,
+            k_steps=100,
             n_samples=5
         )
         ```
@@ -250,7 +250,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             self.device = torch.device("cpu")
 
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
-        self.step_size = step_size
+        self.step_size_scheduler = step_size
         self.n_leapfrog_steps = n_leapfrog_steps
         self.energy_function = energy_function
         if mass is not None and not isinstance(mass, float):
@@ -334,27 +334,27 @@ class HamiltonianMonteCarlo(BaseSampler):
         grad = torch.clamp(grad, min=-1e6, max=1e6)
 
         # Half-step momentum update
-        p_half = momentum - 0.5 * self.step_size * grad
+        p_half = momentum - 0.5 * self.step_size_scheduler * grad
 
         # Full-step position update with mass matrix adjustment
         if self.mass is None:
-            x_new = position + self.step_size * p_half
+            x_new = position + self.step_size_scheduler * p_half
         else:
             if isinstance(self.mass, float):
                 # Ensure mass is positive to avoid division issues
                 safe_mass = max(self.mass, 1e-10)
-                x_new = position + self.step_size * p_half / safe_mass
+                x_new = position + self.step_size_scheduler * p_half / safe_mass
             else:
                 # Create safe mass tensor avoiding zeros or negative values
                 safe_mass = torch.clamp(self.mass, min=1e-10)
-                x_new = position + self.step_size * p_half / safe_mass.view(
+                x_new = position + self.step_size_scheduler * p_half / safe_mass.view(
                     *([1] * (len(position.shape) - 1)), -1
                 )
 
         # Half-step momentum update with gradient clamping
         grad_new = gradient_fn(x_new)
         grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
-        p_new = p_half - 0.5 * self.step_size * grad_new
+        p_new = p_half - 0.5 * self.step_size_scheduler * grad_new
 
         return x_new, p_new
 
@@ -411,7 +411,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         5. Accept/reject based on Metropolis-Hastings criterion
 
         Args:
-            current_position: Current position tensor of shape (batch_size, dim).
+            current_position: Current position tensor of batch_shape (batch_size, dim).
 
         Returns:
             new_position: Updated position tensor
@@ -503,9 +503,9 @@ class HamiltonianMonteCarlo(BaseSampler):
             Final samples:
 
                 - If return_trajectory=False and return_diagnostics=False:
-                    Tensor of shape (n_samples, dim) with final samples.
+                    Tensor of batch_shape (n_samples, dim) with final samples.
                 - If return_trajectory=True and return_diagnostics=False:
-                    Tensor of shape (n_samples, n_steps, dim) with the trajectory of all samples.
+                    Tensor of batch_shape (n_samples, k_steps, dim) with the trajectory of all samples.
                 - If return_diagnostics=True:
                     Tuple of (samples, diagnostics) where diagnostics contains information about
                     the sampling process, including mean, variance, energy values, and acceptance rates.
@@ -520,7 +520,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             # Run 10 parallel chains for 1000 steps
             samples, diagnostics = hmc.sample_chain(
                 dim=10,
-                n_steps=1000,
+                k_steps=1000,
                 n_samples=10,
                 return_diagnostics=True
             )
@@ -596,7 +596,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                     # Energy values (ensure finite values)
                     energy = self.energy_function(
                         x
-                    )  # assumed to have shape (n_samples,)
+                    )  # assumed to have batch_shape (n_samples,)
                     energy = torch.clamp(
                         energy, min=-1e10, max=1e10
                     )  # Prevent extreme energy values
@@ -640,7 +640,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             n_samples: Number of parallel chains (if None, assumed to be 1).
 
         Returns:
-            Empty tensor of shape (n_steps, 4, n_samples, dim) to store diagnostics.
+            Empty tensor of batch_shape (k_steps, 4, n_samples, dim) to store diagnostics.
         """
         if n_samples is not None:
             return torch.empty(

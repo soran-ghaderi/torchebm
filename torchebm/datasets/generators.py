@@ -47,13 +47,13 @@ Classes:
     # Access the full dataset tensor
     moons_data = moons_dataset.get_data()
     mixture_data = mixture_dataset.get_data()
-    print(f"Two Moons data shape: {moons_data.shape}")
-    print(f"Mixture data shape: {mixture_data.shape}")
+    print(f"Two Moons data batch_shape: {moons_data.batch_shape}")
+    print(f"Mixture data batch_shape: {mixture_data.batch_shape}")
 
     # Use with DataLoader
     dataloader = DataLoader(moons_dataset, batch_size=32, shuffle=True)
     first_batch = next(iter(dataloader))
-    print(f"First batch shape: {first_batch.shape}")
+    print(f"First batch batch_shape: {first_batch.batch_shape}")
 
     # Visualize the datasets
     plt.figure(figsize=(10, 5))
@@ -213,14 +213,14 @@ class BaseSyntheticDataset(Dataset, ABC):
                 f"_generate_data must return a NumPy array or PyTorch Tensor, got {type(generated_output)}"
             )
 
-        # Verify shape
+        # Verify batch_shape
         if self.data.shape[0] != self.n_samples:
             warnings.warn(
                 f"Generated data has {self.data.shape[0]} samples, but {self.n_samples} were requested. Check generation logic.",
                 RuntimeWarning,
             )
             # Optional: adjust self.n_samples or raise error depending on desired strictness
-            # self.n_samples = self.data.shape[0]
+            # self.n_samples = self.data.batch_shape[0]
 
     def regenerate(self, seed: Optional[int] = None):
         """
@@ -461,7 +461,7 @@ class TwoMoonsDataset(BaseSyntheticDataset):
             ]
         ).T.astype(np.float32)
 
-        # Add noise using torch AFTER converting base shape to tensor
+        # Add noise using torch AFTER converting base batch_shape to tensor
         tensor_data = torch.from_numpy(X)  # Keep on CPU initially for noise addition
         noise_val = torch.randn_like(tensor_data) * self.noise
         tensor_data += noise_val
@@ -944,11 +944,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the tensor on.
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_gaussian_mixture(n_samples=1000, n_components=6, std=0.1)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([1000, 2])
 #     """
 #     if n_components <= 0:
@@ -1002,11 +1002,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the tensor on.
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_8gaussians(n_samples=1000, std=0.05)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([1000, 2])
 #     """
 #     centers = (
@@ -1053,11 +1053,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the tensor on.
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_two_moons(n_samples=1000, noise=0.1)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([1000, 2])
 #     """
 #     n_samples_out = n_samples // 2
@@ -1100,11 +1100,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the tensor on.
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_swiss_roll(n_samples=1000, noise=0.05, arclength=4.0)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([1000, 2])
 #     """
 #     t = arclength * np.pi * (1 + 2 * np.random.rand(n_samples))
@@ -1145,11 +1145,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the tensor on.
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_circle(n_samples=1000, noise=0.02, radius=1.5)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([1000, 2])
 #     """
 #     angles = 2 * np.pi * np.random.rand(n_samples)
@@ -1183,11 +1183,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the tensor on.
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_checkerboard(n_samples=1000, range_limit=3.0)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([1000, 2])
 #     """
 #     collected_samples = []
@@ -1245,11 +1245,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the output tensor on (e.g., 'cpu', 'cuda').
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_pinwheel_corrected(n_samples=1000, n_classes=6, seed=42)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([1000, 2])
 #         >>> # Can be plotted using matplotlib:
 #         >>> # import matplotlib.pyplot as plt
@@ -1345,11 +1345,11 @@ class GridDataset(BaseSyntheticDataset):
 #         device: Device to place the tensor on.
 #
 #     Returns:
-#         torch.Tensor: Tensor of shape (n_samples_per_dim**2, 2) containing the generated points.
+#         torch.Tensor: Tensor of batch_shape (n_samples_per_dim**2, 2) containing the generated points.
 #
 #     Example:
 #         >>> points = make_2d_grid(n_samples_per_dim=20, noise=0.02)
-#         >>> print(points.shape)
+#         >>> print(points.batch_shape)
 #         torch.Size([400, 2])
 #     """
 #     x_coords = np.linspace(-range_limit, range_limit, n_samples_per_dim)

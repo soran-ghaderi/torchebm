@@ -45,9 +45,13 @@ def test_langevin_dynamics_initialization(langevin_sampler):
 
 def test_langevin_dynamics_initialization_invalid_params(energy_function):
     with pytest.raises(ValueError):
-        LangevinDynamics(energy_function, step_size=-0.1, noise_scale=0.1)
+        LangevinDynamics(
+            energy_function, step_size=-0.1, noise_scale=0.1
+        )
     with pytest.raises(ValueError):
-        LangevinDynamics(energy_function, step_size=0.1, noise_scale=-0.1)
+        LangevinDynamics(
+            energy_function, step_size=0.1, noise_scale=-0.1
+        )
 
 
 @requires_cuda
@@ -96,7 +100,7 @@ def test_langevin_dynamics_sample_trajectory(langevin_sampler):
     trajectory = langevin_sampler.sample(
         dim=dim, n_steps=n_steps, return_trajectory=True
     )
-    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, n_steps, dim)
+    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, k_steps, dim)
     assert torch.all(torch.isfinite(trajectory))
 
 

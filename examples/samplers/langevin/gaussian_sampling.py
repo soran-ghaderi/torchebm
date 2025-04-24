@@ -41,7 +41,7 @@ samples, diagnostics = langevin_sampler.sample(
     return_trajectory=True,
     return_diagnostics=True,
 )
-print(samples.shape)  # Output: (250, 500, 10) -> (samples, n_steps, dim)
+print(samples.shape)  # Output: (250, 500, 10) -> (samples, k_steps, dim)
 # ===================== Example 1 =====================
 
 
@@ -167,7 +167,9 @@ def sampling_utilities_example():
     # Initialize sampler with GPU support if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     sampler = LangevinDynamics(
-        energy_function=HarmonicEnergy(), step_size=0.01, noise_scale=0.1
+        energy_function=HarmonicEnergy(),
+        step_size=0.01,
+        noise_scale=0.1,
     ).to(device)
 
     # Generate samples with thinning
@@ -211,7 +213,7 @@ def langevin_gaussain_sampling():
     )
 
     print(final_x.shape)  # Output: (100, 10)  (final state)
-    # print(xs.shape)  # Output: (500, 100, 10)  (history of all states)
+    # print(xs.batch_shape)  # Output: (500, 100, 10)  (history of all states)
     print("Time taken: ", time.time() - ts)
 
     n_samples = 250

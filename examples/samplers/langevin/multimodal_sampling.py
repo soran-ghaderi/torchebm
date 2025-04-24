@@ -26,7 +26,7 @@ class MultimodalEnergy:
         )
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        # Ensure input has correct dtype and shape
+        # Ensure input has correct dtype and batch_shape
         x = x.to(dtype=self.dtype)
         if x.dim() == 1:
             x = x.view(1, -1)
@@ -42,7 +42,7 @@ class MultimodalEnergy:
         return energy
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
-        # Ensure input has correct dtype and shape
+        # Ensure input has correct dtype and batch_shape
         x = x.to(dtype=self.dtype)
         if x.dim() == 1:
             x = x.view(1, -1)
@@ -77,7 +77,10 @@ def visualize_energy_landscape_and_sampling():
 
     # Initialize the standard Langevin dynamics sampler from the library
     sampler = LangevinDynamics(
-        energy_function=energy_fn, step_size=0.01, noise_scale=0.1, device=device
+        energy_function=energy_fn,
+        step_size=0.01,
+        noise_scale=0.1,
+        device=device,
     )
 
     # Create grid for energy landscape visualization

@@ -6,7 +6,12 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import (
+    BaseEnergyFunction,
+    ExponentialDecayScheduler,
+    LinearScheduler,
+    CosineScheduler,
+)
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import ContrastiveDivergence
 
@@ -122,14 +127,31 @@ if __name__ == "__main__":
     INPUT_DIM = 2
     HIDDEN_DIM = 16
     BATCH_SIZE = 256
-    EPOCHS = 200
+    EPOCHS = 220
     LEARNING_RATE = 1e-3
     SAMPLER_STEP_SIZE = 0.1
+    # SAMPLER_STEP_SIZE = ExponentialDecayScheduler(
+    #     initial_value=1e-2, decay_rate=0.99, min_value=5e-3
+    # )
+    SAMPLER_STEP_SIZE = CosineScheduler(
+        initial_value=3e-2, final_value=5e-3, total_steps=100
+    )
+
     # SAMPLER_NOISE_SCALE = torch.sqrt(torch.Tensor([SAMPLER_STEP_SIZE])).numpy()[0]
     SAMPLER_NOISE_SCALE = 0.1
+    # SAMPLER_NOISE_SCALE = LinearScheduler(
+    #     initial_value=1.0, final_value=0.01, total_steps=1000
+    # )
+    # SAMPLER_NOISE_SCALE = ExponentialDecayScheduler(
+    #     initial_value=1e-1, decay_rate=0.99, min_value=1e-2
+    # )
+    SAMPLER_NOISE_SCALE = CosineScheduler(
+        initial_value=3e-1, final_value=5e-3, total_steps=100
+    )
+
     print(f"Sampler noise scale: {SAMPLER_NOISE_SCALE}")
     CD_K = 10
-    USE_PCD = False
+    USE_PCD = True
     VISUALIZE_EVERY = 20
     SEED = 42
 
@@ -173,7 +195,11 @@ if __name__ == "__main__":
         device=device,
     )
     loss_fn = ContrastiveDivergence(
-        energy_function=energy_model, sampler=sampler, n_steps=CD_K, persistent=USE_PCD
+        energy_function=energy_model,
+        sampler=sampler,
+        k_steps=CD_K,
+        persistent=USE_PCD,
+        buffer_size=BATCH_SIZE,
     ).to(
         device
     )  # Loss function itself can be on device

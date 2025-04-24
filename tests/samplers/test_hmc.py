@@ -68,7 +68,7 @@ def hmc_sampler(request, energy_function):
 def test_hmc_initialization(hmc_sampler):
     """Test basic initialization of the HMC sampler."""
     assert isinstance(hmc_sampler, HamiltonianMonteCarlo)
-    assert hmc_sampler.step_size == 0.1
+    assert hmc_sampler.step_size_scheduler == 0.1
     assert hmc_sampler.n_leapfrog_steps == 10
     assert hmc_sampler.mass is None
 
@@ -79,7 +79,10 @@ def test_hmc_initialization_with_mass():
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
     scalar_mass = 2.0
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=10, mass=scalar_mass
+        energy_function=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=10,
+        mass=scalar_mass,
     )
     assert hmc.mass == scalar_mass
 
@@ -102,9 +105,13 @@ def test_hmc_initialization_with_mass():
 def test_hmc_initialization_invalid_params(energy_function):
     """Test that invalid parameters raise appropriate exceptions."""
     with pytest.raises(ValueError):
-        HamiltonianMonteCarlo(energy_function, step_size=-0.1, n_leapfrog_steps=10)
+        HamiltonianMonteCarlo(
+            energy_function, step_size=-0.1, n_leapfrog_steps=10
+        )
     with pytest.raises(ValueError):
-        HamiltonianMonteCarlo(energy_function, step_size=0.1, n_leapfrog_steps=0)
+        HamiltonianMonteCarlo(
+            energy_function, step_size=0.1, n_leapfrog_steps=0
+        )
 
 
 @pytest.mark.parametrize(
@@ -127,7 +134,7 @@ def test_hmc_sample_chain_basic(hmc_sampler):
     n_steps = 50
     final_state = hmc_sampler.sample(dim=dim, n_steps=n_steps)
 
-    # Check output shape and validity
+    # Check output batch_shape and validity
     assert final_state.shape == (1, dim)  # (n_samples, dim)
     assert torch.all(torch.isfinite(final_state))
 
@@ -148,8 +155,8 @@ def test_hmc_sample_chain_with_trajectory(hmc_sampler):
     n_steps = 50
     trajectory = hmc_sampler.sample(dim=dim, n_steps=n_steps, return_trajectory=True)
 
-    # Check trajectory shape and validity
-    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, n_steps, dim)
+    # Check trajectory batch_shape and validity
+    assert trajectory.shape == (1, n_steps, dim)  # (n_samples, k_steps, dim)
     assert torch.all(torch.isfinite(trajectory))
 
 
@@ -171,14 +178,14 @@ def test_hmc_sample_chain_with_diagnostics(hmc_sampler):
         dim=dim, n_steps=n_steps, return_diagnostics=True
     )
 
-    # Check diagnostics shape and contents
+    # Check diagnostics batch_shape and contents
     assert final_state.shape == (1, dim)
     assert diagnostics.shape == (
         n_steps,
         4,
         1,
         dim,
-    )  # (n_steps, n_diagnostics, n_samples, dim)
+    )  # (k_steps, n_diagnostics, n_samples, dim)
     assert torch.all(torch.isfinite(diagnostics))
 
 
@@ -202,7 +209,7 @@ def test_hmc_sample_chain_multiple_samples(hmc_sampler):
     n_samples = 10
     samples = hmc_sampler.sample(dim=dim, n_steps=n_steps, n_samples=n_samples)
 
-    # Check output shape and validity for multiple samples
+    # Check output batch_shape and validity for multiple samples
     assert samples.shape == (n_samples, dim)
     assert torch.all(torch.isfinite(samples))
 
@@ -396,7 +403,10 @@ def test_hmc_gaussian_sampling_statistics():
 
     # Initialize HMC sampler
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.05, n_leapfrog_steps=10, device="cuda"
+        energy_function=energy_fn,
+        step_size=0.05,
+        n_leapfrog_steps=10,
+        device="cuda",
     )
 
     # Run HMC for many steps to collect statistics

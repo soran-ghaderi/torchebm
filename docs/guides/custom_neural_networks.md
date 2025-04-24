@@ -42,8 +42,8 @@ class NeuralNetEnergyFunction(BaseEnergyFunction):
         )
 
     def forward(self, x):
-        # x has shape (batch_size, input_dim)
-        # Output should have shape (batch_size,)
+        # x has batch_shape (batch_size, input_dim)
+        # Output should have batch_shape (batch_size,)
         return self.network(x).squeeze(-1)
 ```
 

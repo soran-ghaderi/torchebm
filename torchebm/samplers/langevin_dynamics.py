@@ -36,10 +36,10 @@ Classes:
 
     # Run sampling
     samples, diagnostics = sampler.sample_chain(
-        x=initial_state, n_steps=100, n_samples=5, return_diagnostics=True
+        x=initial_state, k_steps=100, n_samples=5, return_diagnostics=True
     )
-    print(f"Samples shape: {samples.shape}")
-    print(f"Diagnostics keys: {diagnostics.shape}")
+    print(f"Samples batch_shape: {samples.batch_shape}")
+    print(f"Diagnostics keys: {diagnostics.batch_shape}")
     ```
 
 ---
@@ -118,6 +118,7 @@ import torch
 
 from torchebm.core.base_energy_function import BaseEnergyFunction, GaussianEnergy
 from torchebm.core.base_sampler import BaseSampler
+from torchebm.core import BaseScheduler, ConstantScheduler, ExponentialDecayScheduler
 
 
 class LangevinDynamics(BaseSampler):
@@ -143,14 +144,14 @@ class LangevinDynamics(BaseSampler):
     !!! note "Algorithm Summary"
 
         1. If `x` is not provided, initialize it with Gaussian noise.
-        2. Iteratively update `x` for `n_steps` using `self.langevin_step()`.
+        2. Iteratively update `x` for `k_steps` using `self.langevin_step()`.
         3. Optionally track trajectory (`return_trajectory=True`).
         4. Optionally collect diagnostics such as mean, variance, and energy gradients.
 
     Args:
         energy_function (BaseEnergyFunction): Energy function to sample from.
-        step_size (float): Step size for updates.
-        noise_scale (float): Scale of the noise.
+        step_size (float): Step size for the Langevin update.
+        noise_scale (float): Scale of the Gaussian noise.
         decay (float): Damping coefficient (not supported yet).
         dtype (torch.dtype): Data type to use for the computations.
         device (str): Device to run the computations on (e.g., "cpu" or "cuda").
@@ -160,8 +161,8 @@ class LangevinDynamics(BaseSampler):
 
     Methods:
         langevin_step(prev_x, noise): Perform a Langevin step.
-        sample_chain(x, dim, n_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
-        _setup_diagnostics(dim, n_steps, n_samples): Initialize the diagnostics
+        sample_chain(x, dim, k_steps, n_samples, return_trajectory, return_diagnostics): Run the sampling process.
+        _setup_diagnostics(dim, k_steps, n_samples): Initialize the diagnostics
 
     !!! example "Basic Usage"
         ```python
@@ -178,7 +179,7 @@ class LangevinDynamics(BaseSampler):
         # Sample 100 points from 5 parallel chains
         samples = sampler.sample_chain(
             dim=2,
-            n_steps=50,
+            k_steps=50,
             n_samples=100
         )
         ```
@@ -191,18 +192,32 @@ class LangevinDynamics(BaseSampler):
     def __init__(
         self,
         energy_function: BaseEnergyFunction,
-        step_size: float = 1e-3,
-        noise_scale: float = 1.0,
+        step_size: Union[float, BaseScheduler] = 1e-3,
+        noise_scale: Union[float, BaseScheduler] = 1.0,
         decay: float = 0.0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
         super().__init__(energy_function, dtype, device)
 
-        if step_size <= 0 or noise_scale <= 0:
-            raise ValueError("step_size and noise_scale must be positive")
-        if not 0 <= decay <= 1:
-            raise ValueError("decay must be between 0 and 1")
+        # Register schedulers for step_size and noise_scale
+        if isinstance(step_size, BaseScheduler):
+            self.register_scheduler("step_size", step_size)
+        else:
+            if step_size <= 0:
+                raise ValueError("step_size must be positive")
+            self.register_scheduler(
+                "step_size", ConstantScheduler(step_size)
+            )
+
+        if isinstance(noise_scale, BaseScheduler):
+            self.register_scheduler("noise_scale", noise_scale)
+        else:
+            if noise_scale <= 0:
+                raise ValueError("noise_scale must be positive")
+            self.register_scheduler(
+                "noise_scale", ConstantScheduler(noise_scale)
+            )
 
         if device is not None:
             self.device = torch.device(device)
@@ -224,11 +239,11 @@ class LangevinDynamics(BaseSampler):
         $$x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t$$
 
         Args:
-            prev_x (torch.Tensor): Current state tensor of shape (batch_size, dim)
-            noise (torch.Tensor): Gaussian noise tensor of shape (batch_size, dim)
+            prev_x (torch.Tensor): Current state tensor of batch_shape (batch_size, dim)
+            noise (torch.Tensor): Gaussian noise tensor of batch_shape (batch_size, dim)
 
         Returns:
-            torch.Tensor: Updated state tensor of same shape as prev_x
+            torch.Tensor: Updated state tensor of same batch_shape as prev_x
 
         Example:
             ```python
@@ -239,25 +254,19 @@ class LangevinDynamics(BaseSampler):
             ```
         """
 
-        # gradient_fn = partial(self.energy_function.gradient)
-        # new_x = (
-        #     prev_x
-        #     - self.step_size * gradient_fn(prev_x)
-        #     + torch.sqrt(torch.tensor(2.0 * self.step_size, device=prev_x.device))
-        #     * noise
-        # )
-        # return new_x
+        step_size = self.get_scheduled_value("step_size")
+        noise_scale = self.get_scheduled_value("noise_scale")
 
         gradient = self.energy_function.gradient(prev_x)
 
         # Apply noise scaling
-        scaled_noise = self.noise_scale * noise
+        scaled_noise = noise_scale * noise
 
         # Apply proper step size and noise scaling
         new_x = (
             prev_x
-            - self.step_size * gradient
-            + torch.sqrt(torch.tensor(2.0 * self.step_size, device=prev_x.device))
+            - step_size * gradient
+            + torch.sqrt(torch.tensor(2.0 * step_size, device=prev_x.device))
             * scaled_noise
         )
         return new_x
@@ -290,8 +299,8 @@ class LangevinDynamics(BaseSampler):
             Final samples:
 
                 - If `return_trajectory=False` and `return_diagnostics=False`, returns the final
-                  samples of shape `(n_samples, dim)`.
-                - If `return_trajectory=True`, returns a tensor of shape `(n_samples, n_steps, dim)`,
+                  samples of batch_shape `(n_samples, dim)`.
+                - If `return_trajectory=True`, returns a tensor of batch_shape `(n_samples, k_steps, dim)`,
                   containing the sampled trajectory.
                 - If `return_diagnostics=True`, returns a tuple `(samples, diagnostics)`, where
                   `diagnostics` is a list of dictionaries storing per-step statistics.
@@ -312,13 +321,16 @@ class LangevinDynamics(BaseSampler):
             # Generate 100 samples from 5 parallel chains
             samples = sampler.sample_chain(
                 dim=32,
-                n_steps=500,
+                k_steps=500,
                 n_samples=100,
                 return_diagnostics=True
             )
             ```
 
         """
+
+        self.reset_schedulers()
+
         if x is None:
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
         else:
@@ -336,8 +348,12 @@ class LangevinDynamics(BaseSampler):
             device_type="cuda" if self.device.type == "cuda" else "cpu"
         ):
             for i in range(n_steps):
+                # todo: Add decay logic
                 # Generate fresh noise for each step
                 noise = torch.randn_like(x, device=self.device)
+
+                # Step all schedulers before each MCMC step
+                scheduler_values = self.step_schedulers()
 
                 x = self.langevin_step(x, noise)
 

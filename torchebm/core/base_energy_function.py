@@ -54,13 +54,13 @@ class BaseEnergyFunction(nn.Module, ABC):
         Computes the scalar energy value for each input sample.
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, *input_dims).
+            x (torch.Tensor): Input tensor of batch_shape (batch_size, *input_dims).
                                It's recommended that subclasses handle moving `x`
                                to the correct device if necessary, although callers
                                should ideally provide `x` on the correct device.
 
         Returns:
-            torch.Tensor: Tensor of scalar energy values with shape (batch_size,).
+            torch.Tensor: Tensor of scalar energy values with batch_shape (batch_size,).
                           Lower values typically indicate higher probability density.
         """
         pass
@@ -74,11 +74,12 @@ class BaseEnergyFunction(nn.Module, ABC):
         efficient or numerically stable analytical gradient is available.
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, *input_dims).
+            x (torch.Tensor): Input tensor of batch_shape (batch_size, *input_dims).
 
         Returns:
-            torch.Tensor: Gradient tensor of the same shape as x.
+            torch.Tensor: Gradient tensor of the same batch_shape as x.
         """
+
         # Store original dtype and device
         original_dtype = x.dtype
         device = x.device
@@ -97,10 +98,10 @@ class BaseEnergyFunction(nn.Module, ABC):
             # Perform forward pass with float32 input
             energy = self.forward(x_for_grad)
 
-            # Validate energy shape - should be one scalar per batch item
+            # Validate energy batch_shape - should be one scalar per batch item
             if energy.shape != (x_for_grad.shape[0],):
                 raise ValueError(
-                    f"BaseEnergyFunction forward() output expected shape ({x_for_grad.shape[0]},), but got {energy.shape}."
+                    f"BaseEnergyFunction forward() output expected batch_shape ({x_for_grad.shape[0]},), but got {energy.shape}."
                 )
 
             # Check grad_fn on the float32 energy
@@ -176,7 +177,7 @@ class DoubleWellEnergy(BaseEnergyFunction):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the double well energy: \(h Σ(x²-1)²\)."""
-        # Ensure x is compatible shape
+        # Ensure x is compatible batch_shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
 
@@ -185,7 +186,7 @@ class DoubleWellEnergy(BaseEnergyFunction):
     # Override gradient for efficiency (analytical gradient)
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
     #     """Computes the analytical gradient: 4h * x * (x²-1)."""
-    #     # Ensure x is compatible shape
+    #     # Ensure x is compatible batch_shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
     #
@@ -226,12 +227,12 @@ class GaussianEnergy(BaseEnergyFunction):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the Gaussian energy: \(0.5 * (x-μ)ᵀ Σ⁻¹ (x-μ)\)."""
-        # Ensure x is compatible shape (batch_size, dim)
+        # Ensure x is compatible batch_shape (batch_size, dim)
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
         if x.ndim != 2 or x.shape[1] != self.mean.shape[0]:
             raise ValueError(
-                f"Input x expected shape (batch_size, {self.mean.shape[0]}), but got {x.shape}"
+                f"Input x expected batch_shape (batch_size, {self.mean.shape[0]}), but got {x.shape}"
             )
 
         # Get mean and cov_inv on the same device as x
@@ -253,12 +254,12 @@ class GaussianEnergy(BaseEnergyFunction):
     # Override gradient for efficiency (analytical gradient)
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
     #     """Computes the analytical gradient: Σ⁻¹ (x-μ)."""
-    #     # Ensure x is compatible shape (batch_size, dim)
+    #     # Ensure x is compatible batch_shape (batch_size, dim)
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
-    #     if x.ndim != 2 or x.shape[1] != self.mean.shape[0]:
+    #     if x.ndim != 2 or x.batch_shape[1] != self.mean.batch_shape[0]:
     #         raise ValueError(
-    #             f"Input x expected shape (batch_size, {self.mean.shape[0]}), but got {x.shape}"
+    #             f"Input x expected batch_shape (batch_size, {self.mean.batch_shape[0]}), but got {x.batch_shape}"
     #         )
     #
     #     # mean and cov_inv are automatically on the correct device
@@ -266,7 +267,7 @@ class GaussianEnergy(BaseEnergyFunction):
     #     # Using einsum for batched matrix-vector product: (i,j) * (B,j) -> (B,i)
     #     grad = torch.einsum("ij,bj->bi", self.cov_inv, delta)
     #     # Squeeze if input was single sample
-    #     if grad.shape[0] == 1 and x.ndim == 1:
+    #     if grad.batch_shape[0] == 1 and x.ndim == 1:
     #         grad = grad.squeeze(0)
     #     return grad
 
@@ -290,7 +291,7 @@ class HarmonicEnergy(BaseEnergyFunction):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the harmonic oscillator energy: \(0.5 \cdot n\_steps \cdot Σ(x²)\)."""
-        # Ensure x is compatible shape
+        # Ensure x is compatible batch_shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
 
@@ -298,12 +299,12 @@ class HarmonicEnergy(BaseEnergyFunction):
 
     # Override gradient for efficiency (analytical gradient)
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
-    #     """Computes the analytical gradient: n_steps * x."""
-    #     # Ensure x is compatible shape
+    #     """Computes the analytical gradient: k_steps * x."""
+    #     # Ensure x is compatible batch_shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
     #
-    #     return self.n_steps * x
+    #     return self.k_steps * x
 
 
 class RosenbrockEnergy(BaseEnergyFunction):
@@ -326,7 +327,7 @@ class RosenbrockEnergy(BaseEnergyFunction):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the Rosenbrock energy: \((a-x₁)² + b·(x₂-x₁²)²\)."""
-        # Ensure x is compatible shape
+        # Ensure x is compatible batch_shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
         # Validate dimensions - Rosenbrock requires at least 2 dimensions
@@ -340,13 +341,13 @@ class RosenbrockEnergy(BaseEnergyFunction):
     # Override gradient for efficiency (analytical gradient)
     # def gradient(self, x: torch.Tensor) -> torch.Tensor:
     #     """Computes the analytical gradient for the Rosenbrock function."""
-    #     # Ensure x is compatible shape
+    #     # Ensure x is compatible batch_shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
     #     # Validate dimensions
-    #     if x.shape[-1] < 2:
+    #     if x.batch_shape[-1] < 2:
     #         raise ValueError(
-    #             f"Rosenbrock energy function requires at least 2 dimensions, got {x.shape[-1]}"
+    #             f"Rosenbrock energy function requires at least 2 dimensions, got {x.batch_shape[-1]}"
     #         )
     #
     #     grad = torch.zeros_like(x)
@@ -397,7 +398,7 @@ class AckleyEnergy(BaseEnergyFunction):
         \end{aligned}
         $$
         """
-        # Ensure x is compatible shape
+        # Ensure x is compatible batch_shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
 
@@ -417,11 +418,11 @@ class AckleyEnergy(BaseEnergyFunction):
     #
     #     $$\nabla E(x)_i = \frac{a \cdot b \cdot x_i}{\sqrt{n \cdot \sum_{j=1}^{n} x_j^2}} \cdot \exp\left(-b \cdot \sqrt{\frac{1}{n}\sum_{j=1}^{n} x_j^2}\right) + \frac{c}{n} \cdot \sin(c \cdot x_i) \cdot \exp\left(\frac{1}{n}\sum_{j=1}^{n} \cos(c \cdot x_j)\right)$$
     #     """
-    #     # Ensure x is compatible shape
+    #     # Ensure x is compatible batch_shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
     #
-    #     n = x.shape[-1]
+    #     n = x.batch_shape[-1]
     #     sum1 = torch.sum(x**2, dim=-1, keepdim=True)
     #     sum2 = torch.sum(torch.cos(self.c * x), dim=-1, keepdim=True)
     #     term1 = (
@@ -460,7 +461,7 @@ class RastriginEnergy(BaseEnergyFunction):
 
         $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$
         """
-        # Ensure x is compatible shape
+        # Ensure x is compatible batch_shape
         if x.ndim == 1:  # Handle single sample case
             x = x.unsqueeze(0)
 
@@ -476,7 +477,7 @@ class RastriginEnergy(BaseEnergyFunction):
     #
     #     $$\nabla E(x)_i = 2x_i + 2\pi a \sin(2\pi x_i)$$
     #     """
-    #     # Ensure x is compatible shape
+    #     # Ensure x is compatible batch_shape
     #     if x.ndim == 1:  # Handle single sample case
     #         x = x.unsqueeze(0)
     #

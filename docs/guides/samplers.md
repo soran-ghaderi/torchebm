@@ -107,7 +107,7 @@ samples, diagnostics = sampler.sample(
     return_diagnostics=True
 )
 
-# Diagnostics shape: [n_steps, n_diagnostics, n_samples, dim]
+# Diagnostics batch_shape: [k_steps, n_diagnostics, n_samples, dim]
 # Includes: Mean, Variance, Energy, Acceptance rate (for HMC)
 ```
 
@@ -172,7 +172,7 @@ class MyCustomSampler(BaseSampler):
     
     def step(self, x, step_idx=None):
         # Implement your sampling step here
-        # x shape: [n_samples, dim]
+        # x batch_shape: [n_samples, dim]
         
         # Example: simple random walk
         noise = torch.randn_like(x) * self.param1

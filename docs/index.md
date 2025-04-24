@@ -408,8 +408,8 @@ Here's a minimal example of defining an energy function and a sampler:
     initial_points = torch.randn(500, 2, device=device)
     samples = sampler.sample(x=initial_points, n_steps=100)
     
-    print(f"Output shape: {samples.shape}")
-    # Output shape: torch.Size([500, 2])
+    print(f"Output batch_shape: {samples.shape}")
+    # Output batch_shape: torch.Size([500, 2])
     ```
 </div>
 ---
@@ -421,62 +421,62 @@ Training EBMs typically involves adjusting the energy function's parameters so t
 Here's an example of setting up training using `ContrastiveDivergence` and `LangevinDynamics`:
 <div class="grid cards" markdown>
 
--   __Train an EBM__
+- __Train an EBM__
 
     ---
-    ```python
-    import torch.optim as optim
-    from torch.utils.data import DataLoader
+  ```python
+  import torch.optim as optim
+  from torch.utils.data import DataLoader
 
-    from torchebm.losses import ContrastiveDivergence
-    from torchebm.datasets import GaussianMixtureDataset
-    
-    # A trainable EBM
-    class MLPEnergy(BaseEnergyFunction):
-        def __init__(self, input_dim, hidden_dim=64):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.SiLU(),
-                nn.Linear(hidden_dim, 1),
-            )
-    
-        def forward(self, x):
-            return self.net(x).squeeze(-1) # a scalar value
+  from torchebm.losses import ContrastiveDivergence
+  from torchebm.datasets import GaussianMixtureDataset
+  
+  # A trainable EBM
+  class MLPEnergy(BaseEnergyFunction):
+      def __init__(self, input_dim, hidden_dim=64):
+          super().__init__()
+          self.net = nn.Sequential(
+              nn.Linear(input_dim, hidden_dim),
+              nn.SiLU(),
+              nn.Linear(hidden_dim, hidden_dim),
+              nn.SiLU(),
+              nn.Linear(hidden_dim, 1),
+          )
+  
+      def forward(self, x):
+          return self.net(x).squeeze(-1) # a scalar value
 
-    energy_fn = MLPEnergy(input_dim=2).to(device)
-    
-    cd_loss_fn = ContrastiveDivergence(
-        energy_function=energy_fn,
-        sampler=sampler, # from the previous example
-        n_steps=10 # MCMC steps for negative samples gen
-    )
-    
-    optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
-    
-    mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123).get_data()
-    dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
-    
-    # Training Loop
-    for epoch in range(10):
-        epoch_loss = 0.0
-        for i, batch_data in enumerate(dataloader):
-            batch_data = batch_data.to(device)
-    
-            optimizer.zero_grad()
-    
-            loss, neg_samples = cd_loss(batch_data)
-    
-            loss.backward()
-            optimizer.step()
-    
-            epoch_loss += loss.item()
-    
-        avg_loss = epoch_loss / len(dataloader)
-        print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
-    ```
+  energy_fn = MLPEnergy(input_dim=2).to(device)
+  
+  cd_loss_fn = ContrastiveDivergence(
+      energy_function=energy_fn,
+      sampler=sampler, # from the previous example
+      k_steps=10 # MCMC steps for negative samples gen
+  )
+  
+  optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+  
+  mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123).get_data()
+  dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
+  
+  # Training Loop
+  for epoch in range(10):
+      epoch_loss = 0.0
+      for i, batch_data in enumerate(dataloader):
+          batch_data = batch_data.to(device)
+  
+          optimizer.zero_grad()
+  
+          loss, neg_samples = cd_loss(batch_data)
+  
+          loss.backward()
+          optimizer.step()
+  
+          epoch_loss += loss.item()
+  
+      avg_loss = epoch_loss / len(dataloader)
+      print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
+  ```
 </div>
 
 Visualizing the learned energy landscape during training can be insightful. Below shows the evolution of an MLP-based energy function trained on a 2D Gaussian mixture:
