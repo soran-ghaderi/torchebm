@@ -253,10 +253,10 @@ Here are some performance benchmarks for common operations:
 
 ```python
 # Optimize step size for Langevin dynamics
-# Rule of thumb: step_size_scheduler ≈ O(d^(-1/3)) where d is dimension
+# Rule of thumb: step_size ≈ O(d^(-1/3)) where d is dimension
 step_size = min(0.01, 0.1 * dim**(-1/3))
 
-# Noise scale should be sqrt(2 * step_size_scheduler) for standard Langevin
+# Noise scale should be sqrt(2 * step_size) for standard Langevin
 noise_scale = np.sqrt(2 * step_size)
 ```
 

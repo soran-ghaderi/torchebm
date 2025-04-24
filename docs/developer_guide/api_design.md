@@ -280,7 +280,7 @@ def sample_chain(
             
     Example:
         >>> energy_fn = GaussianEnergy(torch.zeros(2), torch.eye(2))
-        >>> sampler = LangevinDynamics(energy_fn, step_size_scheduler=0.1)
+        >>> sampler = LangevinDynamics(energy_fn, step_size=0.1)
         >>> samples, _ = sampler.sample_chain(dim=2, k_steps=100, n_samples=10)
     """
     # Implementation

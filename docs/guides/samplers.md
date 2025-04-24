@@ -36,7 +36,7 @@ energy_fn = GaussianEnergy(
 # Create a Langevin dynamics sampler
 langevin_sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size_scheduler=0.01,
+    step_size=0.01,
     device="cuda" if torch.cuda.is_available() else "cpu"
 )
 

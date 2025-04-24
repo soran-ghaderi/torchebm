@@ -90,7 +90,7 @@ energy_fn = GaussianEnergy(
 # Create a sampler
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size_scheduler=0.01
+    step_size=0.01
 )
 
 # Generate samples
@@ -135,7 +135,7 @@ from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size_scheduler=0.01
+    step_size=0.01
 )
 
 samples = sampler.sample(

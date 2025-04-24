@@ -78,8 +78,8 @@ def visualize_energy_landscape_and_sampling():
     # Initialize the standard Langevin dynamics sampler from the library
     sampler = LangevinDynamics(
         energy_function=energy_fn,
-        step_size_scheduler=0.01,
-        noise_scale_scheduler=0.1,
+        step_size=0.01,
+        noise_scale=0.1,
         device=device,
     )
 

@@ -248,7 +248,7 @@ from torchebm.core import GaussianEnergy
 def test_langevin_performance():
     """Test the performance of Langevin dynamics sampling."""
     energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
-    sampler = LangevinDynamics(energy_function=energy_fn, step_size_scheduler=0.01)
+    sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01)
 
     # Warm-up
     sampler.sample(dim=10, n_steps=10, n_samples=100)

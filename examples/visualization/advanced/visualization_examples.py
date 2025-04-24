@@ -29,8 +29,8 @@ def generate_langevin_gaussian():
     # Initialize sampler
     sampler = LangevinDynamics(
         energy_function=energy_fn,
-        step_size_scheduler=0.01,
-        noise_scale_scheduler=0.1,
+        step_size=0.01,
+        noise_scale=0.1,
     ).to(device)
 
     # Generate samples
@@ -64,7 +64,10 @@ def generate_hmc_gaussian():
 
     # Initialize HMC sampler
     sampler = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=5, device=device
+        energy_function=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=5,
+        device=device,
     )
 
     # Generate samples
@@ -92,8 +95,8 @@ def generate_double_well_trajectory():
     # Initialize sampler with better parameters for exploration
     sampler = LangevinDynamics(
         energy_function=energy_fn,
-        step_size_scheduler=0.1,  # Larger step size to help cross barriers
-        noise_scale_scheduler=0.3,  # More noise to help escape local minima
+        step_size=0.1,  # Larger step size to help cross barriers
+        noise_scale=0.3,  # More noise to help escape local minima
         device=device,
     )
 

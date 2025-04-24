@@ -95,7 +95,7 @@ plt.close(fig)
 
 # Gaussian sampling
 sampler = LangevinDynamics(
-    energy_function=gaussian_energy, step_size_scheduler=0.01, noise_scale_scheduler=1.0
+    energy_function=gaussian_energy, step_size=0.01, noise_scale=1.0
 )
 
 # Initial states far from the mean
@@ -121,8 +121,8 @@ plt.close(fig)
 # Double well sampling
 sampler = LangevinDynamics(
     energy_function=double_well_energy,
-    step_size_scheduler=0.01,
-    noise_scale_scheduler=1.0,
+    step_size=0.01,
+    noise_scale=1.0,
 )
 
 # Initial states in the middle of the barrier
@@ -148,8 +148,8 @@ plt.close(fig)
 # Rastrigin sampling
 sampler = LangevinDynamics(
     energy_function=rastrigin_energy,
-    step_size_scheduler=0.005,
-    noise_scale_scheduler=0.5,
+    step_size=0.005,
+    noise_scale=0.5,
 )
 
 # Initial states far from origin

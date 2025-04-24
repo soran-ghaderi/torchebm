@@ -37,8 +37,8 @@ Classes:
     # Set up the sampler
     sampler = LangevinDynamics(
         energy_function=energy_fn,
-        step_size_scheduler=0.1,
-        noise_scale_scheduler=0.01
+        step_size=0.1,
+        noise_scale=0.01
     )
 
     # Create the CD loss
@@ -193,7 +193,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         ```python
         # Setup energy function, sampler and CD loss
         energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
-        sampler = LangevinDynamics(energy_fn, step_size_scheduler=0.1)
+        sampler = LangevinDynamics(energy_fn, step_size=0.1)
         cd_loss = ContrastiveDivergence(
             energy_function=energy_fn,
             sampler=sampler,

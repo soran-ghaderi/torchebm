@@ -125,7 +125,7 @@ from torchebm.samplers.langevin_dynamics import LangevinDynamics
 energy_fn = DoubleWellEnergy(barrier_height=2.0)
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size_scheduler=0.01
+    step_size=0.01
 )
 
 # We'll manually track the trajectory in a 2D space
@@ -202,7 +202,7 @@ from torchebm.samplers.langevin_dynamics import LangevinDynamics
 energy_fn = RastriginEnergy(a=10.0)
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size_scheduler=0.01
+    step_size=0.01
 )
 
 # Set random seed for reproducibility
@@ -287,7 +287,7 @@ energy_fn = GaussianEnergy(mean=mean, cov=cov)
 # Sample using Langevin dynamics
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size_scheduler=0.01
+    step_size=0.01
 )
 
 # Generate samples
@@ -372,7 +372,7 @@ from torchebm.samplers.langevin_dynamics import LangevinDynamics
 energy_fn = DoubleWellEnergy(barrier_height=2.0)
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size_scheduler=0.01
+    step_size=0.01
 )
 
 # Parameters for sampling

@@ -29,7 +29,7 @@ Classes:
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
 
     # Initialize HMC sampler
-    hmc = HamiltonianMonteCarlo(energy_fn, step_size_scheduler=0.1, n_leapfrog_steps=10)
+    hmc = HamiltonianMonteCarlo(energy_fn, step_size=0.1, n_leapfrog_steps=10)
 
     # Starting points for 10 chains
     initial_state = torch.randn(10, 2)
@@ -193,7 +193,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         # Initialize HMC sampler
         sampler = HamiltonianMonteCarlo(
             energy_function=energy_fn,
-            step_size_scheduler=0.1,
+            step_size=0.1,
             n_leapfrog_steps=10
         )
 
@@ -206,7 +206,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         ```
 
     !!! warning "Parameter Relationships"
-        - Decreasing `step_size_scheduler` improves stability but may reduce mixing.
+        - Decreasing `step_size` improves stability but may reduce mixing.
         - Increasing `n_leapfrog_steps` allows exploring more distant regions but increases computation.
         - The `mass` parameter can be tuned to match the geometry of the target distribution.
     """
@@ -234,11 +234,11 @@ class HamiltonianMonteCarlo(BaseSampler):
             device: Device to run computations on ("cpu" or "cuda").
 
         Raises:
-            ValueError: If step_size_scheduler or n_leapfrog_steps is non-positive.
+            ValueError: If step_size or n_leapfrog_steps is non-positive.
         """
         super().__init__(energy_function=energy_function, dtype=dtype, device=device)
         if step_size <= 0:
-            raise ValueError("step_size_scheduler must be positive")
+            raise ValueError("step_size must be positive")
         if n_leapfrog_steps <= 0:
             raise ValueError("n_leapfrog_steps must be positive")
 
@@ -250,7 +250,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             self.device = torch.device("cpu")
 
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
-        self.step_size = step_size
+        self.step_size_scheduler = step_size
         self.n_leapfrog_steps = n_leapfrog_steps
         self.energy_function = energy_function
         if mass is not None and not isinstance(mass, float):
@@ -334,27 +334,27 @@ class HamiltonianMonteCarlo(BaseSampler):
         grad = torch.clamp(grad, min=-1e6, max=1e6)
 
         # Half-step momentum update
-        p_half = momentum - 0.5 * self.step_size * grad
+        p_half = momentum - 0.5 * self.step_size_scheduler * grad
 
         # Full-step position update with mass matrix adjustment
         if self.mass is None:
-            x_new = position + self.step_size * p_half
+            x_new = position + self.step_size_scheduler * p_half
         else:
             if isinstance(self.mass, float):
                 # Ensure mass is positive to avoid division issues
                 safe_mass = max(self.mass, 1e-10)
-                x_new = position + self.step_size * p_half / safe_mass
+                x_new = position + self.step_size_scheduler * p_half / safe_mass
             else:
                 # Create safe mass tensor avoiding zeros or negative values
                 safe_mass = torch.clamp(self.mass, min=1e-10)
-                x_new = position + self.step_size * p_half / safe_mass.view(
+                x_new = position + self.step_size_scheduler * p_half / safe_mass.view(
                     *([1] * (len(position.shape) - 1)), -1
                 )
 
         # Half-step momentum update with gradient clamping
         grad_new = gradient_fn(x_new)
         grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
-        p_new = p_half - 0.5 * self.step_size * grad_new
+        p_new = p_half - 0.5 * self.step_size_scheduler * grad_new
 
         return x_new, p_new
 

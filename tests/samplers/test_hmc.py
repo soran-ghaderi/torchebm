@@ -46,8 +46,8 @@ def hmc_sampler(request, energy_function):
     params = request.param
     device = params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
 
-    # Configure step_size_scheduler and n_leapfrog_steps
-    step_size = params.get("step_size_scheduler", 0.1)
+    # Configure step_size and n_leapfrog_steps
+    step_size = params.get("step_size", 0.1)
     n_leapfrog_steps = params.get("n_leapfrog_steps", 10)
 
     # Configure mass (optional)
@@ -68,7 +68,7 @@ def hmc_sampler(request, energy_function):
 def test_hmc_initialization(hmc_sampler):
     """Test basic initialization of the HMC sampler."""
     assert isinstance(hmc_sampler, HamiltonianMonteCarlo)
-    assert hmc_sampler.step_size == 0.1
+    assert hmc_sampler.step_size_scheduler == 0.1
     assert hmc_sampler.n_leapfrog_steps == 10
     assert hmc_sampler.mass is None
 
@@ -79,7 +79,10 @@ def test_hmc_initialization_with_mass():
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
     scalar_mass = 2.0
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=10, mass=scalar_mass
+        energy_function=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=10,
+        mass=scalar_mass,
     )
     assert hmc.mass == scalar_mass
 
@@ -102,9 +105,13 @@ def test_hmc_initialization_with_mass():
 def test_hmc_initialization_invalid_params(energy_function):
     """Test that invalid parameters raise appropriate exceptions."""
     with pytest.raises(ValueError):
-        HamiltonianMonteCarlo(energy_function, step_size=-0.1, n_leapfrog_steps=10)
+        HamiltonianMonteCarlo(
+            energy_function, step_size=-0.1, n_leapfrog_steps=10
+        )
     with pytest.raises(ValueError):
-        HamiltonianMonteCarlo(energy_function, step_size=0.1, n_leapfrog_steps=0)
+        HamiltonianMonteCarlo(
+            energy_function, step_size=0.1, n_leapfrog_steps=0
+        )
 
 
 @pytest.mark.parametrize(
@@ -265,7 +272,7 @@ def test_hmc_device_consistency(hmc_sampler):
             {"type": "double_well", "barrier_height": 2.0},
             {
                 "device": "cuda" if torch.cuda.is_available() else "cpu",
-                "step_size_scheduler": 0.05,
+                "step_size": 0.05,
                 "n_leapfrog_steps": 20,
             },
         ),
@@ -396,7 +403,10 @@ def test_hmc_gaussian_sampling_statistics():
 
     # Initialize HMC sampler
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.05, n_leapfrog_steps=10, device="cuda"
+        energy_function=energy_fn,
+        step_size=0.05,
+        n_leapfrog_steps=10,
+        device="cuda",
     )
 
     # Run HMC for many steps to collect statistics

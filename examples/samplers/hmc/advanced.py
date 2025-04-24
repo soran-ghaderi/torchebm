@@ -20,7 +20,10 @@ def hmc_gaussian_sampling():
 
     # Initialize HMC sampler
     hmc_sampler = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=10, device=device
+        energy_function=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=10,
+        device=device,
     )
 
     # Sample 10,000 points in 10 dimensions
@@ -74,7 +77,10 @@ def hmc_standard_gaussian():
 
     # Initialize HMC sampler
     hmc_sampler = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=5, device=device
+        energy_function=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=5,
+        device=device,
     )
 
     # Generate samples
@@ -284,7 +290,10 @@ def compare_hmc_implementations():
 
     # Standard HMC sampler
     standard_hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=5, device=device
+        energy_function=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=5,
+        device=device,
     )
 
     # Custom mass matrix

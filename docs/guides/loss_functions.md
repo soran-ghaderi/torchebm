@@ -31,7 +31,7 @@ model = GaussianEnergy(
 # Define a sampler for negative samples
 sampler = LangevinDynamics(
     energy_function=model,
-    step_size_scheduler=0.01
+    step_size=0.01
 )
 
 # Create CD loss

@@ -92,7 +92,7 @@ from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
 # Define a 10D Gaussian energy function
 energy_fn = MLPEnergy(input_dim=2).to(device)
-sampler = LangevinDynamics(energy_function=energy_fn, step_size_scheduler=0.01, device=device)
+sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
 
 cd_loss_fn = ContrastiveDivergence(
   energy_function=energy_fn,

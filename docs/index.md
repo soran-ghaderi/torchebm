@@ -402,7 +402,7 @@ Here's a minimal example of defining an energy function and a sampler:
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2), device=device)
     
     # Define a sampler
-    sampler = LangevinDynamics(energy_function=energy_fn, step_size_scheduler=0.01, device=device)
+    sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
     
     # Generate samples
     initial_points = torch.randn(500, 2, device=device)

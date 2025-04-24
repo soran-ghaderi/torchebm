@@ -29,7 +29,7 @@ Classes:
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
 
     # Initialize Langevin sampler
-    sampler = LangevinDynamics(energy_fn, step_size_scheduler=0.01, noise_scale_scheduler=0.1)
+    sampler = LangevinDynamics(energy_fn, step_size=0.01, noise_scale=0.1)
 
     # Starting points for 5 chains
     initial_state = torch.randn(5, 2)
@@ -150,8 +150,8 @@ class LangevinDynamics(BaseSampler):
 
     Args:
         energy_function (BaseEnergyFunction): Energy function to sample from.
-        step_size_scheduler (float): Step size for updates.
-        noise_scale_scheduler (float): Scale of the noise.
+        step_size (float): Step size for the Langevin update.
+        noise_scale (float): Scale of the Gaussian noise.
         decay (float): Damping coefficient (not supported yet).
         dtype (torch.dtype): Data type to use for the computations.
         device (str): Device to run the computations on (e.g., "cpu" or "cuda").
@@ -192,31 +192,31 @@ class LangevinDynamics(BaseSampler):
     def __init__(
         self,
         energy_function: BaseEnergyFunction,
-        step_size_scheduler: Union[float, BaseScheduler] = 1e-3,
-        noise_scale_scheduler: Union[float, BaseScheduler] = 1.0,
+        step_size: Union[float, BaseScheduler] = 1e-3,
+        noise_scale: Union[float, BaseScheduler] = 1.0,
         decay: float = 0.0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
         super().__init__(energy_function, dtype, device)
 
-        # Register schedulers for step_size_scheduler and noise_scale_scheduler
-        if isinstance(step_size_scheduler, BaseScheduler):
-            self.register_scheduler("step_size_scheduler", step_size_scheduler)
+        # Register schedulers for step_size and noise_scale
+        if isinstance(step_size, BaseScheduler):
+            self.register_scheduler("step_size", step_size)
         else:
-            if step_size_scheduler <= 0:
-                raise ValueError("step_size_scheduler must be positive")
+            if step_size <= 0:
+                raise ValueError("step_size must be positive")
             self.register_scheduler(
-                "step_size_scheduler", ConstantScheduler(step_size_scheduler)
+                "step_size", ConstantScheduler(step_size)
             )
 
-        if isinstance(noise_scale_scheduler, BaseScheduler):
-            self.register_scheduler("noise_scale_scheduler", noise_scale_scheduler)
+        if isinstance(noise_scale, BaseScheduler):
+            self.register_scheduler("noise_scale", noise_scale)
         else:
-            if noise_scale_scheduler <= 0:
-                raise ValueError("noise_scale_scheduler must be positive")
+            if noise_scale <= 0:
+                raise ValueError("noise_scale must be positive")
             self.register_scheduler(
-                "noise_scale_scheduler", ConstantScheduler(noise_scale_scheduler)
+                "noise_scale", ConstantScheduler(noise_scale)
             )
 
         if device is not None:
@@ -226,8 +226,8 @@ class LangevinDynamics(BaseSampler):
             self.device = torch.device("cpu")
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         self.energy_function = energy_function
-        self.step_size = step_size_scheduler
-        self.noise_scale = noise_scale_scheduler
+        self.step_size = step_size
+        self.noise_scale = noise_scale
         self.decay = decay
 
     def langevin_step(self, prev_x: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
@@ -254,8 +254,8 @@ class LangevinDynamics(BaseSampler):
             ```
         """
 
-        step_size = self.get_scheduled_value("step_size_scheduler")
-        noise_scale = self.get_scheduled_value("noise_scale_scheduler")
+        step_size = self.get_scheduled_value("step_size")
+        noise_scale = self.get_scheduled_value("noise_scale")
 
         gradient = self.energy_function.gradient(prev_x)
 
@@ -349,7 +349,6 @@ class LangevinDynamics(BaseSampler):
         ):
             for i in range(n_steps):
                 # todo: Add decay logic
-                # todo: adaptive step size and scheduling
                 # Generate fresh noise for each step
                 noise = torch.randn_like(x, device=self.device)
 
