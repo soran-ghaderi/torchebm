@@ -10,6 +10,7 @@ Loss functions in TorchEBM are designed to work with energy functions and sample
 to define the training objective for energy-based models.
 """
 
+import warnings
 from abc import abstractmethod, ABC
 from typing import Tuple, Union, Optional, Dict, Any
 
@@ -131,7 +132,7 @@ class BaseContrastiveDivergence(BaseLoss):
         k_steps: int = 1,
         persistent: bool = False,
         buffer_size: int = 100,
-        new_sample_ratio: float = 0.05,
+        new_sample_ratio: float = 0.0,
         init_steps: int = 0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
@@ -157,7 +158,10 @@ class BaseContrastiveDivergence(BaseLoss):
         self.buffer_initialized = False
 
     def initialize_buffer(
-        self, batch_shape: Tuple[int, ...], buffer_chunk_size: int = 1024
+        self,
+        data_shape_no_batch: Tuple[int, ...],
+        buffer_chunk_size: int = 1024,
+        init_noise_scale: float = 0.1,
     ) -> torch.Tensor:
         """
         Initialize the replay buffer with random noise.
@@ -173,53 +177,159 @@ class BaseContrastiveDivergence(BaseLoss):
         Returns:
             The initialized chain.
         """
-        if not self.persistent:
+        if not self.persistent or self.buffer_initialized:
             return
 
-        if self.buffer_initialized:
-            return self.replay_buffer
-
-        if (
-            self.replay_buffer is None
-            or self.replay_buffer.batch_shape[1:] != batch_shape[1:]
-        ):
-
-            if self.buffer_size < batch_shape[0]:
-                raise ValueError(
-                    f"Replay buffer size {self.buffer_size} is smaller than batch size {batch_shape[0]}, please increase the replay buffer size. "
-                    f"Hint: ContrastiveDivergence(...,buffer_size=BATCH_SIZE,...)."
-                )
-            buffer_shape = (self.buffer_size,) + tuple(
-                batch_shape[1:]
-            )  # shape: [buffer_size, *data_shape]
-            self.replay_buffer = torch.randn(
-                buffer_shape, dtype=self.dtype, device=self.device
+        if self.buffer_size <= 0:
+            raise ValueError(
+                f"Replay buffer size must be positive, got {self.buffer_size}"
             )
-            self.buffer_ptr = torch.tensor(0, dtype=torch.long, device=self.device)
 
-            if self.init_steps == 0:
-                print(f"Buffer initialized with random noise (size {self.buffer_size})")
+        buffer_shape = (
+            self.buffer_size,
+        ) + data_shape_no_batch  # shape: [buffer_size, *data_shape]
+        print(f"Initializing replay buffer with shape {buffer_shape}...")
 
-            elif self.init_steps > 0:
-                print(f"Initializing buffer with {self.init_steps} MCMC steps...")
-                with torch.no_grad():  # Make sure we don't track gradients
-                    # Process in chunks to avoid memory issues
-                    chunk_size = min(
-                        self.buffer_size, buffer_chunk_size
-                    )  # Adjust based on your GPU memory
-                    for i in range(0, self.buffer_size, chunk_size):
-                        end = min(i + chunk_size, self.buffer_size)
-                        self.replay_buffer[i:end] = self.sampler.sample(
-                            x=self.replay_buffer[i:end], n_steps=self.init_steps
+        self.replay_buffer = (
+            torch.randn(buffer_shape, dtype=self.dtype, device=self.device)
+            * init_noise_scale
+        )  # Start with small noise
+
+        if self.init_steps > 0:
+            print(f"Running {self.init_steps} MCMC steps to populate buffer...")
+            with torch.no_grad():  # Make sure we don't track gradients
+                # Process in chunks to avoid memory issues
+                chunk_size = min(self.buffer_size, buffer_chunk_size)
+                for i in range(0, self.buffer_size, chunk_size):
+                    end = min(i + chunk_size, self.buffer_size)
+                    current_chunk = self.replay_buffer[
+                        i:end
+                    ].clone()  # Sample from current state
+                    try:
+                        updated_chunk = self.sampler.sample(
+                            x=current_chunk, n_steps=self.init_steps
                         ).detach()
+                        # Ensure the output shape matches
+                        if updated_chunk.shape == current_chunk.shape:
+                            self.replay_buffer[i:end] = updated_chunk
+                        else:
+                            warnings.warn(
+                                f"Sampler output shape mismatch during buffer init. Expected {current_chunk.shape}, got {updated_chunk.shape}. Skipping update for chunk {i}-{end}."
+                            )
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"Error during buffer initialization sampling for chunk {i}-{end}: {e}. Keeping noise for this chunk."
+                        )
+                        # Handle potential sampler errors during init
 
-            self.buffer_ptr = torch.tensor(0, dtype=torch.long, device=self.device)
-            self.buffer_initialized = True
-            print(f"Replay buffer initialized with {self.buffer_size} samples")
+        # Reset pointer and mark as initialized
+        self.buffer_ptr.zero_()
+        self.buffer_initialized = True
+        print(f"Replay buffer initialized.")
 
-        return self.replay_buffer
+        # if (
+        #     self.replay_buffer is None
+        #     or self.replay_buffer.batch_shape[1:] != batch_shape[1:]
+        # ):
+        #
+        #     if self.buffer_size < batch_shape[0]:
+        #         raise ValueError(
+        #             f"Replay buffer size {self.buffer_size} is smaller than batch size {batch_shape[0]}, please increase the replay buffer size. "
+        #             f"Hint: ContrastiveDivergence(...,buffer_size=BATCH_SIZE,...)."
+        #         )
+        #     buffer_shape = (self.buffer_size,) + tuple(
+        #         batch_shape[1:]
+        #     )  # shape: [buffer_size, *data_shape]
+        #     self.replay_buffer = torch.randn(
+        #         buffer_shape, dtype=self.dtype, device=self.device
+        #     )
+        #     self.buffer_ptr = torch.tensor(0, dtype=torch.long, device=self.device)
+        #
+        #     if self.init_steps == 0:
+        #         print(f"Buffer initialized with random noise (size {self.buffer_size})")
 
-    def get_negative_samples(self, batch_size, data_shape) -> torch.Tensor:
+        #     elif self.init_steps > 0:
+        #         print(f"Initializing buffer with {self.init_steps} MCMC steps...")
+        #         with torch.no_grad():  # Make sure we don't track gradients
+        #             # Process in chunks to avoid memory issues
+        #             chunk_size = min(
+        #                 self.buffer_size, buffer_chunk_size
+        #             )  # Adjust based on your GPU memory
+        #             for i in range(0, self.buffer_size, chunk_size):
+        #                 end = min(i + chunk_size, self.buffer_size)
+        #                 self.replay_buffer[i:end] = self.sampler.sample(
+        #                     x=self.replay_buffer[i:end], n_steps=self.init_steps
+        #                 ).detach()
+        #
+        #     self.buffer_ptr = torch.tensor(0, dtype=torch.long, device=self.device)
+        #     self.buffer_initialized = True
+        #     print(f"Replay buffer initialized with {self.buffer_size} samples")
+        #
+        # return self.replay_buffer
+
+    def get_start_points(self, x: torch.Tensor) -> torch.Tensor:
+        """Gets the starting points for the MCMC sampler.
+
+        Handles both persistent (PCD) and non-persistent (CD-k) modes.
+        Initializes the buffer for PCD on the first call if needed.
+
+        Args:
+            x (torch.Tensor): The input data batch. Used directly for non-persistent CD
+                              and for shape inference/initialization trigger for PCD.
+
+        Returns:
+            torch.Tensor: The tensor of starting points for the sampler.
+        """
+        batch_size = x.shape[0]
+        data_shape_no_batch = x.shape[1:]
+
+        if self.persistent:
+            # Initialize buffer if it hasn't been done yet
+            if not self.buffer_initialized:
+                self.initialize_buffer(data_shape_no_batch)
+                # Check again if initialization failed silently (e.g., buffer_size=0)
+                if not self.buffer_initialized:
+                    raise RuntimeError("Buffer initialization failed.")
+
+            # --- Standard PCD Logic ---
+            # Sample random indices from the buffer
+            # Ensure buffer_size is at least batch_size for this simple sampling.
+            # A more robust approach might sample with replacement if buffer < batch_size,
+            # but ideally buffer should be much larger. Let's check here.
+            if self.buffer_size < batch_size:
+                warnings.warn(
+                    f"Buffer size ({self.buffer_size}) is smaller than batch size ({batch_size}). Sampling with replacement.",
+                    UserWarning,
+                )
+
+                indices = torch.randint(
+                    0, self.buffer_size, (batch_size,), device=self.device
+                )
+            else:
+                # Sample without replacement if buffer is large enough (though randint samples with replacement by default)
+                # To be precise: sample random indices
+                indices = torch.randint(
+                    0, self.buffer_size, (batch_size,), device=self.device
+                )
+
+            # Retrieve samples and detach
+            start_points = self.replay_buffer[indices].detach().clone()
+
+            # --- Optional: Noise Injection (Less standard for START points) ---
+            if self.new_sample_ratio > 0.0:
+                n_new = max(1, int(batch_size * self.new_sample_ratio))
+                noise_indices = torch.randperm(batch_size, device=self.device)[:n_new]
+                start_points[noise_indices] = torch.randn_like(
+                    start_points[noise_indices]
+                )
+
+        else:
+            # --- Standard Non-Persistent CD Logic ---
+            start_points = x.detach().clone()
+
+        return start_points
+
+    def get_negative_samples(self, x, batch_size, data_shape) -> torch.Tensor:
         """Get negative samples using the replay buffer strategy.
 
         Args:
@@ -265,42 +375,62 @@ class BaseContrastiveDivergence(BaseLoss):
         Args:
             samples: New samples to add to the buffer.
         """
-        if not self.persistent:
+        if not self.persistent or not self.buffer_initialized:
             return
 
         batch_size = samples.shape[0]
+        samples = samples.detach()
 
         # If the buffer isn't fully initialized yet, just append
-        if not hasattr(self, "_buffer_filled_size"):
-            self._buffer_filled_size = 0
+        # if not hasattr(self, "_buffer_filled_size"):
+        #     self._buffer_filled_size = 0
 
-        if self._buffer_filled_size < self.buffer_size:
-            # Still filling the buffer
-            end_idx = min(self._buffer_filled_size + batch_size, self.buffer_size)
-            size_to_add = end_idx - self._buffer_filled_size
+        # if self._buffer_filled_size < self.buffer_size:
+        #     # Still filling the buffer
+        #     end_idx = min(self._buffer_filled_size + batch_size, self.buffer_size)
+        #     size_to_add = end_idx - self._buffer_filled_size
+        #
+        #     self.replay_buffer[self._buffer_filled_size : end_idx] = samples[
+        #         :size_to_add
+        #     ]
+        #     self._buffer_filled_size = end_idx
+        #     self.buffer_ptr.fill_(self._buffer_filled_size % self.buffer_size)
+        #
+        #     if self._buffer_filled_size >= self.buffer_size:
+        #         print("Buffer fully filled with training samples")
+        #     return
 
-            self.replay_buffer[self._buffer_filled_size : end_idx] = samples[
-                :size_to_add
-            ]
-            self._buffer_filled_size = end_idx
-            self.buffer_ptr.fill_(self._buffer_filled_size % self.buffer_size)
+        indices_to_replace = torch.randint(
+            0, self.buffer_size, (batch_size,), device=self.device
+        )
 
-            if self._buffer_filled_size >= self.buffer_size:
-                print("Buffer fully filled with training samples")
-            return
-
-        # Update buffer with new samples
-        ptr = int(self.buffer_ptr)
-        if ptr + batch_size <= self.buffer_size:
-            # If we can fit the entire batch
-            self.replay_buffer[ptr : ptr + batch_size] = samples
-            self.buffer_ptr.fill_((ptr + batch_size) % self.buffer_size)
+        # Handle potential size mismatch if batch_size > buffer_size (should be rare with checks)
+        num_to_replace = min(batch_size, self.buffer_size)
+        if num_to_replace < batch_size:
+            warnings.warn(
+                f"Replacing only {num_to_replace} buffer samples as batch size ({batch_size}) > buffer size ({self.buffer_size})",
+                UserWarning,
+            )
+            indices_to_replace = indices_to_replace[:num_to_replace]
+            samples_to_insert = samples[:num_to_replace]
         else:
-            # Handle wrapping around the buffer
-            space_left = self.buffer_size - ptr
-            self.replay_buffer[ptr:] = samples[:space_left]
-            self.replay_buffer[: batch_size - space_left] = samples[space_left:]
-            self.buffer_ptr.fill_((ptr + batch_size) % self.buffer_size)
+            samples_to_insert = samples
+
+        self.replay_buffer[indices_to_replace] = samples_to_insert
+
+        # this uses FIFO logic, maybe receive a param whether to use this strategy  or the random slots above
+        # # Update buffer with new samples
+        # ptr = int(self.buffer_ptr)
+        # if ptr + batch_size <= self.buffer_size:
+        #     # If we can fit the entire batch
+        #     self.replay_buffer[ptr : ptr + batch_size] = samples
+        #     self.buffer_ptr.fill_((ptr + batch_size) % self.buffer_size)
+        # else:
+        #     # Handle wrapping around the buffer
+        #     space_left = self.buffer_size - ptr
+        #     self.replay_buffer[ptr:] = samples[:space_left]
+        #     self.replay_buffer[: batch_size - space_left] = samples[space_left:]
+        #     self.buffer_ptr.fill_((ptr + batch_size) % self.buffer_size)
 
     def __call__(self, x, *args, **kwargs):
         """
