@@ -265,7 +265,7 @@ class BaseContrastiveDivergence(BaseLoss):
         #     self.buffer_initialized = True
         #     print(f"Replay buffer initialized with {self.buffer_size} samples")
         #
-        # return self.replay_buffer
+        return self.replay_buffer
 
     def get_start_points(self, x: torch.Tensor) -> torch.Tensor:
         """Gets the starting points for the MCMC sampler.

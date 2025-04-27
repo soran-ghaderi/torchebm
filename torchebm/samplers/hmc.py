@@ -132,7 +132,7 @@ from typing import Optional, Union, Tuple, Callable
 
 import torch
 
-from torchebm.core import BaseSampler
+from torchebm.core import BaseSampler, BaseScheduler, ConstantScheduler
 from torchebm.core.base_energy_function import BaseEnergyFunction
 
 
@@ -170,6 +170,9 @@ class HamiltonianMonteCarlo(BaseSampler):
         step_size (float): Step size for leapfrog updates.
         n_leapfrog_steps (int): Number of leapfrog steps per proposal.
         mass (Optional[Tuple[float, torch.Tensor]]): Optional mass matrix or scalar for momentum sampling.
+            If float: Uses scalar mass for all dimensions.
+            If Tensor: Uses diagonal mass matrix.
+            If None: Uses identity mass matrix.
         dtype (torch.dtype): Data type to use for computations.
         device (Optional[Union[Tuple[str, torch.device]]]): Device to run computations on.
 
@@ -214,7 +217,7 @@ class HamiltonianMonteCarlo(BaseSampler):
     def __init__(
         self,
         energy_function: BaseEnergyFunction,
-        step_size: float = 0.1,
+        step_size: Union[float, BaseScheduler] = 1e-3,
         n_leapfrog_steps: int = 10,
         mass: Optional[Tuple[float, torch.Tensor]] = None,
         dtype: torch.Tensor = torch.float32,
@@ -237,8 +240,13 @@ class HamiltonianMonteCarlo(BaseSampler):
             ValueError: If step_size or n_leapfrog_steps is non-positive.
         """
         super().__init__(energy_function=energy_function, dtype=dtype, device=device)
-        if step_size <= 0:
-            raise ValueError("step_size must be positive")
+        if isinstance(step_size, BaseScheduler):
+            self.register_scheduler("step_size", step_size)
+        else:
+            if step_size <= 0:
+                raise ValueError("step_size must be positive")
+            self.register_scheduler("step_size", ConstantScheduler(step_size))
+
         if n_leapfrog_steps <= 0:
             raise ValueError("n_leapfrog_steps must be positive")
 
@@ -249,8 +257,8 @@ class HamiltonianMonteCarlo(BaseSampler):
         else:
             self.device = torch.device("cpu")
 
-        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
-        self.step_size_scheduler = step_size
+        # Respect user-provided dtype
+        self.dtype = dtype
         self.n_leapfrog_steps = n_leapfrog_steps
         self.energy_function = energy_function
         if mass is not None and not isinstance(mass, float):
@@ -328,33 +336,35 @@ class HamiltonianMonteCarlo(BaseSampler):
         Returns:
             Tuple of (new_position, new_momentum).
         """
+        step_size = self.get_scheduled_value("step_size")
+
         # Calculate gradient for half-step momentum update with numerical safeguards
-        grad = gradient_fn(position)
+        gradient = gradient_fn(position)
         # Clip extreme gradient values to prevent instability
-        grad = torch.clamp(grad, min=-1e6, max=1e6)
+        gradient = torch.clamp(gradient, min=-1e6, max=1e6)
 
         # Half-step momentum update
-        p_half = momentum - 0.5 * self.step_size_scheduler * grad
+        p_half = momentum - 0.5 * step_size * gradient
 
         # Full-step position update with mass matrix adjustment
         if self.mass is None:
-            x_new = position + self.step_size_scheduler * p_half
+            x_new = position + step_size * p_half
         else:
             if isinstance(self.mass, float):
                 # Ensure mass is positive to avoid division issues
                 safe_mass = max(self.mass, 1e-10)
-                x_new = position + self.step_size_scheduler * p_half / safe_mass
+                x_new = position + step_size * p_half / safe_mass
             else:
                 # Create safe mass tensor avoiding zeros or negative values
                 safe_mass = torch.clamp(self.mass, min=1e-10)
-                x_new = position + self.step_size_scheduler * p_half / safe_mass.view(
+                x_new = position + step_size * p_half / safe_mass.view(
                     *([1] * (len(position.shape) - 1)), -1
                 )
 
         # Half-step momentum update with gradient clamping
         grad_new = gradient_fn(x_new)
         grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
-        p_new = p_half - 0.5 * self.step_size_scheduler * grad_new
+        p_new = p_half - 0.5 * step_size * grad_new
 
         return x_new, p_new
 
@@ -533,6 +543,9 @@ class HamiltonianMonteCarlo(BaseSampler):
             plt.show()
             ```
         """
+        # Reset schedulers to their initial values at the start of sampling
+        self.reset_schedulers()
+        
         if x is None:
             # If dim is not provided, try to infer from the energy function
             if dim is None:
@@ -545,7 +558,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                     )
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
         else:
-            x = x.to(self.device)
+            x = x.to(device=self.device, dtype=self.dtype)
 
         # Get dimension from x for later use
         dim = x.shape[1]
@@ -562,11 +575,15 @@ class HamiltonianMonteCarlo(BaseSampler):
             )
 
         with torch.amp.autocast(
-            device_type="cuda" if self.device.type == "cuda" else "cpu"
+            device_type="cuda" if self.device.type == "cuda" else "cpu",
+            dtype=self.dtype if self.device.type == "cuda" else None
         ):
             for i in range(n_steps):
                 # Perform single HMC step
                 x, acceptance_prob, accepted = self.hmc_step(x)
+                
+                # Step all schedulers after each HMC step
+                scheduler_values = self.step_schedulers()
 
                 if return_trajectory:
                     trajectory[:, i, :] = x
@@ -614,13 +631,13 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         if return_trajectory:
             if return_diagnostics:
-                return trajectory, diagnostics  # , acceptance_rates
-            return trajectory
+                return trajectory.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)  # , acceptance_rates
+            return trajectory.to(dtype=self.dtype)
 
         if return_diagnostics:
-            return x, diagnostics  # , acceptance_rates
+            return x.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)  # , acceptance_rates
 
-        return x
+        return x.to(dtype=self.dtype)
 
     def _setup_diagnostics(
         self, dim: int, n_steps: int, n_samples: int = None
