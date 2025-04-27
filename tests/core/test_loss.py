@@ -172,7 +172,7 @@ def test_base_contrastive_divergence_initialize_buffer():
 
     # Initialize the replay buffer
     shape = (32, 2)  # batch_size, input_dim
-    replay_buffer = loss.initialize_buffer(shape)
+    replay_buffer = loss.initialize_buffer((2,))
 
     assert replay_buffer.shape == shape
     assert replay_buffer.device.type == device

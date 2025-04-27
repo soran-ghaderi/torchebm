@@ -18,6 +18,8 @@ from .base_scheduler import (
     ExponentialDecayScheduler,
     LinearScheduler,
     CosineScheduler,
+    MultiStepScheduler,
+    WarmupScheduler,
 )
 from .base_sampler import BaseSampler
 

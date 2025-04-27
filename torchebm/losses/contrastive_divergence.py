@@ -247,24 +247,47 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         batch_size = x.shape[0]
         data_shape = x.shape[1:]
 
-        if self.persistent and (
-            not hasattr(self, "buffer_initialized") or not self.buffer_initialized
-        ):
-            self.initialize_buffer(x.shape)
-
-        start_points = self.get_negative_samples(batch_size, data_shape)
-
-        # generate negative samples
-        pred_samples = self.sampler.sample(
-            x=start_points,
-            n_steps=self.k_steps,
-            # n_samples=batch_size,
-        ).detach()
+        start_points = self.get_start_points(x)
+        with torch.no_grad():  # Sampling process should not require gradients itself
+            pred_samples = self.sampler.sample(
+                x=start_points,
+                n_steps=self.k_steps,
+            ).detach()
 
         if self.persistent:
-            self.update_buffer(pred_samples.detach())
+            self.update_buffer(pred_samples)  # Pass the final samples
 
-        loss = self.compute_loss(x, pred_samples, *args, **kwargs)
+        #     if not self.buffer_initialized:
+        #         # Pass the correct shape to initialize_buffer
+        #         self.initialize_buffer(x.shape)
+        #
+        #     indices = torch.randint(
+        #         0, self.buffer_size, (batch_size,), device=self.device
+        #     )
+        #     start_points = self.replay_buffer[indices].detach().clone()
+        # else:
+        #     start_points = x.detach().clone()
+
+        # if self.persistent and (
+        #     not hasattr(self, "buffer_initialized") or not self.buffer_initialized
+        # ):
+        #     self.initialize_buffer(x.shape)
+        #
+        # start_points = (
+        #     self.get_negative_samples(x, batch_size, data_shape).detach().clone()
+        # )
+        #
+        # # generate negative samples
+        # pred_samples = self.sampler.sample(
+        #     x=start_points,
+        #     n_steps=self.k_steps,
+        #     # n_samples=batch_size,
+        # ).detach()
+        #
+        # if self.persistent:
+        #     self.update_buffer(pred_samples.detach())
+
+        loss = self.compute_loss(x, pred_samples.detach(), *args, **kwargs)
 
         return loss, pred_samples.detach()
 
@@ -291,12 +314,18 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             we *minimize* this value. This is different from some formulations that
             maximize `E(x') - E(x)`.
         """
+        x = x.to(self.device, self.dtype)
+        pred_x = pred_x.to(self.device, self.dtype)
 
         x_energy = self.energy_function(x)
         pred_x_energy = self.energy_function(pred_x)
 
         # Contrastive Divergence loss: E[data] - E[model]
         loss = torch.mean(x_energy - pred_x_energy)
+
+        # add energy regularization term in the params in future releases
+        # energy_reg = self.energy_reg_weight * (torch.mean(x_energy**2) + torch.mean(pred_x_energy**2))
+        # loss = loss + energy_reg
 
         return loss
 

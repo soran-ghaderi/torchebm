@@ -198,7 +198,7 @@ class LangevinDynamics(BaseSampler):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
-        super().__init__(energy_function, dtype, device)
+        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
 
         # Register schedulers for step_size and noise_scale
         if isinstance(step_size, BaseScheduler):
@@ -206,18 +206,14 @@ class LangevinDynamics(BaseSampler):
         else:
             if step_size <= 0:
                 raise ValueError("step_size must be positive")
-            self.register_scheduler(
-                "step_size", ConstantScheduler(step_size)
-            )
+            self.register_scheduler("step_size", ConstantScheduler(step_size))
 
         if isinstance(noise_scale, BaseScheduler):
             self.register_scheduler("noise_scale", noise_scale)
         else:
             if noise_scale <= 0:
                 raise ValueError("noise_scale must be positive")
-            self.register_scheduler(
-                "noise_scale", ConstantScheduler(noise_scale)
-            )
+            self.register_scheduler("noise_scale", ConstantScheduler(noise_scale))
 
         if device is not None:
             self.device = torch.device(device)
