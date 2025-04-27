@@ -75,6 +75,15 @@ class BaseSampler(ABC):
         """
         self.schedulers[name] = scheduler
 
+    def get_schedulers(self) -> Dict[str, BaseScheduler]:
+        """
+        Get all registered schedulers.
+
+        Returns:
+            Dictionary mapping parameter names to their schedulers
+        """
+        return self.schedulers
+
     def get_scheduled_value(self, name: str) -> float:
         """
         Get current value for a scheduled parameter.
