@@ -672,7 +672,7 @@ def sampler_config(request):
 )
 def device(request):
     """Fixture for device (CPU or CUDA)."""
-    return request.param
+    return torch.device(request.param)
 
 
 @pytest.fixture
