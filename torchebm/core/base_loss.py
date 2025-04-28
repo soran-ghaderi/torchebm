@@ -170,7 +170,7 @@ class BaseContrastiveDivergence(BaseLoss):
         k_steps: Number of MCMC steps to perform for each update
         persistent: Whether to use replay buffer (PCD)
         buffer_size: Size of the buffer for storing replay buffer
-        new_sample_ratio: Ratio of new samples (default 5%)
+        new_sample_ratio: Ratio of new samples (default 5%). Adds noise to a fraction of buffer samples for exploration
         init_steps: Number of steps to run when initializing new chain elements
         dtype: Data type for computations
         device: Device for computations
@@ -221,7 +221,7 @@ class BaseContrastiveDivergence(BaseLoss):
         self,
         data_shape_no_batch: Tuple[int, ...],
         buffer_chunk_size: int = 1024,
-        init_noise_scale: float = 0.1,
+        init_noise_scale: float = 0.01,
     ) -> torch.Tensor:
         """
         Initialize the replay buffer with random noise.
@@ -251,6 +251,7 @@ class BaseContrastiveDivergence(BaseLoss):
         ) + data_shape_no_batch  # shape: [buffer_size, *data_shape]
         print(f"Initializing replay buffer with shape {buffer_shape}...")
 
+        # Initialize with small noise for better starting positions
         self.replay_buffer = (
             torch.randn(buffer_shape, dtype=self.dtype, device=self.device)
             * init_noise_scale
@@ -288,7 +289,7 @@ class BaseContrastiveDivergence(BaseLoss):
                                 f"Sampler output shape mismatch during buffer init. Expected {current_chunk.shape}, got {updated_chunk.shape}. Skipping update for chunk {i}-{end}."
                             )
                     except Exception as e:
-                        raise RuntimeError(
+                        warnings.warn(
                             f"Error during buffer initialization sampling for chunk {i}-{end}: {e}. Keeping noise for this chunk."
                         )
                         # Handle potential sampler errors during init
@@ -327,40 +328,41 @@ class BaseContrastiveDivergence(BaseLoss):
                 if not self.buffer_initialized:
                     raise RuntimeError("Buffer initialization failed.")
 
-            # --- Standard PCD Logic ---
             # Sample random indices from the buffer
-            # Ensure buffer_size is at least batch_size for this simple sampling.
-            # A more robust approach might sample with replacement if buffer < batch_size,
-            # but ideally buffer should be much larger. Let's check here.
             if self.buffer_size < batch_size:
                 warnings.warn(
                     f"Buffer size ({self.buffer_size}) is smaller than batch size ({batch_size}). Sampling with replacement.",
                     UserWarning,
                 )
-
                 indices = torch.randint(
                     0, self.buffer_size, (batch_size,), device=self.device
                 )
             else:
-                # Sample without replacement if buffer is large enough (though randint samples with replacement by default)
-                # To be precise: sample random indices
-                indices = torch.randint(
-                    0, self.buffer_size, (batch_size,), device=self.device
-                )
+                # Use stratified sampling to ensure better coverage of the buffer
+                stride = self.buffer_size // batch_size
+                base_indices = torch.arange(0, batch_size, device=self.device) * stride
+                offset = torch.randint(0, stride, (batch_size,), device=self.device)
+                indices = (base_indices + offset) % self.buffer_size
 
             # Retrieve samples and detach
             start_points = self.replay_buffer[indices].detach().clone()
 
-            # --- Optional: Noise Injection (Less standard for START points) ---
+            # Optional noise injection for exploration
             if self.new_sample_ratio > 0.0:
                 n_new = max(1, int(batch_size * self.new_sample_ratio))
                 noise_indices = torch.randperm(batch_size, device=self.device)[:n_new]
-                start_points[noise_indices] = torch.randn_like(
-                    start_points[noise_indices], device=self.device, dtype=self.dtype
+                noise_scale = 0.01  # Small noise scale
+                start_points[noise_indices] = (
+                    start_points[noise_indices]
+                    + torch.randn_like(
+                        start_points[noise_indices],
+                        device=self.device,
+                        dtype=self.dtype,
+                    )
+                    * noise_scale
                 )
-
         else:
-            # --- Standard Non-Persistent CD Logic ---
+            # For standard CD-k, use the data points as starting points
             start_points = x.detach().clone()
 
         return start_points
@@ -406,7 +408,7 @@ class BaseContrastiveDivergence(BaseLoss):
         return all_samples
 
     def update_buffer(self, samples: torch.Tensor) -> None:
-        """Update the replay buffer with new samples.
+        """Update the replay buffer with new samples using FIFO strategy.
 
         Args:
             samples: New samples to add to the buffer.
@@ -418,23 +420,29 @@ class BaseContrastiveDivergence(BaseLoss):
         samples = samples.to(device=self.device, dtype=self.dtype).detach()
 
         batch_size = samples.shape[0]
-        indices_to_replace = torch.randint(
-            0, self.buffer_size, (batch_size,), device=self.device
-        )
 
-        # Handle potential size mismatch if batch_size > buffer_size (should be rare with checks)
-        num_to_replace = min(batch_size, self.buffer_size)
-        if num_to_replace < batch_size:
-            warnings.warn(
-                f"Replacing only {num_to_replace} buffer samples as batch size ({batch_size}) > buffer size ({self.buffer_size})",
-                UserWarning,
-            )
-            indices_to_replace = indices_to_replace[:num_to_replace]
-            samples_to_insert = samples[:num_to_replace]
+        # FIFO update strategy - replace oldest samples first
+        ptr = int(self.buffer_ptr.item())
+        # Handle the case where batch_size > buffer_size
+        if batch_size >= self.buffer_size:
+            # If batch is larger than buffer, just use the latest samples
+            self.replay_buffer[:] = samples[-self.buffer_size :].detach()
+            self.buffer_ptr[...] = 0  # Use ellipsis to set value without indexing
         else:
-            samples_to_insert = samples
+            # Calculate indices to be replaced (handling buffer wraparound)
+            end_ptr = (ptr + batch_size) % self.buffer_size
 
-        self.replay_buffer[indices_to_replace] = samples_to_insert
+            if end_ptr > ptr:
+                # No wraparound
+                self.replay_buffer[ptr:end_ptr] = samples.detach()
+            else:
+                # Handle wraparound - split the update into two parts
+                first_part = self.buffer_size - ptr
+                self.replay_buffer[ptr:] = samples[:first_part].detach()
+                self.replay_buffer[:end_ptr] = samples[first_part:].detach()
+
+            # Update pointer - use item assignment instead of indexing
+            self.buffer_ptr[...] = end_ptr
 
     def to(
         self, device: Union[str, torch.device], dtype: Optional[torch.dtype] = None

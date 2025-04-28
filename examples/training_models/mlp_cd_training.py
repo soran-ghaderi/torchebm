@@ -1,21 +1,29 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+import os
 
 from torchebm.core import (
     BaseEnergyFunction,
-    ExponentialDecayScheduler,
-    LinearScheduler,
     CosineScheduler,
+    LinearScheduler,
+    ExponentialDecayScheduler,
 )
 from torchebm.samplers import LangevinDynamics
-from torchebm.losses import ContrastiveDivergence, ScoreMatching
+from torchebm.losses import ContrastiveDivergence
+from torchebm.datasets import TwoMoonsDataset
 
-from torchebm.datasets import GaussianMixtureDataset, TwoMoonsDataset
+# Set seeds for reproducibility
+torch.manual_seed(42)
+np.random.seed(42)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(42)
+
+# Create output directory for plots
+os.makedirs("ebm_training_plots", exist_ok=True)
 
 
 class MLPEnergy(BaseEnergyFunction):
@@ -24,11 +32,17 @@ class MLPEnergy(BaseEnergyFunction):
     def __init__(self, input_dim: int, hidden_dim: int = 64):
         super().__init__()
         self.network = nn.Sequential(
+            # nn.Linear(input_dim, hidden_dim),
+            # nn.ReLU(),
+            # nn.Linear(hidden_dim, hidden_dim),
+            # nn.Tanh(),
+            # nn.Linear(hidden_dim, 1),  # Output a single scalar energy value
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
+            nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),  # Output a single scalar energy value
+            nn.SELU(),
+            nn.Linear(hidden_dim, 1),
+            nn.Tanh(),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -127,7 +141,7 @@ if __name__ == "__main__":
     INPUT_DIM = 2
     HIDDEN_DIM = 16
     BATCH_SIZE = 256
-    EPOCHS = 220
+    EPOCHS = 200
     LEARNING_RATE = 1e-3
     SAMPLER_STEP_SIZE = 0.1
     # SAMPLER_STEP_SIZE = ExponentialDecayScheduler(
@@ -137,13 +151,11 @@ if __name__ == "__main__":
 
     # SAMPLER_NOISE_SCALE = torch.sqrt(torch.Tensor([SAMPLER_STEP_SIZE])).numpy()[0]
     SAMPLER_NOISE_SCALE = 0.1
-    # SAMPLER_NOISE_SCALE = LinearScheduler(
-    #     start_value=1.0, end_value=0.01, n_steps=1000
-    # )
+    # SAMPLER_NOISE_SCALE = LinearScheduler(start_value=1.0, end_value=0.01, n_steps=50)
     # SAMPLER_NOISE_SCALE = ExponentialDecayScheduler(
     #     start_value=1e-1, decay_rate=0.99, min_value=1e-2
     # )
-    SAMPLER_NOISE_SCALE = CosineScheduler(start_value=3e-1, end_value=5e-3, n_steps=100)
+    SAMPLER_NOISE_SCALE = CosineScheduler(start_value=3e-1, end_value=1e-2, n_steps=100)
 
     print(f"Sampler noise scale: {SAMPLER_NOISE_SCALE}")
     CD_K = 10
@@ -190,22 +202,15 @@ if __name__ == "__main__":
         noise_scale=SAMPLER_NOISE_SCALE,
         device=device,
     )
-    # loss_fn = ContrastiveDivergence(
-    #     energy_function=energy_model,
-    #     sampler=sampler,
-    #     k_steps=CD_K,
-    #     persistent=USE_PCD,
-    #     buffer_size=BATCH_SIZE,
-    # ).to(
-    #     device
-    # )  # Loss function itself can be on device
-
-    loss_fn = ScoreMatching(
+    loss_fn = ContrastiveDivergence(
         energy_function=energy_model,
-        hessian_method="hutchinson",  # More efficient for higher dimensions
-        hutchinson_samples=5,
-        device=device,
-    )
+        sampler=sampler,
+        k_steps=CD_K,
+        persistent=USE_PCD,
+        buffer_size=BATCH_SIZE,
+    ).to(
+        device
+    )  # Loss function itself can be on device
 
     # Optimizer (Optimizes the parameters of the energy function)
     optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
@@ -225,8 +230,7 @@ if __name__ == "__main__":
 
             # Calculate Contrastive Divergence loss
             # The loss_fn.forward() internally calls the sampler and energy_fn
-            # loss, negative_samples = loss_fn(data_batch) # Uncomment if using CD
-            loss = loss_fn(data_batch)
+            loss, negative_samples = loss_fn(data_batch)
 
             # Backpropagate the loss through the energy function parameters
             loss.backward()
