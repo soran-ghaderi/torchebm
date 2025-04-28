@@ -1,75 +1,191 @@
 r"""
-Score Matching Loss Functions
+Score Matching Loss Module.
 
-This module implements various Score Matching techniques for training energy-based models (EBMs). 
-Score Matching provides a way to train EBMs without requiring MCMC sampling, which can be 
-computationally expensive and potentially unstable.
+This module provides implementations of various Score Matching techniques for training energy-based models (EBMs).
+Score Matching offers a powerful alternative to Contrastive Divergence by directly estimating the score function
+without requiring MCMC sampling, making it more computationally efficient and stable in many cases.
 
-## Overview
+!!! success "Key Features"
+    - Original Score Matching (Hyvärinen, 2005)
+    - Denoising Score Matching (Vincent, 2011)
+    - Sliced Score Matching (Song et al., 2019)
+    - Support for different Hessian computation methods
+    - Mixed precision training support
 
-Score Matching methods directly estimate the score function \( \nabla_x \log p(x) \), which is the 
-gradient of the log probability density with respect to the input data. For energy-based models where 
-\( p(x) \propto \exp(-E(x)) \), this score function equals \( -\nabla_x E(x) \).
+---
 
-The key advantage of Score Matching is that it avoids the sampling problem inherent in methods like 
-Maximum Likelihood Estimation, which requires computing the partition function or using MCMC sampling.
+## Module Components
 
-## Implemented Methods
+Classes:
+    ScoreMatching: Original score matching with exact or approximate Hessian computation
+    DenosingScoreMatching: Denoising variant that avoids Hessian computation
+    SlicedScoreMatching: Efficient variant using random projections
 
-### Original Score Matching (Hyvärinen, 2005)
+---
 
-Original Score Matching minimizes the expected squared distance between the model's score and the data's score:
+## Usage Example
 
-\[
-J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] + 
-\mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
-\]
+!!! example "Basic Score Matching Usage"
+    ```python
+    from torchebm.losses import ScoreMatching
+    from torchebm.energy_functions import MLPEnergyFunction
+    import torch
 
-where:
-- \( E_\theta(x) \) is the energy function with parameters \( \theta \)
-- \( \nabla_x E_\theta(x) \) is the gradient of the energy with respect to the input
-- \( \nabla_x^2 E_\theta(x) \) is the Hessian of the energy function
-- \( \text{tr}(\cdot) \) denotes the trace operation
+    # Define the energy function
+    energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
 
-The computational challenge in this approach is computing the trace of the Hessian, which can be 
-expensive for high-dimensional data.
+    # Create the score matching loss
+    sm_loss = ScoreMatching(
+        energy_function=energy_fn,
+        hessian_method="hutchinson",  # More efficient for high dimensions
+        hutchinson_samples=5
+    )
 
-### Denoising Score Matching (Vincent, 2011)
+    # In the training loop:
+    data_batch = torch.randn(32, 2)  # Real data samples
+    loss = sm_loss(data_batch)
+    loss.backward()
+    ```
 
-Denoising Score Matching (DSM) avoids computing the Hessian trace by working with noise-perturbed data.
-We perturb the data with noise \( \varepsilon \sim \mathcal{N}(0, \sigma^2 I) \) and train the model to 
-predict the score of the perturbed data distribution:
+---
 
-\[
-J_{\text{DSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{\varepsilon} 
-\left[ \left\| \nabla_x E_\theta(x + \varepsilon) + \frac{\varepsilon}{\sigma^2} \right\|^2 \right]
-\]
+## Mathematical Foundations
 
-The key insight is that the score of the noise-perturbed data can be approximated using the noise itself.
+!!! info "Score Matching Principles"
+    Score Matching minimizes the expected squared distance between the model's score and the data's score:
 
-### Sliced Score Matching (Song et al., 2019)
+    $$
+    J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] + 
+    \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
+    $$
 
-Sliced Score Matching (SSM) is a computationally efficient variant that uses random projections to 
-estimate the score matching objective without computing the full Hessian:
+    where:
+    - \( E_\theta(x) \) is the energy function with parameters \( \theta \)
+    - \( \nabla_x E_\theta(x) \) is the score function (gradient of energy w.r.t. input)
+    - \( \nabla_x^2 E_\theta(x) \) is the Hessian of the energy function
 
-\[
-J_{\text{SSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
-\left[ (v^T \nabla_x E_\theta(x))^2 \right] - \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
-\left[ v^T \nabla_x^2 E_\theta(x) v \right]
-\]
+!!! question "Why Score Matching Works"
+    - **No MCMC Required**: Directly estimates the score function without sampling
+    - **Computational Efficiency**: Avoids the need for expensive MCMC chains
+    - **Stability**: More stable training dynamics compared to CD
+    - **Theoretical Guarantees**: Consistent estimator under mild conditions
 
-where \( v \) is a random projection vector, typically sampled from a Rademacher or Gaussian distribution.
-This approach significantly reduces computation, especially for high-dimensional data, as it avoids 
-computing the full Hessian trace.
+### Variants
 
-## References
+!!! note "Denoising Score Matching (DSM)"
+    DSM avoids computing the Hessian trace by working with noise-perturbed data:
 
-- Hyvärinen, A. (2005). Estimation of non-normalized statistical models by score matching. 
-  Journal of Machine Learning Research, 6, 695-709.
-- Vincent, P. (2011). A connection between score matching and denoising autoencoders. 
-  Neural Computation, 23(7), 1661-1674.
-- Song, Y., Garg, S., Shi, J., & Ermon, S. (2019). Sliced score matching: A scalable approach to 
-  density and score estimation. Uncertainty in Artificial Intelligence.
+    $$
+    J_{\text{DSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{\varepsilon} 
+    \left[ \left\| \nabla_x E_\theta(x + \varepsilon) + \frac{\varepsilon}{\sigma^2} \right\|^2 \right]
+    $$
+
+    where \( \varepsilon \sim \mathcal{N}(0, \sigma^2 I) \) is the added noise.
+
+    !!! tip "Noise Scale Selection"
+        - Smaller \( \sigma \): Better for fine details but may be unstable
+        - Larger \( \sigma \): More stable but may lose fine structure
+        - Annealing \( \sigma \) during training can help
+
+!!! note "Sliced Score Matching (SSM)"
+    SSM uses random projections to estimate the score matching objective:
+
+    $$
+    J_{\text{SSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
+    \left[ (v^T \nabla_x E_\theta(x))^2 \right] - \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
+    \left[ v^T \nabla_x^2 E_\theta(x) v \right]
+    $$
+
+    where \( v \) is a random projection vector.
+
+    !!! tip "Projection Types"
+        - **Rademacher**: Values in \(\{-1, +1\}\), often lower variance
+        - **Gaussian**: Standard normal distribution, more general
+
+---
+
+## Practical Considerations
+
+!!! warning "Hessian Computation Methods"
+    - **exact**: Computes full Hessian diagonal, accurate but expensive
+    - **hutchinson**: Uses random projections, efficient for high dimensions
+    - **approx**: Uses finite differences, numerically stable
+
+!!! question "How to Choose the Right Method?"
+    Consider these factors when selecting a score matching variant:
+
+    - **Data Dimension**: For high dimensions, prefer SSM or DSM
+    - **Computational Resources**: Exact Hessian requires more memory
+    - **Training Stability**: DSM often more stable than original SM
+    - **Accuracy Requirements**: Exact method most accurate but slowest
+
+!!! warning "Common Pitfalls"
+    - **Numerical Instability**: Hessian computation can be unstable
+    - **Gradient Explosion**: Score terms can grow very large
+    - **Memory Usage**: Exact Hessian requires \( O(d^2) \) memory
+    - **Noise Scale**: Poor choice of \( \sigma \) in DSM can hurt performance
+
+---
+
+## Useful Insights
+
+!!! abstract "When to Use Score Matching"
+    Score Matching is particularly effective when:
+
+    - Training high-dimensional energy-based models
+    - Working with continuous data distributions
+    - Computational efficiency is important
+    - MCMC sampling is unstable or expensive
+
+???+ info "Further Reading"
+    - Hyvärinen, A. (2005). "Estimation of non-normalized statistical models by score matching."
+    - Vincent, P. (2011). "A connection between score matching and denoising autoencoders."
+    - Song, Y., et al. (2019). "Sliced score matching: A scalable approach to density and score estimation."
+
+---
+
+## Other Examples
+
+!!! example "Denoising Score Matching with Annealing"
+    ```python
+    from torchebm.losses import DenosingScoreMatching
+    from torchebm.core import LinearScheduler
+
+    # Create noise scale scheduler
+    noise_scheduler = LinearScheduler(
+        start_value=0.1,
+        end_value=0.01,
+        n_steps=1000
+    )
+
+    # Create DSM loss with dynamic noise scale
+    dsm_loss = DenosingScoreMatching(
+        energy_function=energy_fn,
+        noise_scale=noise_scheduler
+    )
+    ```
+
+!!! example "Sliced Score Matching with Multiple Projections"
+    ```python
+    from torchebm.losses import SlicedScoreMatching
+
+    # Create SSM loss with multiple projections
+    ssm_loss = SlicedScoreMatching(
+        energy_function=energy_fn,
+        n_projections=10,
+        projection_type="rademacher"
+    )
+    ```
+
+!!! example "Mixed Precision Training"
+    ```python
+    # Enable mixed precision for better performance
+    sm_loss = ScoreMatching(
+        energy_function=energy_fn,
+        hessian_method="hutchinson",
+        use_mixed_precision=True
+    )
+    ```
 """
 
 import torch
@@ -88,6 +204,12 @@ class ScoreMatching(BaseScoreMatching):
     energy function (score) match the gradient of the data's log density. This method
     avoids the need for MCMC sampling that is typically required in contrastive divergence.
 
+    !!! success "Key Advantages"
+        - No MCMC sampling required
+        - Direct estimation of score function
+        - More stable training dynamics
+        - Consistent estimator under mild conditions
+
     ## Mathematical Formulation
 
     The score matching objective minimizes:
@@ -103,6 +225,12 @@ class ScoreMatching(BaseScoreMatching):
     - \( \nabla_x^2 E_\theta(x) \) is the Hessian of the energy function
     - \( \text{tr}(\cdot) \) denotes the trace operator
 
+    !!! tip "Computational Considerations"
+        The computational cost varies significantly with the choice of Hessian computation method:
+        - Exact method: \( O(d^2) \) for d-dimensional data
+        - Hutchinson method: \( O(d) \) with variance depending on number of samples
+        - Approximation method: \( O(d) \) but may be less accurate
+
     ## Implementation Details
 
     This implementation provides three different methods for computing the Hessian trace:
@@ -116,6 +244,53 @@ class ScoreMatching(BaseScoreMatching):
 
     3. **approx**: Uses a finite-difference approximation of the Hessian trace which can be
        more numerically stable in some cases.
+
+    !!! warning "Numerical Stability"
+        - The exact method can be unstable with mixed precision training
+        - Large values in the Hessian can cause numerical issues
+        - Gradient clipping is applied automatically to prevent instability
+
+    !!! example "Basic Usage"
+        ```python
+        # Create a simple energy function
+        energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
+
+        # Initialize score matching with Hutchinson estimator
+        sm_loss = ScoreMatching(
+            energy_function=energy_fn,
+            hessian_method="hutchinson",
+            hutchinson_samples=5
+        )
+
+        # Training loop
+        optimizer = torch.optim.Adam(energy_fn.parameters(), lr=1e-3)
+
+        for batch in dataloader:
+            optimizer.zero_grad()
+            loss = sm_loss(batch)
+            loss.backward()
+            optimizer.step()
+        ```
+
+    !!! example "Advanced Configuration"
+        ```python
+        # With mixed precision training
+        sm_loss = ScoreMatching(
+            energy_function=energy_fn,
+            hessian_method="hutchinson",
+            use_mixed_precision=True
+        )
+
+        # With custom regularization
+        def l2_regularization(energy_fn, x):
+            return torch.mean(energy_fn(x)**2)
+
+        sm_loss = ScoreMatching(
+            energy_function=energy_fn,
+            regularization_strength=0.1,
+            custom_regularization=l2_regularization
+        )
+        ```
 
     Args:
         energy_function (BaseEnergyFunction): Energy function to train
@@ -588,5 +763,242 @@ class ScoreMatching(BaseScoreMatching):
 
         # Combine terms for full loss
         loss = score_square_term + hessian_trace
+
+        return loss
+
+
+class DenosingScoreMatching(BaseScoreMatching):
+    r"""
+    Implementation of Denoising Score Matching (DSM) by Vincent (2011).
+
+    DSM is a variant of score matching that avoids computing the trace of the Hessian
+    by instead matching the score function to the score of noise-perturbed data. This makes
+    it more computationally efficient and numerically stable than the original score matching.
+
+    !!! success "Key Advantages"
+        - No Hessian computation required
+        - More stable than original score matching
+        - Computationally efficient
+        - Works well with high-dimensional data
+
+    ## Mathematical Formulation
+
+    For data \( x \), we add noise \( \varepsilon \sim \mathcal{N}(0, \sigma^2 I) \) to get
+    perturbed data \( \tilde{x} = x + \varepsilon \). The DSM objective is:
+
+    \[
+    J_{\text{DSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{\varepsilon}
+    \left[ \left\| \nabla_{\tilde{x}} E_\theta(\tilde{x}) + \frac{\varepsilon}{\sigma^2} \right\|^2 \right]
+    \]
+
+    The key insight is that the score of the noise-perturbed data distribution can be related to
+    the original data distribution and the noise model:
+
+    \[
+    \nabla_{\tilde{x}} \log p(\tilde{x}) \approx \frac{x - \tilde{x}}{\sigma^2} = -\frac{\varepsilon}{\sigma^2}
+    \]
+
+    This allows us to train the model without computing Hessians, using only first-order gradients.
+
+    !!! tip "Noise Scale Selection"
+        The choice of noise scale \( \sigma \) is crucial:
+        - Small \( \sigma \): Better for fine details but may be unstable
+        - Large \( \sigma \): More stable but may lose fine structure
+        - Annealing \( \sigma \) during training can help balance these trade-offs
+
+    ## Practical Considerations
+
+    - The noise scale \( \sigma \) is a critical hyperparameter that affects the training dynamics
+    - Smaller noise scales focus on fine details of the data distribution
+    - Larger noise scales help with stability but may lose some detailed structure
+    - Annealing the noise scale during training can sometimes improve results
+
+    !!! warning "Common Issues"
+        - Too small noise scale can lead to numerical instability
+        - Too large noise scale can cause loss of fine details
+        - Noise scale should be tuned based on data characteristics
+
+    !!! example "Basic Usage"
+        ```python
+        # Create energy function
+        energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
+
+        # Initialize DSM with default noise scale
+        dsm_loss = DenosingScoreMatching(
+            energy_function=energy_fn,
+            noise_scale=0.01
+        )
+
+        # Training loop
+        optimizer = torch.optim.Adam(energy_fn.parameters(), lr=1e-3)
+
+        for batch in dataloader:
+            optimizer.zero_grad()
+            loss = dsm_loss(batch)
+            loss.backward()
+            optimizer.step()
+        ```
+
+    !!! example "Advanced Configuration"
+        ```python
+        # With noise scale annealing
+        from torchebm.core import LinearScheduler
+
+        noise_scheduler = LinearScheduler(
+            start_value=0.1,
+            end_value=0.01,
+            n_steps=1000
+        )
+
+        dsm_loss = DenosingScoreMatching(
+            energy_function=energy_fn,
+            noise_scale=noise_scheduler
+        )
+
+        # With mixed precision training
+        dsm_loss = DenosingScoreMatching(
+            energy_function=energy_fn,
+            noise_scale=0.01,
+            use_mixed_precision=True
+        )
+        ```
+
+    Args:
+        energy_function (BaseEnergyFunction): Energy function to train
+        noise_scale (float): Scale of Gaussian noise for data perturbation
+        regularization_strength (float): Coefficient for regularization terms
+        custom_regularization (Optional[Callable]): Optional function for custom regularization
+        use_mixed_precision (bool): Whether to use mixed precision training
+        dtype (torch.dtype): Data type for computations
+        device (Optional[Union[str, torch.device]]): Device for computations
+
+    References:
+        Vincent, P. (2011). A connection between score matching and denoising autoencoders.
+        Neural Computation, 23(7), 1661-1674.
+    """
+
+    def __init__(
+        self,
+        energy_function: BaseEnergyFunction,
+        noise_scale: float = 0.01,
+        regularization_strength: float = 0.0,
+        custom_regularization: Optional[Callable] = None,
+        use_mixed_precision: bool = False,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            energy_function=energy_function,
+            noise_scale=noise_scale,
+            regularization_strength=regularization_strength,
+            use_autograd=True,
+            custom_regularization=custom_regularization,
+            use_mixed_precision=use_mixed_precision,
+            dtype=dtype,
+            device=device,
+            *args,
+            **kwargs,
+        )
+
+    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        r"""
+        Compute the denoising score matching loss for a batch of data.
+
+        This method first computes the denoising score matching loss using perturbed data,
+        then adds regularization if needed.
+
+        !!! note
+            The input tensor is automatically converted to the device and dtype specified
+            during initialization.
+
+        Args:
+            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
+            *args: Additional positional arguments passed to compute_loss
+            **kwargs: Additional keyword arguments passed to compute_loss
+
+        Returns:
+            torch.Tensor: The denoising score matching loss (scalar)
+
+        Examples:
+            >>> energy_fn = MLPEnergyFunction(dim=2, hidden_dim=32)
+            >>> loss_fn = DenosingScoreMatching(
+            ...     energy_fn,
+            ...     noise_scale=0.01  # Controls the noise level added to data
+            ... )
+            >>> x = torch.randn(128, 2)  # 128 samples of 2D data
+            >>> loss = loss_fn(x)  # Compute the DSM loss
+            >>> loss.backward()  # Backpropagate the loss
+        """
+        # Ensure x is on the correct device and dtype
+        x = x.to(device=self.device, dtype=self.dtype)
+
+        # Compute the loss
+        loss = self.compute_loss(x, *args, **kwargs)
+
+        # Add regularization if needed
+        if self.regularization_strength > 0 or self.custom_regularization is not None:
+            loss = self.add_regularization(loss, x)
+
+        return loss
+
+    def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        r"""
+        Compute the denoising score matching loss.
+
+        DSM adds noise \( \varepsilon \sim \mathcal{N}(0, \sigma^2 I) \) to the data and
+        trains the score network to predict \( -\varepsilon/\sigma^2 \):
+
+        \[
+        \mathcal{L}_{\text{DSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{\varepsilon}
+        \left[ \left\| \nabla_{\tilde{x}} E_\theta(\tilde{x}) + \frac{\varepsilon}{\sigma^2} \right\|^2 \right]
+        \]
+
+        where \( \tilde{x} = x + \varepsilon \) is the perturbed data point.
+
+        !!! note
+            The noise scale \( \sigma \) is a critical hyperparameter that affects the learning dynamics.
+
+        !!! tip
+            - Smaller noise scales focus on fine details of the data distribution
+            - Larger noise scales help with stability but may lose some detailed structure
+
+        Args:
+            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
+            *args: Additional arguments (not used)
+            **kwargs: Additional keyword arguments (not used)
+
+        Returns:
+            torch.Tensor: The denoising score matching loss (scalar)
+
+        Examples:
+            >>> # Creating loss functions with different noise scales:
+            >>> # Small noise for capturing fine details
+            >>> fine_dsm = DenosingScoreMatching(energy_fn, noise_scale=0.01)
+            >>>
+            >>> # Larger noise for stability
+            >>> stable_dsm = DenosingScoreMatching(energy_fn, noise_scale=0.1)
+            >>>
+            >>> # Computing loss
+            >>> x = torch.randn(32, 2)  # 32 samples of 2D data
+            >>> loss = fine_dsm(x)
+        """
+        # Perturb the data with noise
+        x_perturbed, noise = self.perturb_data(x)
+
+        # Compute score at the perturbed point
+        score = self.compute_score(x_perturbed)
+
+        # Target score is -noise/sigma²
+        target_score = -noise / (self.noise_scale**2)
+
+        # Compute loss as mean squared error between score and target
+        loss = (
+            0.5
+            * torch.sum(
+                (score - target_score) ** 2, dim=list(range(1, len(x.shape)))
+            ).mean()
+        )
 
         return loss
