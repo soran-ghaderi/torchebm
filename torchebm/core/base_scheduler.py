@@ -11,15 +11,15 @@ class BaseScheduler(ABC):
     """Base class for parameter schedulers.
 
     Args:
-    initial_value: Initial parameter value
+    start_value: Initial parameter value
     """
 
-    def __init__(self, initial_value: float):
-        if not isinstance(initial_value, (float, int)):
-            raise TypeError(f"{type(self).__name__} received an invalid initial_value")
+    def __init__(self, start_value: float):
+        if not isinstance(start_value, (float, int)):
+            raise TypeError(f"{type(self).__name__} received an invalid start_value")
 
-        self.initial_value = initial_value
-        self.current_value = initial_value
+        self.start_value = start_value
+        self.current_value = start_value
         self.step_count = 0
 
     @abstractmethod
@@ -35,7 +35,7 @@ class BaseScheduler(ABC):
 
     def reset(self) -> None:
         """Reset scheduler to initial state."""
-        self.current_value = self.initial_value
+        self.current_value = self.start_value
         self.step_count = 0
 
     def get_value(self) -> float:
@@ -69,11 +69,11 @@ class ExponentialDecayScheduler(BaseScheduler):
 
     def __init__(
         self,
-        initial_value: float,
+        start_value: float,
         decay_rate: float,
         min_value: float = 0.0,  # Default min_value to 0
     ):
-        super().__init__(initial_value)
+        super().__init__(start_value)
         if not 0.0 < decay_rate <= 1.0:
             raise ValueError("decay_rate must be in (0, 1]")
         if min_value < 0:
@@ -84,7 +84,7 @@ class ExponentialDecayScheduler(BaseScheduler):
     def _compute_value(self) -> float:
         """Compute value with exponential decay."""
         # Use self.step_count which was incremented in step()
-        val = self.initial_value * (self.decay_rate**self.step_count)
+        val = self.start_value * (self.decay_rate**self.step_count)
         return max(self.min_value, val)
 
 
@@ -92,28 +92,28 @@ class LinearScheduler(BaseScheduler):
     """Scheduler with linear annealing.
 
     Args:
-        initial_value: Starting parameter value
-        final_value: Target parameter value
-        total_steps: Number of steps to reach final value
+        start_value: Starting parameter value
+        end_value: Target parameter value
+        n_steps: Number of steps to reach final value
     """
 
-    def __init__(self, initial_value: float, final_value: float, total_steps: int):
-        super().__init__(initial_value)
-        if total_steps <= 0:
-            raise ValueError("total_steps must be positive")
-        self.final_value = final_value
-        self.total_steps = total_steps
-        if total_steps > 0:
-            self.step_size: float = (final_value - initial_value) / total_steps
+    def __init__(self, start_value: float, end_value: float, n_steps: int):
+        super().__init__(start_value)
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive")
+        self.end_value = end_value
+        self.n_steps = n_steps
+        if n_steps > 0:
+            self.step_size: float = (end_value - start_value) / n_steps
         else:
-            self.step_size = 0.0  # Or handle total_steps=0 case appropriately
+            self.step_size = 0.0  # Or handle n_steps=0 case appropriately
 
     def _compute_value(self) -> float:
         """Update value with linear change."""
-        if self.step_count >= self.total_steps:
-            self.current_value = self.final_value
+        if self.step_count >= self.n_steps:
+            self.current_value = self.end_value
         else:
-            self.current_value = self.initial_value + self.step_size * self.step_count
+            self.current_value = self.start_value + self.step_size * self.step_count
         return self.current_value
 
 
@@ -121,37 +121,36 @@ class CosineScheduler(BaseScheduler):
     """Scheduler with cosine annealing.
 
     Args:
-        initial_value: Starting parameter value
-        final_value: Target parameter value
-        total_steps: Number of steps to reach final value
+        start_value: Starting parameter value
+        end_value: Target parameter value
+        n_steps: Number of steps to reach final value
     """
 
-    def __init__(self, initial_value: float, final_value: float, total_steps: int):
-        super().__init__(initial_value)
-        if total_steps <= 0:
-            raise ValueError("total_steps must be a positive integer")
+    def __init__(self, start_value: float, end_value: float, n_steps: int):
+        super().__init__(start_value)
+        if n_steps <= 0:
+            raise ValueError("n_steps must be a positive integer")
 
-        self.final_value = final_value
-        self.total_steps = total_steps
+        self.end_value = end_value
+        self.n_steps = n_steps
 
     def _compute_value(self) -> float:
         """Update value with cosine annealing."""
-        if self.step_count >= self.total_steps:
-            self.current_value = self.final_value
+        if self.step_count >= self.n_steps:
+            self.current_value = self.end_value
         else:
-            # Cosine schedule from initial_value to final_value
-            progress = self.step_count / self.total_steps
+            # Cosine schedule from start_value to end_value
+            progress = self.step_count / self.n_steps
             cosine_factor = 0.5 * (1 + math.cos(math.pi * progress))
             self.current_value = (
-                self.final_value
-                + (self.initial_value - self.final_value) * cosine_factor
+                self.end_value + (self.start_value - self.end_value) * cosine_factor
             )
         return self.current_value
 
 
 class MultiStepScheduler(BaseScheduler):
-    def __init__(self, initial_value: float, milestones: List[int], gamma: float = 0.1):
-        super().__init__(initial_value)
+    def __init__(self, start_value: float, milestones: List[int], gamma: float = 0.1):
+        super().__init__(start_value)
         if not all(m > 0 for m in milestones):
             raise ValueError("Milestone steps must be positive integers.")
         if not all(
@@ -163,7 +162,7 @@ class MultiStepScheduler(BaseScheduler):
 
     def _compute_value(self) -> float:
         power = sum(1 for m in self.milestones if self.step_count >= m)
-        return self.initial_value * (self.gamma**power)
+        return self.start_value * (self.gamma**power)
 
 
 class WarmupScheduler(BaseScheduler):
@@ -174,13 +173,11 @@ class WarmupScheduler(BaseScheduler):
         warmup_init_factor: float = 0.01,
     ):
         # Initialize based on the main scheduler's initial value
-        super().__init__(main_scheduler.initial_value * warmup_init_factor)
+        super().__init__(main_scheduler.start_value * warmup_init_factor)
         self.main_scheduler = main_scheduler
         self.warmup_steps = warmup_steps
         self.warmup_init_factor = warmup_init_factor
-        self.target_value = (
-            main_scheduler.initial_value
-        )  # Store the target after warmup
+        self.target_value = main_scheduler.start_value  # Store the target after warmup
 
         # Reset main scheduler as warmup controls the initial phase
         self.main_scheduler.reset()
@@ -189,9 +186,7 @@ class WarmupScheduler(BaseScheduler):
         if self.step_count < self.warmup_steps:
             # Linear warmup
             progress = self.step_count / self.warmup_steps
-            return self.initial_value + progress * (
-                self.target_value - self.initial_value
-            )
+            return self.start_value + progress * (self.target_value - self.start_value)
         else:
             # After warmup, step the main scheduler
             # We need its value based on steps *after* warmup

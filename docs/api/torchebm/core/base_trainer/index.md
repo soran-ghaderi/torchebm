@@ -4,7 +4,8 @@
 
 ### Classes
 
-- [`ContrastiveDivergenceTrainer`](classes/ContrastiveDivergenceTrainer) - No description available.
+- [`BaseTrainer`](classes/BaseTrainer) - Base class for training energy-based models.
+- [`ContrastiveDivergenceTrainer`](classes/ContrastiveDivergenceTrainer) - Specialized trainer for contrastive divergence training of EBMs.
 
 ## API Reference
 

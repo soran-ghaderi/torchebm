@@ -4,7 +4,9 @@
 
 ### Classes
 
-- [`ScoreMatching`](classes/ScoreMatching) - No description available.
+- [`DenosingScoreMatching`](classes/DenosingScoreMatching) - Implementation of Denoising Score Matching (DSM) by Vincent (2011).
+- [`ScoreMatching`](classes/ScoreMatching) - Implementation of the original Score Matching method by Hyvärinen (2005).
+- [`SlicedScoreMatching`](classes/SlicedScoreMatching) - Implementation of Sliced Score Matching (SSM) by Song et al. (2019).
 
 ## API Reference
 

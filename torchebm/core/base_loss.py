@@ -558,7 +558,7 @@ class BaseScoreMatching(BaseLoss):
         super().__init__(
             dtype=dtype, device=device, use_mixed_precision=use_mixed_precision
         )
-        self.energy_function = energy_function
+        self.energy_function = energy_function.to(device=self.device)
         self.noise_scale = noise_scale
         self.regularization_strength = regularization_strength
         self.use_autograd = use_autograd
@@ -567,7 +567,7 @@ class BaseScoreMatching(BaseLoss):
         self.use_mixed_precision = use_mixed_precision
 
         # Move energy function to specified device and dtype
-        self.energy_function = self.energy_function.to(device=self.device)
+        # self.energy_function = self.energy_function
 
         # Check if mixed precision is available
         if self.use_mixed_precision:

@@ -11,6 +11,7 @@ icon: octicons/package-24
 - [Core](core/)
 - [Cuda](cuda/)
 - [Datasets](datasets/)
+- [Evaluation](evaluation/)
 - [Losses](losses/)
 - [Models](models/)
 - [Samplers](samplers/)

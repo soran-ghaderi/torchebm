@@ -19,23 +19,23 @@ from tests.conftest import requires_cuda
 all_scheduler_configs = [
     # ConstantScheduler configs
     pytest.param(
-        {"class": ConstantScheduler, "args": {"initial_value": 0.1}}, id="Constant_0.1"
+        {"class": ConstantScheduler, "args": {"start_value": 0.1}}, id="Constant_0.1"
     ),
     pytest.param(
-        {"class": ConstantScheduler, "args": {"initial_value": 5.0}}, id="Constant_5.0"
+        {"class": ConstantScheduler, "args": {"start_value": 5.0}}, id="Constant_5.0"
     ),
     # ExponentialDecayScheduler configs
     pytest.param(
         {
             "class": ExponentialDecayScheduler,
-            "args": {"initial_value": 1.0, "decay_rate": 0.9, "min_value": 0.01},
+            "args": {"start_value": 1.0, "decay_rate": 0.9, "min_value": 0.01},
         },
         id="ExpDecay_1.0_0.9",
     ),
     pytest.param(
         {
             "class": ExponentialDecayScheduler,
-            "args": {"initial_value": 0.5, "decay_rate": 0.99, "min_value": 0.0},
+            "args": {"start_value": 0.5, "decay_rate": 0.99, "min_value": 0.0},
         },
         id="ExpDecay_0.5_0.99",
     ),
@@ -43,14 +43,14 @@ all_scheduler_configs = [
     pytest.param(
         {
             "class": LinearScheduler,
-            "args": {"initial_value": 1.0, "final_value": 0.1, "total_steps": 10},
+            "args": {"start_value": 1.0, "end_value": 0.1, "n_steps": 10},
         },
         id="Linear_1.0_0.1_10",
     ),
     pytest.param(
         {
             "class": LinearScheduler,
-            "args": {"initial_value": 0.0, "final_value": 5.0, "total_steps": 5},
+            "args": {"start_value": 0.0, "end_value": 5.0, "n_steps": 5},
         },
         id="Linear_0.0_5.0_5",
     ),
@@ -58,14 +58,14 @@ all_scheduler_configs = [
     pytest.param(
         {
             "class": CosineScheduler,
-            "args": {"initial_value": 1.0, "final_value": 0.0, "total_steps": 10},
+            "args": {"start_value": 1.0, "end_value": 0.0, "n_steps": 10},
         },
         id="Cosine_1.0_0.0_10",
     ),
     pytest.param(
         {
             "class": CosineScheduler,
-            "args": {"initial_value": 0.1, "final_value": 0.5, "total_steps": 20},
+            "args": {"start_value": 0.1, "end_value": 0.5, "n_steps": 20},
         },
         id="Cosine_0.1_0.5_20",
     ),
@@ -73,14 +73,14 @@ all_scheduler_configs = [
     pytest.param(
         {
             "class": MultiStepScheduler,
-            "args": {"initial_value": 1.0, "milestones": [5, 8], "gamma": 0.1},
+            "args": {"start_value": 1.0, "milestones": [5, 8], "gamma": 0.1},
         },
         id="MultiStep_[5,8]_0.1",
     ),
     pytest.param(
         {
             "class": MultiStepScheduler,
-            "args": {"initial_value": 10.0, "milestones": [2], "gamma": 0.5},
+            "args": {"start_value": 10.0, "milestones": [2], "gamma": 0.5},
         },
         id="MultiStep_[2]_0.5",
     ),
@@ -104,7 +104,7 @@ def scheduler_instance(request):
 
 def test_scheduler_initialization(scheduler_instance):
     """Test initial value and step count."""
-    initial_value = scheduler_instance.initial_value
+    initial_value = scheduler_instance.start_value
     assert scheduler_instance.get_value() == pytest.approx(initial_value)
     assert scheduler_instance.step_count == 0
 
@@ -115,7 +115,7 @@ def test_scheduler_initialization(scheduler_instance):
 def test_constant_scheduler_behavior():
     """Specific test for ConstantScheduler logic."""
     initial_val = 5.0
-    scheduler = ConstantScheduler(initial_value=initial_val)
+    scheduler = ConstantScheduler(start_value=initial_val)
     assert scheduler.step_count == 0
     assert scheduler.get_value() == pytest.approx(initial_val)
 
@@ -133,17 +133,17 @@ def test_constant_scheduler_behavior():
 
 def test_exponential_scheduler_behavior():
     """Specific test for ExponentialDecayScheduler logic."""
-    args = {"initial_value": 1.0, "decay_rate": 0.9, "min_value": 0.01}
+    args = {"start_value": 1.0, "decay_rate": 0.9, "min_value": 0.01}
     scheduler = ExponentialDecayScheduler(**args)
     assert scheduler.step_count == 0
 
-    last_val = scheduler.initial_value
+    last_val = scheduler.start_value
     for i in range(15):  # Step multiple times
         expected_step_count = i + 1
         # Calculate expected value based on the step count *after* incrementing
         expected_val = max(
             args["min_value"],
-            args["initial_value"] * (args["decay_rate"] ** expected_step_count),
+            args["start_value"] * (args["decay_rate"] ** expected_step_count),
         )
 
         returned_val = scheduler.step()
@@ -162,21 +162,21 @@ def test_exponential_scheduler_behavior():
 
 def test_linear_scheduler_behavior():
     """Specific test for LinearScheduler."""
-    args = {"initial_value": 1.0, "final_value": 0.1, "total_steps": 10}
+    args = {"start_value": 1.0, "end_value": 0.1, "n_steps": 10}
     scheduler = LinearScheduler(**args)
-    total_steps = args["total_steps"]
+    total_steps = args["n_steps"]
     assert scheduler.step_count == 0
 
-    for i in range(total_steps + 3):  # Step beyond total_steps
+    for i in range(total_steps + 3):  # Step beyond n_steps
         expected_step_count = i + 1
         # Calculate expected value based on the step count *after* incrementing
         if expected_step_count >= total_steps:
-            expected_val = args["final_value"]
+            expected_val = args["end_value"]
         else:
             progress = expected_step_count / total_steps  # Use future step count
             expected_val = (
-                args["initial_value"]
-                + (args["final_value"] - args["initial_value"]) * progress
+                args["start_value"]
+                + (args["end_value"] - args["start_value"]) * progress
             )
 
         returned_val = scheduler.step()
@@ -184,27 +184,27 @@ def test_linear_scheduler_behavior():
         assert scheduler.get_value() == pytest.approx(expected_val)
         assert scheduler.step_count == expected_step_count
 
-    assert scheduler.get_value() == pytest.approx(args["final_value"])  # Final check
+    assert scheduler.get_value() == pytest.approx(args["end_value"])  # Final check
 
 
 def test_cosine_scheduler_behavior():
     """Specific test for CosineScheduler."""
-    args = {"initial_value": 1.0, "final_value": 0.0, "total_steps": 10}
+    args = {"start_value": 1.0, "end_value": 0.0, "n_steps": 10}
     scheduler = CosineScheduler(**args)
-    total_steps = args["total_steps"]
+    total_steps = args["n_steps"]
     assert scheduler.step_count == 0
 
-    for i in range(total_steps + 3):  # Step beyond total_steps
+    for i in range(total_steps + 3):  # Step beyond n_steps
         expected_step_count = i + 1
         # Calculate expected value based on the step count *after* incrementing
         if expected_step_count >= total_steps:
-            expected_val = args["final_value"]
+            expected_val = args["end_value"]
         else:
             progress = expected_step_count / total_steps  # Use future step count
             cosine_factor = 0.5 * (1 + np.cos(np.pi * progress))
             expected_val = (
-                args["final_value"]
-                + (args["initial_value"] - args["final_value"]) * cosine_factor
+                args["end_value"]
+                + (args["start_value"] - args["end_value"]) * cosine_factor
             )
 
         returned_val = scheduler.step()
@@ -212,14 +212,14 @@ def test_cosine_scheduler_behavior():
         assert scheduler.get_value() == pytest.approx(expected_val)
         assert scheduler.step_count == expected_step_count
 
-    assert scheduler.get_value() == pytest.approx(args["final_value"])  # Final check
+    assert scheduler.get_value() == pytest.approx(args["end_value"])  # Final check
 
 
 def test_multistep_scheduler_behavior():
     """Specific test for MultiStepScheduler."""
-    args = {"initial_value": 1.0, "milestones": [5, 8], "gamma": 0.1}
+    args = {"start_value": 1.0, "milestones": [5, 8], "gamma": 0.1}
     scheduler = MultiStepScheduler(**args)
-    initial_val = args["initial_value"]
+    initial_val = args["start_value"]
     gamma = args["gamma"]
     milestones = args["milestones"]
     assert scheduler.step_count == 0
@@ -244,7 +244,7 @@ def test_multistep_scheduler_behavior():
 
 def test_scheduler_reset(scheduler_instance):
     """Test the reset method using the combined fixture."""
-    initial_value = scheduler_instance.initial_value
+    initial_value = scheduler_instance.start_value
     # Step a few times
     for _ in range(3):
         scheduler_instance.step()
@@ -310,9 +310,9 @@ def test_scheduler_state_dict_load_state_dict(scheduler_instance):
         if param_name != "self" and param_name in state:
             init_args[param_name] = state[param_name]
         elif (
-            param_name == "initial_value" and "initial_value" in state
-        ):  # Ensure initial_value is present
-            init_args[param_name] = state["initial_value"]
+            param_name == "start_value" and "start_value" in state
+        ):  # Ensure start_value is present
+            init_args[param_name] = state["start_value"]
 
     try:
         # Attempt to recreate with extracted args

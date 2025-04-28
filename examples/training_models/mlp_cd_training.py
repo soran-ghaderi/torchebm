@@ -13,7 +13,7 @@ from torchebm.core import (
     CosineScheduler,
 )
 from torchebm.samplers import LangevinDynamics
-from torchebm.losses import ContrastiveDivergence
+from torchebm.losses import ContrastiveDivergence, ScoreMatching
 
 from torchebm.datasets import GaussianMixtureDataset, TwoMoonsDataset
 
@@ -131,23 +131,19 @@ if __name__ == "__main__":
     LEARNING_RATE = 1e-3
     SAMPLER_STEP_SIZE = 0.1
     # SAMPLER_STEP_SIZE = ExponentialDecayScheduler(
-    #     initial_value=1e-2, decay_rate=0.99, min_value=5e-3
+    #     start_value=1e-2, decay_rate=0.99, min_value=5e-3
     # )
-    SAMPLER_STEP_SIZE = CosineScheduler(
-        initial_value=3e-2, final_value=5e-3, total_steps=100
-    )
+    SAMPLER_STEP_SIZE = CosineScheduler(start_value=3e-2, end_value=5e-3, n_steps=100)
 
     # SAMPLER_NOISE_SCALE = torch.sqrt(torch.Tensor([SAMPLER_STEP_SIZE])).numpy()[0]
     SAMPLER_NOISE_SCALE = 0.1
     # SAMPLER_NOISE_SCALE = LinearScheduler(
-    #     initial_value=1.0, final_value=0.01, total_steps=1000
+    #     start_value=1.0, end_value=0.01, n_steps=1000
     # )
     # SAMPLER_NOISE_SCALE = ExponentialDecayScheduler(
-    #     initial_value=1e-1, decay_rate=0.99, min_value=1e-2
+    #     start_value=1e-1, decay_rate=0.99, min_value=1e-2
     # )
-    SAMPLER_NOISE_SCALE = CosineScheduler(
-        initial_value=3e-1, final_value=5e-3, total_steps=100
-    )
+    SAMPLER_NOISE_SCALE = CosineScheduler(start_value=3e-1, end_value=5e-3, n_steps=100)
 
     print(f"Sampler noise scale: {SAMPLER_NOISE_SCALE}")
     CD_K = 10
@@ -194,15 +190,22 @@ if __name__ == "__main__":
         noise_scale=SAMPLER_NOISE_SCALE,
         device=device,
     )
-    loss_fn = ContrastiveDivergence(
+    # loss_fn = ContrastiveDivergence(
+    #     energy_function=energy_model,
+    #     sampler=sampler,
+    #     k_steps=CD_K,
+    #     persistent=USE_PCD,
+    #     buffer_size=BATCH_SIZE,
+    # ).to(
+    #     device
+    # )  # Loss function itself can be on device
+
+    loss_fn = ScoreMatching(
         energy_function=energy_model,
-        sampler=sampler,
-        k_steps=CD_K,
-        persistent=USE_PCD,
-        buffer_size=BATCH_SIZE,
-    ).to(
-        device
-    )  # Loss function itself can be on device
+        hessian_method="hutchinson",  # More efficient for higher dimensions
+        hutchinson_samples=5,
+        device=device,
+    )
 
     # Optimizer (Optimizes the parameters of the energy function)
     optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
@@ -222,7 +225,8 @@ if __name__ == "__main__":
 
             # Calculate Contrastive Divergence loss
             # The loss_fn.forward() internally calls the sampler and energy_fn
-            loss, negative_samples = loss_fn(data_batch)
+            # loss, negative_samples = loss_fn(data_batch) # Uncomment if using CD
+            loss = loss_fn(data_batch)
 
             # Backpropagate the loss through the energy function parameters
             loss.backward()

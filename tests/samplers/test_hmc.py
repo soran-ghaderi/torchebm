@@ -103,7 +103,7 @@ def hmc_sampler(request, energy_function):
         end_value = step_size_config.get("end", 0.01)
         num_steps = step_size_config.get("steps", 100)
         step_size = LinearScheduler(
-            initial_value=start_value, final_value=end_value, total_steps=num_steps
+            start_value=start_value, end_value=end_value, n_steps=num_steps
         )
     else:
         step_size = step_size_config  # Assume float otherwise
@@ -806,14 +806,14 @@ def test_hmc_numerical_stability_extreme_values(start_val):
             self.dim = dim
             self._device = torch.device(device)
             self.dummy_param = torch.nn.Parameter(torch.zeros(1, device=self._device))
-            
+
         @property
         def device(self):
             return self._device
 
         def energy(self, x: torch.Tensor) -> torch.Tensor:
             return 0.1 * torch.sum(x**4, dim=-1)
-            
+
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             # Forward method to satisfy BaseEnergyFunction contract
             return self.energy(x)
