@@ -1002,3 +1002,386 @@ class DenosingScoreMatching(BaseScoreMatching):
         )
 
         return loss
+
+
+class SlicedScoreMatching(BaseScoreMatching):
+    r"""
+    Implementation of Sliced Score Matching (SSM) by Song et al. (2019).
+
+    SSM is a computationally efficient variant of score matching that uses random projections
+    to estimate the score matching objective. It avoids computing the full Hessian matrix and
+    instead uses random projections to estimate the trace of the Hessian.
+
+    !!! success "Key Advantages"
+        - Significantly more efficient than exact score matching
+        - Scales well to high dimensions
+        - No need for MCMC sampling
+        - Works with any energy function architecture
+
+    ## Mathematical Formulation
+
+    For data \( x \) and random projection vectors \( v \), the SSM objective is:
+
+    \[
+    J_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v \sim \mathcal{N}(0, I)}
+    \left[ v^T \nabla_x^2 E_\theta(x) v + \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 \right]
+    \]
+
+    The key insight is that we can estimate the trace of the Hessian using random projections:
+
+    \[
+    \text{tr}(\nabla_x^2 E_\theta(x)) \approx \mathbb{E}_{v \sim \mathcal{N}(0, I)} [v^T \nabla_x^2 E_\theta(x) v]
+    \]
+
+    This allows us to compute the score matching objective using only first-order gradients
+    and Hessian-vector products, which are much more efficient than computing the full Hessian.
+
+    !!! tip "Projection Selection"
+        The choice of projection type and number of projections affects the accuracy:
+        - Gaussian projections: Most common, works well in practice
+        - Rademacher projections: Binary values, can be more efficient
+        - More projections: Better accuracy but higher computational cost
+        - Fewer projections: Faster but may be less accurate
+
+    ## Practical Considerations
+
+    - The number of projections \( n_{\text{projections}} \) is a key hyperparameter
+    - More projections lead to better accuracy but higher computational cost
+    - The projection type (Gaussian or Rademacher) can affect performance
+    - SSM is particularly useful for high-dimensional data where exact score matching is infeasible
+
+    !!! warning "Common Issues"
+        - Too few projections can lead to high variance in the gradient estimates
+        - Projection type should be chosen based on the data characteristics
+        - May require more iterations than exact score matching for convergence
+
+    !!! example "Basic Usage"
+        ```python
+        # Create energy function
+        energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
+
+        # Initialize SSM with default parameters
+        ssm_loss = SlicedScoreMatching(
+            energy_function=energy_fn,
+            n_projections=10,
+            projection_type="gaussian"
+        )
+
+        # Training loop
+        optimizer = torch.optim.Adam(energy_fn.parameters(), lr=1e-3)
+
+        for batch in dataloader:
+            optimizer.zero_grad()
+            loss = ssm_loss(batch)
+            loss.backward()
+            optimizer.step()
+        ```
+
+    !!! example "Advanced Configuration"
+        ```python
+        # With Rademacher projections
+        ssm_loss = SlicedScoreMatching(
+            energy_function=energy_fn,
+            n_projections=20,
+            projection_type="rademacher"
+        )
+
+        # With mixed precision training
+        ssm_loss = SlicedScoreMatching(
+            energy_function=energy_fn,
+            n_projections=10,
+            projection_type="gaussian",
+            use_mixed_precision=True
+        )
+
+        # With custom regularization
+        def custom_reg(energy_fn, x):
+            return torch.mean(energy_fn(x)**2)
+
+        ssm_loss = SlicedScoreMatching(
+            energy_function=energy_fn,
+            n_projections=10,
+            projection_type="gaussian",
+            custom_regularization=custom_reg
+        )
+        ```
+
+    Args:
+        energy_function (BaseEnergyFunction): Energy function to train
+        n_projections (int): Number of random projections to use
+        projection_type (str): Type of random projections ("gaussian" or "rademacher")
+        regularization_strength (float): Coefficient for regularization terms
+        custom_regularization (Optional[Callable]): Optional function for custom regularization
+        use_mixed_precision (bool): Whether to use mixed precision training
+        dtype (torch.dtype): Data type for computations
+        device (Optional[Union[str, torch.device]]): Device for computations
+
+    References:
+        Song, Y., Garg, S., Shi, J., & Ermon, S. (2019). Sliced score matching: A scalable approach
+        to density and score estimation. In Uncertainty in Artificial Intelligence (pp. 574-584).
+    """
+
+    def __init__(
+        self,
+        energy_function: BaseEnergyFunction,
+        n_projections: int = 5,
+        projection_type: str = "rademacher",
+        regularization_strength: float = 0.0,
+        custom_regularization: Optional[Callable] = None,
+        use_mixed_precision: bool = False,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            energy_function=energy_function,
+            regularization_strength=regularization_strength,
+            use_autograd=True,
+            custom_regularization=custom_regularization,
+            use_mixed_precision=use_mixed_precision,
+            dtype=dtype,
+            device=device,
+            *args,
+            **kwargs,
+        )
+
+        self.n_projections = n_projections
+        self.projection_type = projection_type
+
+        # Validate projection_type
+        valid_types = ["rademacher", "gaussian"]
+        if self.projection_type not in valid_types:
+            warnings.warn(
+                f"Invalid projection_type '{self.projection_type}'. "
+                f"Using 'rademacher' instead. Valid options are: {valid_types}",
+                UserWarning,
+            )
+            self.projection_type = "rademacher"
+
+    def _get_random_projections(self, shape: torch.Size) -> torch.Tensor:
+        r"""
+        Generate random vectors for projection-based score matching.
+
+        This function samples vectors from either a Rademacher or Gaussian distribution
+        based on the `projection_type` parameter.
+
+        !!! note
+            Rademacher distributions (values in \(\{-1, +1\}\)) often have lower variance
+            in the trace estimator compared to Gaussian distributions.
+
+        Args:
+            shape (torch.Size): Shape of vectors to generate
+
+        Returns:
+            torch.Tensor: Random projection vectors of the specified shape
+
+        Examples:
+            >>> loss_fn = SlicedScoreMatching(energy_fn)
+            >>> # Internally used to generate projection vectors:
+            >>> v = loss_fn._get_random_projections((32, 2))  # 32 samples of dim 2
+            >>> # v will be of shape (32, 2) with values in {-1, +1} (Rademacher)
+        """
+        if self.projection_type == "rademacher":
+            # Rademacher (+1/-1) distribution
+            return (torch.randint(0, 2, shape, device=self.device) * 2 - 1).to(
+                dtype=self.dtype
+            )
+        else:  # "gaussian"
+            # Standard normal distribution
+            return torch.randn(shape, device=self.device, dtype=self.dtype)
+
+    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        r"""
+        Compute the sliced score matching loss for a batch of data.
+
+        This method first calculates the sliced score matching loss using random
+        projections, then adds regularization if needed.
+
+        !!! note
+            The input tensor is automatically converted to the device and dtype specified
+            during initialization.
+
+        Args:
+            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
+            *args: Additional positional arguments passed to compute_loss
+            **kwargs: Additional keyword arguments passed to compute_loss
+
+        Returns:
+            torch.Tensor: The sliced score matching loss (scalar)
+
+        Examples:
+            >>> energy_fn = MLPEnergyFunction(dim=2, hidden_dim=32)
+            >>> loss_fn = SlicedScoreMatching(
+            ...     energy_fn,
+            ...     n_projections=10,  # Number of random projections to use
+            ...     projection_type="rademacher"  # Type of random vectors
+            ... )
+            >>> x = torch.randn(128, 2)  # 128 samples of 2D data
+            >>> loss = loss_fn(x)  # Compute the SSM loss
+            >>> loss.backward()  # Backpropagate the loss
+        """
+        # Ensure x is on the correct device and dtype
+        x = x.to(device=self.device, dtype=self.dtype)
+
+        # Compute the loss
+        loss = self.compute_loss(x, *args, **kwargs)
+
+        # Add regularization if needed
+        if self.regularization_strength > 0 or self.custom_regularization is not None:
+            loss = self.add_regularization(loss, x)
+
+        return loss
+
+    def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        r"""
+        Compute the sliced score matching loss using random projections.
+
+        Sliced Score Matching avoids computing the full Hessian trace by using random
+        projections. The objective is:
+
+        \[
+        \mathcal{L}_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v \sim \mathcal{N}(0, I)}
+        \left[ v^T \nabla_x^2 E_\theta(x) v + \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 \right]
+        \]
+
+        where \( v \) is a random projection vector sampled from a Rademacher or Gaussian distribution.
+
+        !!! tip
+            This method is computationally efficient for high-dimensional data, with complexity
+            \( O(d) \) in the data dimension rather than \( O(d^2) \) for exact score matching.
+
+        !!! note
+            The number of projections (`n_projections`) controls the trade-off between
+            computational cost and estimation accuracy. More projections give better
+            approximation but require more computation.
+
+        Args:
+            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
+            *args: Additional arguments (not used)
+            **kwargs: Additional keyword arguments (not used)
+
+        Returns:
+            torch.Tensor: The sliced score matching loss (scalar)
+
+        Examples:
+            >>> # Different ways to configure sliced score matching:
+            >>>
+            >>> # With Rademacher projections (default)
+            >>> ssm_rade = SlicedScoreMatching(
+            ...     energy_fn,
+            ...     n_projections=5,
+            ...     projection_type="rademacher"
+            ... )
+            >>>
+            >>> # With Gaussian projections
+            >>> ssm_gauss = SlicedScoreMatching(
+            ...     energy_fn,
+            ...     n_projections=5,
+            ...     projection_type="gaussian"
+            ... )
+            >>>
+            >>> # More projections for better accuracy
+            >>> ssm_accurate = SlicedScoreMatching(
+            ...     energy_fn,
+            ...     n_projections=20
+            ... )
+            >>>
+            >>> loss = ssm_rade(data)
+        """
+        batch_size = x.shape[0]
+
+        # Clone and detach x to avoid modifying the original tensor
+        x_detached = x.detach().clone()
+        x_detached.requires_grad_(True)
+
+        # Initialize loss terms
+        total_loss = 0.0
+
+        for _ in range(self.n_projections):
+            # Generate random projection vectors
+            v = self._get_random_projections(x_detached.shape)
+
+            if self.use_mixed_precision and self.autocast_available:
+                from torch.cuda.amp import autocast
+
+                with autocast():
+                    # Get energy
+                    energy = self.energy_function(x_detached)
+
+                    # First term: v^T ∇E
+                    # Need grad_outputs for batched energy outputs
+                    grad_outputs = torch.ones_like(
+                        energy, device=self.device, dtype=self.dtype
+                    )
+                    score = torch.autograd.grad(
+                        energy,
+                        x_detached,
+                        grad_outputs=grad_outputs,
+                        create_graph=True,
+                    )[0]
+
+                    v_score = torch.sum(v * score, dim=list(range(1, len(x.shape))))
+                    term1 = 0.5 * torch.mean(v_score**2)
+
+                    # Second term: v^T ∇²E v
+                    # Sum v_score to scalar for autograd
+                    v_score_sum = v_score.sum()
+                    grad_v_score = torch.autograd.grad(
+                        v_score_sum,
+                        x_detached,
+                        create_graph=True,
+                    )[0]
+
+                    term2 = torch.mean(
+                        torch.sum(v * grad_v_score, dim=list(range(1, len(x.shape))))
+                    )
+            else:
+                # Get energy
+                energy = self.energy_function(x_detached)
+
+                # First term: v^T ∇E
+                # Need grad_outputs for batched energy outputs
+                grad_outputs = torch.ones_like(
+                    energy, device=self.device, dtype=self.dtype
+                )
+                score = torch.autograd.grad(
+                    energy,
+                    x_detached,
+                    grad_outputs=grad_outputs,
+                    create_graph=True,
+                )[0]
+
+                v_score = torch.sum(v * score, dim=list(range(1, len(x.shape))))
+                term1 = 0.5 * torch.mean(v_score**2)
+
+                # Second term: v^T ∇²E v
+                # Sum v_score to scalar for autograd
+                v_score_sum = v_score.sum()
+                grad_v_score = torch.autograd.grad(
+                    v_score_sum,
+                    x_detached,
+                    create_graph=True,
+                )[0]
+
+                term2 = torch.mean(
+                    torch.sum(v * grad_v_score, dim=list(range(1, len(x.shape))))
+                )
+
+            # Apply scaling to balance terms (second term can dominate)
+            scaling_factor = 0.1
+            # Add to total loss
+            total_loss += term1 - scaling_factor * term2
+
+        # Average over number of projections
+        loss = total_loss / self.n_projections
+
+        # Clip to reasonable values for stability
+        if torch.isnan(loss) or torch.isinf(loss) or loss > 1e6:
+            warnings.warn(
+                f"Sliced Score Matching loss is unstable: {loss.item()}. Clipping to a reasonable value.",
+                UserWarning,
+            )
+            loss = torch.clamp(loss, -1e6, 1e6)
+
+        return loss
