@@ -2,11 +2,25 @@
   <img src="docs/assets/images/logo_with_text.svg" alt="TorchEBM Logo" width="350">
 </p>
 
+<p align="center" style="margin-bottom: 20px;">
+    <a href="https://pypi.org/project/torchebm/" target="_blank" title="PyPI version">
+        <img alt="PyPI" src="https://img.shields.io/pypi/v/torchebm?style=flat-square&color=blue">
+    </a>
+    <a href="https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE" target="_blank" title="License">
+        <img alt="License" src="https://img.shields.io/github/license/soran-ghaderi/torchebm?style=flat-square&color=brightgreen">
+    </a>
+    <a href="https://github.com/soran-ghaderi/torchebm" target="_blank" title="GitHub Repo Stars">
+        <img alt="GitHub Stars" src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social">
+    </a>
+    <!-- Consider adding: build status, documentation status, code coverage -->
+</p>
+
+
 <p align="center">⚡ Energy-Based Modeling library for PyTorch, offering tools for 🔬 sampling, 🧠 inference, and 📊 learning in complex distributions.</p>
 
 ![ebm_training_animation.gif](docs/assets/animations/ebm_training_animation.gif)
 
-## What is TorchEBM?
+## What is ∇ TorchEBM 🍓? 
 
 **Energy-Based Models (EBMs)** offer a powerful and flexible framework for generative modeling by assigning an unnormalized probability (or "energy") to each data point. Lower energy corresponds to higher probability.
 
@@ -15,6 +29,11 @@
 *   **Defining complex energy functions:** Easily create custom energy landscapes using PyTorch modules.
 *   **Training:** Loss functions and procedures suitable for EBM parameter estimation including score matching and contrastive divergence variants.
 *   **Sampling:** Algorithms to draw samples from the learned distribution \( p(x) \).
+
+## Documentation
+
+For detailed documentation, including installation instructions, usage examples, and API references, please visit 
+the 📚 [TorchEBM Website](https://soran-ghaderi.github.io/torchebm/).
 
 ## Features
 
@@ -44,11 +63,17 @@
     <td align="center">Rosenbrock Function</td>
   </tr>
 </table>
+
 ## Installation
 
 ```bash
 pip install torchebm
 ```
+
+#### Dependencies
+- [PyTorch](https://pytorch.org/) (with CUDA support for optimal performance)
+- Other dependencies are listed in [requirements.txt](requirements.txt)
+
 
 ## Usage Examples
 
@@ -88,7 +113,7 @@ from torch.utils.data import DataLoader
 
 from torchebm.losses import ContrastiveDivergence
 from torchebm.datasets import GaussianMixtureDataset
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torchebm.samplers import LangevinDynamics
 
 # Define a 10D Gaussian energy function
 energy_fn = MLPEnergy(input_dim=2).to(device)
@@ -127,9 +152,9 @@ for epoch in range(10):
 ### 2. Hamiltonian Monte Carlo (HMC)
 
 ```python
-from torchebm.samplers.hmc import HamiltonianMonteCarlo
+from torchebm.samplers import HamiltonianMonteCarlo
 
-# Define a 10D Gaussian energy function
+# Define a 10-D Gaussian energy function
 energy_fn = GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
 
 # Initialize HMC sampler
@@ -199,15 +224,48 @@ torchebm/
 </table>
 
 Check out the `examples/` directory for sample scripts:
-- `langevin_dynamics_sampling.py`: Demonstrates Langevin dynamics sampling
-- `hmc_examples.py`: Demonstrates Hamiltonian Monte Carlo sampling
-- `energy_fn_visualization.py`: Visualizes various energy functions
+- `samplers/`: Demonstrates different sampling algorithms
+- `datasets/`: Depicts data generation using built-in datasets
+- `training_models/`: Shows how to train energy-based models using TorchEBM
+- `visualization/`: Visualizes sampling results and trajectories
+- and more!
 
 ## Contributing
 
-Contributions are welcome! Please check the issues page for current tasks or create a new issue to discuss proposed changes.
+Contributions are welcome! Step-by-step instructions for contributing to the project can be found on the [contributing.md](docs/developer_guide/contributing.md) page on the website.
+
+Please check the issues page for current tasks or create a new issue to discuss proposed changes.
+
+### Star and Spread the Word about ∇ TorchEBM 🍓
+
+If ∇ TorchEBM has helped you, please ⭐️ star the GitHub repository to support 
+our community and increase the project's visibility! Also, please consider sharing your experience on social media or with colleagues.
+
+Thank you! 🚀
+
+## Citation
+
+If you use ∇ TorchEBM in your research, please cite it using the following BibTeX entry:
+
+```bibtex
+@misc{torchebm_library_2025,
+  author       = {Ghaderi, Soran and Contributors},
+  title        = {{TorchEBM}: A PyTorch Library for Training Energy-Based Models},
+  year         = {2025},
+  url          = {https://github.com/soran-ghaderi/torchebm},
+}
+```
+
+## Changelog
+
+For a detailed list of changes between versions, please see our [CHANGELOG](CHANGELOG.md).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## Research Collaboration
+
+If you are interested in collaborating on research projects (**diffusion**-/**flow**-/**energy-based** models) or have 
+any questions about the library, please feel free to reach out. I am open to discussions and collaborations that can 
+enhance the capabilities of **∇ TorchEBM** 🍓 and contribute to the field of generative modeling.

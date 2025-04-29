@@ -19,605 +19,428 @@ The training process typically involves:
 3. Optimizing the energy function parameters
 4. Evaluating the model using sampling and visualization techniques
 
-## Methods for Training EBMs
+## Defining an Energy Function
 
-TorchEBM supports several methods for training EBMs, each with their own advantages and trade-offs:
-
-### Contrastive Divergence (CD)
-
-Contrastive Divergence is one of the most widely used methods for training EBMs. It approximates the gradient of the log-likelihood by comparing data samples to model samples obtained through short MCMC runs.
-
-```python
-import torch
-from torchebm.core import BaseEnergyFunction, MLPEnergyFunction
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
-
-# Create energy function
-energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
-
-# Create sampler for generating negative samples
-sampler = LangevinDynamics(
-    energy_function=energy_fn,
-    step_size=0.01
-)
-
-# Optimizer
-optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.001)
-
-
-# Contrastive Divergence training step
-def train_step_cd(data_batch, k_steps=10):
-    optimizer.zero_grad()
-
-    # Positive phase: compute energy of real data
-    pos_energy = energy_fn(data_batch)
-
-    # Negative phase: generate samples from current model
-    # Start from random noise
-    neg_samples = torch.randn_like(data_batch)
-
-    # Sample for k_steps steps
-    neg_samples = sampler.sample(
-        initial_points=neg_samples,
-        n_steps=k_steps,
-        return_final=True
-    )
-
-    # Compute energy of generated samples
-    neg_energy = energy_fn(neg_samples)
-
-    # Compute loss
-    # Minimize energy of real data, maximize energy of generated samples
-    loss = pos_energy.mean() - neg_energy.mean()
-
-    # Backpropagation
-    loss.backward()
-    optimizer.step()
-
-    return loss.item(), pos_energy.mean().item(), neg_energy.mean().item()
-```
-
-### Persistent Contrastive Divergence (PCD)
-
-PCD improves on standard CD by maintaining a persistent chain of samples that are used across training iterations:
-
-```python
-# Initialize persistent samples
-persistent_samples = torch.randn(1000, 2)  # Shape: [n_persistent, data_dim]
-
-
-# PCD training step
-def train_step_pcd(data_batch, k_steps=10):
-    global persistent_samples
-    optimizer.zero_grad()
-
-    # Positive phase: compute energy of real data
-    pos_energy = energy_fn(data_batch)
-
-    # Negative phase: continue sampling from persistent chains
-    # Start from existing persistent samples (select a random subset)
-    indices = torch.randperm(persistent_samples.shape[0])[:data_batch.shape[0]]
-    initial_samples = persistent_samples[indices].clone()
-
-    # Sample for k_steps steps
-    neg_samples = sampler.sample(
-        initial_points=initial_samples,
-        n_steps=k_steps,
-        return_final=True
-    )
-
-    # Update persistent samples
-    persistent_samples[indices] = neg_samples.detach()
-
-    # Compute energy of generated samples
-    neg_energy = energy_fn(neg_samples)
-
-    # Compute loss
-    loss = pos_energy.mean() - neg_energy.mean()
-
-    # Backpropagation
-    loss.backward()
-    optimizer.step()
-
-    return loss.item(), pos_energy.mean().item(), neg_energy.mean().item()
-```
-
-### Score Matching
-
-Score Matching avoids the need for MCMC sampling altogether, focusing on matching the gradient of the log-density (score function) instead:
-
-```python
-def train_step_score_matching(data_batch, noise_scale=0.01):
-    optimizer.zero_grad()
-    
-    # Ensure data requires gradients
-    data_batch.requires_grad_(True)
-    
-    # Compute energy
-    energy = energy_fn(data_batch)
-    
-    # Compute gradients with respect to inputs
-    grad_energy = torch.autograd.grad(
-        outputs=energy.sum(),
-        inputs=data_batch,
-        create_graph=True
-    )[0]
-    
-    # Compute score matching loss
-    loss = 0.5 * (grad_energy.pow(2)).sum(dim=1).mean()
-    
-    # Add regularization (optional)
-    noise_data = data_batch + noise_scale * torch.randn_like(data_batch)
-    noise_energy = energy_fn(noise_data)
-    reg_loss = ((noise_energy - energy) ** 2).mean()
-    
-    total_loss = loss + 0.1 * reg_loss
-    
-    # Backpropagation
-    total_loss.backward()
-    optimizer.step()
-    
-    return total_loss.item()
-```
-
-### Denoising Score Matching
-
-Denoising Score Matching is a variant that adds noise to data points and trains the model to predict the score of the noised data:
-
-```python
-def train_step_denoising_score_matching(data_batch, sigma=0.1):
-    optimizer.zero_grad()
-    
-    # Add noise to data
-    noise = sigma * torch.randn_like(data_batch)
-    noised_data = data_batch + noise
-    noised_data.requires_grad_(True)
-    
-    # Compute energy of noised data
-    energy = energy_fn(noised_data)
-    
-    # Compute gradients with respect to noised inputs
-    grad_energy = torch.autograd.grad(
-        outputs=energy.sum(),
-        inputs=noised_data,
-        create_graph=True
-    )[0]
-    
-    # Ground truth score is -noise/sigma^2 for Gaussian noise
-    target_score = -noise / (sigma**2)
-    
-    # Compute loss as MSE between predicted and target scores
-    loss = 0.5 * ((grad_energy - target_score) ** 2).sum(dim=1).mean()
-    
-    # Backpropagation
-    loss.backward()
-    optimizer.step()
-    
-    return loss.item()
-```
-
-## Full Training Loop Example
-
-Here's a complete example showing how to train an EBM using contrastive divergence:
+In TorchEBM, you can create custom energy functions by subclassing `BaseEnergyFunction`:
 
 ```python
 import torch
 import torch.nn as nn
-import numpy as np
-import matplotlib.pyplot as plt
 from torchebm.core import BaseEnergyFunction
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
 
+class MLPEnergy(BaseEnergyFunction):
+    """A simple MLP to act as the energy function."""
 
-# Define a neural network energy function
-class MLPEnergyFunction(BaseEnergyFunction):
-    def __init__(self, input_dim=2, hidden_dim=64):
+    def __init__(self, input_dim: int, hidden_dim: int = 64):
         super().__init__()
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim, 1)
+            nn.SELU(),
+            nn.Linear(hidden_dim, 1),
+            nn.Tanh(),  # Optional: can help stabilize training
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x).squeeze(-1)
+```
+
+## Training with Contrastive Divergence
+
+Contrastive Divergence (CD) is one of the most common methods for training EBMs. Here's a complete example of training with CD using TorchEBM:
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+import os
+
+from torchebm.core import BaseEnergyFunction, CosineScheduler
+from torchebm.samplers import LangevinDynamics
+from torchebm.losses import ContrastiveDivergence
+from torchebm.datasets import TwoMoonsDataset
+
+# Set seeds for reproducibility
+torch.manual_seed(42)
+np.random.seed(42)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(42)
+
+# Create output directory for plots
+os.makedirs("training_plots", exist_ok=True)
+
+# Define the energy function
+class MLPEnergy(BaseEnergyFunction):
+    def __init__(self, input_dim: int, hidden_dim: int = 64):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, 1),
+            nn.Tanh(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x).squeeze(-1)
+
+# Hyperparameters
+INPUT_DIM = 2
+HIDDEN_DIM = 16
+BATCH_SIZE = 256
+EPOCHS = 200
+LEARNING_RATE = 1e-3
+
+# Use dynamic schedulers for sampler parameters
+SAMPLER_STEP_SIZE = CosineScheduler(start_value=3e-2, end_value=5e-3, n_steps=100)
+SAMPLER_NOISE_SCALE = CosineScheduler(start_value=3e-1, end_value=1e-2, n_steps=100)
+
+CD_K = 10  # Number of MCMC steps for Contrastive Divergence
+USE_PCD = True  # Whether to use Persistent Contrastive Divergence
+VISUALIZE_EVERY = 20
+
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# Load dataset
+dataset = TwoMoonsDataset(n_samples=3000, noise=0.05, seed=42, device=device)
+real_data_for_plotting = dataset.get_data()
+dataloader = DataLoader(
+    dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=True,
+    drop_last=True,
+)
+
+# Setup model components
+energy_model = MLPEnergy(INPUT_DIM, HIDDEN_DIM).to(device)
+sampler = LangevinDynamics(
+    energy_function=energy_model,
+    step_size=SAMPLER_STEP_SIZE,
+    noise_scale=SAMPLER_NOISE_SCALE,
+    device=device,
+)
+loss_fn = ContrastiveDivergence(
+    energy_function=energy_model,
+    sampler=sampler,
+    k_steps=CD_K,
+    persistent=USE_PCD,
+    buffer_size=BATCH_SIZE,
+).to(device)
+
+# Optimizer
+optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
+
+# Training loop
+losses = []
+print("Starting training...")
+for epoch in range(EPOCHS):
+    energy_model.train()
+    epoch_loss = 0.0
+    
+    for i, data_batch in enumerate(dataloader):
+        # Zero gradients
+        optimizer.zero_grad()
+        
+        # Calculate Contrastive Divergence loss
+        loss, negative_samples = loss_fn(data_batch)
+        
+        # Backpropagate and optimize
+        loss.backward()
+        
+        # Optional: Gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
+        
+        # Update parameters
+        optimizer.step()
+        
+        epoch_loss += loss.item()
+    
+    # Calculate average loss for this epoch
+    avg_epoch_loss = epoch_loss / len(dataloader)
+    losses.append(avg_epoch_loss)
+    print(f"Epoch [{epoch+1}/{EPOCHS}], Average Loss: {avg_epoch_loss:.4f}")
+    
+    # Visualize progress
+    if (epoch + 1) % VISUALIZE_EVERY == 0 or epoch == 0:
+        print("Generating visualization...")
+        plot_energy_and_samples(
+            energy_fn=energy_model,
+            real_samples=real_data_for_plotting,
+            sampler=sampler,
+            epoch=epoch + 1,
+            device=device,
+            plot_range=2.5,
+            k_sampling=200,
+        )
+
+# Plot the training loss
+plt.figure(figsize=(10, 6))
+plt.plot(losses)
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training Loss')
+plt.grid(True, alpha=0.3)
+plt.savefig('docs/assets/images/training/cd_training_loss.png')
+plt.show()
+```
+
+## Visualization During Training
+
+It's important to visualize the model's progress during training. Here's a helper function to plot the energy landscape and samples:
+
+```python
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+from torchebm.core import BaseEnergyFunction
+from torchebm.samplers import LangevinDynamics
+
+@torch.no_grad()
+def plot_energy_and_samples(
+    energy_fn: BaseEnergyFunction,
+    real_samples: torch.Tensor,
+    sampler: LangevinDynamics,
+    epoch: int,
+    device: torch.device,
+    grid_size: int = 100,
+    plot_range: float = 3.0,
+    k_sampling: int = 100,
+):
+    """Plots the energy surface, real data, and model samples."""
+    plt.figure(figsize=(8, 8))
+
+    # Create grid for energy surface plot
+    x_coords = torch.linspace(-plot_range, plot_range, grid_size, device=device)
+    y_coords = torch.linspace(-plot_range, plot_range, grid_size, device=device)
+    xv, yv = torch.meshgrid(x_coords, y_coords, indexing="xy")
+    grid = torch.stack([xv.flatten(), yv.flatten()], dim=1)
+
+    # Calculate energy on the grid
+    energy_fn.eval()
+    energy_values = energy_fn(grid).cpu().numpy().reshape(grid_size, grid_size)
+    
+    # Plot energy surface (using probability density for better visualization)
+    log_prob_values = -energy_values
+    log_prob_values = log_prob_values - np.max(log_prob_values)
+    prob_density = np.exp(log_prob_values)
+
+    plt.contourf(
+        xv.cpu().numpy(),
+        yv.cpu().numpy(),
+        prob_density,
+        levels=50,
+        cmap="viridis",
+    )
+    plt.colorbar(label="exp(-Energy) (unnormalized density)")
+
+    # Generate samples from the current model for visualization
+    vis_start_noise = torch.randn(
+        500, real_samples.shape[1], device=device
+    )
+    model_samples_tensor = sampler.sample(x=vis_start_noise, n_steps=k_sampling)
+    model_samples = model_samples_tensor.cpu().numpy()
+
+    # Plot real and model samples
+    real_samples_np = real_samples.cpu().numpy()
+    plt.scatter(
+        real_samples_np[:, 0],
+        real_samples_np[:, 1],
+        s=10,
+        alpha=0.5,
+        label="Real Data",
+        c="white",
+        edgecolors="k",
+        linewidths=0.5,
+    )
+    plt.scatter(
+        model_samples[:, 0],
+        model_samples[:, 1],
+        s=10,
+        alpha=0.5,
+        label="Model Samples",
+        c="red",
+        edgecolors="darkred",
+        linewidths=0.5,
+    )
+
+    plt.xlim(-plot_range, plot_range)
+    plt.ylim(-plot_range, plot_range)
+    plt.title(f"Epoch {epoch}")
+    plt.xlabel("X1")
+    plt.ylabel("X2")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(f"docs/assets/images/training/ebm_training_epoch_{epoch}.png")
+    plt.close()
+```
+
+## Training with Score Matching
+
+An alternative to Contrastive Divergence is Score Matching, which doesn't require MCMC sampling:
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+
+from torchebm.core import BaseEnergyFunction
+from torchebm.losses import ScoreMatching
+from torchebm.datasets import GaussianMixtureDataset
+
+# Define the energy function
+class MLPEnergy(BaseEnergyFunction):
+    def __init__(self, input_dim, hidden_dim=64):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        return self.net(x).squeeze(-1)
+
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Setup model, loss, and optimizer
+energy_fn = MLPEnergy(input_dim=2).to(device)
+sm_loss_fn = ScoreMatching(
+    energy_function=energy_fn,
+    hessian_method="hutchinson",  # More efficient for higher dimensions
+    hutchinson_samples=5,
+    device=device,
+)
+optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+
+# Setup data
+dataset = GaussianMixtureDataset(
+    n_samples=500, n_components=4, std=0.1, seed=123
+).get_data()
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+# Training Loop
+losses = []
+for epoch in range(50):
+    epoch_loss = 0.0
+    for batch_data in dataloader:
+        batch_data = batch_data.to(device)
+
+        optimizer.zero_grad()
+        loss = sm_loss_fn(batch_data)
+        loss.backward()
+        optimizer.step()
+
+        epoch_loss += loss.item()
+
+    avg_loss = epoch_loss / len(dataloader)
+    losses.append(avg_loss)
+    print(f"Epoch {epoch+1}/50, Loss: {avg_loss:.6f}")
+
+# Plot the training loss
+plt.figure(figsize=(10, 6))
+plt.plot(losses)
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Score Matching Training Loss')
+plt.grid(True, alpha=0.3)
+plt.savefig('docs/assets/images/training/sm_training_loss.png')
+plt.show()
+```
+
+## Comparing Training Methods
+
+Here's how the major training methods for EBMs compare:
+
+| Method | Pros | Cons | Best For |
+|--------|------|------|----------|
+| **Contrastive Divergence (CD)** | - Simple to implement<br>- Works well for many models | - Can be slow due to sampling<br>- May not explore all modes | General-purpose EBM training |
+| **Persistent CD (PCD)** | - Better mixing than CD<br>- Can discover more modes | - Requires more memory<br>- Can be unstable | Complex energy landscapes |
+| **Score Matching** | - No sampling required<br>- Stable training | - Computationally intensive for high dimensions<br>- May require regularization | Lower-dimensional problems |
+| **Denoising Score Matching** | - More stable than standard score matching<br>- Scales better to high dimensions | - Sensitive to noise level<br>- May lose fine details | High-dimensional data |
+| **Noise Contrastive Estimation** | - No sampling from model<br>- Scales well | - Requires a good noise distribution<br>- Can be sensitive to hyperparameters | When a good noise model is available |
+
+## Advanced Training Techniques
+
+### Parameter Scheduling
+
+TorchEBM supports dynamic parameter scheduling during training, which can significantly improve results:
+
+```python
+from torchebm.core import CosineScheduler, LinearScheduler, ExponentialDecayScheduler
+
+# Create learning rate scheduler
+lr_scheduler = CosineScheduler(
+    start_value=1e-3,
+    end_value=1e-5,
+    n_steps=100
+)
+
+# Update learning rate during training
+for epoch in range(EPOCHS):
+    current_lr = lr_scheduler(epoch)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = current_lr
+    
+    # Rest of training loop...
+```
+
+### Gradient Clipping
+
+Gradient clipping is essential for stable EBM training:
+
+```python
+# After loss.backward()
+torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
+optimizer.step()
+```
+
+### Regularization Techniques
+
+Adding regularization can help stabilize training:
+
+```python
+# L2 regularization
+weight_decay = 1e-4
+optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE, weight_decay=weight_decay)
+
+# Spectral normalization for stability
+from torch.nn.utils import spectral_norm
+
+class RegularizedMLPEnergy(BaseEnergyFunction):
+    def __init__(self, input_dim, hidden_dim=64):
+        super().__init__()
+        self.network = nn.Sequential(
+            spectral_norm(nn.Linear(input_dim, hidden_dim)),
+            nn.ReLU(),
+            spectral_norm(nn.Linear(hidden_dim, hidden_dim)),
+            nn.ReLU(),
+            spectral_norm(nn.Linear(hidden_dim, 1))
         )
 
     def forward(self, x):
         return self.network(x).squeeze(-1)
-
-
-# Create a synthetic dataset (mixture of Gaussians)
-def generate_data(n_samples=10000):
-    # Create a mixture of 5 Gaussians
-    centers = [
-        (0, 0),
-        (2, 2),
-        (-2, 2),
-        (2, -2),
-        (-2, -2)
-    ]
-    std = 0.3
-
-    # Equal number of samples per component
-    n_per_component = n_samples // len(centers)
-    data = []
-
-    for center in centers:
-        component_data = torch.randn(n_per_component, 2) * std
-        component_data[:, 0] += center[0]
-        component_data[:, 1] += center[1]
-        data.append(component_data)
-
-    # Combine all components
-    data = torch.cat(data, dim=0)
-
-    # Shuffle
-    indices = torch.randperm(data.shape[0])
-    data = data[indices]
-
-    return data
-
-
-# Generate dataset
-dataset = generate_data(10000)
-
-# Create energy function and sampler
-energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=128)
-sampler = LangevinDynamics(
-    energy_function=energy_fn,
-    step_size=0.01
-)
-
-# Optimizer
-optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.0001)
-
-# Training hyperparameters
-batch_size = 128
-n_epochs = 200
-k_steps = 10  # Number of MCMC steps for negative samples
-log_interval = 20
-
-# Persistent samples
-persistent_samples = torch.randn(1000, 2)
-
-# Training loop
-for epoch in range(n_epochs):
-    # Shuffle dataset
-    indices = torch.randperm(dataset.shape[0])
-    dataset = dataset[indices]
-
-    total_loss = 0
-    n_batches = 0
-
-    for i in range(0, dataset.shape[0], batch_size):
-        # Get batch
-        batch_indices = indices[i:i + batch_size]
-        batch = dataset[batch_indices]
-
-        # Training step using PCD
-        optimizer.zero_grad()
-
-        # Positive phase
-        pos_energy = energy_fn(batch)
-
-        # Negative phase with persistent samples
-        pcd_indices = torch.randperm(persistent_samples.shape[0])[:batch_size]
-        neg_samples_init = persistent_samples[pcd_indices].clone()
-
-        neg_samples = sampler.sample(
-            initial_points=neg_samples_init,
-            n_steps=k_steps,
-            return_final=True
-        )
-
-        # Update persistent samples
-        persistent_samples[pcd_indices] = neg_samples.detach()
-
-        # Compute energy of negative samples
-        neg_energy = energy_fn(neg_samples)
-
-        # Compute loss
-        loss = pos_energy.mean() - neg_energy.mean()
-
-        # Backpropagation
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-        n_batches += 1
-
-    # Log progress
-    avg_loss = total_loss / n_batches
-
-    if (epoch + 1) % log_interval == 0:
-        print(f'Epoch {epoch + 1}/{n_epochs}, BaseLoss: {avg_loss:.4f}')
-
-        # Visualize current energy function
-        with torch.no_grad():
-            # Create grid
-            x = torch.linspace(-4, 4, 100)
-            y = torch.linspace(-4, 4, 100)
-            X, Y = torch.meshgrid(x, y, indexing='ij')
-            grid_points = torch.stack([X.flatten(), Y.flatten()], dim=1)
-
-            # Compute energy values
-            energies = energy_fn(grid_points).reshape(100, 100)
-
-            # Visualize
-            plt.figure(figsize=(10, 8))
-            plt.contourf(X.numpy(), Y.numpy(), energies.numpy(), 50, cmap='viridis')
-
-            # Plot data points
-            plt.scatter(dataset[:500, 0], dataset[:500, 1], s=1, color='red', alpha=0.5)
-
-            # Plot samples from model
-            sampled = sampler.sample(
-                dim=2,
-                n_samples=500,
-                n_steps=500,
-                burn_in=100
-            )
-            plt.scatter(sampled[:, 0], sampled[:, 1], s=1, color='white', alpha=0.5)
-
-            plt.title(f'Energy Landscape (Epoch {epoch + 1})')
-            plt.xlim(-4, 4)
-            plt.ylim(-4, 4)
-            plt.colorbar(label='Energy')
-            plt.tight_layout()
-            plt.show()
-
-# Final evaluation
-print("Training complete. Generating samples...")
-
-# Generate final samples
-final_samples = sampler.sample(
-    dim=2,
-    n_samples=5000,
-    n_steps=1000,
-    burn_in=200
-)
-
-# Visualize final distribution
-plt.figure(figsize=(12, 5))
-
-# Plot data distribution
-plt.subplot(1, 2, 1)
-plt.hist2d(dataset[:, 0].numpy(), dataset[:, 1].numpy(), bins=50, cmap='Blues')
-plt.title('Data Distribution')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.colorbar(label='Count')
-
-# Plot model distribution
-plt.subplot(1, 2, 2)
-plt.hist2d(final_samples[:, 0].numpy(), final_samples[:, 1].numpy(), bins=50, cmap='Reds')
-plt.title('Model Distribution')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.colorbar(label='Count')
-
-plt.tight_layout()
-plt.show()
 ```
 
-## Training with Regularization
+## Tips for Successful Training
 
-Adding regularization can help stabilize training and prevent the energy function from assigning extremely low values to certain regions:
-
-```python
-def train_step_with_regularization(data_batch, k_steps=10, l2_reg=0.001):
-    optimizer.zero_grad()
-
-    # Positive phase
-    pos_energy = energy_fn(data_batch)
-
-    # Negative phase
-    neg_samples = torch.randn_like(data_batch)
-    neg_samples = sampler.sample(
-        initial_points=neg_samples,
-        n_steps=k_steps,
-        return_final=True
-    )
-    neg_energy = energy_fn(neg_samples)
-
-    # Contrastive divergence loss
-    cd_loss = pos_energy.mean() - neg_energy.mean()
-
-    # L2 regularization on parameters
-    l2_norm = sum(p.pow(2).sum() for p in energy_fn.parameters())
-
-    # Total loss
-    loss = cd_loss + l2_reg * l2_norm
-
-    # Backpropagation
-    loss.backward()
-    optimizer.step()
-
-    return loss.item()
-```
-
-## Training with Gradient Clipping
-
-Gradient clipping can prevent explosive gradients during training:
-
-```python
-def train_step_with_gradient_clipping(data_batch, k_steps=10, max_norm=1.0):
-    optimizer.zero_grad()
-
-    # Positive phase
-    pos_energy = energy_fn(data_batch)
-
-    # Negative phase
-    neg_samples = torch.randn_like(data_batch)
-    neg_samples = sampler.sample(
-        initial_points=neg_samples,
-        n_steps=k_steps,
-        return_final=True
-    )
-    neg_energy = energy_fn(neg_samples)
-
-    # Contrastive divergence loss
-    loss = pos_energy.mean() - neg_energy.mean()
-
-    # Backpropagation
-    loss.backward()
-
-    # Gradient clipping
-    torch.nn.utils.clip_grad_norm_(energy_fn.parameters(), max_norm)
-
-    optimizer.step()
-
-    return loss.item()
-```
-
-## Monitoring Training Progress
-
-It's important to monitor various metrics during training to ensure the model is learning effectively:
-
-```python
-def visualize_training_progress(energy_fn, data, sampler, epoch):
-    # Generate samples from current model
-    samples = sampler.sample(
-        dim=data.shape[1],
-        n_samples=1000,
-        n_steps=500,
-        burn_in=100
-    )
-
-    # Compute energy statistics
-    with torch.no_grad():
-        data_energy = energy_fn(data[:1000]).mean().item()
-        sample_energy = energy_fn(samples).mean().item()
-
-    print(f"Epoch {epoch}: Data Energy: {data_energy:.4f}, Sample Energy: {sample_energy:.4f}")
-
-    # Create visualization
-    plt.figure(figsize=(15, 5))
-
-    # Plot data
-    plt.subplot(1, 3, 1)
-    plt.scatter(data[:1000, 0].numpy(), data[:1000, 1].numpy(), s=2, alpha=0.5)
-    plt.title('Data')
-    plt.xlim(-4, 4)
-    plt.ylim(-4, 4)
-
-    # Plot samples
-    plt.subplot(1, 3, 2)
-    plt.scatter(samples[:, 0].numpy(), samples[:, 1].numpy(), s=2, alpha=0.5)
-    plt.title('Samples')
-    plt.xlim(-4, 4)
-    plt.ylim(-4, 4)
-
-    # Plot energy landscape
-    plt.subplot(1, 3, 3)
-    x = torch.linspace(-4, 4, 100)
-    y = torch.linspace(-4, 4, 100)
-    X, Y = torch.meshgrid(x, y, indexing='ij')
-    grid_points = torch.stack([X.flatten(), Y.flatten()], dim=1)
-
-    with torch.no_grad():
-        energies = energy_fn(grid_points).reshape(100, 100)
-
-    plt.contourf(X.numpy(), Y.numpy(), energies.numpy(), 50, cmap='viridis')
-    plt.colorbar(label='Energy')
-    plt.title('Energy Landscape')
-
-    plt.tight_layout()
-    plt.savefig(f"training_progress_epoch_{epoch}.png")
-    plt.close()
-```
-
-## Debugging Tips
-
-Training EBMs can be challenging. Here are some tips for debugging:
-
-1. **Start with simpler energy functions**: Begin with analytical energy functions before moving to neural networks
-2. **Monitor energy values**: If energy values become extremely large or small, the model may be collapsing
-3. **Visualize samples**: Regularly visualize samples during training to check if they match the data distribution
-4. **Adjust learning rate**: Try different learning rates; EBMs often require smaller learning rates
-5. **Increase MCMC steps**: More MCMC steps for negative samples can improve training stability
-6. **Add noise regularization**: Adding small noise to data samples can help prevent overfitting
-7. **Use gradient clipping**: Clip gradients to prevent instability during training
-8. **Try different initializations**: Initial parameter values can significantly impact training dynamics
-
-## Training on Different Data Types
-
-The training approach may vary depending on the type of data:
-
-### Images
-
-For image data, convolutional architectures are recommended:
-
-```python
-class ImageEBM(BaseEnergyFunction):
-    def __init__(self, input_channels=1, image_size=28):
-        super().__init__()
-        
-        self.conv_net = nn.Sequential(
-            nn.Conv2d(input_channels, 32, 3, 1, 1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(32, 64, 4, 2, 1),  # Downsampling
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(64, 128, 4, 2, 1),  # Downsampling
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(128, 256, 4, 2, 1),  # Downsampling
-            nn.LeakyReLU(0.2)
-        )
-        
-        # Calculate final feature map size
-        feature_size = 256 * (image_size // 8) * (image_size // 8)
-        
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(feature_size, 1)
-        )
-    
-    def forward(self, x):
-        # Ensure proper dimensions for convolutional layers
-        if x.ndim == 3:
-            x = x.unsqueeze(1)  # Add channel dimension for grayscale
-        
-        features = self.conv_net(x)
-        energy = self.fc(features).squeeze(-1)
-        return energy
-```
-
-### Sequential Data
-
-For sequential data, recurrent or transformer architectures may be more appropriate:
-
-```python
-class SequentialEBM(BaseEnergyFunction):
-    def __init__(self, input_dim=1, hidden_dim=128, seq_len=50):
-        super().__init__()
-        
-        self.lstm = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=2,
-            batch_first=True,
-            bidirectional=True
-        )
-        
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim, 1)
-        )
-    
-    def forward(self, x):
-        # x batch_shape: [batch_size, seq_len, input_dim]
-        lstm_out, _ = self.lstm(x)
-        
-        # Use final hidden state
-        final_hidden = lstm_out[:, -1, :]
-        
-        # Compute energy
-        energy = self.fc(final_hidden).squeeze(-1)
-        return energy
-```
-
-## Conclusion
-
-Training energy-based models is a challenging but rewarding process. By leveraging the techniques outlined in this guide, you can effectively train EBMs using TorchEBM for a variety of applications. Remember to monitor training progress, visualize results, and adjust your approach based on the specific characteristics of your data and modeling objectives.
-
-Whether you're using contrastive divergence, score matching, or other methods, the key is to ensure that your energy function accurately captures the underlying structure of your data distribution. With practice and experimentation, you can master the art of training energy-based models for complex tasks in unsupervised learning. 
+1. **Start Simple**: Begin with a simple energy function and dataset, then increase complexity
+2. **Monitor Energy Values**: Watch for energy collapse (very negative values) which indicates instability
+3. **Adjust Sampling Parameters**: Tune MCMC step size and noise scale for effective exploration
+4. **Use Persistent CD**: For complex distributions, persistent CD often yields better results
+5. **Visualize Frequently**: Regularly check the energy landscape and samples to track progress
+6. **Gradient Clipping**: Always use gradient clipping to prevent explosive gradients
+7. **Parameter Scheduling**: Use schedulers for learning rate, step size, and noise scale
+8. **Batch Normalization**: Consider adding batch normalization in your energy network
+9. **Ensemble Methods**: Train multiple models and ensemble their predictions for better results
+10. **Patience**: EBM training can be challenging - be prepared to experiment with hyperparameters 
