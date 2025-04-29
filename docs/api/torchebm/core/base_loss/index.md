@@ -6,6 +6,7 @@
 
 - [`BaseContrastiveDivergence`](classes/BaseContrastiveDivergence) - Abstract base class for Contrastive Divergence (CD) based loss functions.
 - [`BaseLoss`](classes/BaseLoss) - Abstract base class for loss functions used in energy-based models.
+- [`BaseScoreMatching`](classes/BaseScoreMatching) - Abstract base class for Score Matching based loss functions.
 
 ## API Reference
 

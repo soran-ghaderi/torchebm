@@ -53,7 +53,10 @@ class MockCD(BaseContrastiveDivergence):
         # Simple loss: difference in energy between positive and negative samples
         x_energy = self.energy_function(x)
         pred_x_energy = self.energy_function(pred_x)
-        return torch.mean(x_energy - pred_x_energy)
+        # Ensure the result maintains the correct dtype
+        loss = torch.mean(x_energy - pred_x_energy)
+        # Explicitly cast to the requested dtype to maintain consistency
+        return loss.to(dtype=self.dtype)
 
 
 @pytest.fixture
@@ -84,6 +87,7 @@ def mock_loss():
 def mock_cd(energy_function, sampler):
     """Fixture to create a mock contrastive divergence loss."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device)
     return MockCD(
         energy_function=energy_function,
         sampler=sampler,
@@ -121,6 +125,7 @@ def test_base_loss_to_device():
 def test_base_contrastive_divergence_initialization(energy_function, sampler):
     """Test that BaseContrastiveDivergence can be initialized properly."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device)
     cd = MockCD(
         energy_function=energy_function,
         sampler=sampler,

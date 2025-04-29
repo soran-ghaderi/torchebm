@@ -27,7 +27,8 @@ def test_energy_function():
 
     # Test gradient method
     grad = energy_fn.gradient(x)
-    expected_grad = torch.tensor([[2.0, 4.0], [6.0, 8.0]])
+    # Create expected_grad on the same device as grad to avoid device mismatch
+    expected_grad = torch.tensor([[2.0, 4.0], [6.0, 8.0]], device=grad.device)
     assert torch.allclose(
         grad, expected_grad
     ), f"Expected gradient {expected_grad}, but got {grad}"

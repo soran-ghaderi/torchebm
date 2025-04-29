@@ -97,18 +97,35 @@ nav:
         - HarmonicEnergy: api/torchebm/core/base_energy_function/classes/HarmonicEnergy.md
         - RastriginEnergy: api/torchebm/core/base_energy_function/classes/RastriginEnergy.md
         - RosenbrockEnergy: api/torchebm/core/base_energy_function/classes/RosenbrockEnergy.md
+      - Base_evaluator: api/torchebm/core/base_evaluator/index.md
       - Base_loss:
         - api/torchebm/core/base_loss/index.md
         - BaseContrastiveDivergence: api/torchebm/core/base_loss/classes/BaseContrastiveDivergence.md
         - BaseLoss: api/torchebm/core/base_loss/classes/BaseLoss.md
+        - BaseScoreMatching: api/torchebm/core/base_loss/classes/BaseScoreMatching.md
+      - Base_metric:
+        - api/torchebm/core/base_metric/index.md
+        - BaseMetric: api/torchebm/core/base_metric/classes/BaseMetric.md
+        - EnergySampleMetric: api/torchebm/core/base_metric/classes/EnergySampleMetric.md
+        - SampleQualityMetric: api/torchebm/core/base_metric/classes/SampleQualityMetric.md
       - Base_optimizer:
         - api/torchebm/core/base_optimizer/index.md
         - Optimizer: api/torchebm/core/base_optimizer/classes/Optimizer.md
       - Base_sampler:
         - api/torchebm/core/base_sampler/index.md
         - BaseSampler: api/torchebm/core/base_sampler/classes/BaseSampler.md
+      - Base_scheduler:
+        - api/torchebm/core/base_scheduler/index.md
+        - BaseScheduler: api/torchebm/core/base_scheduler/classes/BaseScheduler.md
+        - ConstantScheduler: api/torchebm/core/base_scheduler/classes/ConstantScheduler.md
+        - CosineScheduler: api/torchebm/core/base_scheduler/classes/CosineScheduler.md
+        - ExponentialDecayScheduler: api/torchebm/core/base_scheduler/classes/ExponentialDecayScheduler.md
+        - LinearScheduler: api/torchebm/core/base_scheduler/classes/LinearScheduler.md
+        - MultiStepScheduler: api/torchebm/core/base_scheduler/classes/MultiStepScheduler.md
+        - WarmupScheduler: api/torchebm/core/base_scheduler/classes/WarmupScheduler.md
       - Base_trainer:
         - api/torchebm/core/base_trainer/index.md
+        - BaseTrainer: api/torchebm/core/base_trainer/classes/BaseTrainer.md
         - ContrastiveDivergenceTrainer: api/torchebm/core/base_trainer/classes/ContrastiveDivergenceTrainer.md
     - Cuda: api/torchebm/cuda/index.md
     - Datasets:
@@ -124,6 +141,39 @@ nav:
         - PinwheelDataset: api/torchebm/datasets/generators/classes/PinwheelDataset.md
         - SwissRollDataset: api/torchebm/datasets/generators/classes/SwissRollDataset.md
         - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
+    - Evaluation:
+      - api/torchebm/evaluation/index.md
+      - Evaluators:
+        - api/torchebm/evaluation/evaluators/index.md
+        - Base:
+          - api/torchebm/evaluation/evaluators/base/index.md
+          - BaseEvaluator: api/torchebm/evaluation/evaluators/base/classes/BaseEvaluator.md
+          - TimeMetric: api/torchebm/evaluation/evaluators/base/classes/TimeMetric.md
+        - Model_evaluator:
+          - api/torchebm/evaluation/evaluators/model_evaluator/index.md
+          - EnsembleEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/EnsembleEvaluator.md
+          - ModelEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/ModelEvaluator.md
+        - Sampler_evaluator:
+          - api/torchebm/evaluation/evaluators/sampler_evaluator/index.md
+          - ComparativeSamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/ComparativeSamplerEvaluator.md
+          - SamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/SamplerEvaluator.md
+      - Metrics:
+        - api/torchebm/evaluation/metrics/index.md
+        - Base:
+          - api/torchebm/evaluation/metrics/base/index.md
+          - BaseMetric: api/torchebm/evaluation/metrics/base/classes/BaseMetric.md
+          - EnergySampleMetric: api/torchebm/evaluation/metrics/base/classes/EnergySampleMetric.md
+          - SampleQualityMetric: api/torchebm/evaluation/metrics/base/classes/SampleQualityMetric.md
+        - Likelihood:
+          - api/torchebm/evaluation/metrics/likelihood/index.md
+          - KLDivergence: api/torchebm/evaluation/metrics/likelihood/classes/KLDivergence.md
+          - LogLikelihood: api/torchebm/evaluation/metrics/likelihood/classes/LogLikelihood.md
+        - Sample_quality:
+          - api/torchebm/evaluation/metrics/sample_quality/index.md
+          - FrechetDistance: api/torchebm/evaluation/metrics/sample_quality/classes/FrechetDistance.md
+          - InceptionScore: api/torchebm/evaluation/metrics/sample_quality/classes/InceptionScore.md
+          - MaximumMeanDiscrepancy: api/torchebm/evaluation/metrics/sample_quality/classes/MaximumMeanDiscrepancy.md
+      - Examples: api/torchebm/evaluation/examples/index.md
     - Losses:
       - api/torchebm/losses/index.md
       - Contrastive_divergence:
@@ -133,7 +183,9 @@ nav:
         - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
       - Score_matching:
         - api/torchebm/losses/score_matching/index.md
+        - DenosingScoreMatching: api/torchebm/losses/score_matching/classes/DenosingScoreMatching.md
         - ScoreMatching: api/torchebm/losses/score_matching/classes/ScoreMatching.md
+        - SlicedScoreMatching: api/torchebm/losses/score_matching/classes/SlicedScoreMatching.md
     - Models:
       - api/torchebm/models/index.md
       - Base_model:

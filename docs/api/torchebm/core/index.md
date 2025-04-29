@@ -9,9 +9,12 @@ icon: octicons/package-24
 ### Modules
 
 - [Base_energy_function](base_energy_function/index.md)
+- [Base_evaluator](base_evaluator/index.md)
 - [Base_loss](base_loss/index.md)
+- [Base_metric](base_metric/index.md)
 - [Base_optimizer](base_optimizer/index.md)
 - [Base_sampler](base_sampler/index.md)
+- [Base_scheduler](base_scheduler/index.md)
 - [Base_trainer](base_trainer/index.md)
 
 ## API Reference

@@ -148,6 +148,7 @@ import torch
 from torch import nn
 import math
 from abc import abstractmethod
+import warnings
 
 from torchebm.core import BaseContrastiveDivergence
 
@@ -186,6 +187,14 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         sampler (BaseSampler): MCMC sampler for generating negative samples
         k_steps (int): Number of MCMC steps (k in CD-k)
         persistent (bool): Whether to use persistent Contrastive Divergence
+        buffer_size (int, optional): Size of buffer for PCD. Defaults to 10000.
+        init_steps (int, optional): Number of initial MCMC steps to warm up buffer. Defaults to 100.
+        new_sample_ratio (float, optional): Fraction of new random samples to introduce. Defaults to 0.05.
+        energy_reg_weight (float, optional): Weight for energy regularization. Defaults to 0.001.
+        use_temperature_annealing (bool, optional): Whether to use temperature annealing for sampler. Defaults to False.
+        min_temp (float, optional): Minimum temperature for annealing. Defaults to 0.01.
+        max_temp (float, optional): Maximum temperature for annealing. Defaults to 2.0.
+        temp_decay (float, optional): Decay rate for temperature annealing. Defaults to 0.999.
         dtype (torch.dtype): Data type for computations
         device (torch.device): Device to run computations on
 
@@ -216,6 +225,47 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         - Persistent CD (`persistent=True`) can explore better but may require careful initialization
     """
 
+    def __init__(
+        self,
+        energy_function,
+        sampler,
+        k_steps=10,
+        persistent=False,
+        buffer_size=10000,
+        init_steps=100,
+        new_sample_ratio=0.05,
+        energy_reg_weight=0.001,
+        use_temperature_annealing=False,
+        min_temp=0.01,
+        max_temp=2.0,
+        temp_decay=0.999,
+        dtype=torch.float32,
+        device=None,
+        **kwargs
+    ):
+        super().__init__(
+            energy_function=energy_function,
+            sampler=sampler,
+            k_steps=k_steps,
+            persistent=persistent,
+            buffer_size=buffer_size,
+            new_sample_ratio=new_sample_ratio,
+            init_steps=init_steps,
+            dtype=dtype,
+            device=device,
+            **kwargs
+        )
+        # Additional parameters for improved stability
+        self.energy_reg_weight = energy_reg_weight
+        self.use_temperature_annealing = use_temperature_annealing
+        self.min_temp = min_temp
+        self.max_temp = max_temp
+        self.temp_decay = temp_decay
+        self.current_temp = max_temp
+        
+        # Register temperature as buffer for persistence
+        self.register_buffer("temperature", torch.tensor(max_temp, dtype=self.dtype))
+        
     def forward(
         self, x: torch.Tensor, *args, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -247,49 +297,44 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         batch_size = x.shape[0]
         data_shape = x.shape[1:]
 
+        # Update temperature if annealing is enabled
+        if self.use_temperature_annealing and self.training:
+            self.current_temp = max(self.min_temp, self.current_temp * self.temp_decay)
+            self.temperature[...] = self.current_temp  # Use ellipsis instead of index
+            
+            # If sampler has a temperature parameter, update it
+            if hasattr(self.sampler, "temperature"):
+                self.sampler.temperature = self.current_temp
+            elif hasattr(self.sampler, "noise_scale"):
+                # For samplers like Langevin, adjust noise scale based on temperature
+                original_noise = getattr(self.sampler, "_original_noise_scale", None)
+                if original_noise is None:
+                    setattr(self.sampler, "_original_noise_scale", self.sampler.noise_scale)
+                    original_noise = self.sampler.noise_scale
+                
+                self.sampler.noise_scale = original_noise * math.sqrt(self.current_temp)
+
+        # Get starting points for chains (either from buffer or data)
         start_points = self.get_start_points(x)
-        with torch.no_grad():  # Sampling process should not require gradients itself
-            pred_samples = self.sampler.sample(
-                x=start_points,
-                n_steps=self.k_steps,
-            ).detach()
+        
+        # Run MCMC chains to get negative samples
+        pred_samples = self.sampler.sample(
+            x=start_points,
+            n_steps=self.k_steps,
+        )
 
+        # Update persistent buffer if using PCD
         if self.persistent:
-            self.update_buffer(pred_samples)  # Pass the final samples
+            with torch.no_grad():
+                self.update_buffer(pred_samples.detach())
 
-        #     if not self.buffer_initialized:
-        #         # Pass the correct shape to initialize_buffer
-        #         self.initialize_buffer(x.shape)
-        #
-        #     indices = torch.randint(
-        #         0, self.buffer_size, (batch_size,), device=self.device
-        #     )
-        #     start_points = self.replay_buffer[indices].detach().clone()
-        # else:
-        #     start_points = x.detach().clone()
+        # Add energy regularization to kwargs for compute_loss
+        kwargs['energy_reg_weight'] = kwargs.get('energy_reg_weight', self.energy_reg_weight)
+        
+        # Compute contrastive divergence loss
+        loss = self.compute_loss(x, pred_samples, *args, **kwargs)
 
-        # if self.persistent and (
-        #     not hasattr(self, "buffer_initialized") or not self.buffer_initialized
-        # ):
-        #     self.initialize_buffer(x.shape)
-        #
-        # start_points = (
-        #     self.get_negative_samples(x, batch_size, data_shape).detach().clone()
-        # )
-        #
-        # # generate negative samples
-        # pred_samples = self.sampler.sample(
-        #     x=start_points,
-        #     n_steps=self.k_steps,
-        #     # n_samples=batch_size,
-        # ).detach()
-        #
-        # if self.persistent:
-        #     self.update_buffer(pred_samples.detach())
-
-        loss = self.compute_loss(x, pred_samples.detach(), *args, **kwargs)
-
-        return loss, pred_samples.detach()
+        return loss, pred_samples
 
     def compute_loss(
         self, x: torch.Tensor, pred_x: torch.Tensor, *args, **kwargs
@@ -314,19 +359,45 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             we *minimize* this value. This is different from some formulations that
             maximize `E(x') - E(x)`.
         """
+        # Ensure inputs are on the correct device and dtype
         x = x.to(self.device, self.dtype)
         pred_x = pred_x.to(self.device, self.dtype)
 
-        x_energy = self.energy_function(x)
-        pred_x_energy = self.energy_function(pred_x)
+        # Compute energy of real and generated samples
+        with torch.set_grad_enabled(True):
+            # Add small noise to real data for stability (optional)
+            if kwargs.get('add_noise_to_real', False):
+                noise_scale = kwargs.get('noise_scale', 1e-4)
+                x_noisy = x + noise_scale * torch.randn_like(x)
+                x_energy = self.energy_function(x_noisy)
+            else:
+                x_energy = self.energy_function(x)
+                
+            pred_x_energy = self.energy_function(pred_x)
 
-        # Contrastive Divergence loss: E[data] - E[model]
-        loss = torch.mean(x_energy - pred_x_energy)
-
-        # add energy regularization term in the params in future releases
-        # energy_reg = self.energy_reg_weight * (torch.mean(x_energy**2) + torch.mean(pred_x_energy**2))
-        # loss = loss + energy_reg
-
+        # Compute mean energies with improved numerical stability
+        mean_x_energy = torch.mean(x_energy)
+        mean_pred_energy = torch.mean(pred_x_energy)
+        
+        # Basic contrastive divergence loss: E[data] - E[model]
+        loss = mean_x_energy - mean_pred_energy
+        
+        # Optional: Regularization to prevent energies from becoming too large
+        # This helps with stability especially in the early phases of training
+        energy_reg_weight = kwargs.get('energy_reg_weight', 0.001)
+        if energy_reg_weight > 0:
+            energy_reg = energy_reg_weight * (torch.mean(x_energy**2) + torch.mean(pred_x_energy**2))
+            loss = loss + energy_reg
+        
+        # Prevent extremely large gradients with a safety check
+        if torch.isnan(loss) or torch.isinf(loss):
+            warnings.warn(
+                f"NaN or Inf detected in CD loss. x_energy: {mean_x_energy}, pred_energy: {mean_pred_energy}",
+                RuntimeWarning
+            )
+            # Return a small positive constant instead of NaN/Inf to prevent training collapse
+            return torch.tensor(0.1, device=self.device, dtype=self.dtype)
+            
         return loss
 
 

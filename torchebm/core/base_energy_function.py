@@ -1,8 +1,9 @@
 import math
+import warnings
 from abc import ABC, abstractmethod
 import torch
 from torch import nn
-from typing import Optional
+from typing import Optional, Union
 
 
 class BaseEnergyFunction(nn.Module, ABC):
@@ -27,16 +28,50 @@ class BaseEnergyFunction(nn.Module, ABC):
     - Subclasses can contain trainable parameters (`nn.Parameter`).
     - Standard PyTorch methods like `.to(device)`, `.parameters()`, `.state_dict()`,
       and integration with `torch.optim` work as expected.
+      
+    Args:
+        dtype (torch.dtype): Data type for computations
+        device (Union[str, torch.device]): Device for computations
+        use_mixed_precision (bool): Whether to use mixed precision for forward and gradient computation
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = None,
+        use_mixed_precision: bool = False,
+    ):
         """Initializes the BaseEnergyFunction base class."""
         super().__init__()
-        # Optional: store device, though nn.Module handles parameter/buffer device placement
-        self._device: Optional[torch.device] = None
+        # Convert string device to torch.device
+        if isinstance(device, str):
+            device = torch.device(device)
+            
+        # Store dtype and device settings
+        self.dtype = dtype
+        self._device = device or (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
+        self.use_mixed_precision = use_mixed_precision
+        
+        # Check if mixed precision is available
+        if self.use_mixed_precision:
+            try:
+                from torch.cuda.amp import autocast
+                self.autocast_available = True
+            except ImportError:
+                warnings.warn(
+                    "Mixed precision requested but torch.cuda.amp not available. "
+                    "Falling back to full precision. Requires PyTorch 1.6+.",
+                    UserWarning,
+                )
+                self.use_mixed_precision = False
+                self.autocast_available = False
+        else:
+            self.autocast_available = False
 
     @property
-    def device(self) -> Optional[torch.device]:
+    def device(self) -> torch.device:
         """Returns the device associated with the module's parameters/buffers (if any)."""
         try:
             # Attempt to infer device from the first parameter/buffer found
@@ -55,9 +90,9 @@ class BaseEnergyFunction(nn.Module, ABC):
 
         Args:
             x (torch.Tensor): Input tensor of batch_shape (batch_size, *input_dims).
-                               It's recommended that subclasses handle moving `x`
-                               to the correct device if necessary, although callers
-                               should ideally provide `x` on the correct device.
+                              It's recommended that subclasses handle moving `x`
+                              to the correct device if necessary, although callers
+                              should ideally provide `x` on the correct device.
 
         Returns:
             torch.Tensor: Tensor of scalar energy values with batch_shape (batch_size,).
@@ -95,8 +130,13 @@ class BaseEnergyFunction(nn.Module, ABC):
                 x.detach().to(dtype=torch.float32, device=device).requires_grad_(True)
             )
 
-            # Perform forward pass with float32 input
-            energy = self.forward(x_for_grad)
+            # Perform forward pass with float32 input, using mixed precision if enabled
+            if self.use_mixed_precision and self.autocast_available:
+                from torch.cuda.amp import autocast
+                with autocast():
+                    energy = self.forward(x_for_grad)
+            else:
+                energy = self.forward(x_for_grad)
 
             # Validate energy batch_shape - should be one scalar per batch item
             if energy.shape != (x_for_grad.shape[0],):
@@ -132,9 +172,16 @@ class BaseEnergyFunction(nn.Module, ABC):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """Alias for the forward method for standard PyTorch module usage."""
-        # Note: nn.Module.__call__ has hooks; calling forward directly bypasses them.
-        # It's generally better to call the module instance: energy_fn(x)
-        return super().__call__(x, *args, **kwargs)  # Use nn.Module's __call__
+        # First ensure x is on the correct device and dtype
+        x = x.to(device=self.device, dtype=self.dtype)
+        
+        # Apply mixed precision context if enabled
+        if self.use_mixed_precision and self.autocast_available:
+            from torch.cuda.amp import autocast
+            with autocast():
+                return super().__call__(x, *args, **kwargs)
+        else:
+            return super().__call__(x, *args, **kwargs)  # Use nn.Module's __call__
 
     # Override the base nn.Module `to` method to also store the device hint
     def to(self, *args, **kwargs):
@@ -154,6 +201,16 @@ class BaseEnergyFunction(nn.Module, ABC):
 
             if device:
                 new_self._device = device
+                
+            # Check for dtype updates
+            dtype = None
+            if len(args) > 1 and isinstance(args[1], torch.dtype):
+                dtype = args[1]
+            if "dtype" in kwargs:
+                dtype = kwargs["dtype"]
+                
+            if dtype:
+                new_self.dtype = dtype
         except Exception:
             # Ignore potential errors in parsing .to args, rely on parameter/buffer device
             pass

@@ -1,21 +1,29 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+import os
 
 from torchebm.core import (
     BaseEnergyFunction,
-    ExponentialDecayScheduler,
-    LinearScheduler,
     CosineScheduler,
+    LinearScheduler,
+    ExponentialDecayScheduler,
 )
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import ContrastiveDivergence
+from torchebm.datasets import TwoMoonsDataset
 
-from torchebm.datasets import GaussianMixtureDataset, TwoMoonsDataset
+# Set seeds for reproducibility
+torch.manual_seed(42)
+np.random.seed(42)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(42)
+
+# Create output directory for plots
+os.makedirs("ebm_training_plots", exist_ok=True)
 
 
 class MLPEnergy(BaseEnergyFunction):
@@ -24,11 +32,17 @@ class MLPEnergy(BaseEnergyFunction):
     def __init__(self, input_dim: int, hidden_dim: int = 64):
         super().__init__()
         self.network = nn.Sequential(
+            # nn.Linear(input_dim, hidden_dim),
+            # nn.ReLU(),
+            # nn.Linear(hidden_dim, hidden_dim),
+            # nn.Tanh(),
+            # nn.Linear(hidden_dim, 1),  # Output a single scalar energy value
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
+            nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),  # Output a single scalar energy value
+            nn.SELU(),
+            nn.Linear(hidden_dim, 1),
+            nn.Tanh(),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -127,27 +141,21 @@ if __name__ == "__main__":
     INPUT_DIM = 2
     HIDDEN_DIM = 16
     BATCH_SIZE = 256
-    EPOCHS = 220
+    EPOCHS = 200
     LEARNING_RATE = 1e-3
     SAMPLER_STEP_SIZE = 0.1
     # SAMPLER_STEP_SIZE = ExponentialDecayScheduler(
-    #     initial_value=1e-2, decay_rate=0.99, min_value=5e-3
+    #     start_value=1e-2, decay_rate=0.99, min_value=5e-3
     # )
-    SAMPLER_STEP_SIZE = CosineScheduler(
-        initial_value=3e-2, final_value=5e-3, total_steps=100
-    )
+    SAMPLER_STEP_SIZE = CosineScheduler(start_value=3e-2, end_value=5e-3, n_steps=100)
 
     # SAMPLER_NOISE_SCALE = torch.sqrt(torch.Tensor([SAMPLER_STEP_SIZE])).numpy()[0]
     SAMPLER_NOISE_SCALE = 0.1
-    # SAMPLER_NOISE_SCALE = LinearScheduler(
-    #     initial_value=1.0, final_value=0.01, total_steps=1000
-    # )
+    # SAMPLER_NOISE_SCALE = LinearScheduler(start_value=1.0, end_value=0.01, n_steps=50)
     # SAMPLER_NOISE_SCALE = ExponentialDecayScheduler(
-    #     initial_value=1e-1, decay_rate=0.99, min_value=1e-2
+    #     start_value=1e-1, decay_rate=0.99, min_value=1e-2
     # )
-    SAMPLER_NOISE_SCALE = CosineScheduler(
-        initial_value=3e-1, final_value=5e-3, total_steps=100
-    )
+    SAMPLER_NOISE_SCALE = CosineScheduler(start_value=3e-1, end_value=1e-2, n_steps=100)
 
     print(f"Sampler noise scale: {SAMPLER_NOISE_SCALE}")
     CD_K = 10
