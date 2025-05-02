@@ -310,6 +310,7 @@ markdown_extensions:
       emoji_index: !!python/name:materialx.emoji.twemoji
       emoji_generator: !!python/name:materialx.emoji.to_svg
   - pymdownx.highlight:
+      linenums: true
       anchor_linenums: true
       line_spans: __span
       pygments_lang_class: true
@@ -335,7 +336,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/soran-ghaderi/torchebm
+      link: https://github.com/soran-ghaderi
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/torchebm/
     - icon: fontawesome/brands/bluesky

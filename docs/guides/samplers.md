@@ -77,20 +77,6 @@ print(samples.shape)  # Shape: [100, 2]
 
 The `LangevinDynamics` sampler in TorchEBM comes with several advanced features:
 
-#### Burn-in and Thinning
-
-You can automatically discard the initial samples (burn-in) and keep only every n-th sample (thinning):
-
-```python
-samples = langevin_sampler.sample(
-    x=initial_points,
-    n_steps=2000,
-    burn_in=1000,  # Discard the first 1000 steps
-    thinning=10,   # Keep every 10th sample after burn-in
-    return_trajectory=False
-)
-```
-
 #### Returning Trajectories
 
 For visualization or analysis, you can get the full trajectory of the sampling process:
@@ -209,14 +195,30 @@ Visualizing the sampling process can help understand the behavior of your model.
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
+import torch
+from torchebm.core import DoubleWellEnergy, LinearScheduler, WarmupScheduler
 from torchebm.samplers import LangevinDynamics
 
 # Create energy function and sampler
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
+energy_fn = DoubleWellEnergy(barrier_height=5.0)
+
+# Define a cosine scheduler for the Langevin dynamics
+scheduler_linear = LinearScheduler(
+    initial_value=0.05,
+    final_value=0.03,
+    total_steps=100
+)
+
+scheduler = WarmupScheduler(
+    main_scheduler=scheduler_linear,
+    warmup_steps=10,
+    warmup_init_factor=0.01
+)
+
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size=0.01
+    step_size=scheduler
+
 )
 
 # Initial point
@@ -225,6 +227,7 @@ initial_point = torch.tensor([[-2.0, 0.0]], dtype=torch.float32)
 # Run sampling and get trajectory
 trajectory = sampler.sample(
     x=initial_point,
+    dim=2,
     n_steps=1000,
     return_trajectory=True
 )
@@ -252,14 +255,14 @@ traj_y = trajectory[0, :, 1].numpy()
 # Plot trajectory
 plt.plot(traj_x, traj_y, 'r-', linewidth=1, alpha=0.7)
 plt.scatter(traj_x[0], traj_y[0], c='black', s=50, marker='o', label='Start')
-plt.scatter(traj_x[-1], traj_y[-1], c='red', s=50, marker='*', label='End')
+plt.scatter(traj_x[-1], traj_y[-1], c='blue', s=50, marker='*', label='End')
 
 plt.xlabel('x')
 plt.ylabel('y')
 plt.title('Langevin Dynamics Trajectory')
 plt.legend()
 plt.grid(True, alpha=0.3)
-plt.savefig('docs/assets/images/samplers/langevin_trajectory.png')
+plt.savefig('langevin_trajectory.png')
 plt.show()
 ```
 
@@ -277,37 +280,219 @@ plt.show()
 2. **Adjust step size**: Too large → unstable sampling; too small → slow mixing
 3. **Dynamic scheduling**: Use parameter schedulers to automatically adjust step size and noise during sampling
 4. **Monitor energy values**: Track energy values to ensure proper mixing and convergence
-5. **Burn-in and thinning**: Use appropriate burn-in and thinning to improve sample quality
-6. **Multiple chains**: Run multiple chains from different starting points to better explore the distribution
+5**Multiple chains**: Run multiple chains from different starting points to better explore the distribution
 
 ## Custom Samplers
 
-You can create custom samplers by subclassing `BaseSampler`:
+TorchEBM provides flexible base classes for creating your own custom sampling algorithms. All samplers inherit from the `BaseSampler` abstract base class which defines the core interfaces and functionalities.
+
+### Creating a Custom Sampler
+
+To implement a custom sampler, you need to subclass `BaseSampler` and implement at minimum the `sample()` method:
 
 ```python
-from torchebm.core import BaseSampler
+from torchebm.core import BaseSampler, BaseEnergyFunction
 import torch
+from typing import Optional, Union, Tuple, List, Dict
 
 class MyCustomSampler(BaseSampler):
-    def __init__(self, energy_function, param1, param2, device="cpu"):
-        super().__init__(energy_function, device)
-        self.param1 = param1
-        self.param2 = param2
-    
-    def step(self, x, step_idx=None):
-        # Implement a single sampling step
-        # x shape: [n_samples, dim]
+    def __init__(
+        self,
+        energy_function: BaseEnergyFunction,
+        my_parameter: float = 0.1,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = None,
+    ):
+        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
+        self.my_parameter = my_parameter
         
-        # Example: simple random walk with energy gradient
-        grad = self.energy_function.grad(x)
-        noise = torch.randn_like(x) * self.param1
-        x_new = x - self.param2 * grad + noise
-        
-        return x_new
+        # You can register schedulers for parameters that change during sampling
+        self.register_scheduler("my_parameter", ConstantScheduler(my_parameter))
     
-    def sample(self, x=None, n_steps=1000, n_samples=None, dim=None, 
-               return_trajectory=False, burn_in=0, thinning=1):
-        # You can customize the sampling logic or use the implementation
-        # from the parent class BaseSampler
-        return super().sample(x, n_steps, n_samples, dim, 
-                              return_trajectory, burn_in, thinning) 
+    def custom_step(self, x: torch.Tensor) -> torch.Tensor:
+        """Implement a single step of your sampling algorithm"""
+        # Get current parameter value (if using schedulers)
+        param_value = self.get_scheduled_value("my_parameter")
+        
+        # Compute gradient of the energy function
+        gradient = self.energy_function.gradient(x)
+        
+        # Implement your sampling logic
+        noise = torch.randn_like(x)
+        new_x = x - param_value * gradient + noise * 0.01
+        
+        return new_x
+    
+    @torch.no_grad()
+    def sample(
+        self,
+        x: Optional[torch.Tensor] = None,
+        dim: int = 10,
+        n_steps: int = 100,
+        n_samples: int = 1,
+        thin: int = 1,
+        return_trajectory: bool = False,
+        return_diagnostics: bool = False,
+        *args,
+        **kwargs,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
+        """Implementation of the abstract sample method"""
+        # Reset any schedulers to their initial state
+        self.reset_schedulers()
+        
+        # Initialize samples if not provided
+        if x is None:
+            x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
+        else:
+            x = x.to(self.device)
+            
+        # Setup trajectory storage if requested
+        if return_trajectory:
+            trajectory = torch.empty(
+                (n_samples, n_steps, dim), dtype=self.dtype, device=self.device
+            )
+            
+        # Setup diagnostics if requested
+        if return_diagnostics:
+            diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
+            
+        # Main sampling loop
+        for i in range(n_steps):
+            # Step all schedulers before each MCMC step
+            self.step_schedulers()
+            
+            # Apply your custom sampling step
+            x = self.custom_step(x)
+            
+            # Record trajectory if requested
+            if return_trajectory:
+                trajectory[:, i, :] = x
+                
+            # Compute and store diagnostics if requested
+            if return_diagnostics:
+                # Your diagnostic computations here
+                pass
+                
+        # Return results based on what was requested
+        if return_trajectory:
+            if return_diagnostics:
+                return trajectory, diagnostics
+            return trajectory
+        if return_diagnostics:
+            return x, diagnostics
+        return x
+    
+    def _setup_diagnostics(self, dim: int, n_steps: int, n_samples: int = None) -> torch.Tensor:
+        """Optional method to setup diagnostic storage"""
+        if n_samples is not None:
+            return torch.empty(
+                (n_steps, 3, n_samples, dim), device=self.device, dtype=self.dtype
+            )
+        else:
+            return torch.empty((n_steps, 3, dim), device=self.device, dtype=self.dtype)
+```
+
+### Key Components
+
+When implementing a custom sampler, consider these key aspects:
+
+1. **Energy Function**: All samplers work with an energy function that defines the target distribution.
+
+2. **Parameter Scheduling**: Use the built-in scheduler system to manage parameters that change during sampling:
+   ```python
+   # Register a scheduler in __init__
+   self.register_scheduler("step_size", ConstantScheduler(0.01))
+   
+   # Get current value during sampling
+   current_step_size = self.get_scheduled_value("step_size")
+   
+   # Step all schedulers in each iteration
+   self.step_schedulers()
+   ```
+
+3. **Device and Precision Management**: The base class handles device placement and precision settings:
+   ```python
+   # Move sampler to a specific device
+   my_sampler = my_sampler.to("cuda:0")
+   ```
+
+4. **Diagnostics Collection**: Implement `_setup_diagnostics()` to collect sampling statistics.
+
+### Example: Simplified Langevin Dynamics
+
+Here's a simplified example of a Langevin dynamics sampler:
+
+```python
+class SimpleLangevin(BaseSampler):
+    def __init__(
+        self,
+        energy_function: BaseEnergyFunction,
+        step_size: float = 0.01,
+        noise_scale: float = 1.0,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = None,
+    ):
+        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
+        self.register_scheduler("step_size", ConstantScheduler(step_size))
+        self.register_scheduler("noise_scale", ConstantScheduler(noise_scale))
+    
+    def langevin_step(self, x: torch.Tensor) -> torch.Tensor:
+        step_size = self.get_scheduled_value("step_size")
+        noise_scale = self.get_scheduled_value("noise_scale")
+        
+        gradient = self.energy_function.gradient(x)
+        noise = torch.randn_like(x)
+        
+        new_x = (
+            x 
+            - step_size * gradient 
+            + torch.sqrt(torch.tensor(2.0 * step_size)) * noise_scale * noise
+        )
+        return new_x
+    
+    @torch.no_grad()
+    def sample(
+        self,
+        x: Optional[torch.Tensor] = None,
+        dim: int = 10,
+        n_steps: int = 100,
+        n_samples: int = 1,
+        thin: int = 1,
+        return_trajectory: bool = False,
+        return_diagnostics: bool = False,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
+        self.reset_schedulers()
+        
+        if x is None:
+            x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
+        else:
+            x = x.to(self.device)
+            
+        if return_trajectory:
+            trajectory = torch.empty(
+                (n_samples, n_steps, dim), dtype=self.dtype, device=self.device
+            )
+            
+        for i in range(n_steps):
+            self.step_schedulers()
+            x = self.langevin_step(x)
+            
+            if return_trajectory:
+                trajectory[:, i, :] = x
+                
+        if return_trajectory:
+            return trajectory
+        return x
+```
+
+### Tips for Custom Samplers
+
+1. **Performance**: Use `@torch.no_grad()` for the sampling loop to disable gradient computation.
+
+2. **GPU Compatibility**: Handle device placement correctly, especially when generating random noise.
+
+3. **Validation**: Ensure your sampler works with simple distributions before moving to complex ones.
+
+4. **Diagnostics**: Implement helpful diagnostics to monitor convergence and sampling quality.
+
+5. **Mixed Precision**: For better performance on modern GPUs, use the built-in mixed precision support.

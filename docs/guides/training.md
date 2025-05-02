@@ -73,22 +73,6 @@ if torch.cuda.is_available():
 # Create output directory for plots
 os.makedirs("training_plots", exist_ok=True)
 
-# Define the energy function
-class MLPEnergy(BaseEnergyFunction):
-    def __init__(self, input_dim: int, hidden_dim: int = 64):
-        super().__init__()
-        self.network = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SELU(),
-            nn.Linear(hidden_dim, 1),
-            nn.Tanh(),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x).squeeze(-1)
-
 # Hyperparameters
 INPUT_DIM = 2
 HIDDEN_DIM = 16
@@ -295,21 +279,6 @@ from torchebm.core import BaseEnergyFunction
 from torchebm.losses import ScoreMatching
 from torchebm.datasets import GaussianMixtureDataset
 
-# Define the energy function
-class MLPEnergy(BaseEnergyFunction):
-    def __init__(self, input_dim, hidden_dim=64):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, x):
-        return self.net(x).squeeze(-1)
-
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -362,38 +331,16 @@ plt.show()
 
 Here's how the major training methods for EBMs compare:
 
-| Method | Pros | Cons | Best For |
-|--------|------|------|----------|
-| **Contrastive Divergence (CD)** | - Simple to implement<br>- Works well for many models | - Can be slow due to sampling<br>- May not explore all modes | General-purpose EBM training |
-| **Persistent CD (PCD)** | - Better mixing than CD<br>- Can discover more modes | - Requires more memory<br>- Can be unstable | Complex energy landscapes |
-| **Score Matching** | - No sampling required<br>- Stable training | - Computationally intensive for high dimensions<br>- May require regularization | Lower-dimensional problems |
-| **Denoising Score Matching** | - More stable than standard score matching<br>- Scales better to high dimensions | - Sensitive to noise level<br>- May lose fine details | High-dimensional data |
-| **Noise Contrastive Estimation** | - No sampling from model<br>- Scales well | - Requires a good noise distribution<br>- Can be sensitive to hyperparameters | When a good noise model is available |
+| Method                            | Pros                                                                                                                             | Cons                                                                                                                                         | Best For                                                                        |
+|-----------------------------------|----------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| **Contrastive Divergence (CD)**   | - Simple to implement<br>- Computationally efficient<br>- Works well for simple distributions                                    | - May not converge to true gradient<br>- Limited mode exploration with short MCMC runs<br>- Can lead to poor samples                         | Restricted Boltzmann Machines, simpler energy-based models                      |
+| **Persistent CD (PCD)**           | - Better mode exploration than CD<br>- More accurate gradient estimation<br>- Improved sample quality                            | - Requires maintaining persistent chains<br>- Can be unstable with high learning rates<br>- Chains can get stuck in metastable states        | Deep Boltzmann Machines, models with complex energy landscapes                  |
+| **Score Matching**                | - Avoids MCMC sampling<br>- Consistent estimator<br>- Stable optimization                                                        | - Requires computing Hessian diagonals<br>- High computational cost in high dimensions<br>- Need for second derivatives                      | Continuous data, models with tractable derivatives                              |
+| **Denoising Score Matching**      | - Avoids explicit Hessian computation<br>- More efficient than standard score matching<br>- Works well for high-dimensional data | - Performance depends on noise distribution<br>- Trade-off between noise level and estimation accuracy<br>- May smooth out important details | Image modeling, high-dimensional continuous distributions                       |
+| **Sliced Score Matching**         | - Linear computational complexity<br>- No Hessian computation needed<br>- Scales well to high dimensions                         | - Approximation depends on number of projections<br>- Less accurate with too few random projections<br>- Still requires gradient computation | High-dimensional problems where other score matching variants are too expensive |
+
 
 ## Advanced Training Techniques
-
-### Parameter Scheduling
-
-TorchEBM supports dynamic parameter scheduling during training, which can significantly improve results:
-
-```python
-from torchebm.core import CosineScheduler, LinearScheduler, ExponentialDecayScheduler
-
-# Create learning rate scheduler
-lr_scheduler = CosineScheduler(
-    start_value=1e-3,
-    end_value=1e-5,
-    n_steps=100
-)
-
-# Update learning rate during training
-for epoch in range(EPOCHS):
-    current_lr = lr_scheduler(epoch)
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = current_lr
-    
-    # Rest of training loop...
-```
 
 ### Gradient Clipping
 

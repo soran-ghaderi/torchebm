@@ -322,7 +322,6 @@ class LangevinDynamics(BaseSampler):
                 return_diagnostics=True
             )
             ```
-
         """
 
         self.reset_schedulers()
@@ -331,6 +330,8 @@ class LangevinDynamics(BaseSampler):
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
         else:
             x = x.to(self.device)  # Initial batch
+            dim = x.shape[-1]
+            n_samples = x.shape[0]
 
         if return_trajectory:
             trajectory = torch.empty(
