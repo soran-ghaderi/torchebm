@@ -52,26 +52,25 @@ plt.show()
 
 ![Basic Energy Landscape](../assets/images/visualization/basic_energy_landscape.png)
 
-### Advanced Energy Landscape Visualization
+### Visualizing Energy as Probability Density
 
-For more advanced visualizations, you can combine contour plots with 3D surfaces:
+Often, it's more intuitive to visualize the probability density (exp(-Energy)) rather than the energy itself:
 
 ```python
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from torchebm.core import RastriginEnergy
+from torchebm.core import DoubleWellEnergy
 
-# Create energy function
-energy_fn = RastriginEnergy(a=10.0)
+# Create the energy function
+energy_fn = DoubleWellEnergy(barrier_height=2.0)
 
-# Create a grid
-resolution = 200
-x = np.linspace(-5, 5, resolution)
-y = np.linspace(-5, 5, resolution)
-X, Y = np.meshgrid(x, y)
+# Create a grid for visualization
+grid_size = 100
+plot_range = 3.0
+x_coords = np.linspace(-plot_range, plot_range, grid_size)
+y_coords = np.linspace(-plot_range, plot_range, grid_size)
+X, Y = np.meshgrid(x_coords, y_coords)
 Z = np.zeros_like(X)
 
 # Compute energy values
@@ -80,33 +79,25 @@ for i in range(X.shape[0]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
         Z[i, j] = energy_fn(point).item()
 
-# Apply log-scaling for better visualization
-Z_vis = np.log(Z - np.min(Z) + 1)
+# Convert energy to probability density (unnormalized)
+# Subtract max for numerical stability before exponentiating
+log_prob_values = -Z
+log_prob_values = log_prob_values - np.max(log_prob_values)
+prob_density = np.exp(log_prob_values)
 
-# Create figure with two subplots
-fig = plt.figure(figsize=(16, 6))
-
-# 3D surface plot
-ax1 = fig.add_subplot(121, projection='3d')
-surf = ax1.plot_surface(X, Y, Z_vis, cmap=cm.viridis, linewidth=0, antialiased=True)
-ax1.set_title('Rastrigin Energy Function (3D)')
-ax1.set_xlabel('x')
-ax1.set_ylabel('y')
-ax1.set_zlabel('Log Energy')
-
-# 2D contour plot
-ax2 = fig.add_subplot(122)
-contour = ax2.contourf(X, Y, Z_vis, 50, cmap=cm.viridis)
-ax2.set_title('Rastrigin Energy Function (Contour)')
-ax2.set_xlabel('x')
-ax2.set_ylabel('y')
-fig.colorbar(contour, ax=ax2, label='Log Energy')
-
+# Create contour plot
+plt.figure(figsize=(10, 8))
+contour = plt.contourf(X, Y, prob_density, levels=50, cmap='viridis')
+plt.colorbar(label='exp(-Energy) (unnormalized density)')
+plt.xlabel('X1')
+plt.ylabel('X2')
+plt.title('Double Well Probability Density')
+plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.show()
 ```
 
-![Advanced Energy Landscape](../assets/images/visualization/advanced_energy_landscape.png)
+![Probability Density](../assets/images/visualization/probability_density.png)
 
 ## Sampling Trajectory Visualization
 
@@ -115,34 +106,43 @@ Visualizing the trajectory of sampling algorithms can provide insights into thei
 ### Visualizing Langevin Dynamics Trajectories
 
 ```python
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torchebm.core import DoubleWellEnergy, LinearScheduler, WarmupScheduler
+from torchebm.samplers import LangevinDynamics
 
 # Create energy function and sampler
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
-sampler = LangevinDynamics(
-    energy_function=energy_fn,
-    step_size=0.01
+energy_fn = DoubleWellEnergy(barrier_height=5.0)
+
+# Define a cosine scheduler for the Langevin dynamics
+scheduler_linear = LinearScheduler(
+    initial_value=0.05,
+    final_value=0.03,
+    total_steps=100
 )
 
-# We'll manually track the trajectory in a 2D space
-dim = 2
-n_steps = 1000
+scheduler = WarmupScheduler(
+    main_scheduler=scheduler_linear,
+    warmup_steps=10,
+    warmup_init_factor=0.01
+)
+
+sampler = LangevinDynamics(
+    energy_function=energy_fn,
+    step_size=scheduler
+
+)
+
+# Initial point
 initial_point = torch.tensor([[-2.0, 0.0]], dtype=torch.float32)
 
-# Track the trajectory manually
-trajectory = torch.zeros((1, n_steps, dim))
-current_sample = initial_point
+# Run sampling and get trajectory
+trajectory = sampler.sample(
+    x=initial_point,
+    dim=2,
+    n_steps=1000,
+    return_trajectory=True
+)
 
-# Run the sampling steps and store each position
-for i in range(n_steps):
-    current_sample = sampler.langevin_step(current_sample, torch.randn_like(current_sample))
-    trajectory[:, i, :] = current_sample.clone().detach()
-
-# Prepare the background energy landscape
+# Background energy landscape
 x = np.linspace(-3, 3, 100)
 y = np.linspace(-3, 3, 100)
 X, Y = np.meshgrid(x, y)
@@ -153,41 +153,30 @@ for i in range(X.shape[0]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
         Z[i, j] = energy_fn(point).item()
 
-# Plot contour with trajectory
+# Visualize
 plt.figure(figsize=(10, 8))
-contour = plt.contourf(X, Y, Z, 50, cmap='viridis', alpha=0.7)
+plt.contourf(X, Y, Z, 50, cmap='viridis', alpha=0.7)
 plt.colorbar(label='Energy')
 
 # Extract trajectory coordinates
 traj_x = trajectory[0, :, 0].numpy()
 traj_y = trajectory[0, :, 1].numpy()
 
-# Plot trajectory with colormap based on step number
-points = plt.scatter(
-    traj_x, traj_y,
-    c=np.arange(len(traj_x)),
-    cmap='plasma',
-    s=5,
-    alpha=0.7
-)
-plt.colorbar(points, label='Sampling Step')
-
-# Plot arrows to show direction of trajectory
-step = 50  # Plot an arrow every 50 steps
-plt.quiver(
-    traj_x[:-1:step], traj_y[:-1:step],
-    traj_x[1::step] - traj_x[:-1:step], traj_y[1::step] - traj_y[:-1:step],
-    scale_units='xy', angles='xy', scale=1, color='red', alpha=0.7
-)
+# Plot trajectory
+plt.plot(traj_x, traj_y, 'r-', linewidth=1, alpha=0.7)
+plt.scatter(traj_x[0], traj_y[0], c='black', s=50, marker='o', label='Start')
+plt.scatter(traj_x[-1], traj_y[-1], c='blue', s=50, marker='*', label='End')
 
 plt.xlabel('x')
 plt.ylabel('y')
-plt.title('Langevin Dynamics Sampling Trajectory on Double Well Potential')
-plt.tight_layout()
+plt.title('Langevin Dynamics Trajectory')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig('langevin_trajectory.png')
 plt.show()
 ```
 
-![Langevin Dynamics Trajectory](../assets/images/visualization/langevin_trajectory.png)
+![Langevin Dynamics Trajectory](../assets/images/samplers/langevin_trajectory.png)
 
 ### Visualizing Multiple Chains
 
@@ -196,18 +185,18 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from torchebm.core import RastriginEnergy
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torchebm.samplers import LangevinDynamics
+
+# Set random seed for reproducibility
+torch.manual_seed(44)
+np.random.seed(43)
 
 # Create energy function and sampler
 energy_fn = RastriginEnergy(a=10.0)
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size=0.01
+    step_size=0.008
 )
-
-# Set random seed for reproducibility
-torch.manual_seed(42)
-np.random.seed(42)
 
 # Parameters for sampling
 dim = 2
@@ -217,20 +206,21 @@ num_chains = 5
 # Generate random starting points
 initial_points = torch.randn(num_chains, dim) * 3
 
-# Track the trajectories manually
-trajectories = torch.zeros((num_chains, n_steps, dim))
-current_samples = initial_points.clone()
-
-# Run the sampling steps and store each position
-for i in range(n_steps):
-    current_samples = sampler.langevin_step(current_samples, torch.randn_like(current_samples))
-    trajectories[:, i, :] = current_samples.clone().detach()
+# Run sampling and get trajectory
+trajectories = sampler.sample(
+    x=initial_points,
+    dim=dim,
+    n_samples=num_chains,
+    n_steps=n_steps,
+    return_trajectory=True
+)
 
 # Create background contour
 x = np.linspace(-5, 5, 100)
 y = np.linspace(-5, 5, 100)
 X, Y = np.meshgrid(x, y)
 Z = np.zeros_like(X)
+print(trajectories.shape)
 
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
@@ -260,10 +250,11 @@ plt.ylabel('y')
 plt.title('Multiple Langevin Dynamics Sampling Chains on Rastrigin Potential')
 plt.legend()
 plt.tight_layout()
+plt.savefig('multiple_chains.png')
 plt.show()
 ```
 
-![Multiple Sampling Chains](../assets/images/visualization/multiple_chains.png)
+![Multiple Sampling Chains](../assets/images/samplers/multiple_chains.png)
 
 ## Distribution Visualization
 
@@ -277,7 +268,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 from torchebm.core import GaussianEnergy
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torchebm.samplers import LangevinDynamics
 
 # Create a Gaussian energy function
 mean = torch.tensor([1.0, -1.0])
@@ -292,23 +283,18 @@ sampler = LangevinDynamics(
 
 # Generate samples
 n_samples = 5000
-dim = 2
-n_steps = 1000
 burn_in = 200
 
 # Initialize random samples
-x = torch.randn(n_samples, dim)
+x = torch.randn(n_samples, 2)
 
-# Run sampling for burn-in period (discard these samples)
-for i in range(burn_in):
-    x = sampler.langevin_step(x, torch.randn_like(x))
-
-# Run sampling for the desired number of steps
-for i in range(n_steps):
-    x = sampler.langevin_step(x, torch.randn_like(x))
-
-# Final samples
-samples = x
+# Perform sampling
+samples = sampler.sample(
+    x=x,
+    n_steps=1000,
+    burn_in=burn_in,
+    return_trajectory=False
+)
 
 # Convert to numpy for visualization
 samples_np = samples.numpy()
@@ -353,46 +339,57 @@ ax3.set_xlim(ax2.get_xlim())
 ax3.set_ylim(ax2.get_ylim())
 
 plt.tight_layout()
+plt.savefig('distribution_comparison_updated.png')
 plt.show()
 ```
 
-![Distribution Comparison](../assets/images/visualization/distribution_comparison.png)
+![Distribution Comparison](../assets/images/visualization/distribution_comparison_updated.png)
 
 ## Energy Evolution Visualization
 
 Tracking how energy values evolve during sampling can help assess convergence.
 
 ```python
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torchebm.core import DoubleWellEnergy, GaussianEnergy, CosineScheduler
+from torchebm.samplers import LangevinDynamics
+
+
+SAMPLER_STEP_SIZE = CosineScheduler(
+    initial_value=1e-2, final_value=1e-3, total_steps=50
+)
+
+SAMPLER_NOISE_SCALE = CosineScheduler(
+    initial_value=2e-1, final_value=1e-2, total_steps=50
+)
 
 # Create energy function and sampler
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
+energy_fn = GaussianEnergy(mean=torch.tensor([0.0, 0.0]), cov=torch.eye(2) * 0.5)
 sampler = LangevinDynamics(
     energy_function=energy_fn,
-    step_size=0.01
+    step_size=SAMPLER_STEP_SIZE,
+    noise_scale=SAMPLER_NOISE_SCALE
 )
 
 # Parameters for sampling
 dim = 2
-n_steps = 1000
+n_steps = 200
 initial_point = torch.tensor([[-2.0, 0.0]], dtype=torch.float32)
 
-# Track the trajectory and energy manually
-trajectory = torch.zeros((1, n_steps, dim))
-energy_values = torch.zeros(n_steps)
+# Track the energy during sampling
+energy_values = []
 current_sample = initial_point.clone()
 
-# Run the sampling steps and store each position and energy
+# Run the sampling steps and store each energy
 for i in range(n_steps):
-    current_sample = sampler.langevin_step(current_sample, torch.randn_like(current_sample))
-    trajectory[:, i, :] = current_sample.clone().detach()
-    energy_values[i] = energy_fn(current_sample).item()
+    noise = torch.randn_like(current_sample)
+    current_sample = sampler.langevin_step(current_sample, noise)
+    energy_values.append(energy_fn(current_sample).item())
 
 # Convert to numpy for plotting
-energy_values_np = energy_values.numpy()
+energy_values_np = np.array(energy_values)
 
 # Plot energy evolution
 plt.figure(figsize=(10, 6))
@@ -402,57 +399,114 @@ plt.ylabel('Energy')
 plt.title('Energy Evolution During Langevin Dynamics Sampling')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
+plt.savefig('energy_evolution_updated.png')
 plt.show()
+
 ```
 
-![Energy Evolution](../assets/images/visualization/energy_evolution.png)
+![Energy Evolution](../assets/images/training/energy_evolution.png)
 
-## Interactive Visualizations
+## Visualizing Training Progress with Different Loss Functions
 
-Since actual interactive visualizations can't be included in documentation, here's an example showing energy landscapes with different parameters:
+You can also visualize how different loss functions affect the training dynamics:
 
 ```python
-import numpy as np
 import torch
+import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import BaseEnergyFunction
+from torchebm.losses import ContrastiveDivergence, ScoreMatching
+from torchebm.samplers import LangevinDynamics
+from torchebm.datasets import TwoMoonsDataset
+import torch.nn as nn
+import torch.optim as optim
 
-# Create a grid for visualization
-x = np.linspace(-3, 3, 100)
-y = np.linspace(-3, 3, 100)
-X, Y = np.meshgrid(x, y)
-Z = np.zeros_like(X)
-
-# Create barrier height values
-barrier_heights = [0.5, 1.0, 2.0, 4.0]
-
-# Create a figure with multiple subplots
-fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-axes = axes.flatten()
-
-# Calculate energy landscapes for different barrier heights
-for i, barrier_height in enumerate(barrier_heights):
-    # Create energy function with the specified barrier height
-    energy_fn = DoubleWellEnergy(barrier_height=barrier_height)
+# Define a simple MLP energy function
+class MLPEnergy(BaseEnergyFunction):
+    def __init__(self, input_dim, hidden_dim=64):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, 1)
+        )
     
-    # Compute energy values
-    for j in range(X.shape[0]):
-        for k in range(X.shape[1]):
-            point = torch.tensor([X[j, k], Y[j, k]], dtype=torch.float32).unsqueeze(0)
-            Z[j, k] = energy_fn(point).item()
-    
-    # Create contour plot
-    contour = axes[i].contourf(X, Y, Z, 50, cmap='viridis')
-    fig.colorbar(contour, ax=axes[i], label='Energy')
-    axes[i].set_xlabel('x')
-    axes[i].set_ylabel('y')
-    axes[i].set_title(f'Double Well Energy (Barrier Height = {barrier_height})')
+    def forward(self, x):
+        return self.network(x).squeeze(-1)
 
+# Training function
+def train_and_record_loss(loss_type, n_epochs=100):
+    # Reset model
+    energy_model = MLPEnergy(input_dim=2, hidden_dim=32).to(device)
+    
+    # Setup sampler and loss
+    sampler = LangevinDynamics(
+        energy_function=energy_model,
+        step_size=0.1,
+        device=device
+    )
+    
+    if loss_type == 'CD':
+        loss_fn = ContrastiveDivergence(
+            energy_function=energy_model,
+            sampler=sampler,
+            k_steps=10,
+            persistent=True
+        )
+    elif loss_type == 'SM':
+        loss_fn = ScoreMatching(
+            energy_function=energy_model,
+            hutchinson_samples=5
+        )
+    
+    optimizer = optim.Adam(energy_model.parameters(), lr=0.001)
+    
+    # Record loss
+    losses = []
+    
+    # Train
+    for epoch in range(n_epochs):
+        epoch_loss = 0.0
+        for batch in dataloader:
+            optimizer.zero_grad()
+            loss = loss_fn(batch)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+        
+        avg_loss = epoch_loss / len(dataloader)
+        losses.append(avg_loss)
+        if (epoch + 1) % 10 == 0:
+            print(f"{loss_type} - Epoch {epoch+1}/{n_epochs}, Loss: {avg_loss:.4f}")
+    
+    return losses
+
+# Setup data and device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+dataset = TwoMoonsDataset(n_samples=1000, noise=0.1, device=device)
+dataloader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=True)
+
+# Train with different loss functions
+cd_losses = train_and_record_loss('CD')
+sm_losses = train_and_record_loss('SM')
+
+# Plot losses
+plt.figure(figsize=(10, 6))
+plt.plot(cd_losses, label='Contrastive Divergence')
+plt.plot(sm_losses, label='Score Matching')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training Loss Comparison')
+plt.legend()
+plt.grid(True, alpha=0.3)
 plt.tight_layout()
+plt.savefig('loss_comparison.png')
 plt.show()
 ```
 
-![Interactive Visualization](../assets/images/visualization/interactive_visualization.png)
+![Loss Comparison](../assets/images/visualization/loss_comparison.png)
 
 ## Conclusion
 

@@ -69,7 +69,7 @@ docs = [
 homepage = "https://github.com/soran-ghaderi/torchebm"
 documentation = "https://soran-ghaderi.github.io/torchebm/"
 repository = "https://github.com/soran-ghaderi/torchebm.git"
-#changelog = "https://github.com/soran-ghaderi/torchebm/blob/main/CHANGELOG.md"
+changelog = "https://github.com/soran-ghaderi/torchebm/blob/main/CHANGELOG.md"
 
 [tool.setuptools_scm]
 write_to = "torchebm/_version.py"

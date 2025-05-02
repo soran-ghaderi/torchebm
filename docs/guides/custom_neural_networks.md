@@ -6,7 +6,7 @@ description: Creating custom neural network-based energy functions
 
 # Custom Neural Network Energy Functions
 
-Energy-based models (EBMs) are extremely flexible, and one of their key advantages is that the energy function can be parameterized using neural networks. This guide explains how to create and use neural network-based energy functions in TorchEBM.
+Energy-based models (EBMs) are highly flexible, and one of their key advantages is that the energy function can be parameterized using neural networks. This guide explains how to create and use neural network-based energy functions in TorchEBM.
 
 ## Overview
 
@@ -33,11 +33,9 @@ class NeuralNetEnergyFunction(BaseEnergyFunction):
         # Define neural network architecture
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.Softplus(),
+            nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.Softplus(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Softplus(),
+            nn.SELU(),
             nn.Linear(hidden_dim, 1)
         )
 
@@ -82,173 +80,127 @@ Here's a complete example with a simple MLP energy function:
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import BaseEnergyFunction
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
-import matplotlib.pyplot as plt
-import numpy as np
+from torchebm.core import (
+    BaseEnergyFunction,
+    CosineScheduler,
+)
+from torchebm.samplers import LangevinDynamics
+from torchebm.losses import ContrastiveDivergence
+from torchebm.datasets import GaussianMixtureDataset
+from torch.utils.data import DataLoader
+
+# Set random seeds for reproducibility
+SEED = 42
+torch.manual_seed(SEED)
 
 
+# Create a simple MLP energy function
 class MLPEnergyFunction(BaseEnergyFunction):
     def __init__(self, input_dim=2, hidden_dim=64):
         super().__init__()
-
-        # Define neural network architecture
-        self.network = nn.Sequential(
+        self.model = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim, 1)
+            nn.SELU(),
+            nn.Linear(hidden_dim, 1),
         )
 
-        # Initialize with small weights
-        for m in self.network.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight, gain=0.01)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
     def forward(self, x):
-        # Ensure x is batched
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-
-        # Forward pass through network
-        return self.network(x).squeeze(-1)
+        return self.model(x).squeeze(-1)
 
 
-# Create the energy function
-energy_fn = MLPEnergyFunction()
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Create the dataset
+dataset = GaussianMixtureDataset(
+    n_samples=1000,
+    n_components=5,  # 5 Gaussian components
+    std=0.1,  # Standard deviation
+    radius=1.5,  # Radius of the mixture
+    device=device,
+    seed=SEED,
+)
 
-# Define parameters we want the network to learn
-# Let's create a "four peaks" energy landscape
-def target_energy(x, y):
-    return -2.0 * torch.exp(-0.2 * ((x - 2) ** 2 + (y - 2) ** 2))
-    - 3.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y - 2) ** 2))
-    - 1.0 * torch.exp(-0.3 * ((x - 2) ** 2 + (y + 2) ** 2))
-    - 4.0 * torch.exp(-0.2 * ((x + 2) ** 2 + (y + 2) ** 2))
-    + 0.1 * (x ** 2 + y ** 2)
+# Create dataloader
+dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
+# Create model
+model = MLPEnergyFunction(input_dim=2, hidden_dim=64).to(device)
+SAMPLER_NOISE_SCALE = CosineScheduler(
+    initial_value=2e-1, final_value=1e-2, total_steps=50
+)
 
-# Generate training data from the target distribution
-def generate_training_data(n_samples=10000):
-    # Sample uniformly from a grid
-    x = torch.linspace(-4, 4, 100)
-    y = torch.linspace(-4, 4, 100)
-    X, Y = torch.meshgrid(x, y, indexing='ij')
-    positions = torch.stack([X.flatten(), Y.flatten()], dim=1)
+# Create sampler
+sampler = LangevinDynamics(
+    energy_function=model,
+    step_size=0.01,
+    device=device,
+    noise_scale=SAMPLER_NOISE_SCALE,
+)
 
-    # Calculate target energy
-    energies = target_energy(positions[:, 0], positions[:, 1])
+# Create loss function
+loss_fn = ContrastiveDivergence(
+    energy_function=model,
+    sampler=sampler,
+    k_steps=10,  # Number of MCMC steps
+    persistent=False,  # Set to True for Persistent Contrastive Divergence
+    device=device,
+)
 
-    # Convert energies to probabilities (unnormalized)
-    probs = torch.exp(-energies)
-
-    # Normalize to create a distribution
-    probs = probs / probs.sum()
-
-    # Sample indices based on probability
-    indices = torch.multinomial(probs, n_samples, replacement=True)
-
-    # Return sampled positions
-    return positions[indices]
-
-
-# Generate training data
-train_data = generate_training_data(10000)
-
-# Set up optimizer
-optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.001)
+# Create optimizer
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 # Training loop
-n_epochs = 1000
-batch_size = 128
-
+n_epochs = 200
 for epoch in range(n_epochs):
-    # Generate random noise samples for contrastive divergence
-    noise_samples = torch.randn_like(train_data)
+    epoch_loss = 0.0
 
-    # Shuffle data
-    indices = torch.randperm(train_data.shape[0])
-
-    # Mini-batch training
-    for start_idx in range(0, train_data.shape[0], batch_size):
-        end_idx = min(start_idx + batch_size, train_data.shape[0])
-        batch_indices = indices[start_idx:end_idx]
-
-        data_batch = train_data[batch_indices]
-        noise_batch = noise_samples[batch_indices]
-
+    for batch in dataloader:
         # Zero gradients
         optimizer.zero_grad()
 
-        # Calculate energy for data and noise samples
-        data_energy = energy_fn(data_batch)
-        noise_energy = energy_fn(noise_batch)
-
-        # Contrastive divergence loss: make data energy lower, noise energy higher
-        loss = data_energy.mean() - noise_energy.mean()
+        # Compute loss (automatically handles positive and negative samples)
+        loss, neg_samples = loss_fn(batch)
 
         # Backpropagation
         loss.backward()
+
+        # Update parameters
         optimizer.step()
 
-    # Print progress
-    if (epoch + 1) % 100 == 0:
-        print(f'Epoch {epoch + 1}/{n_epochs}, BaseLoss: {loss.item():.4f}')
+        epoch_loss += loss.item()
+
+    # Print progress every 10 epochs
+    if (epoch + 1) % 10 == 0:
+        print(f"Epoch {epoch + 1}/{n_epochs}, Loss: {epoch_loss / len(dataloader):.4f}")
 
 
-# Visualize learned energy function
-def visualize_energy_function(energy_fn, title="Learned Energy Function"):
-    x = torch.linspace(-4, 4, 100)
-    y = torch.linspace(-4, 4, 100)
-    X, Y = torch.meshgrid(x, y, indexing='ij')
-    positions = torch.stack([X.flatten(), Y.flatten()], dim=1)
+# Generate samples from the trained model
+def generate_samples(model, n_samples=500):
+    # Create sampler
+    sampler = LangevinDynamics(energy_function=model, step_size=0.005, device=device)
 
-    # Calculate energies
+    # Initialize from random noise
+    initial_samples = torch.randn(n_samples, 2).to(device)
+
+    # Sample using MCMC
     with torch.no_grad():
-        energies = energy_fn(positions).reshape(100, 100)
+        samples = sampler.sample(
+            initial_state=initial_samples,
+            dim=initial_samples.shape[-1],
+            n_samples=n_samples,
+            n_steps=1000,
+        )
 
-    # Plot
-    plt.figure(figsize=(10, 8))
-    plt.contourf(X.numpy(), Y.numpy(), energies.numpy(), 50, cmap='viridis')
-    plt.colorbar(label='Energy')
-    plt.title(title)
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.tight_layout()
-    plt.show()
+    return samples.cpu()
 
 
-# Visualize the learned energy function
-visualize_energy_function(energy_fn)
+# Generate samples
+samples = generate_samples(model)
+print(f"Generated {len(samples)} samples from the energy-based model")
 
-# Sample from the learned energy function using Langevin dynamics
-sampler = LangevinDynamics(
-    energy_function=energy_fn,
-    step_size=0.01
-)
-
-samples = sampler.sample(
-    dim=2,
-    n_steps=1000,
-    n_samples=2000,
-    burn_in=200
-)
-
-# Visualize samples
-plt.figure(figsize=(10, 8))
-plt.scatter(samples[:, 0].numpy(), samples[:, 1].numpy(), s=1, alpha=0.5)
-plt.xlim(-4, 4)
-plt.ylim(-4, 4)
-plt.title('Samples from Learned Energy Function')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.tight_layout()
-plt.show()
 ```
 
 ## Example: Convolutional Energy Function for Images
@@ -265,20 +217,20 @@ class ConvolutionalEnergyFunction(BaseEnergyFunction):
     def __init__(self, channels=1, width=28, height=28):
         super().__init__()
 
-        # Convolutional feature extractor
-        self.feature_extractor = nn.Sequential(
+        # Convolutional part
+        self.conv_net = nn.Sequential(
             nn.Conv2d(channels, 32, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),  # 14x14
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1),  # 7x7
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),  # 4x4
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
         )
 
         # Calculate the size of the flattened features
@@ -288,7 +240,7 @@ class ConvolutionalEnergyFunction(BaseEnergyFunction):
         self.energy_head = nn.Sequential(
             nn.Flatten(),
             nn.Linear(feature_size, 128),
-            nn.LeakyReLU(0.2),
+            nn.SELU(),
             nn.Linear(128, 1)
         )
 
@@ -300,15 +252,15 @@ class ConvolutionalEnergyFunction(BaseEnergyFunction):
             x = x.unsqueeze(0).unsqueeze(0)
 
         # Extract features and compute energy
-        features = self.feature_extractor(x)
+        features = self.conv_net(x)
         energy = self.energy_head(features).squeeze(-1)
 
         return energy
 ```
 
-## Advanced Pattern: Hybrid Energy Functions
+## Advanced Pattern: Composed Energy Functions
 
-You can combine analytical energy functions with neural networks for best of both worlds:
+You can combine multiple analytical energy functions with multiple neural networks for best of both worlds:
 
 ```python
 import torch
@@ -316,7 +268,7 @@ import torch.nn as nn
 from torchebm.core import BaseEnergyFunction, GaussianEnergy
 
 
-class HybridEnergyFunction(BaseEnergyFunction):
+class CompositionalEnergyFunction(BaseEnergyFunction):
     def __init__(self, input_dim=2, hidden_dim=64):
         super().__init__()
 
@@ -329,9 +281,9 @@ class HybridEnergyFunction(BaseEnergyFunction):
         # Neural network component
         self.neural_component = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.GELU(),
+            nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
+            nn.SELU(),
             nn.Linear(hidden_dim, 1)
         )
 
@@ -362,33 +314,25 @@ Training neural network energy functions requires special techniques:
 A common approach is contrastive divergence, which minimizes the energy of data samples while maximizing the energy of samples from the model:
 
 ```python
-def train_step_contrastive_divergence(energy_fn, optimizer, data_batch, sampler, n_sampling_steps=10):
+loss_fn = ContrastiveDivergence(
+    energy_function=model,
+    sampler=sampler,
+    k_steps=10,  # Number of MCMC steps
+    persistent=False,  # Set to True for Persistent Contrastive Divergence
+    device=device,
+)
+
+def train_step_contrastive_divergence(data_batch):
     # Zero gradients
     optimizer.zero_grad()
 
-    # Data energy
-    data_energy = energy_fn(data_batch)
-
-    # Generate negative samples (model samples)
-    with torch.no_grad():
-        # Start from random noise
-        model_samples = torch.randn_like(data_batch)
-
-        # Run MCMC for a few steps
-        model_samples = sampler.sample(
-            initial_points=model_samples,
-            n_steps=n_sampling_steps,
-            return_final=True
-        )
-
-    # Model energy
-    model_energy = energy_fn(model_samples)
-
-    # BaseLoss: make data energy lower, model energy higher
-    loss = data_energy.mean() - model_energy.mean()
-
+    # Compute loss (automatically handles positive and negative samples)
+    loss, neg_samples = loss_fn(data_batch)
+    
     # Backpropagation
     loss.backward()
+    
+    # Update parameters
     optimizer.step()
 
     return loss.item()
@@ -399,30 +343,16 @@ def train_step_contrastive_divergence(energy_fn, optimizer, data_batch, sampler,
 Score matching is another approach that avoids the need for MCMC sampling:
 
 ```python
-def score_matching_loss(energy_fn, data_batch, noise_scale=0.01):
-    # Add noise to data
-    data_batch.requires_grad_(True)
-    
-    # Compute energy
-    energy = energy_fn(data_batch)
-    
-    # Compute gradients w.r.t. inputs
-    grad_energy = torch.autograd.grad(
-        outputs=energy.sum(),
-        inputs=data_batch,
-        create_graph=True,
-        retain_graph=True
-    )[0]
-    
-    # Compute score matching loss
-    loss = 0.5 * (grad_energy ** 2).sum(dim=1).mean()
-    
-    # Add regularization term
-    noise_data = data_batch + noise_scale * torch.randn_like(data_batch)
-    noise_energy = energy_fn(noise_data)
-    reg_loss = ((noise_energy - energy) ** 2).mean()
-    
-    return loss + 0.1 * reg_loss
+
+# Use score matching for training
+sm_loss_fn = ScoreMatching(
+    energy_function=energy_fn,
+    hessian_method="hutchinson",  # More efficient for higher dimensions
+    hutchinson_samples=5,
+    device=device,
+)
+
+batch_loss = train_step_contrastive_divergence(data_batch)
 ```
 
 ## Tips for Neural Network Energy Functions
