@@ -12,7 +12,21 @@
     <a href="https://github.com/soran-ghaderi/torchebm" target="_blank" title="GitHub Repo Stars">
         <img alt="GitHub Stars" src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social">
     </a>
+    <a href="https://deepwiki.com/soran-ghaderi/torchebm"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
     <!-- Consider adding: build status, documentation status, code coverage -->
+    <a href="https://github.com/soran-ghaderi/torchebm/actions" target="_blank" title="Build Status">
+      <img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/tag-release.yml?branch=master&style=flat-square&label=build">
+    </a>
+    <!-- Docs badge -->
+    <a href="https://github.com/soran-ghaderi/torchebm/actions" target="_blank" title="Documentation">
+      <img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/docs_ci.yml?branch=master&style=flat-square&label=docs">
+    </a>
+    <a href="https://pepy.tech/project/torchebm" target="_blank" title="Downloads">
+        <img alt="Downloads" src="https://img.shields.io/pypi/dm/torchebm?style=flat-square">
+    </a>
+    <a href="https://pypi.org/project/torchebm/" target="_blank" title="Python Versions">
+        <img alt="Python Versions" src="https://img.shields.io/pypi/pyversions/torchebm?style=flat-square">
+    </a>
 </p>
 
 
@@ -115,7 +129,21 @@ from torchebm.losses import ContrastiveDivergence
 from torchebm.datasets import GaussianMixtureDataset
 from torchebm.samplers import LangevinDynamics
 
-# Define a 10D Gaussian energy function
+# Define an NN energy model
+class MLPEnergy(BaseEnergyFunction):
+    def __init__(self, input_dim, hidden_dim=64):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        return self.net(x).squeeze(-1) # a scalar value
+
 energy_fn = MLPEnergy(input_dim=2).to(device)
 sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
 
@@ -236,10 +264,9 @@ Contributions are welcome! Step-by-step instructions for contributing to the pro
 
 Please check the issues page for current tasks or create a new issue to discuss proposed changes.
 
-### Star and Spread the Word about ∇ TorchEBM 🍓
+## Show your Support for ∇ TorchEBM 🍓
 
-If ∇ TorchEBM has helped you, please ⭐️ star the GitHub repository to support 
-our community and increase the project's visibility! Also, please consider sharing your experience on social media or with colleagues.
+Please ⭐️ this repository if ∇ TorchEBM helped you and spread the word.
 
 Thank you! 🚀
 
