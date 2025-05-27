@@ -1,6 +1,6 @@
 ---
 title: Schrodinger Bridges
-date: 2023-03-07
+date: 2025-03-07
 authors:
   - soran-ghaderi
 categories:
