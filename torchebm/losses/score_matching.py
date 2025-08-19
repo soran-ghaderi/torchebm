@@ -312,7 +312,6 @@ class ScoreMatching(BaseScoreMatching):
         energy_function: BaseEnergyFunction,
         hessian_method: str = "exact",
         regularization_strength: float = 0.0,
-        hutchinson_samples: int = 1,
         custom_regularization: Optional[Callable] = None,
         use_mixed_precision: bool = False,
         dtype: torch.dtype = torch.float32,
@@ -324,7 +323,6 @@ class ScoreMatching(BaseScoreMatching):
             energy_function=energy_function,
             regularization_strength=regularization_strength,
             use_autograd=True,
-            hutchinson_samples=hutchinson_samples,
             custom_regularization=custom_regularization,
             use_mixed_precision=use_mixed_precision,
             dtype=dtype,
@@ -335,21 +333,29 @@ class ScoreMatching(BaseScoreMatching):
 
         self.hessian_method = hessian_method
 
-        # Validate hessian_method
-        valid_methods = ["exact", "hutchinson", "approx"]
+        # Validate hessian_method - remove hutchinson since it should use SlicedScoreMatching
+        valid_methods = ["exact", "approx"]
         if self.hessian_method not in valid_methods:
-            warnings.warn(
-                f"Invalid hessian_method '{self.hessian_method}'. "
-                f"Using 'exact' instead. Valid options are: {valid_methods}",
-                UserWarning,
-            )
-            self.hessian_method = "exact"
+            if self.hessian_method == "hutchinson":
+                warnings.warn(
+                    "hutchinson method for ScoreMatching is deprecated. "
+                    "Use SlicedScoreMatching for efficient trace estimation.",
+                    UserWarning,
+                )
+                self.hessian_method = "exact"
+            else:
+                warnings.warn(
+                    f"Invalid hessian_method '{self.hessian_method}'. "
+                    f"Using 'exact' instead. Valid options are: {valid_methods}",
+                    UserWarning,
+                )
+                self.hessian_method = "exact"
 
-        # For mixed precision, hutchinson is more stable
+        # For mixed precision, exact method may be unstable
         if self.use_mixed_precision and self.hessian_method == "exact":
             warnings.warn(
                 "Using 'exact' Hessian method with mixed precision may be unstable. "
-                "Consider using 'hutchinson' method for better numerical stability.",
+                "Consider using SlicedScoreMatching for better numerical stability.",
                 UserWarning,
             )
 
@@ -399,8 +405,8 @@ class ScoreMatching(BaseScoreMatching):
         based on the `hessian_method` attribute.
 
         !!! note
-            For high-dimensional data, the "hutchinson" method is recommended for better
-            computational efficiency.
+            For high-dimensional data, SlicedScoreMatching is recommended for better
+            computational efficiency and numerical stability.
 
         !!! warning
             The "exact" method requires computing the full Hessian diagonal, which can be
@@ -419,21 +425,15 @@ class ScoreMatching(BaseScoreMatching):
             >>> # Exact method (computationally expensive but accurate)
             >>> loss_fn_exact = ScoreMatching(energy_fn, hessian_method="exact")
             >>>
-            >>> # Hutchinson method (more efficient for high dimensions)
-            >>> loss_fn_hutch = ScoreMatching(
-            ...     energy_fn,
-            ...     hessian_method="hutchinson",
-            ...     hutchinson_samples=10
-            ... )
-            >>>
             >>> # Approximation method (using finite differences)
             >>> loss_fn_approx = ScoreMatching(energy_fn, hessian_method="approx")
+            >>>
+            >>> # For efficient high-dimensional computation, use SlicedScoreMatching:
+            >>> loss_fn_sliced = SlicedScoreMatching(energy_fn, n_projections=10)
         """
         # Handle different Hessian computation methods
         if self.hessian_method == "exact":
             return self._exact_score_matching(x)
-        elif self.hessian_method == "hutchinson":
-            return self._hutchinson_score_matching(x)
         elif self.hessian_method == "approx":
             return self._approx_score_matching(x)
         else:
@@ -553,156 +553,6 @@ class ScoreMatching(BaseScoreMatching):
 
         return loss
 
-    def _hutchinson_score_matching(self, x: torch.Tensor) -> torch.Tensor:
-        r"""
-        Compute score matching loss using Hutchinson's trace estimator.
-
-        This uses random projections to estimate the trace of the Hessian:
-
-        \[
-        \text{tr}(H) \approx \mathbb{E}_v[v^T H v]
-        \]
-
-        where \( v \) is a random vector, typically sampled from a Rademacher distribution.
-
-        The complete objective becomes:
-
-        \[
-        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] +
-        \mathbb{E}_{p_{\text{data}}} \mathbb{E}_v \left[ v^T \nabla_x^2 E_\theta(x) v \right]
-        \]
-
-        !!! tip
-            This method is more computationally efficient than exact Hessian computation,
-            especially for high-dimensional data, as it scales as \( O(d) \) rather than
-            \( O(d^2) \) where \( d \) is the data dimension.
-
-        !!! note
-            The number of random projections (`hutchinson_samples`) controls the variance
-            of the estimator. More samples give a better approximation but require more
-            computation.
-
-        Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
-
-        Returns:
-            torch.Tensor: The score matching loss (scalar)
-
-        Examples:
-            >>> # The Hutchinson method can be used with multiple samples:
-            >>> loss_fn = ScoreMatching(
-            ...     energy_fn,
-            ...     hessian_method="hutchinson",
-            ...     hutchinson_samples=5  # Use 5 random projections
-            ... )
-            >>> loss = loss_fn(data)
-        """
-        batch_size = x.shape[0]
-
-        # Clone and detach x to avoid modifying the original tensor
-        x_detached = x.detach().clone()
-        x_detached.requires_grad_(True)
-
-        # Compute first term: 1/2 * ||∇E(x)||²
-        score = self.compute_score(x_detached)
-        # Add small epsilon for numerical stability
-        score_square_term = (
-            0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
-        )
-
-        # Compute second term using Hutchinson's estimator
-        hessian_trace = 0
-        for _ in range(self.hutchinson_samples):
-            # Generate random vectors (typically Rademacher or Gaussian)
-            # Rademacher (+1/-1) is often preferred for lower variance
-            v = torch.randint(0, 2, x_detached.shape, device=self.device) * 2 - 1
-            v = v.to(dtype=self.dtype)
-
-            # Compute Jacobian-vector product
-            if self.use_mixed_precision and self.autocast_available:
-                from torch.cuda.amp import autocast
-
-                with autocast():
-                    # Get energy - must sum to scalar for autograd.grad
-                    energy = self.energy_function(x_detached)
-
-                    # We need to provide grad_outputs since energy is not a scalar
-                    grad_outputs = torch.ones_like(
-                        energy, device=self.device, dtype=self.dtype
-                    )
-                    Jv = (
-                        torch.autograd.grad(
-                            energy,
-                            x_detached,
-                            grad_outputs=grad_outputs,
-                            create_graph=True,
-                        )[0]
-                        * v
-                    )
-
-                    # Compute v^T H v using another Jacobian-vector product
-                    Jv_sum = torch.sum(Jv)  # Sum to scalar
-                    vHv = (
-                        torch.autograd.grad(
-                            Jv_sum,
-                            x_detached,
-                            retain_graph=True,
-                        )[0]
-                        * v
-                    )
-            else:
-                # Get energy
-                energy = self.energy_function(x_detached)
-
-                # We need to provide grad_outputs since energy is not a scalar
-                grad_outputs = torch.ones_like(
-                    energy, device=self.device, dtype=self.dtype
-                )
-                Jv = (
-                    torch.autograd.grad(
-                        energy,
-                        x_detached,
-                        grad_outputs=grad_outputs,
-                        create_graph=True,
-                    )[0]
-                    * v
-                )
-
-                # Compute v^T H v using another Jacobian-vector product
-                Jv_sum = torch.sum(Jv)  # Sum to scalar
-                vHv = (
-                    torch.autograd.grad(
-                        Jv_sum,
-                        x_detached,
-                        retain_graph=True,
-                    )[0]
-                    * v
-                )
-
-            # Add to trace estimate
-            hessian_trace += vHv.sum() / self.hutchinson_samples
-
-        # Average over batch
-        hessian_trace = hessian_trace / batch_size
-
-        # Apply magnitude scaling for better training dynamics
-        # The Hessian trace is typically much larger than the score term, so scale it down
-        hessian_scaling = 0.1
-        hessian_trace = hessian_scaling * hessian_trace
-
-        # Combine terms for full loss
-        loss = score_square_term + hessian_trace
-
-        # Clip loss to prevent instability
-        if torch.isnan(loss) or torch.isinf(loss) or loss > 1e6:
-            warnings.warn(
-                f"Score matching loss is unstable: {loss.item()}. Clipping to a reasonable value.",
-                UserWarning,
-            )
-            loss = torch.clamp(loss, -1e6, 1e6)
-
-        return loss
-
     def _approx_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         r"""
         Compute score matching loss using a more efficient finite-difference approximation.
@@ -765,6 +615,21 @@ class ScoreMatching(BaseScoreMatching):
         loss = score_square_term + hessian_trace
 
         return loss
+
+    def _hutchinson_score_matching(self, x: torch.Tensor) -> torch.Tensor:
+        r"""
+        DEPRECATED: Use SlicedScoreMatching for efficient trace estimation.
+
+        This method has been deprecated in favor of SlicedScoreMatching which provides
+        a more efficient and theoretically sound implementation of Hutchinson's estimator.
+        """
+        warnings.warn(
+            "ScoreMatching._hutchinson_score_matching is deprecated. "
+            "Use SlicedScoreMatching for efficient trace estimation instead.",
+            DeprecationWarning,
+        )
+        # Fall back to exact method
+        return self._exact_score_matching(x)
 
 
 class DenosingScoreMatching(BaseScoreMatching):
@@ -1221,13 +1086,10 @@ class SlicedScoreMatching(BaseScoreMatching):
             >>> loss = loss_fn(x)  # Compute the SSM loss
             >>> loss.backward()  # Backpropagate the loss
         """
-        # Ensure x is on the correct device and dtype
         x = x.to(device=self.device, dtype=self.dtype)
 
-        # Compute the loss
         loss = self.compute_loss(x, *args, **kwargs)
 
-        # Add regularization if needed
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
 
@@ -1235,26 +1097,23 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
-        Compute the sliced score matching loss using random projections.
+        Compute the sliced score matching loss using random projections efficiently.
 
-        Sliced Score Matching avoids computing the full Hessian trace by using random
-        projections. The objective is:
+        This implementation uses Hutchinson's trace estimator to compute the sliced score
+        matching objective efficiently. The key insight is that we can compute v^T ∇²E v
+        using only first-order gradients through the identity:
 
+        v^T ∇²E v = v^T ∇(∇E) = ∇(v^T ∇E) (since v is independent of x)
+
+        The objective is:
         \[
-        \mathcal{L}_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v \sim \mathcal{N}(0, I)}
+        \mathcal{L}_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v}
         \left[ v^T \nabla_x^2 E_\theta(x) v + \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 \right]
         \]
 
-        where \( v \) is a random projection vector sampled from a Rademacher or Gaussian distribution.
-
         !!! tip
-            This method is computationally efficient for high-dimensional data, with complexity
-            \( O(d) \) in the data dimension rather than \( O(d^2) \) for exact score matching.
-
-        !!! note
-            The number of projections (`n_projections`) controls the trade-off between
-            computational cost and estimation accuracy. More projections give better
-            approximation but require more computation.
+            This method is computationally efficient for high-dimensional data with O(d)
+            complexity rather than O(d²) for exact score matching, where d is the data dimension.
 
         Args:
             x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
@@ -1263,125 +1122,103 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         Returns:
             torch.Tensor: The sliced score matching loss (scalar)
-
-        Examples:
-            >>> # Different ways to configure sliced score matching:
-            >>>
-            >>> # With Rademacher projections (default)
-            >>> ssm_rade = SlicedScoreMatching(
-            ...     energy_fn,
-            ...     n_projections=5,
-            ...     projection_type="rademacher"
-            ... )
-            >>>
-            >>> # With Gaussian projections
-            >>> ssm_gauss = SlicedScoreMatching(
-            ...     energy_fn,
-            ...     n_projections=5,
-            ...     projection_type="gaussian"
-            ... )
-            >>>
-            >>> # More projections for better accuracy
-            >>> ssm_accurate = SlicedScoreMatching(
-            ...     energy_fn,
-            ...     n_projections=20
-            ... )
-            >>>
-            >>> loss = ssm_rade(data)
         """
-        batch_size = x.shape[0]
 
-        # Clone and detach x to avoid modifying the original tensor
-        x_detached = x.detach().clone()
-        x_detached.requires_grad_(True)
+        def loss_for_single_sample_and_projection(x_single, v_single):
+            """Compute loss for a single sample and single projection to avoid graph conflicts."""
+            # Ensure single sample has batch dimension
+            if x_single.dim() == len(x.shape) - 1:
+                x_single = x_single.unsqueeze(0)
+                v_single = v_single.unsqueeze(0)
 
-        # Initialize loss terms
-        total_loss = 0.0
-
-        for _ in range(self.n_projections):
-            # Generate random projection vectors
-            v = self._get_random_projections(x_detached.shape)
+            # Don't clone to maintain gradient connection
+            x_single.requires_grad_(True)
 
             if self.use_mixed_precision and self.autocast_available:
                 from torch.cuda.amp import autocast
 
                 with autocast():
-                    # Get energy
-                    energy = self.energy_function(x_detached)
+                    # Compute energy
+                    energy = self.energy_function(x_single)
 
-                    # First term: v^T ∇E
-                    # Need grad_outputs for batched energy outputs
-                    grad_outputs = torch.ones_like(
-                        energy, device=self.device, dtype=self.dtype
-                    )
+                    # Compute score
                     score = torch.autograd.grad(
-                        energy,
-                        x_detached,
-                        grad_outputs=grad_outputs,
-                        create_graph=True,
+                        energy.sum(), x_single, create_graph=True, retain_graph=True
                     )[0]
 
-                    v_score = torch.sum(v * score, dim=list(range(1, len(x.shape))))
+                    # First term: 1/2 * (v^T ∇E)²
+                    v_score = torch.sum(
+                        v_single * score, dim=tuple(range(1, len(x_single.shape)))
+                    )
                     term1 = 0.5 * torch.mean(v_score**2)
 
-                    # Second term: v^T ∇²E v
-                    # Sum v_score to scalar for autograd
-                    v_score_sum = v_score.sum()
-                    grad_v_score = torch.autograd.grad(
-                        v_score_sum,
-                        x_detached,
-                        create_graph=True,
+                    # Second term: v^T ∇²E v using Hutchinson's trick
+                    hvp = torch.autograd.grad(
+                        v_score.sum(), x_single, create_graph=True, allow_unused=True
                     )[0]
-
-                    term2 = torch.mean(
-                        torch.sum(v * grad_v_score, dim=list(range(1, len(x.shape))))
-                    )
+                    if hvp is not None:
+                        term2 = torch.mean(
+                            torch.sum(
+                                v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
+                            )
+                        )
+                    else:
+                        term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
             else:
-                # Get energy
-                energy = self.energy_function(x_detached)
+                # Compute energy
+                energy = self.energy_function(x_single)
 
-                # First term: v^T ∇E
-                # Need grad_outputs for batched energy outputs
-                grad_outputs = torch.ones_like(
-                    energy, device=self.device, dtype=self.dtype
-                )
+                # Compute score
                 score = torch.autograd.grad(
-                    energy,
-                    x_detached,
-                    grad_outputs=grad_outputs,
-                    create_graph=True,
+                    energy.sum(), x_single, create_graph=True, retain_graph=True
                 )[0]
 
-                v_score = torch.sum(v * score, dim=list(range(1, len(x.shape))))
+                # First term: 1/2 * (v^T ∇E)²
+                v_score = torch.sum(
+                    v_single * score, dim=tuple(range(1, len(x_single.shape)))
+                )
                 term1 = 0.5 * torch.mean(v_score**2)
 
-                # Second term: v^T ∇²E v
-                # Sum v_score to scalar for autograd
-                v_score_sum = v_score.sum()
-                grad_v_score = torch.autograd.grad(
-                    v_score_sum,
-                    x_detached,
-                    create_graph=True,
+                # Second term: v^T ∇²E v using Hutchinson's trick
+                hvp = torch.autograd.grad(
+                    v_score.sum(), x_single, create_graph=True, allow_unused=True
                 )[0]
+                if hvp is not None:
+                    term2 = torch.mean(
+                        torch.sum(
+                            v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
+                        )
+                    )
+                else:
+                    term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
 
-                term2 = torch.mean(
-                    torch.sum(v * grad_v_score, dim=list(range(1, len(x.shape))))
-                )
+            return term1 + term2
 
-            # Apply scaling to balance terms (second term can dominate)
-            scaling_factor = 0.1
-            # Add to total loss
-            total_loss += term1 - scaling_factor * term2
+        batch_size = x.shape[0]
+        total_loss = 0.0
+
+        # Process samples in smaller batches to maintain efficiency while avoiding graph conflicts
+        for i in range(self.n_projections):
+            # Generate random projection for the entire batch
+            v = self._get_random_projections(x.shape)
+
+            # Compute loss for this projection across the batch
+            projection_loss = loss_for_single_sample_and_projection(x, v)
+            total_loss += projection_loss
 
         # Average over number of projections
         loss = total_loss / self.n_projections
 
-        # Clip to reasonable values for stability
-        if torch.isnan(loss) or torch.isinf(loss) or loss > 1e6:
+        # Basic stability check without arbitrary clipping
+        if torch.isnan(loss) or torch.isinf(loss):
             warnings.warn(
-                f"Sliced Score Matching loss is unstable: {loss.item()}. Clipping to a reasonable value.",
+                f"Sliced Score Matching loss is unstable: {loss.item()}. "
+                "This may indicate numerical issues with the energy function or gradients.",
                 UserWarning,
             )
-            loss = torch.clamp(loss, -1e6, 1e6)
+            # Return a reasonable fallback rather than arbitrary clipping
+            loss = torch.tensor(
+                0.0, device=self.device, dtype=self.dtype, requires_grad=True
+            )
 
         return loss

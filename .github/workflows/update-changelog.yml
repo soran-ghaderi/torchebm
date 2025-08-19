@@ -28,18 +28,157 @@ jobs:
           echo "${{ github.event.release.body }}" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
+      - name: Get previous tag
+        id: previous_tag
+        run: |
+          git fetch --tags
+          CURRENT_TAG="v${{ env.VERSION }}"
+          PREVIOUS_TAG=$(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | grep -B1 "$CURRENT_TAG" | head -n1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # If no previous tag, get all commits
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          echo "PREVIOUS_TAG=$PREVIOUS_TAG" >> $GITHUB_ENV
+          echo "Found previous tag: $PREVIOUS_TAG"
+
+      - name: Generate changelog content from commits
+        id: generate_changelog
+        run: |
+          echo "Generating changelog from commits between ${{ env.PREVIOUS_TAG }} and v${{ env.VERSION }}"
+          
+          # Initialize sections
+          ADDED=""
+          CHANGED=""
+          FIXED=""
+          DEPRECATED=""
+          REMOVED=""
+          SECURITY=""
+          OTHER=""
+          
+          # Get commits between tags
+          if [[ "${{ env.PREVIOUS_TAG }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            COMMIT_RANGE="${{ env.PREVIOUS_TAG }}..v${{ env.VERSION }}"
+          else
+            COMMIT_RANGE="${{ env.PREVIOUS_TAG }}..HEAD"
+          fi
+          
+          echo "Using commit range: $COMMIT_RANGE"
+          
+          # Process each commit using process substitution to avoid subshell issues
+          while IFS= read -r commit_msg; do
+            # Skip merge commits and version bump commits
+            if [[ "$commit_msg" =~ ^Merge|^Update.*version|^Bump.*version|^Release.*v[0-9] ]]; then
+              continue
+            fi
+            
+            # Parse conventional commit format
+            if [[ "$commit_msg" =~ ^feat(\(.+\))?!?:(.+)$ ]]; then
+              ADDED="$ADDED\n- ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^fix(\(.+\))?!?:(.+)$ ]]; then
+              FIXED="$FIXED\n- ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^docs(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- Documentation: ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^style(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- Code style: ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^refactor(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- Refactor: ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^perf(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- Performance: ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^test(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- Tests: ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^build(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- Build: ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^ci(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- CI/CD: ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^chore(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- ${BASH_REMATCH[2]# }"
+            elif [[ "$commit_msg" =~ ^revert(\(.+\))?!?:(.+)$ ]]; then
+              CHANGED="$CHANGED\n- Reverted: ${BASH_REMATCH[2]# }"
+            else
+              # Non-conventional commit - add to other
+              OTHER="$OTHER\n- $commit_msg"
+            fi
+          done < <(git log --pretty=format:"%s" "$COMMIT_RANGE")
+          
+          # Build changelog content
+          CHANGELOG_CONTENT=""
+          
+          if [ -n "$ADDED" ]; then
+            CHANGELOG_CONTENT="$CHANGELOG_CONTENT\n### Added$ADDED\n"
+          fi
+          
+          if [ -n "$CHANGED" ]; then
+            CHANGELOG_CONTENT="$CHANGELOG_CONTENT\n### Changed$CHANGED\n"
+          fi
+          
+          if [ -n "$FIXED" ]; then
+            CHANGELOG_CONTENT="$CHANGELOG_CONTENT\n### Fixed$FIXED\n"
+          fi
+          
+          if [ -n "$DEPRECATED" ]; then
+            CHANGELOG_CONTENT="$CHANGELOG_CONTENT\n### Deprecated$DEPRECATED\n"
+          fi
+          
+          if [ -n "$REMOVED" ]; then
+            CHANGELOG_CONTENT="$CHANGELOG_CONTENT\n### Removed$REMOVED\n"
+          fi
+          
+          if [ -n "$SECURITY" ]; then
+            CHANGELOG_CONTENT="$CHANGELOG_CONTENT\n### Security$SECURITY\n"
+          fi
+          
+          if [ -n "$OTHER" ]; then
+            CHANGELOG_CONTENT="$CHANGELOG_CONTENT\n### Other$OTHER\n"
+          fi
+          
+          # If no content generated, use a default message
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            CHANGELOG_CONTENT="\n### Changed\n- Minor updates and improvements\n"
+          fi
+          
+          # Save to environment
+          echo "GENERATED_CHANGELOG<<EOF" >> $GITHUB_ENV
+          echo -e "$CHANGELOG_CONTENT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          echo "Generated changelog content:"
+          echo -e "$CHANGELOG_CONTENT"
+
       - name: Update CHANGELOG.md
         run: |
           # Create new entry in CHANGELOG.md
           sed -i "s/## \[Unreleased\]/## \[Unreleased\]\n\n## \[${{ env.VERSION }}] - ${{ env.DATE }}/g" CHANGELOG.md
           
-          # Add release body to CHANGELOG if it contains valid sections
+          # Determine which content to use (priority order):
+          # 1. Manual release body with sections
+          # 2. Generated changelog from commits  
+          # 3. GitHub auto-generated release notes
+          # 4. Default fallback message
+          
+          CONTENT_TO_ADD=""
+          
+          # Check if release body has structured content
           if [[ "${{ env.RELEASE_BODY }}" == *"### "* ]]; then
-            awk -v ver="${{ env.VERSION }}" -v rb="${{ env.RELEASE_BODY }}" '
-            /^## \['"${{ env.VERSION }}"'\]/ {
+            echo "Using manual release body content"
+            CONTENT_TO_ADD="${{ env.RELEASE_BODY }}"
+          elif [[ -n "${{ env.GENERATED_CHANGELOG }}" ]]; then
+            echo "Using generated changelog from commits"
+            CONTENT_TO_ADD="${{ env.GENERATED_CHANGELOG }}"
+          elif [[ -n "${{ env.RELEASE_BODY }}" ]] && [[ "${{ env.RELEASE_BODY }}" != "null" ]]; then
+            echo "Using GitHub auto-generated release notes"
+            CONTENT_TO_ADD="${{ env.RELEASE_BODY }}"
+          else
+            echo "Using fallback content"
+            CONTENT_TO_ADD="### Changed\n- Minor updates and improvements"
+          fi
+          
+          # Add the content to the changelog
+          if [[ -n "$CONTENT_TO_ADD" ]]; then
+            awk -v ver="${{ env.VERSION }}" -v content="$CONTENT_TO_ADD" '
+            /^## \[/ && $0 ~ ver {
               print $0
               print ""
-              print rb
+              print content
               next
             }
             {print}

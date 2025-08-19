@@ -1,0 +1,200 @@
+name: ⚡ Performance Issue
+description: Report performance problems, slowdowns, or optimization requests
+title: "[Performance]: "
+labels: ["performance", "needs-investigation"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a performance issue! Performance reports help us make TorchEBM faster and more efficient.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      description: Please confirm you have completed the following
+      options:
+        - label: I have searched existing issues to ensure this performance issue hasn't been reported before
+          required: true
+        - label: I have profiled my code to identify the bottleneck
+          required: true
+        - label: I have tested with the latest version of TorchEBM
+          required: true
+
+  - type: textarea
+    id: performance-issue
+    attributes:
+      label: Performance Issue Description
+      description: Describe the performance problem you're experiencing
+      placeholder: |
+        - What operation is slow?
+        - How slow is it compared to your expectations?
+        - When did you first notice this issue?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component of TorchEBM is experiencing performance issues?
+      options:
+        - "Energy Function Computation"
+        - "HMC Sampler"
+        - "Langevin Sampler"
+        - "Loss Function Computation"
+        - "Model Training"
+        - "Data Loading"
+        - "Visualization"
+        - "Memory Usage"
+        - "Other/Unknown"
+    validations:
+      required: true
+
+  - type: textarea
+    id: benchmark-code
+    attributes:
+      label: Benchmark Code
+      description: Provide a minimal code example that demonstrates the performance issue
+      render: python
+      placeholder: |
+        import time
+        import torch
+        import torchebm
+        
+        # Setup code
+        model = ...
+        data = ...
+        
+        # Timing the slow operation
+        start_time = time.time()
+        result = slow_operation(...)
+        end_time = time.time()
+        
+        print(f"Operation took: {end_time - start_time:.4f} seconds")
+    validations:
+      required: true
+
+  - type: textarea
+    id: performance-metrics
+    attributes:
+      label: Performance Metrics
+      description: Provide specific timing, memory usage, or other performance metrics
+      placeholder: |
+        - Execution time: X seconds
+        - Memory usage: X GB
+        - GPU utilization: X%
+        - Batch size tested: X
+        - Dataset size: X samples
+        - Hardware specs: (see system info below)
+
+  - type: textarea
+    id: expected-performance
+    attributes:
+      label: Expected Performance
+      description: What performance did you expect? Do you have benchmarks from similar operations?
+      placeholder: |
+        - Expected execution time based on...
+        - Comparison with other libraries/implementations
+        - Performance on different hardware
+        - Scaling expectations
+
+  - type: dropdown
+    id: device-type
+    attributes:
+      label: Device Type
+      description: Where are you experiencing the performance issue?
+      options:
+        - "CPU only"
+        - "Single GPU (CUDA)"
+        - "Multiple GPUs"
+        - "Apple Silicon (MPS)"
+        - "Mixed CPU/GPU"
+    validations:
+      required: true
+
+  - type: textarea
+    id: system-specs
+    attributes:
+      label: System Specifications
+      description: Provide detailed information about your hardware and software environment
+      placeholder: |
+        Hardware:
+        - CPU: (e.g., Intel i7-10700K, Apple M1, AMD Ryzen 9 5900X)
+        - RAM: (e.g., 32GB DDR4)
+        - GPU: (e.g., NVIDIA RTX 3080, Tesla V100)
+        - Storage: (e.g., NVMe SSD, HDD)
+        
+        Software:
+        - OS: (e.g., Ubuntu 20.04, macOS 13.0, Windows 11)
+        - Python: (e.g., 3.10.8)
+        - PyTorch: (e.g., 2.0.1)
+        - CUDA: (e.g., 11.8)
+        - TorchEBM: (e.g., 0.1.0)
+    validations:
+      required: true
+
+  - type: textarea
+    id: profiling-results
+    attributes:
+      label: Profiling Results
+      description: If you've profiled your code, please share the results
+      render: shell
+      placeholder: |
+        # Results from cProfile, line_profiler, or PyTorch profiler
+        # You can also include screenshots of profiling tools
+
+  - type: dropdown
+    id: data-size
+    attributes:
+      label: Data Scale
+      description: What size of data are you working with?
+      options:
+        - "Small (< 1K samples)"
+        - "Medium (1K - 100K samples)"
+        - "Large (100K - 1M samples)"
+        - "Very Large (> 1M samples)"
+        - "Variable/Multiple sizes"
+
+  - type: textarea
+    id: workarounds
+    attributes:
+      label: Workarounds
+      description: Have you found any workarounds or optimizations that help?
+      placeholder: |
+        - Reducing batch size
+        - Using different parameters
+        - Alternative implementations
+        - Hardware changes
+
+  - type: checkboxes
+    id: investigation-help
+    attributes:
+      label: Investigation Help
+      description: How can you help us investigate this issue?
+      options:
+        - label: I can provide additional profiling data
+        - label: I can test proposed optimizations
+        - label: I can share my dataset (if applicable)
+        - label: I have access to different hardware for testing
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information that might help us understand and reproduce the performance issue
+      placeholder: |
+        - Related issues or discussions
+        - Performance comparisons with other libraries
+        - Specific use case requirements
+        - Any other relevant details
+
+  - type: checkboxes
+    id: code-of-conduct
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

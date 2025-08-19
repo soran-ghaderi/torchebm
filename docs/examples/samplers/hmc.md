@@ -176,16 +176,16 @@ overall_acceptance_rate = acceptance_rates[-1].mean()
 
     Consider discarding initial samples to allow the chain to reach the target distribution.
 
-  ```python
-  # Run 100 warm-up steps before collecting samples
-  warm_up_samples = hmc_sampler.sample(
+    ```python
+    # Run 100 warm-up steps before collecting samples
+    warm_up_samples = hmc_sampler.sample(
       x=initial_state, n_steps=100
-  )
-  # Use the final state as the starting point
-  samples = hmc_sampler.sample(
+    )
+    # Use the final state as the starting point
+    samples = hmc_sampler.sample(
       x=warm_up_samples, n_steps=1000
-  )
-  ```
+    )
+    ```
 
 - :fontawesome-solid-chart-line:{ .lg .middle } __Parallel Chains__
 
@@ -193,13 +193,13 @@ overall_acceptance_rate = acceptance_rates[-1].mean()
 
     Run multiple chains in parallel to improve exploration and assess convergence.
 
-  ```python
-  # Run 10 chains in parallel
-  n_chains = 10
-  samples = hmc_sampler.sample(
+    ```python
+    # Run 10 chains in parallel
+    n_chains = 10
+    samples = hmc_sampler.sample(
       dim=dim, n_steps=1000, n_samples=n_chains
-  )
-  ```
+    )
+    ```
 
 </div>
 
