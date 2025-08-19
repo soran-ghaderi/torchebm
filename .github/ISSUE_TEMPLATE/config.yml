@@ -9,6 +9,3 @@ contact_links:
   - name: 🔬 Check out TorchEBM Blog
     url: https://soran-ghaderi.github.io/torchebm/latest/blog/
     about: Read the latest updates and articles about TorchEBM
-  - name: 📋 Issue List Template (Contributors)
-    url: https://github.com/soran-ghaderi/torchebm/issues/new?template=issue_list.yml
-    about: Submit multiple feature requests in an organized list (for contributors and approved users)

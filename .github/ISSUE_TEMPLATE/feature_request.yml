@@ -1,7 +1,7 @@
 name: 🚀 Feature Request
 description: Suggest a new feature or enhancement for TorchEBM
 title: "[Feature]: "
-labels: ["enhancement", "needs triage"]
+labels: ["enhancement", "needs triage", "help wanted", "good first issue", "test"]
 assignees: []
 body:
   - type: markdown
@@ -68,118 +68,6 @@ body:
       placeholder: e.g., integrations, deployment, etc.
     validations:
       required: false
-    if:
-      field: feature-category
-      equals: "Other"
-
-  # Conditional labels based on feature category
-  - type: input
-    id: auto-label-models
-    attributes:
-      label: "Auto-assigned label: models"
-      description: "This will automatically add the 'models' label"
-      value: "models"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Models/Neural Networks"
-
-  - type: input
-    id: auto-label-performance
-    attributes:
-      label: "Auto-assigned label: performance"
-      description: "This will automatically add the 'performance' label"
-      value: "performance"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Performance/Optimization"
-
-  - type: input
-    id: auto-label-core
-    attributes:
-      label: "Auto-assigned label: core"
-      description: "This will automatically add the 'core' label"
-      value: "core"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Samplers (HMC, Langevin, etc.)"
-
-  - type: input
-    id: auto-label-core-loss
-    attributes:
-      label: "Auto-assigned label: core"
-      description: "This will automatically add the 'core' label"
-      value: "core"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Loss Functions"
-
-  - type: input
-    id: auto-label-core-energy
-    attributes:
-      label: "Auto-assigned label: core"
-      description: "This will automatically add the 'core' label"
-      value: "core"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Energy Functions"
-
-  - type: input
-    id: auto-label-cuda
-    attributes:
-      label: "Auto-assigned label: cuda"
-      description: "This will automatically add the 'cuda' label"
-      value: "cuda"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "CUDA/Hardware Acceleration"
-
-  - type: input
-    id: auto-label-datasets
-    attributes:
-      label: "Auto-assigned label: datasets"
-      description: "This will automatically add the 'datasets' label"
-      value: "datasets"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Data Handling"
-
-  - type: input
-    id: auto-label-datasets-alt
-    attributes:
-      label: "Auto-assigned label: datasets"
-      description: "This will automatically add the 'datasets' label"
-      value: "datasets"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Datasets"
-
-  - type: input
-    id: auto-label-documentation
-    attributes:
-      label: "Auto-assigned label: documentation"
-      description: "This will automatically add the 'documentation' label"
-      value: "documentation"
-    validations:
-      required: false
-    if:
-      field: feature-category
-      equals: "Documentation"
 
   - type: dropdown
     id: priority
