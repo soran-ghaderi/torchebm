@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://your-torchebm-docs.com
+    about: Check out our comprehensive documentation and guides
+  - name: 💬 Discussions
+    url: https://github.com/your-username/torchebm/discussions
+    about: Ask questions and discuss TorchEBM with the community
+  - name: 🔬 Research Papers
+    url: https://your-torchebm-docs.com/papers
+    about: Academic papers and research related to Energy-Based Models

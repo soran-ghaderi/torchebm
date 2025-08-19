@@ -13,6 +13,8 @@ draft: true
 
 # Schrödinger Bridges
 
-Content coming soon.
+The Schrödinger bridge problem tries to find the most likely way of transforming one probability distribution to another over time. Originally posed by Erwin Schrödinger in 1931, it combines ideas from optimal transport, stochastic processes, and information theory.
 
+
+Core idea: 
 

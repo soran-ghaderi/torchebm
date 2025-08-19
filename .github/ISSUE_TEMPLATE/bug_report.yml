@@ -1,0 +1,163 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior in TorchEBM
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us reproduce and fix the issue.
+        
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      description: Please confirm you have completed the following
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported before
+          required: true
+        - label: I have read the documentation and followed the installation guide
+          required: true
+        - label: I can reproduce this bug consistently
+          required: true
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe what happened and what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to Reproduce
+      description: Provide detailed steps to reproduce the behavior
+      placeholder: |
+        1. Import torchebm
+        2. Create energy function with '...'
+        3. Run sampler with '...'
+        4. See error
+      value: |
+        1. 
+        2. 
+        3. 
+        4. 
+    validations:
+      required: true
+
+  - type: textarea
+    id: minimal-example
+    attributes:
+      label: Minimal Code Example
+      description: Please provide a minimal, complete, and verifiable example that reproduces the issue
+      render: python
+      placeholder: |
+        import torch
+        import torchebm
+        
+        # Your minimal example here
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: A clear description of what you expected to happen
+      placeholder: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-traceback
+    attributes:
+      label: Error Output/Traceback
+      description: If applicable, paste the full error message and traceback
+      render: shell
+      placeholder: Paste the complete error message and traceback here
+
+  - type: dropdown
+    id: torchebm-version
+    attributes:
+      label: TorchEBM Version
+      description: Which version of TorchEBM are you using?
+      options:
+        - "0.1.0 (latest)"
+        - "0.0.0"
+        - "main branch (development)"
+        - "Other (please specify in additional context)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pytorch-version
+    attributes:
+      label: PyTorch Version
+      description: Which version of PyTorch are you using?
+      options:
+        - "2.1.x"
+        - "2.0.x"
+        - "1.13.x"
+        - "1.12.x"
+        - "Other (please specify in additional context)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: python-version
+    attributes:
+      label: Python Version
+      description: Which version of Python are you using?
+      options:
+        - "3.11"
+        - "3.10"
+        - "3.9"
+        - "3.8"
+        - "Other (please specify)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating System
+      description: Which operating system are you using?
+      options:
+        - "Linux"
+        - "macOS"
+        - "Windows"
+        - "Other (please specify)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      description: Are you using CPU or GPU?
+      multiple: true
+      options:
+        - "CPU"
+        - "CUDA GPU"
+        - "MPS (Apple Silicon)"
+        - "Other"
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here (hardware specs, environment details, etc.)
+      placeholder: Any additional information that might help us understand the issue
+
+  - type: checkboxes
+    id: code-of-conduct
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

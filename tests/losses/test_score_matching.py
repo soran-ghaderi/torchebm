@@ -173,16 +173,18 @@ def test_get_random_projections(ssm_loss):
     # Test Rademacher projections
     ssm_loss.projection_type = "rademacher"
     v_rademacher = ssm_loss._get_random_projections(shape)
-    
+
     assert v_rademacher.shape == shape
     assert torch.all(torch.abs(v_rademacher) == 1.0)  # Rademacher should be +1 or -1
-    
+
     # Test Gaussian projections
     ssm_loss.projection_type = "gaussian"
     v_gaussian = ssm_loss._get_random_projections(shape)
-    
+
     assert v_gaussian.shape == shape
-    assert not torch.all(torch.abs(v_gaussian) == 1.0)  # Gaussian shouldn't be all +1 or -1
+    assert not torch.all(
+        torch.abs(v_gaussian) == 1.0
+    )  # Gaussian shouldn't be all +1 or -1
 
 
 def test_forward_pass(ssm_loss):
@@ -202,7 +204,7 @@ def test_compute_loss(ssm_loss):
     x = torch.randn(10, 2, device=device)
 
     loss = ssm_loss.compute_loss(x)
-    
+
     assert isinstance(loss, torch.Tensor)
     assert loss.shape == torch.Size([])  # Should be a scalar
     assert not torch.isnan(loss)  # Loss should not be NaN
@@ -217,12 +219,12 @@ def test_forward_with_noise(energy_function):
         noise_scale=0.1,
         device=device,
     )
-    
+
     x = torch.randn(10, 2, device=device)
-    
+
     # Run with noise
     loss = ssm(x)
-    
+
     assert isinstance(loss, torch.Tensor)
     assert not torch.isnan(loss)
 
@@ -236,15 +238,17 @@ def test_forward_with_clipping(energy_function):
         clip_value=clip_value,
         device=device,
     )
-    
+
     x = torch.randn(10, 2, device=device)
-    
+
     # Run with clipping
     loss = ssm(x)
-    
+
     assert isinstance(loss, torch.Tensor)
     # Don't assert about the actual value
-    assert loss.detach().item() <= clip_value + 1.0  # Allow for some floating point error
+    assert (
+        loss.detach().item() <= clip_value + 1.0
+    )  # Allow for some floating point error
 
 
 def test_forward_with_regularization(energy_function):
@@ -256,16 +260,16 @@ def test_forward_with_regularization(energy_function):
         regularization_strength=regularization_strength,
         device=device,
     )
-    
+
     x = torch.randn(10, 2, device=device)
-    
+
     # Run with regularization
     loss_with_reg = ssm(x)
-    
+
     # Run without regularization for comparison
     ssm.regularization_strength = 0.0
     loss_without_reg = ssm(x)
-    
+
     assert isinstance(loss_with_reg, torch.Tensor)
     # Skip direct comparison as it's not guaranteed to be different
     # Due to the stochastic nature of sliced score matching
@@ -277,7 +281,7 @@ def test_different_projections_yield_different_losses(energy_function):
     """Test that different projection types yield different losses."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(42)
-    
+
     # Create two instances with different projection types
     ssm1 = SlicedScoreMatching(
         energy_function=energy_function,
@@ -285,25 +289,25 @@ def test_different_projections_yield_different_losses(energy_function):
         n_projections=50,  # Use more projections to make difference more reliable
         device=device,
     )
-    
+
     ssm2 = SlicedScoreMatching(
         energy_function=energy_function,
         projection_type="gaussian",
         n_projections=50,  # Use more projections to make difference more reliable
         device=device,
     )
-    
+
     # Use same input for both
     torch.manual_seed(123)
     x = torch.randn(10, 2, device=device)
-    
+
     # Compute losses
     torch.manual_seed(42)  # Same seed for both to control randomness
     loss1 = ssm1(x)
-    
+
     torch.manual_seed(42)  # Same seed for both to control randomness
     loss2 = ssm2(x)
-    
+
     # The losses should be different due to different projection types
     assert not torch.isnan(loss1)
     assert not torch.isnan(loss2)
@@ -346,23 +350,23 @@ def test_sliced_score_matching_with_different_energy_functions(ssm_loss):
 def test_higher_dimensions():
     """Test SSM with higher-dimensional inputs."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     # Create a 10-dimensional energy function
     mean = torch.zeros(10, device=device)
     cov = torch.eye(10, device=device)
     energy_fn = GaussianEnergy(mean=mean, cov=cov)
-    
+
     ssm = SlicedScoreMatching(
         energy_function=energy_fn,
         n_projections=3,  # Use fewer projections for speed
         device=device,
     )
-    
+
     # Create high-dimensional input
     x = torch.randn(5, 10, device=device)
-    
+
     loss = ssm(x)
-    
+
     assert isinstance(loss, torch.Tensor)
     assert not torch.isnan(loss)
 
@@ -370,22 +374,22 @@ def test_higher_dimensions():
 def test_numerical_stability():
     """Test SSM with extreme values to check numerical stability."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     # Create standard energy function
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
-    
+
     ssm = SlicedScoreMatching(
         energy_function=energy_fn,
         n_projections=5,
         clip_value=100.0,  # Large clip value to see if it handles extreme values
         device=device,
     )
-    
+
     # Create inputs with extreme values
     x_extreme = torch.ones(10, 2, device=device) * 1000.0
-    
+
     loss = ssm(x_extreme)
-    
+
     assert isinstance(loss, torch.Tensor)
     assert not torch.isnan(loss)
     assert not torch.isinf(loss)
@@ -397,7 +401,7 @@ def test_gradient_flow():
 
     # Create a trainable energy function (MLP)
     energy_fn = MLPEnergy(input_dim=2, hidden_dim=8).to(device)
-    
+
     ssm = SlicedScoreMatching(
         energy_function=energy_fn,
         n_projections=3,
@@ -454,58 +458,58 @@ def test_sliced_score_matching_cuda():
 def test_convergence_potential():
     """Test potential to converge to a known distribution."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     # Define a simple target distribution (1D Gaussian)
     mean = torch.tensor([0.0], device=device)
     std = torch.tensor([1.0], device=device)
-    
+
     # Create a trainable energy function
     energy_fn = MLPEnergy(input_dim=1, hidden_dim=32).to(device)
-    
+
     # Create SSM loss
     ssm = SlicedScoreMatching(
         energy_function=energy_fn,
         n_projections=10,
         device=device,
     )
-    
+
     # Setup optimizer
     optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.001)
-    
+
     # Generate training data from target distribution
     n_samples = 1000
     data = torch.randn(n_samples, 1, device=device) * std + mean
-    
+
     # Train for a few iterations
-    n_epochs = 5
+    n_epochs = 10
     batch_size = 64
-    
+
     for epoch in range(n_epochs):
         epoch_losses = []
         for batch_idx in range(0, n_samples, batch_size):
-            batch = data[batch_idx:batch_idx+batch_size]
+            batch = data[batch_idx : batch_idx + batch_size]
             if len(batch) == 0:
                 continue
-                
+
             optimizer.zero_grad()
             loss = ssm(batch)
             loss.backward()
             optimizer.step()
             epoch_losses.append(loss.item())
-        
+
         # Verify loss is not NaN
         assert not any(np.isnan(loss) for loss in epoch_losses)
-    
+
     # Generate some samples to analyze the learned distribution
     # We need to sample directly by computing energy on a grid since we don't have a sampler
     x_grid = torch.linspace(-5, 5, 1000).view(-1, 1).to(device)
     with torch.no_grad():
         energies = energy_fn(x_grid)
-    
+
     # Check if low energy regions correspond to high density regions of the target distribution
     min_energy_idx = torch.argmin(energies)
     min_energy_point = x_grid[min_energy_idx]
-    
+
     # Check if the minimum energy point is close to the true mean
     # Using a relatively loose tolerance given limited training
     assert abs(min_energy_point.item() - mean.item()) < 1.0
