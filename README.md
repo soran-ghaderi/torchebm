@@ -21,8 +21,11 @@
     <a href="https://github.com/soran-ghaderi/torchebm/actions" target="_blank" title="Documentation">
       <img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/docs_ci.yml?branch=master&style=flat-square&label=docs">
     </a>
-    <a href="https://pepy.tech/project/torchebm" target="_blank" title="Downloads">
+<!--     <a href="https://pepy.tech/project/torchebm" target="_blank" title="Downloads">
         <img alt="Downloads" src="https://img.shields.io/pypi/dm/torchebm?style=flat-square">
+    </a> -->
+    <a href="https://pepy.tech/project/torchebm" target="_blank" title="Downloads">
+        <img alt="Downloads" src="https://static.pepy.tech/badge/torchebm?style=flat-square">
     </a>
     <a href="https://pypi.org/project/torchebm/" target="_blank" title="Python Versions">
         <img alt="Python Versions" src="https://img.shields.io/pypi/pyversions/torchebm?style=flat-square">
