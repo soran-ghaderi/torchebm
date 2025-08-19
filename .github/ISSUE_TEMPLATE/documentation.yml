@@ -1,13 +1,13 @@
 name: 📚 Documentation
 description: Report issues with documentation or suggest improvements
 title: "[Docs]: "
-labels: ["documentation", "good-first-issue"]
+labels: ["documentation", "good first issue", "needs triage"]
 assignees: []
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve TorchEBM's documentation! Clear documentation is essential for user success.
+        Thanks for helping improve TorchEBM's documentation!
 
   - type: checkboxes
     id: prerequisites

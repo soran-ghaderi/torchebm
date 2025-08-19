@@ -1,11 +1,14 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: 📖 Documentation
-    url: https://your-torchebm-docs.com
+  - name: 📖 Check out Documentation/Website
+    url: https://soran-ghaderi.github.io/torchebm/
     about: Check out our comprehensive documentation and guides
-  - name: 💬 Discussions
-    url: https://github.com/your-username/torchebm/discussions
+  - name: 💬 Check out Discussions
+    url: https://github.com/soran-ghaderi/torchebm/discussions
     about: Ask questions and discuss TorchEBM with the community
-  - name: 🔬 Research Papers
-    url: https://your-torchebm-docs.com/papers
-    about: Academic papers and research related to Energy-Based Models
+  - name: 🔬 Check out TorchEBM Blog
+    url: https://soran-ghaderi.github.io/torchebm/latest/blog/
+    about: Read the latest updates and articles about TorchEBM
+  - name: 📋 Issue List Template (Contributors)
+    url: https://github.com/soran-ghaderi/torchebm/issues/new?template=issue_list.yml
+    about: Submit multiple feature requests in an organized list (for contributors and approved users)

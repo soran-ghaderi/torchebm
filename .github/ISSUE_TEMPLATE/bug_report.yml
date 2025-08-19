@@ -1,7 +1,7 @@
 name: 🐛 Bug Report
 description: Report a bug or unexpected behavior in TorchEBM
 title: "[Bug]: "
-labels: ["bug", "needs-triage"]
+labels: ["bug", "subtask", "needs triage"]
 assignees: []
 body:
   - type: markdown
@@ -86,12 +86,22 @@ body:
       label: TorchEBM Version
       description: Which version of TorchEBM are you using?
       options:
-        - "0.1.0 (latest)"
-        - "0.0.0"
-        - "main branch (development)"
+        - "latest"
         - "Other (please specify in additional context)"
     validations:
       required: true
+
+  - type: input
+    id: torchebm-version-other
+    attributes:
+      label: Other TorchEBM Version
+      description: Please specify which version you are using if you selected "Other"
+      placeholder: e.g., 0.3.7, custom commit SHA, experimental branch, etc.
+    validations:
+      required: true
+    if:
+      field: torchebm-version
+      equals: "Other (please specify in additional context)"
 
   - type: dropdown
     id: pytorch-version
@@ -99,13 +109,28 @@ body:
       label: PyTorch Version
       description: Which version of PyTorch are you using?
       options:
-        - "2.1.x"
-        - "2.0.x"
+        - "2.8.x"
+        - "2.7.x"
+        - "2.6.x"
+        - "2.5.x"
         - "1.13.x"
         - "1.12.x"
         - "Other (please specify in additional context)"
     validations:
       required: true
+
+  - type: input
+    id: pytorch-version-other
+    attributes:
+      label: Other PyTorch Version
+      description: Please specify your PyTorch version if you selected "Other"
+      placeholder: e.g., custom build, nightly, etc.
+    validations:
+      required: true
+    if:
+      field: pytorch-version
+      equals: "Other (please specify in additional context)"
+
 
   - type: dropdown
     id: python-version
@@ -113,13 +138,26 @@ body:
       label: Python Version
       description: Which version of Python are you using?
       options:
+        - "3.13"
+        - "3.12"
         - "3.11"
         - "3.10"
         - "3.9"
-        - "3.8"
         - "Other (please specify)"
     validations:
       required: true
+
+  - type: input
+    id: python-version-other
+    attributes:
+      label: Other Python Version
+      description: Please specify the Python version if you selected "Other"
+      placeholder: e.g., 3.7, 3.12, custom build
+    validations:
+      required: true
+    if:
+      field: python-version
+      equals: "Other (please specify)"
 
   - type: dropdown
     id: operating-system
@@ -133,6 +171,18 @@ body:
         - "Other (please specify)"
     validations:
       required: true
+
+  - type: input
+    id: operating-system-other
+    attributes:
+      label: Other Operating System
+      description: Please specify your operating system if you selected "Other"
+      placeholder: e.g., FreeBSD, Solaris, etc.
+    validations:
+      required: true
+    if:
+      field: operating-system
+      equals: "Other (please specify)"
 
   - type: dropdown
     id: device

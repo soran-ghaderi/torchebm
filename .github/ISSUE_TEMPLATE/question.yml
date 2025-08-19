@@ -1,7 +1,7 @@
 name: ❓ Question
 description: Ask a question about using TorchEBM
 title: "[Question]: "
-labels: ["question", "help-wanted"]
+labels: ["question", "help wanted", "needs triage"]
 assignees: []
 body:
   - type: markdown
@@ -47,6 +47,79 @@ body:
         - "Other"
     validations:
       required: true
+
+  # Conditional labels based on question category
+  - type: input
+    id: auto-label-core-energy
+    attributes:
+      label: "Auto-assigned label: core"
+      description: "This will automatically add the 'core' label"
+      value: "core"
+    validations:
+      required: false
+    if:
+      field: question-category
+      equals: "Energy Functions"
+
+  - type: input
+    id: auto-label-core-samplers
+    attributes:
+      label: "Auto-assigned label: core"
+      description: "This will automatically add the 'core' label"
+      value: "core"
+    validations:
+      required: false
+    if:
+      field: question-category
+      equals: "Samplers (HMC, Langevin, etc.)"
+
+  - type: input
+    id: auto-label-core-loss
+    attributes:
+      label: "Auto-assigned label: core"
+      description: "This will automatically add the 'core' label"
+      value: "core"
+    validations:
+      required: false
+    if:
+      field: question-category
+      equals: "Loss Functions"
+
+  - type: input
+    id: auto-label-models
+    attributes:
+      label: "Auto-assigned label: models"
+      description: "This will automatically add the 'models' label"
+      value: "models"
+    validations:
+      required: false
+    if:
+      field: question-category
+      equals: "Model Training"
+
+  - type: input
+    id: auto-label-datasets
+    attributes:
+      label: "Auto-assigned label: datasets"
+      description: "This will automatically add the 'datasets' label"
+      value: "datasets"
+    validations:
+      required: false
+    if:
+      field: question-category
+      equals: "Datasets"
+
+  - type: input
+    id: auto-label-performance
+    attributes:
+      label: "Auto-assigned label: performance"
+      description: "This will automatically add the 'performance' label"
+      value: "performance"
+    validations:
+      required: false
+    if:
+      field: question-category
+      equals: "Performance/Optimization"
 
   - type: textarea
     id: question
