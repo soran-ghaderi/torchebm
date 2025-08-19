@@ -1,7 +1,7 @@
 name: 🐛 Bug Report
 description: Report a bug or unexpected behavior in TorchEBM
-title: "[Bug]: "
-labels: ["bug", "subtask", "needs triage"]
+title: "[Issue]: "
+labels: ["bug", "subtask", "needs triage", "help wanted", "documentation", "good first issue", "test"]
 assignees: []
 body:
   - type: markdown
@@ -98,10 +98,7 @@ body:
       description: Please specify which version you are using if you selected "Other"
       placeholder: e.g., 0.3.7, custom commit SHA, experimental branch, etc.
     validations:
-      required: true
-    if:
-      field: torchebm-version
-      equals: "Other (please specify in additional context)"
+      required: false
 
   - type: dropdown
     id: pytorch-version
@@ -126,10 +123,7 @@ body:
       description: Please specify your PyTorch version if you selected "Other"
       placeholder: e.g., custom build, nightly, etc.
     validations:
-      required: true
-    if:
-      field: pytorch-version
-      equals: "Other (please specify in additional context)"
+      required: false
 
 
   - type: dropdown
@@ -154,10 +148,7 @@ body:
       description: Please specify the Python version if you selected "Other"
       placeholder: e.g., 3.7, 3.12, custom build
     validations:
-      required: true
-    if:
-      field: python-version
-      equals: "Other (please specify)"
+      required: false
 
   - type: dropdown
     id: operating-system
@@ -179,10 +170,7 @@ body:
       description: Please specify your operating system if you selected "Other"
       placeholder: e.g., FreeBSD, Solaris, etc.
     validations:
-      required: true
-    if:
-      field: operating-system
-      equals: "Other (please specify)"
+      required: false
 
   - type: dropdown
     id: device
