@@ -1,0 +1,202 @@
+name: 📋 Issue List (Feature Requests)
+description: Submit multiple feature requests or issues in a single organized list (Contributors and approved users preferred)
+title: "[Issue List]: "
+labels: ["issue list", "enhancement", "needs triage", "help wanted", "documentation", "good first issue", "test"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Issue List Template
+        
+        **Note for Contributors:** This template is intended primarily for approved contributors and maintainers who need to submit multiple related feature requests or issues efficiently. While anyone can use this template, please consider using individual issue templates for single requests to ensure proper discussion and tracking.
+        
+        **For single issues, please use:**
+        - 🐛 [Bug Report](https://github.com/soran-ghaderi/torchebm/issues/new?template=bug_report.yml) for bugs
+        - 🚀 [Feature Request](https://github.com/soran-ghaderi/torchebm/issues/new?template=feature_request.yml) for single features
+        - ❓ [Question](https://github.com/soran-ghaderi/torchebm/issues/new?template=question.yml) for questions
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      description: Please confirm you have completed the following
+      options:
+        - label: I have searched existing issues to ensure these items haven't been reported before
+          required: true
+        - label: I am a contributor, maintainer, or have discussed this list with the maintainers
+          required: true
+        - label: Each item in this list is substantial enough to warrant tracking
+          required: true
+
+  - type: dropdown
+    id: list-type
+    attributes:
+      label: List Type
+      description: What type of issue list is this?
+      options:
+        - "Feature Roadmap Items"
+        - "Bug Triage List"
+        - "Enhancement Backlog"
+        - "Research/Experimental Features"
+        - "Documentation Tasks"
+        - "Performance Improvements"
+        - "API Changes/Improvements"
+        - "Integration Features"
+        - "Other"
+    validations:
+      required: true
+
+  - type: input
+    id: list-type-other
+    attributes:
+      label: Other List Type
+      description: Please specify if you selected "Other"
+      placeholder: e.g., security improvements, testing enhancements, etc.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority-level
+    attributes:
+      label: Overall Priority Level
+      description: What's the priority level for this list of items?
+      options:
+        - "Low - Future considerations"
+        - "Medium - Next milestone"
+        - "High - Current milestone"
+        - "Critical - Urgent items"
+    validations:
+      required: true
+
+  - type: textarea
+    id: list-overview
+    attributes:
+      label: List Overview
+      description: Provide a brief overview of this issue list and its purpose
+      placeholder: |
+        - What is the common theme of these items?
+        - Why are they being grouped together?
+        - What is the expected outcome of completing this list?
+        - Any dependencies or relationships between items?
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue-list
+    attributes:
+      label: Issue/Feature List
+      description: List each issue or feature request with detailed descriptions
+      placeholder: |
+        Please format each item as follows:
+        
+        ## 1. [Issue/Feature Title]
+        **Category:** [models/core/cuda/datasets/performance/documentation/etc.]
+        **Priority:** [High/Medium/Low]
+        **Labels:** [suggested labels from torchebm repository]
+        **Description:** Brief description of the issue or feature
+        **Acceptance Criteria:** 
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        **Estimated Effort:** [Small/Medium/Large/XL]
+        
+        ## 2. [Next Issue/Feature Title]
+        **Category:** [category]
+        **Priority:** [priority]
+        **Labels:** [labels]
+        **Description:** ...
+        
+        (Continue for each item)
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies & Relationships
+      description: Describe any dependencies or relationships between the items in this list
+      placeholder: |
+        - Item 1 depends on Item 3 being completed first
+        - Items 2 and 4 can be worked on in parallel
+        - Item 5 requires external library integration
+        - etc.
+
+  - type: textarea
+    id: timeline
+    attributes:
+      label: Proposed Timeline
+      description: If applicable, provide a suggested timeline or milestone mapping
+      placeholder: |
+        - Phase 1 (Milestone v0.x.x): Items 1, 2, 3
+        - Phase 2 (Milestone v0.x.x): Items 4, 5
+        - Future consideration: Items 6, 7
+        
+        Or provide specific dates/timeframes if relevant.
+
+  - type: dropdown
+    id: implementation-areas
+    attributes:
+      label: Primary Implementation Areas
+      description: Which areas of TorchEBM will these items primarily affect?
+      multiple: true
+      options:
+        - "Core Energy Functions"
+        - "Neural Network Models"
+        - "Samplers (HMC, Langevin, etc.)"
+        - "Loss Functions"
+        - "CUDA/Hardware Acceleration"
+        - "Data Handling/Datasets"
+        - "Training Pipeline"
+        - "Evaluation/Metrics"
+        - "Visualization"
+        - "API/Interface"
+        - "Documentation"
+        - "Testing Infrastructure"
+        - "Performance Optimization"
+        - "Examples/Tutorials"
+
+  - type: checkboxes
+    id: contributor-commitment
+    attributes:
+      label: Contributor Commitment
+      description: How will you or your team contribute to these items?
+      options:
+        - label: I/we will implement some or all of these items
+        - label: I/we will provide detailed specifications for each item
+        - label: I/we will help with testing and validation
+        - label: I/we will help with documentation and examples
+        - label: I/we will help with code review
+        - label: This is a community wishlist (no specific commitment)
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any additional information that would help prioritize or implement these items
+      placeholder: |
+        - Links to research papers, external implementations, or references
+        - User feedback or community requests that support these items
+        - Technical constraints or considerations
+        - Integration requirements with other libraries
+        - Any other relevant context
+
+  - type: checkboxes
+    id: follow-up-plan
+    attributes:
+      label: Follow-up Plan
+      description: How should these items be handled after submission?
+      options:
+        - label: Create individual issues for each item in this list
+        - label: Use this as a tracking issue with checkboxes
+        - label: Break into smaller sub-lists by category/priority
+        - label: Schedule discussion with maintainers
+        - label: Add to project roadmap/milestone planning
+
+  - type: checkboxes
+    id: code-of-conduct
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
