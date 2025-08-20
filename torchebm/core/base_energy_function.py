@@ -28,7 +28,7 @@ class BaseEnergyFunction(nn.Module, ABC):
     - Subclasses can contain trainable parameters (`nn.Parameter`).
     - Standard PyTorch methods like `.to(device)`, `.parameters()`, `.state_dict()`,
       and integration with `torch.optim` work as expected.
-      
+
     Args:
         dtype (torch.dtype): Data type for computations
         device (Union[str, torch.device]): Device for computations
@@ -43,21 +43,19 @@ class BaseEnergyFunction(nn.Module, ABC):
     ):
         """Initializes the BaseEnergyFunction base class."""
         super().__init__()
-        # Convert string device to torch.device
         if isinstance(device, str):
             device = torch.device(device)
-            
-        # Store dtype and device settings
+
         self.dtype = dtype
         self._device = device or (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
         self.use_mixed_precision = use_mixed_precision
-        
-        # Check if mixed precision is available
+
         if self.use_mixed_precision:
             try:
                 from torch.cuda.amp import autocast
+
                 self.autocast_available = True
             except ImportError:
                 warnings.warn(
@@ -115,106 +113,66 @@ class BaseEnergyFunction(nn.Module, ABC):
             torch.Tensor: Gradient tensor of the same batch_shape as x.
         """
 
-        # Store original dtype and device
         original_dtype = x.dtype
         device = x.device
 
-        # Ensure x is on the correct device (if specified by the model)
         if self.device and device != self.device:
             x = x.to(self.device)
-            device = self.device  # Update device if x was moved
+            device = self.device
 
-        with torch.enable_grad():
-            # Detach, convert to float32, and enable gradient tracking
+        with torch.enable_grad():  # todo: consider removing conversion to fp32 and uncessary device change
             x_for_grad = (
                 x.detach().to(dtype=torch.float32, device=device).requires_grad_(True)
             )
 
-            # Perform forward pass with float32 input, using mixed precision if enabled
             if self.use_mixed_precision and self.autocast_available:
                 from torch.cuda.amp import autocast
+
                 with autocast():
                     energy = self.forward(x_for_grad)
             else:
                 energy = self.forward(x_for_grad)
 
-            # Validate energy batch_shape - should be one scalar per batch item
-            if energy.shape != (x_for_grad.shape[0],):
+            if energy.shape != (x_for_grad.shape[0],):  # a scalar per batch item
                 raise ValueError(
                     f"BaseEnergyFunction forward() output expected batch_shape ({x_for_grad.shape[0]},), but got {energy.shape}."
                 )
 
-            # Check grad_fn on the float32 energy
             if not energy.grad_fn:
                 raise RuntimeError(
                     "Cannot compute gradient: `forward` method did not use the input `x` (as float32) in a differentiable way."
                 )
 
-            # Compute gradient using autograd w.r.t. the float32 input
             gradient_float32 = torch.autograd.grad(
                 outputs=energy,
-                inputs=x_for_grad,  # Compute gradient w.r.t the float32 version
+                inputs=x_for_grad,
                 grad_outputs=torch.ones_like(energy, device=energy.device),
-                create_graph=False,  # Set to False for standard gradient computation
-                retain_graph=None,  # Usually not needed when create_graph=False, let PyTorch decide
+                create_graph=False,  # false for standard grad computation
+                retain_graph=None,  # since create_graph=False, let PyTorch decide
             )[0]
 
-        if gradient_float32 is None:
-            # This should theoretically not happen if checks above pass, but good to have.
+        if (
+            gradient_float32 is None
+        ):  # theoretically shouldn't happen but for triple checking!
             raise RuntimeError(
                 "Gradient computation failed unexpectedly. Check the forward pass implementation."
             )
 
-        # Cast gradient back to the original dtype before returning
         gradient = gradient_float32.to(original_dtype)
 
         return gradient.detach()
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """Alias for the forward method for standard PyTorch module usage."""
-        # First ensure x is on the correct device and dtype
         x = x.to(device=self.device, dtype=self.dtype)
-        
-        # Apply mixed precision context if enabled
+
         if self.use_mixed_precision and self.autocast_available:
             from torch.cuda.amp import autocast
+
             with autocast():
                 return super().__call__(x, *args, **kwargs)
         else:
             return super().__call__(x, *args, **kwargs)  # Use nn.Module's __call__
-
-    # Override the base nn.Module `to` method to also store the device hint
-    def to(self, *args, **kwargs):
-        """Moves and/or casts the parameters and buffers."""
-        new_self = super().to(*args, **kwargs)
-        # Try to update the internal device hint after moving
-        try:
-            # Get device from args/kwargs (handling different ways .to can be called)
-            device = None
-            if args:
-                if isinstance(args[0], torch.device):
-                    device = args[0]
-                elif isinstance(args[0], str):
-                    device = torch.device(args[0])
-            if "device" in kwargs:
-                device = kwargs["device"]
-
-            if device:
-                new_self._device = device
-                
-            # Check for dtype updates
-            dtype = None
-            if len(args) > 1 and isinstance(args[1], torch.dtype):
-                dtype = args[1]
-            if "dtype" in kwargs:
-                dtype = kwargs["dtype"]
-                
-            if dtype:
-                new_self.dtype = dtype
-        except Exception:
-            # Ignore potential errors in parsing .to args, rely on parameter/buffer device
-            pass
-        return new_self
 
 
 class DoubleWellEnergy(BaseEnergyFunction):
