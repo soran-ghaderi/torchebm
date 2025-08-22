@@ -138,7 +138,9 @@ class LangevinDynamics(BaseSampler):
     def sample(self, x, n_steps, **kwargs):
         x_curr = x.clone()
         for _ in range(n_steps):
-            noise = torch.randn_like(x_curr) * self.noise_scale * np.sqrt(self.temperature)
+            noise = (
+                torch.randn_like(x_curr) * self.noise_scale * np.sqrt(self.temperature)
+            )
             grad = self.energy_function.gradient(x_curr).to(device=x.device)
             step_term = (
                 torch.sqrt(torch.tensor(2.0 * self.step_size, device=x.device)) * noise
@@ -281,6 +283,7 @@ def test_contrastive_divergence_initialization(energy_function, sampler, device)
     assert cd.min_temp == 0.1
     assert cd.temp_decay == 0.99
     assert cd.current_temp == 1.5
+    assert cd.energy_function.device == device
     assert cd.device == device
     assert cd.replay_buffer is None
 
@@ -353,10 +356,12 @@ def test_contrastive_divergence_persistence(
         assert cd.replay_buffer is not None
         assert cd.buffer_initialized
         assert cd.replay_buffer.shape[0] == buffer_size
-        
+
         # Test second update to verify buffer continuity
         loss2, samples2 = cd(x)
-        assert not torch.allclose(samples1, samples2), "Samples should differ across calls with PCD"
+        assert not torch.allclose(
+            samples1, samples2
+        ), "Samples should differ across calls with PCD"
     else:
         assert not cd.persistent
         assert cd.replay_buffer is None
@@ -414,29 +419,31 @@ def test_temperature_annealing(energy_function, sampler, device):
         temp_decay=0.8,  # Fast decay for testing
         device=device,
     )
-    
+
     # Set to training mode
     cd.train()
-    
+
     # Store initial temperature
     initial_temp = cd.current_temp
-    
+
     # Run multiple forward passes to check temperature decay
     x = torch.randn(10, 2, device=device)
     cd(x)
-    
+
     # Temperature should have been updated
     assert cd.current_temp < initial_temp
     assert cd.current_temp >= cd.min_temp
-    
+
     # Run enough iterations to reach near min_temp
     for _ in range(20):  # More iterations to get closer to min_temp
         cd(x)
-    
+
     # Temperature should be closer to min_temp after more iterations
     # Allow more tolerance - we just need to verify it's decreasing
-    assert cd.current_temp <= 0.2, f"Temperature {cd.current_temp} should be closer to min_temp {cd.min_temp}"
-    
+    assert (
+        cd.current_temp <= 0.2
+    ), f"Temperature {cd.current_temp} should be closer to min_temp {cd.min_temp}"
+
     # Verify it never goes below min_temp
     assert cd.current_temp >= cd.min_temp
 
@@ -449,15 +456,15 @@ def test_nan_handling_in_loss(energy_function, sampler, device):
         k_steps=5,
         device=device,
     )
-    
+
     # Create data that will produce NaN energy
     x = torch.randn(10, 2, device=device)
-    pred_x = torch.ones_like(x) * float('inf')  # Will cause NaN in energy calculation
-    
+    pred_x = torch.ones_like(x) * float("inf")  # Will cause NaN in energy calculation
+
     # There should be a warning
     with pytest.warns(RuntimeWarning):
         loss = cd.compute_loss(x, pred_x)
-    
+
     # Loss should be a fallback value, not NaN
     assert not torch.isnan(loss)
     assert abs(loss.item() - 0.1) < 1e-4  # Allow for small float precision differences
@@ -475,27 +482,27 @@ def test_fifo_buffer_update(energy_function, sampler, device):
         buffer_size=buffer_size,
         device=device,
     )
-    
+
     x = torch.randn(batch_size, 2, device=device)
-    
+
     # First update to initialize buffer
     cd(x)
-    
+
     # Get initial buffer pointer
     initial_ptr = cd.buffer_ptr.item()
-    
+
     # Run another update
     cd(x)
-    
+
     # Check pointer has advanced correctly
     expected_ptr = (initial_ptr + batch_size) % buffer_size
     assert cd.buffer_ptr.item() == expected_ptr
-    
+
     # Test full wraparound by filling buffer
     full_batches = (buffer_size // batch_size) + 1
     for _ in range(full_batches):
         cd(x)
-    
+
     # Buffer pointer should have wrapped around at least once
     assert cd.buffer_ptr.item() < buffer_size
 
@@ -512,29 +519,29 @@ def test_stratified_sampling(energy_function, sampler, device):
         buffer_size=buffer_size,
         device=device,
     )
-    
+
     # Initialize buffer with a pattern we can detect
     x = torch.zeros(batch_size, 2, device=device)
     cd(x)
-    
+
     # Manually fill buffer with recognizable pattern
     # Each entry has a unique value based on its index
     with torch.no_grad():
         for i in range(buffer_size):
             cd.replay_buffer[i, 0] = i
-    
+
     # Get samples - with stratified sampling, we should get samples
     # that are approximately evenly spaced through the buffer
     samples = cd.get_start_points(x)
-    
+
     # Extract the indices we retrieved based on our pattern
     retrieved_indices = samples[:, 0].long()
-    
+
     # Check for more uniform distribution than pure random
     # With stratified sampling, indices should be more evenly spaced
     indices_sorted = torch.sort(retrieved_indices).values
     diffs = indices_sorted[1:] - indices_sorted[:-1]
-    
+
     # In pure random sampling, we'd expect some very small differences
     # due to duplicates or nearby indices. With stratified sampling,
     # the minimum difference should be larger.
@@ -547,7 +554,7 @@ def test_energy_regularization_effect(energy_function, sampler, device):
     # Create data with non-zero energy values for testing
     x = torch.randn(10, 2, device=device) * 5.0  # Scale up to get larger energy values
     pred_x = torch.randn(10, 2, device=device) * 5.0
-    
+
     # Test with no regularization
     cd_no_reg = ContrastiveDivergence(
         energy_function=energy_function,
@@ -556,7 +563,7 @@ def test_energy_regularization_effect(energy_function, sampler, device):
         energy_reg_weight=0.0,
         device=device,
     )
-    
+
     # Test with high regularization
     cd_high_reg = ContrastiveDivergence(
         energy_function=energy_function,
@@ -565,32 +572,33 @@ def test_energy_regularization_effect(energy_function, sampler, device):
         energy_reg_weight=0.5,  # Much higher regularization
         device=device,
     )
-    
+
     # Force higher energies to make regularization effect more noticeable
     with torch.no_grad():
         # Make sure energies are substantial
         x_energy = energy_function(x)
         pred_x_energy = energy_function(pred_x)
-        
+
         # Skip test if energies are too small to show regularization effect
         if torch.mean(x_energy**2) < 0.1 and torch.mean(pred_x_energy**2) < 0.1:
             pytest.skip("Energy values too small to show regularization effect")
-    
+
     # Compute losses
     loss_no_reg = cd_no_reg.compute_loss(x, pred_x)
     loss_high_reg = cd_high_reg.compute_loss(x, pred_x, energy_reg_weight=0.5)
-    
+
     # Check if the regularization has a meaningful effect
     # This is a more robust test that doesn't depend as much on energy scale
-    assert abs(loss_no_reg - loss_high_reg) > 1e-5, \
-        f"Regularization had no effect: {loss_no_reg} vs {loss_high_reg}"
+    assert (
+        abs(loss_no_reg - loss_high_reg) > 1e-5
+    ), f"Regularization had no effect: {loss_no_reg} vs {loss_high_reg}"
 
 
 def test_multiple_training_iterations(energy_function, sampler, device):
     """Test stability over multiple training iterations."""
     # Create a simple MLP energy function for training
     energy_fn = MLPEnergy(input_dim=2, hidden_dim=8).to(device)
-    
+
     # Create loss with PCD to better test stability
     cd = ContrastiveDivergence(
         energy_function=energy_fn,
@@ -601,44 +609,50 @@ def test_multiple_training_iterations(energy_function, sampler, device):
         energy_reg_weight=0.001,
         device=device,
     )
-    
+
     # Setup optimizer
     optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.001)
-    
+
     # Create synthetic data (e.g., from a Gaussian mixture)
     n_samples = 100
-    mixture1 = torch.randn(n_samples // 2, 2, device=device) + torch.tensor([2.0, 2.0], device=device)
-    mixture2 = torch.randn(n_samples // 2, 2, device=device) + torch.tensor([-2.0, -2.0], device=device)
+    mixture1 = torch.randn(n_samples // 2, 2, device=device) + torch.tensor(
+        [2.0, 2.0], device=device
+    )
+    mixture2 = torch.randn(n_samples // 2, 2, device=device) + torch.tensor(
+        [-2.0, -2.0], device=device
+    )
     data = torch.cat([mixture1, mixture2], dim=0)
-    
+
     # Run 10 training iterations
     losses = []
     for _ in range(10):
         # Sample a batch
         idx = torch.randperm(n_samples)[:10]
         batch = data[idx]
-        
+
         # Forward and backward
         optimizer.zero_grad()
         loss, _ = cd(batch)
         loss.backward()
         optimizer.step()
-        
+
         losses.append(loss.item())
-    
+
     # Verify we don't have NaN losses
     assert not any(np.isnan(loss) for loss in losses)
-    
+
     # Ideally, loss should be decreasing or at least stable
     # This is a statistical test, so it might occasionally fail
     # Let's check if the trend is generally downward
     first_half_avg = np.mean(losses[:5])
     second_half_avg = np.mean(losses[5:])
-    
+
     # Note: We don't assert this as it depends on data and init
     # but it's useful to log if there might be instability
     if first_half_avg < second_half_avg:
-        warnings.warn(f"Loss not decreasing: first half avg={first_half_avg}, second half avg={second_half_avg}")
+        warnings.warn(
+            f"Loss not decreasing: first half avg={first_half_avg}, second half avg={second_half_avg}"
+        )
 
 
 @requires_cuda
@@ -730,10 +744,10 @@ def test_small_buffer_warning():
         noise_scale=0.01,
         device=device,
     )
-    
+
     buffer_size = 5
     batch_size = 10
-    
+
     cd = ContrastiveDivergence(
         energy_function=energy_fn,
         sampler=sampler,
@@ -742,9 +756,9 @@ def test_small_buffer_warning():
         buffer_size=buffer_size,
         device=device,
     )
-    
+
     x = torch.randn(batch_size, 2, device=device)
-    
+
     # Should raise a warning about buffer size < batch size
     with pytest.warns(UserWarning, match="Buffer size .* is smaller than batch size"):
         cd(x)
@@ -753,17 +767,17 @@ def test_small_buffer_warning():
 def test_convergence_potential():
     """Test potential to converge to a known distribution."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     # Define a simple target distribution (1D Gaussian)
     mean = torch.tensor([0.0], device=device)
     std = torch.tensor([1.0], device=device)
-    
+
     # Create true energy function (negative log likelihood of Gaussian)
-    true_energy_fn = lambda x: 0.5 * ((x - mean) / std)**2
-    
+    true_energy_fn = lambda x: 0.5 * ((x - mean) / std) ** 2
+
     # Create a trainable energy function
     energy_fn = MLPEnergy(input_dim=1, hidden_dim=32).to(device)
-    
+
     # Create sampler
     sampler = LangevinDynamics(
         energy_function=energy_fn,
@@ -771,7 +785,7 @@ def test_convergence_potential():
         noise_scale=0.05,
         device=device,
     )
-    
+
     # Create CD loss with temperature annealing for better convergence
     cd = ContrastiveDivergence(
         energy_function=energy_fn,
@@ -787,48 +801,48 @@ def test_convergence_potential():
         energy_reg_weight=0.0001,
         device=device,
     )
-    
+
     # Setup optimizer
     optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.001)
-    
+
     # Generate training data from target distribution
     n_samples = 1000
     data = torch.randn(n_samples, 1, device=device) * std + mean
-    
+
     # Train for a few iterations
     n_epochs = 5
     batch_size = 64
-    
+
     for epoch in range(n_epochs):
         epoch_losses = []
         for batch_idx in range(0, n_samples, batch_size):
-            batch = data[batch_idx:batch_idx+batch_size]
+            batch = data[batch_idx : batch_idx + batch_size]
             if len(batch) == 0:
                 continue
-                
+
             optimizer.zero_grad()
             loss, _ = cd(batch)
             loss.backward()
             optimizer.step()
             epoch_losses.append(loss.item())
-        
+
         # Verify loss is not NaN
         assert not any(np.isnan(loss) for loss in epoch_losses)
-    
+
     # After training, sample from model to test convergence
     # We use the samples from the last batch
     _, model_samples = cd(batch)
-    
+
     # Check if mean and std of samples are close to true distribution
     # Note: This might fail due to random initialization and short training
     # So we use a large tolerance
     model_mean = model_samples.mean().item()
     model_std = model_samples.std().item()
-    
+
     # Log values but don't assert (hard to guarantee in few iterations)
     print(f"Target mean: {mean.item()}, Model mean: {model_mean}")
     print(f"Target std: {std.item()}, Model std: {model_std}")
-    
+
     # Instead, just test that values are reasonable
     assert -3 < model_mean < 3, "Mean should be in a reasonable range"
     assert 0.1 < model_std < 10, "Std should be in a reasonable range"

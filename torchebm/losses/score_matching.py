@@ -55,8 +55,8 @@ Classes:
     Score Matching minimizes the expected squared distance between the model's score and the data's score:
 
     $$
-    J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] + 
-    \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
+    J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right]
+    - \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
     $$
 
     where:
@@ -91,9 +91,8 @@ Classes:
     SSM uses random projections to estimate the score matching objective:
 
     $$
-    J_{\text{SSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
-    \left[ (v^T \nabla_x E_\theta(x))^2 \right] - \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
-    \left[ v^T \nabla_x^2 E_\theta(x) v \right]
+    J_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \left[
+    v^T \nabla_x \log p_\theta(x) v + \frac{1}{2} \left( v^T \nabla_x \log p_\theta(x) \right)^2 \right] + \text{const.}
     $$
 
     where \( v \) is a random projection vector.
@@ -101,6 +100,7 @@ Classes:
     !!! tip "Projection Types"
         - **Rademacher**: Values in \(\{-1, +1\}\), often lower variance
         - **Gaussian**: Standard normal distribution, more general
+        - **Sphere**: Uniformly sampled unit vectors on the hypersphere, preserving direction norms
 
 ---
 
@@ -447,8 +447,8 @@ class ScoreMatching(BaseScoreMatching):
         This computes the score matching objective:
 
         \[
-        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] +
-        \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
+        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right]
+        - \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
         \]
 
         where the trace of the Hessian is computed exactly by calculating each diagonal element.
@@ -548,8 +548,8 @@ class ScoreMatching(BaseScoreMatching):
             # Add to trace
             hessian_trace += grad_grad_i.mean()
 
-        # Combine terms for full loss
-        loss = score_square_term + hessian_trace
+        # Combine terms for full loss (minus Laplacian of energy)
+        loss = score_square_term - hessian_trace
 
         return loss
 
@@ -611,8 +611,8 @@ class ScoreMatching(BaseScoreMatching):
             dim=list(range(1, len(x.shape))),
         ).mean() / (epsilon**2 * data_dim)
 
-        # Combine terms for full loss
-        loss = score_square_term + hessian_trace
+        # Combine terms for full loss (minus Laplacian of energy)
+        loss = score_square_term - hessian_trace
 
         return loss
 
@@ -889,22 +889,24 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     \[
     J_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v \sim \mathcal{N}(0, I)}
-    \left[ v^T \nabla_x^2 E_\theta(x) v + \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 \right]
+    \left[ v^T \nabla_x \log p_\theta(x) v + \frac{1}{2} \left( v^T \nabla_x \log p_\theta(x) \right)^2 \right] + \text{const.}
     \]
 
-    The key insight is that we can estimate the trace of the Hessian using random projections:
+    The key insight is that this provides a tractable alternative to score matching by obtaining
+    the following tractable alternative:
 
     \[
-    \text{tr}(\nabla_x^2 E_\theta(x)) \approx \mathbb{E}_{v \sim \mathcal{N}(0, I)} [v^T \nabla_x^2 E_\theta(x) v]
+    \nabla_x \log p_\theta(x) = -\nabla_x E_\theta(x)
     \]
 
     This allows us to compute the score matching objective using only first-order gradients
-    and Hessian-vector products, which are much more efficient than computing the full Hessian.
+    and avoids computing the full Hessian matrix, which is much more efficient.
 
     !!! tip "Projection Selection"
         The choice of projection type and number of projections affects the accuracy:
         - Gaussian projections: Most common, works well in practice
         - Rademacher projections: Binary values, can be more efficient
+        - sphere projections:
         - More projections: Better accuracy but higher computational cost
         - Fewer projections: Faster but may be less accurate
 
@@ -912,7 +914,7 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     - The number of projections \( n_{\text{projections}} \) is a key hyperparameter
     - More projections lead to better accuracy but higher computational cost
-    - The projection type (Gaussian or Rademacher) can affect performance
+    - The projection type (Gaussian, Rademacher, or sphere) can affect performance
     - SSM is particularly useful for high-dimensional data where exact score matching is infeasible
 
     !!! warning "Common Issues"
@@ -974,7 +976,7 @@ class SlicedScoreMatching(BaseScoreMatching):
     Args:
         energy_function (BaseEnergyFunction): Energy function to train
         n_projections (int): Number of random projections to use
-        projection_type (str): Type of random projections ("gaussian" or "rademacher")
+        projection_type (str): Type of random projections ("gaussian", "rademacher", or "sphere")
         regularization_strength (float): Coefficient for regularization terms
         custom_regularization (Optional[Callable]): Optional function for custom regularization
         use_mixed_precision (bool): Whether to use mixed precision training
@@ -1015,7 +1017,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         self.projection_type = projection_type
 
         # Validate projection_type
-        valid_types = ["rademacher", "gaussian"]
+        valid_types = ["rademacher", "sphere", "gaussian"]
         if self.projection_type not in valid_types:
             warnings.warn(
                 f"Invalid projection_type '{self.projection_type}'. "
@@ -1047,14 +1049,25 @@ class SlicedScoreMatching(BaseScoreMatching):
             >>> v = loss_fn._get_random_projections((32, 2))  # 32 samples of dim 2
             >>> # v will be of shape (32, 2) with values in {-1, +1} (Rademacher)
         """
+        vectors = torch.randn_like(shape)
         if self.projection_type == "rademacher":
+            # new code:
+            return vectors.sign()
             # Rademacher (+1/-1) distribution
             return (torch.randint(0, 2, shape, device=self.device) * 2 - 1).to(
                 dtype=self.dtype
             )
+        elif self.projection_type == "sphere":
+            # uniformly sample from unit sphere
+            return (
+                vectors
+                / torch.norm(vectors, dim=-1, keepdim=True)
+                * torch.sqrt(vectors.shape[-1])
+            )
         else:  # "gaussian"
-            # Standard normal distribution
-            return torch.randn(shape, device=self.device, dtype=self.dtype)
+            # standard normal distribution
+            # return torch.randn(shape, device=self.device, dtype=self.dtype)
+            return vectors
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
@@ -1087,8 +1100,14 @@ class SlicedScoreMatching(BaseScoreMatching):
             >>> loss.backward()  # Backpropagate the loss
         """
         x = x.to(device=self.device, dtype=self.dtype)
+        if self.use_mixed_precision and self.autocast_available:
+            from torch.cuda.amp import autocast
 
-        loss = self.compute_loss(x, *args, **kwargs)
+            with autocast():
+                loss = self.compute_loss(x, *args, **kwargs)
+        else:
+            loss = self.compute_loss(x, *args, **kwargs)
+        # loss = self.compute_loss(x, *args, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
@@ -1099,16 +1118,19 @@ class SlicedScoreMatching(BaseScoreMatching):
         r"""
         Compute the sliced score matching loss using random projections efficiently.
 
-        This implementation uses Hutchinson's trace estimator to compute the sliced score
-        matching objective efficiently. The key insight is that we can compute v^T ∇²E v
-        using only first-order gradients through the identity:
+        This implementation computes the sliced score matching objective efficiently using
+        the tractable alternative formulation. The key insight is that we can compute the
+        objective using only first-order gradients by leveraging the relationship:
 
-        v^T ∇²E v = v^T ∇(∇E) = ∇(v^T ∇E) (since v is independent of x)
+        \[
+        \nabla_x \log p_\theta(x) = - \nabla_x E_\theta(x)
+        \]
 
         The objective is:
+
         \[
-        \mathcal{L}_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v}
-        \left[ v^T \nabla_x^2 E_\theta(x) v + \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 \right]
+        \mathcal{L}_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)}
+        \left[ v^T \nabla_x \log p_\theta(x) v + \frac{1}{2} \left( v^T \nabla_x \log p_\theta(x) \right)^2 \right] + \text{const.}
         \]
 
         !!! tip
@@ -1124,101 +1146,32 @@ class SlicedScoreMatching(BaseScoreMatching):
             torch.Tensor: The sliced score matching loss (scalar)
         """
 
-        def loss_for_single_sample_and_projection(x_single, v_single):
-            """Compute loss for a single sample and single projection to avoid graph conflicts."""
-            # Ensure single sample has batch dimension
-            if x_single.dim() == len(x.shape) - 1:
-                x_single = x_single.unsqueeze(0)
-                v_single = v_single.unsqueeze(0)
+        dup_x = (
+            x.unsqueeze(0)
+            .expand(self.n_projections, *x.shape)
+            .contiguous()
+            .view(-1, *x.shape[1:])
+        ).requires_grad_(
+            True
+        )  # final shape: (n_particles * batch_size, d). tracing the shape: (batch_size, d) -> (1, batch_size, d)
+        # -> (n_particles, batch_size, d) -> (n_particles, batch_size, d) -> (n_particles * batch_size, d)
 
-            # Don't clone to maintain gradient connection
-            x_single.requires_grad_(True)
+        n_vectors = self._get_random_projections(dup_x)
 
-            if self.use_mixed_precision and self.autocast_available:
-                from torch.cuda.amp import autocast
+        logp = -self.energy_function(dup_x).sum()
+        grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
+        v_score = torch.sum(grad1 * n_vectors, dim=-1)
+        term1 = 0.5 * (v_score**2)
 
-                with autocast():
-                    # Compute energy
-                    energy = self.energy_function(x_single)
+        grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[
+            0
+        ]  # be careful to not do the grad over grad1!!!
+        term2 = torch.sum(n_vectors * grad_v, dim=-1)
 
-                    # Compute score
-                    score = torch.autograd.grad(
-                        energy.sum(), x_single, create_graph=True, retain_graph=True
-                    )[0]
+        # if x.shape[0] > 1:
+        term1 = term1.view(self.n_projections, -1).mean(dim=0)
+        term2 = term2.view(self.n_projections, -1).mean(dim=0)
 
-                    # First term: 1/2 * (v^T ∇E)²
-                    v_score = torch.sum(
-                        v_single * score, dim=tuple(range(1, len(x_single.shape)))
-                    )
-                    term1 = 0.5 * torch.mean(v_score**2)
+        loss = term2 + term1
 
-                    # Second term: v^T ∇²E v using Hutchinson's trick
-                    hvp = torch.autograd.grad(
-                        v_score.sum(), x_single, create_graph=True, allow_unused=True
-                    )[0]
-                    if hvp is not None:
-                        term2 = torch.mean(
-                            torch.sum(
-                                v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
-                            )
-                        )
-                    else:
-                        term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
-            else:
-                # Compute energy
-                energy = self.energy_function(x_single)
-
-                # Compute score
-                score = torch.autograd.grad(
-                    energy.sum(), x_single, create_graph=True, retain_graph=True
-                )[0]
-
-                # First term: 1/2 * (v^T ∇E)²
-                v_score = torch.sum(
-                    v_single * score, dim=tuple(range(1, len(x_single.shape)))
-                )
-                term1 = 0.5 * torch.mean(v_score**2)
-
-                # Second term: v^T ∇²E v using Hutchinson's trick
-                hvp = torch.autograd.grad(
-                    v_score.sum(), x_single, create_graph=True, allow_unused=True
-                )[0]
-                if hvp is not None:
-                    term2 = torch.mean(
-                        torch.sum(
-                            v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
-                        )
-                    )
-                else:
-                    term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
-
-            return term1 + term2
-
-        batch_size = x.shape[0]
-        total_loss = 0.0
-
-        # Process samples in smaller batches to maintain efficiency while avoiding graph conflicts
-        for i in range(self.n_projections):
-            # Generate random projection for the entire batch
-            v = self._get_random_projections(x.shape)
-
-            # Compute loss for this projection across the batch
-            projection_loss = loss_for_single_sample_and_projection(x, v)
-            total_loss += projection_loss
-
-        # Average over number of projections
-        loss = total_loss / self.n_projections
-
-        # Basic stability check without arbitrary clipping
-        if torch.isnan(loss) or torch.isinf(loss):
-            warnings.warn(
-                f"Sliced Score Matching loss is unstable: {loss.item()}. "
-                "This may indicate numerical issues with the energy function or gradients.",
-                UserWarning,
-            )
-            # Return a reasonable fallback rather than arbitrary clipping
-            loss = torch.tensor(
-                0.0, device=self.device, dtype=self.dtype, requires_grad=True
-            )
-
-        return loss
+        return loss.mean()

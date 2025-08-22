@@ -141,38 +141,38 @@ nav:
         - PinwheelDataset: api/torchebm/datasets/generators/classes/PinwheelDataset.md
         - SwissRollDataset: api/torchebm/datasets/generators/classes/SwissRollDataset.md
         - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
-    - Evaluation:
-      - api/torchebm/evaluation/index.md
-      - Evaluators:
-        - api/torchebm/evaluation/evaluators/index.md
-        - Base:
-          - api/torchebm/evaluation/evaluators/base/index.md
-          - BaseEvaluator: api/torchebm/evaluation/evaluators/base/classes/BaseEvaluator.md
-          - TimeMetric: api/torchebm/evaluation/evaluators/base/classes/TimeMetric.md
-        - Model_evaluator:
-          - api/torchebm/evaluation/evaluators/model_evaluator/index.md
-          - EnsembleEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/EnsembleEvaluator.md
-          - ModelEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/ModelEvaluator.md
-        - Sampler_evaluator:
-          - api/torchebm/evaluation/evaluators/sampler_evaluator/index.md
-          - ComparativeSamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/ComparativeSamplerEvaluator.md
-          - SamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/SamplerEvaluator.md
-      - Metrics:
-        - api/torchebm/evaluation/metrics/index.md
-        - Base:
-          - api/torchebm/evaluation/metrics/base/index.md
-          - BaseMetric: api/torchebm/evaluation/metrics/base/classes/BaseMetric.md
-          - EnergySampleMetric: api/torchebm/evaluation/metrics/base/classes/EnergySampleMetric.md
-          - SampleQualityMetric: api/torchebm/evaluation/metrics/base/classes/SampleQualityMetric.md
-        - Likelihood:
-          - api/torchebm/evaluation/metrics/likelihood/index.md
-          - KLDivergence: api/torchebm/evaluation/metrics/likelihood/classes/KLDivergence.md
-          - LogLikelihood: api/torchebm/evaluation/metrics/likelihood/classes/LogLikelihood.md
-        - Sample_quality:
-          - api/torchebm/evaluation/metrics/sample_quality/index.md
-          - FrechetDistance: api/torchebm/evaluation/metrics/sample_quality/classes/FrechetDistance.md
-          - InceptionScore: api/torchebm/evaluation/metrics/sample_quality/classes/InceptionScore.md
-          - MaximumMeanDiscrepancy: api/torchebm/evaluation/metrics/sample_quality/classes/MaximumMeanDiscrepancy.md
+#    - Evaluation:
+#      - api/torchebm/evaluation/index.md
+#      - Evaluators:
+#        - api/torchebm/evaluation/evaluators/index.md
+#        - Base:
+#          - api/torchebm/evaluation/evaluators/base/index.md
+#          - BaseEvaluator: api/torchebm/evaluation/evaluators/base/classes/BaseEvaluator.md
+#          - TimeMetric: api/torchebm/evaluation/evaluators/base/classes/TimeMetric.md
+#        - Model_evaluator:
+#          - api/torchebm/evaluation/evaluators/model_evaluator/index.md
+#          - EnsembleEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/EnsembleEvaluator.md
+#          - ModelEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/ModelEvaluator.md
+#        - Sampler_evaluator:
+#          - api/torchebm/evaluation/evaluators/sampler_evaluator/index.md
+#          - ComparativeSamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/ComparativeSamplerEvaluator.md
+#          - SamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/SamplerEvaluator.md
+#      - Metrics:
+#        - api/torchebm/evaluation/metrics/index.md
+#        - Base:
+#          - api/torchebm/evaluation/metrics/base/index.md
+#          - BaseMetric: api/torchebm/evaluation/metrics/base/classes/BaseMetric.md
+#          - EnergySampleMetric: api/torchebm/evaluation/metrics/base/classes/EnergySampleMetric.md
+#          - SampleQualityMetric: api/torchebm/evaluation/metrics/base/classes/SampleQualityMetric.md
+#        - Likelihood:
+#          - api/torchebm/evaluation/metrics/likelihood/index.md
+#          - KLDivergence: api/torchebm/evaluation/metrics/likelihood/classes/KLDivergence.md
+#          - LogLikelihood: api/torchebm/evaluation/metrics/likelihood/classes/LogLikelihood.md
+#        - Sample_quality:
+#          - api/torchebm/evaluation/metrics/sample_quality/index.md
+#          - FrechetDistance: api/torchebm/evaluation/metrics/sample_quality/classes/FrechetDistance.md
+#          - InceptionScore: api/torchebm/evaluation/metrics/sample_quality/classes/InceptionScore.md
+#          - MaximumMeanDiscrepancy: api/torchebm/evaluation/metrics/sample_quality/classes/MaximumMeanDiscrepancy.md
       - Examples: api/torchebm/evaluation/examples/index.md
     - Losses:
       - api/torchebm/losses/index.md

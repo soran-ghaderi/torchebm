@@ -19,9 +19,10 @@ from torch import nn
 
 from torchebm.core import BaseEnergyFunction
 from torchebm.core import BaseSampler
+from torchebm.core import DeviceMixin
 
 
-class BaseLoss(nn.Module, ABC):
+class BaseLoss(DeviceMixin, nn.Module, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
 
@@ -46,18 +47,19 @@ class BaseLoss(nn.Module, ABC):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
+        clip_value: Optional[float] = None,
+        *args: Any,
+        **kwargs: Any,
     ):
         """Initialize the base loss class."""
-        super().__init__()
-        if isinstance(device, str):
-            device = torch.device(device)
+        super().__init__(device=device, *args, **kwargs)
+
+        # if isinstance(device, str):
+        #     device = torch.device(device)
         self.dtype = dtype
-        self.device = device or (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        self.clip_value = clip_value
         self.use_mixed_precision = use_mixed_precision
 
-        # Check if mixed precision is available
         if self.use_mixed_precision:
             try:
                 from torch.cuda.amp import autocast
@@ -74,6 +76,17 @@ class BaseLoss(nn.Module, ABC):
         else:
             self.autocast_available = False
 
+    # @property
+    # def device(self) -> torch.device:
+    #     """Returns the device associated with the module's parameters/buffers (if any)."""
+    #     try:
+    #         return next(self.parameters()).device
+    #     except StopIteration:
+    #         try:
+    #             return next(self.buffers()).device
+    #         except StopIteration:
+    #             return self._device
+
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
@@ -88,24 +101,6 @@ class BaseLoss(nn.Module, ABC):
             torch.Tensor: The computed scalar loss value.
         """
         pass
-
-    def to(
-        self, device: Union[str, torch.device], dtype: Optional[torch.dtype] = None
-    ) -> "BaseLoss":
-        """
-        Move the loss function to the specified device and optionally change its dtype.
-
-        Args:
-            device: Target device for computations.
-            dtype: Optional data type to convert to.
-
-        Returns:
-            The loss function instance moved to the specified device/dtype.
-        """
-        self.device = device
-        if dtype is not None:
-            self.dtype = dtype
-        return super().to(device)
 
     def __repr__(self):
         """Return a string representation of the loss function."""
@@ -127,10 +122,8 @@ class BaseLoss(nn.Module, ABC):
         Returns:
             torch.Tensor: The computed loss value.
         """
-        # Ensure x is on the correct device and has the correct dtype
         x = x.to(device=self.device, dtype=self.dtype)
 
-        # Apply mixed precision context if enabled
         if (
             hasattr(self, "use_mixed_precision")
             and self.use_mixed_precision
@@ -139,9 +132,13 @@ class BaseLoss(nn.Module, ABC):
             from torch.cuda.amp import autocast
 
             with autocast():
-                return self.forward(x, *args, **kwargs)
+                loss = self.forward(x, *args, **kwargs)
         else:
-            return self.forward(x, *args, **kwargs)
+            loss = self.forward(x, *args, **kwargs)
+
+        if self.clip_value:
+            loss = torch.clamp(loss, -self.clip_value, self.clip_value)
+        return loss
 
 
 class BaseContrastiveDivergence(BaseLoss):
@@ -191,11 +188,17 @@ class BaseContrastiveDivergence(BaseLoss):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
+        clip_value: Optional[float] = None,
         *args,
         **kwargs,
     ):
         super().__init__(
-            dtype=dtype, device=device, use_mixed_precision=use_mixed_precision
+            dtype=dtype,
+            device=device,
+            use_mixed_precision=use_mixed_precision,
+            clip_value=clip_value,
+            *args,
+            **kwargs,
         )
         self.energy_function = energy_function
         self.sampler = sampler
@@ -205,12 +208,10 @@ class BaseContrastiveDivergence(BaseLoss):
         self.new_sample_ratio = new_sample_ratio
         self.init_steps = init_steps
 
-        # Move components to the specified device
         self.energy_function = self.energy_function.to(device=self.device)
         if hasattr(self.sampler, "to") and callable(getattr(self.sampler, "to")):
             self.sampler = self.sampler.to(device=self.device)
 
-        # for replay buffer
         self.register_buffer("replay_buffer", None)
         self.register_buffer(
             "buffer_ptr", torch.tensor(0, dtype=torch.long, device=self.device)
@@ -251,24 +252,19 @@ class BaseContrastiveDivergence(BaseLoss):
         ) + data_shape_no_batch  # shape: [buffer_size, *data_shape]
         print(f"Initializing replay buffer with shape {buffer_shape}...")
 
-        # Initialize with small noise for better starting positions
         self.replay_buffer = (
             torch.randn(buffer_shape, dtype=self.dtype, device=self.device)
             * init_noise_scale
-        )  # Start with small noise
+        )
 
         if self.init_steps > 0:
             print(f"Running {self.init_steps} MCMC steps to populate buffer...")
-            with torch.no_grad():  # Make sure we don't track gradients
-                # Process in chunks to avoid memory issues
+            with torch.no_grad():
                 chunk_size = min(self.buffer_size, buffer_chunk_size)
                 for i in range(0, self.buffer_size, chunk_size):
                     end = min(i + chunk_size, self.buffer_size)
-                    current_chunk = self.replay_buffer[
-                        i:end
-                    ].clone()  # Sample from current state
+                    current_chunk = self.replay_buffer[i:end].clone()
                     try:
-                        # Apply mixed precision context if enabled
                         if self.use_mixed_precision and self.autocast_available:
                             from torch.cuda.amp import autocast
 
@@ -281,7 +277,6 @@ class BaseContrastiveDivergence(BaseLoss):
                                 x=current_chunk, n_steps=self.init_steps
                             ).detach()
 
-                        # Ensure the output shape matches
                         if updated_chunk.shape == current_chunk.shape:
                             self.replay_buffer[i:end] = updated_chunk
                         else:
@@ -292,9 +287,7 @@ class BaseContrastiveDivergence(BaseLoss):
                         warnings.warn(
                             f"Error during buffer initialization sampling for chunk {i}-{end}: {e}. Keeping noise for this chunk."
                         )
-                        # Handle potential sampler errors during init
 
-        # Reset pointer and mark as initialized
         self.buffer_ptr.zero_()
         self.buffer_initialized = True
         print(f"Replay buffer initialized.")
@@ -314,21 +307,17 @@ class BaseContrastiveDivergence(BaseLoss):
         Returns:
             torch.Tensor: The tensor of starting points for the sampler.
         """
-        # Ensure x is on the correct device and has the correct dtype
         x = x.to(device=self.device, dtype=self.dtype)
 
         batch_size = x.shape[0]
         data_shape_no_batch = x.shape[1:]
 
         if self.persistent:
-            # Initialize buffer if it hasn't been done yet
             if not self.buffer_initialized:
                 self.initialize_buffer(data_shape_no_batch)
-                # Check again if initialization failed silently (e.g., buffer_size=0)
                 if not self.buffer_initialized:
                     raise RuntimeError("Buffer initialization failed.")
 
-            # Sample random indices from the buffer
             if self.buffer_size < batch_size:
                 warnings.warn(
                     f"Buffer size ({self.buffer_size}) is smaller than batch size ({batch_size}). Sampling with replacement.",
@@ -338,20 +327,19 @@ class BaseContrastiveDivergence(BaseLoss):
                     0, self.buffer_size, (batch_size,), device=self.device
                 )
             else:
-                # Use stratified sampling to ensure better coverage of the buffer
+                # stratified sampling for better buffer coverage
                 stride = self.buffer_size // batch_size
                 base_indices = torch.arange(0, batch_size, device=self.device) * stride
                 offset = torch.randint(0, stride, (batch_size,), device=self.device)
                 indices = (base_indices + offset) % self.buffer_size
 
-            # Retrieve samples and detach
             start_points = self.replay_buffer[indices].detach().clone()
 
-            # Optional noise injection for exploration
+            # add some noise for exploration
             if self.new_sample_ratio > 0.0:
                 n_new = max(1, int(batch_size * self.new_sample_ratio))
                 noise_indices = torch.randperm(batch_size, device=self.device)[:n_new]
-                noise_scale = 0.01  # Small noise scale
+                noise_scale = 0.01
                 start_points[noise_indices] = (
                     start_points[noise_indices]
                     + torch.randn_like(
@@ -362,7 +350,7 @@ class BaseContrastiveDivergence(BaseLoss):
                     * noise_scale
                 )
         else:
-            # For standard CD-k, use the data points as starting points
+            # standard CD-k uses data as starting points
             start_points = x.detach().clone()
 
         return start_points
@@ -384,24 +372,22 @@ class BaseContrastiveDivergence(BaseLoss):
                 (batch_size,) + data_shape, dtype=self.dtype, device=self.device
             )
 
-        # Calculate how many samples to draw from buffer vs. generate new
         n_new = max(1, int(batch_size * self.new_sample_ratio))
         n_old = batch_size - n_new
 
-        # Create tensor to hold all samples
         all_samples = torch.empty(
             (batch_size,) + data_shape, dtype=self.dtype, device=self.device
         )
 
-        # Generate new random samples (5%)
+        # new random samples
         if n_new > 0:
             all_samples[:n_new] = torch.randn(
                 (n_new,) + data_shape, dtype=self.dtype, device=self.device
             )
 
-        # Get samples from buffer (95%)
+        # samples from buffer
         if n_old > 0:
-            # Choose random indices from buffer
+
             indices = torch.randint(0, self.buffer_size, (n_old,), device=self.device)
             all_samples[n_new:] = self.replay_buffer[indices]
 
@@ -421,51 +407,26 @@ class BaseContrastiveDivergence(BaseLoss):
 
         batch_size = samples.shape[0]
 
-        # FIFO update strategy - replace oldest samples first
+        # FIFO strategy
         ptr = int(self.buffer_ptr.item())
-        # Handle the case where batch_size > buffer_size
+
         if batch_size >= self.buffer_size:
-            # If batch is larger than buffer, just use the latest samples
+            # batch larger than buffer, use latest samples
             self.replay_buffer[:] = samples[-self.buffer_size :].detach()
-            self.buffer_ptr[...] = 0  # Use ellipsis to set value without indexing
+            self.buffer_ptr[...] = 0
         else:
-            # Calculate indices to be replaced (handling buffer wraparound)
+            # handle buffer wraparound
             end_ptr = (ptr + batch_size) % self.buffer_size
 
             if end_ptr > ptr:
-                # No wraparound
                 self.replay_buffer[ptr:end_ptr] = samples.detach()
             else:
-                # Handle wraparound - split the update into two parts
+                # wraparound case - split update
                 first_part = self.buffer_size - ptr
                 self.replay_buffer[ptr:] = samples[:first_part].detach()
                 self.replay_buffer[:end_ptr] = samples[first_part:].detach()
 
-            # Update pointer - use item assignment instead of indexing
             self.buffer_ptr[...] = end_ptr
-
-    def to(
-        self, device: Union[str, torch.device], dtype: Optional[torch.dtype] = None
-    ) -> "BaseContrastiveDivergence":
-        """
-        Move the loss function to the specified device and optionally change its dtype.
-
-        Args:
-            device: Target device for computations
-            dtype: Optional data type to convert to
-
-        Returns:
-            The loss function instance moved to the specified device/dtype
-        """
-        # Call parent method
-        super().to(device, dtype)
-
-        # Move components to the specified device
-        self.energy_function = self.energy_function.to(device=self.device)
-        if hasattr(self.sampler, "to") and callable(getattr(self.sampler, "to")):
-            self.sampler = self.sampler.to(device=self.device)
-
-        return self
 
     @abstractmethod
     def forward(
@@ -558,13 +519,17 @@ class BaseScoreMatching(BaseLoss):
         hutchinson_samples: int = 1,
         custom_regularization: Optional[Callable] = None,
         use_mixed_precision: bool = False,
-        dtype: torch.dtype = torch.float32,
-        device: Optional[Union[str, torch.device]] = None,
+        clip_value: Optional[float] = None,
+        # dtype: torch.dtype = torch.float32,
+        # device: Optional[Union[str, torch.device]] = None,
         *args,
         **kwargs,
     ):
         super().__init__(
-            dtype=dtype, device=device, use_mixed_precision=use_mixed_precision
+            use_mixed_precision=use_mixed_precision,
+            clip_value=clip_value,
+            *args,
+            **kwargs,  # dtype=dtype, device=device,
         )
         self.energy_function = energy_function.to(device=self.device)
         self.noise_scale = noise_scale
@@ -574,10 +539,8 @@ class BaseScoreMatching(BaseLoss):
         self.custom_regularization = custom_regularization
         self.use_mixed_precision = use_mixed_precision
 
-        # Move energy function to specified device and dtype
-        # self.energy_function = self.energy_function
+        self.energy_function = self.energy_function.to(device=self.device)
 
-        # Check if mixed precision is available
         if self.use_mixed_precision:
             try:
                 from torch.cuda.amp import autocast
@@ -607,7 +570,7 @@ class BaseScoreMatching(BaseLoss):
         Returns:
             torch.Tensor: The score function evaluated at x
         """
-        # Ensure x is on the correct device and has the correct dtype
+
         x = x.to(device=self.device, dtype=self.dtype)
 
         if noise is not None:
@@ -619,7 +582,6 @@ class BaseScoreMatching(BaseLoss):
         if not x_perturbed.requires_grad:
             x_perturbed.requires_grad_(True)
 
-        # Apply mixed precision context if enabled
         if self.use_mixed_precision and self.autocast_available:
             from torch.cuda.amp import autocast
 
@@ -629,17 +591,17 @@ class BaseScoreMatching(BaseLoss):
             energy = self.energy_function(x_perturbed)
 
         if self.use_autograd:
-            # Compute gradient using autograd
             score = torch.autograd.grad(energy.sum(), x_perturbed, create_graph=True)[0]
         else:
-            # Allow subclasses to implement custom gradient computation
             raise NotImplementedError(
                 "Custom gradient computation must be implemented in subclasses"
             )
 
         return score
 
-    def perturb_data(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def perturb_data(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:  # todo: add more noise types
         """
         Perturb the input data with Gaussian noise for denoising variants.
 
@@ -649,7 +611,7 @@ class BaseScoreMatching(BaseLoss):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Perturbed data and noise tensor
         """
-        # Ensure x is on the correct device and has the correct dtype
+
         x = x.to(device=self.device, dtype=self.dtype)
         noise = (
             torch.randn_like(x, device=self.device, dtype=self.dtype) * self.noise_scale
@@ -669,7 +631,7 @@ class BaseScoreMatching(BaseLoss):
         Returns:
             torch.Tensor: The computed loss
         """
-        # Ensure x is on the correct device
+
         x = x.to(device=self.device, dtype=self.dtype)
         return self.forward(x, *args, **kwargs)
 
@@ -728,40 +690,17 @@ class BaseScoreMatching(BaseLoss):
         if strength <= 0:
             return loss
 
-        # Use custom regularization if provided as parameter
         if custom_reg_fn is not None:
             reg_term = custom_reg_fn(x, self.energy_function)
-        # Use class-level custom regularization if available
+
         elif self.custom_regularization is not None:
             reg_term = self.custom_regularization(x, self.energy_function)
-        # Default regularization: L2 norm of score magnitude
+        # default: L2 norm of score
         else:
             score = self.compute_score(x)
             reg_term = score.pow(2).sum(dim=list(range(1, len(x.shape)))).mean()
 
         return loss + strength * reg_term
-
-    def to(
-        self, device: Union[str, torch.device], dtype: Optional[torch.dtype] = None
-    ) -> "BaseScoreMatching":
-        """
-        Move the loss function to the specified device and optionally change its dtype.
-
-        Args:
-            device: Target device for computations
-            dtype: Optional data type to convert to
-
-        Returns:
-            The loss function instance moved to the specified device/dtype
-        """
-        self.device = device
-        if dtype is not None:
-            self.dtype = dtype
-
-        # Move energy function
-        self.energy_function = self.energy_function.to(device=self.device)
-
-        return self
 
     def __repr__(self):
         """Return a string representation of the loss function."""

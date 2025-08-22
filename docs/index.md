@@ -292,7 +292,21 @@ icon: octicons/home-fill-16
     <a href="https://github.com/soran-ghaderi/torchebm" target="_blank" title="GitHub Repo Stars">
         <img alt="GitHub Stars" src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social">
     </a>
+    <a href="https://deepwiki.com/soran-ghaderi/torchebm"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
     <!-- Consider adding: build status, documentation status, code coverage -->
+    <a href="https://github.com/soran-ghaderi/torchebm/actions" target="_blank" title="Build Status">
+      <img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/tag-release.yml?branch=master&style=flat-square&label=build">
+    </a>
+    <!-- Docs badge -->
+    <a href="https://github.com/soran-ghaderi/torchebm/actions" target="_blank" title="Documentation">
+      <img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/docs_ci.yml?branch=master&style=flat-square&label=docs">
+    </a>
+    <a href="https://pepy.tech/project/torchebm" target="_blank" title="Downloads">
+        <img alt="Downloads" src="https://static.pepy.tech/badge/torchebm?style=flat-square">
+    </a>
+    <a href="https://pypi.org/project/torchebm/" target="_blank" title="Python Versions">
+        <img alt="Python Versions" src="https://img.shields.io/pypi/pyversions/torchebm?style=flat-square">
+    </a>
 </p>
 
 <p class="lead" style="text-align: center; font-size: 1.3em; margin-bottom: 30px;" markdown>
