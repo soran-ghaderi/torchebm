@@ -1055,14 +1055,14 @@ class SlicedScoreMatching(BaseScoreMatching):
                 dtype=self.dtype
             )
         elif self.projection_type == "sphere":
-            # Uniformly sample from unit sphere
+            # uniformly sample from unit sphere
             return (
                 vectors
                 / torch.norm(vectors, dim=-1, keepdim=True)
                 * torch.sqrt(vectors.shape[-1])
             )
         else:  # "gaussian"
-            # Standard normal distribution
+            # standard normal distribution
             # return torch.randn(shape, device=self.device, dtype=self.dtype)
             return vectors
 
@@ -1097,8 +1097,14 @@ class SlicedScoreMatching(BaseScoreMatching):
             >>> loss.backward()  # Backpropagate the loss
         """
         x = x.to(device=self.device, dtype=self.dtype)
+        if self.use_mixed_precision and self.autocast_available:
+            from torch.cuda.amp import autocast
 
-        loss = self.compute_loss(x, *args, **kwargs)
+            with autocast():
+                loss = self.compute_loss(x, *args, **kwargs)
+        else:
+            loss = self.compute_loss(x, *args, **kwargs)
+        # loss = self.compute_loss(x, *args, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
@@ -1134,6 +1140,39 @@ class SlicedScoreMatching(BaseScoreMatching):
             torch.Tensor: The sliced score matching loss (scalar)
         """
 
+        # this new one discards the inefficient for loop -> vectorized version.
+
+        dup_x = (
+            x.unsqueeze(0)
+            .expand(self.n_projections, *x.shape)
+            .contiguous()
+            .view(-1, *x.shape[1:])
+        ).requires_grad_(
+            True
+        )  # final shape: (n_particles * batch_size, d). tracing the shape: (batch_size, d) -> (1, batch_size, d)
+        # -> (n_particles, batch_size, d) -> (n_particles, batch_size, d) -> (n_particles * batch_size, d)
+
+        n_vectors = self._get_random_projections(dup_x)
+
+        logp = -self.energy_function(dup_x).sum()
+        grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
+        v_score = torch.sum(grad1 * n_vectors, dim=-1)
+        term1 = 0.5 * (v_score**2)
+
+        grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[
+            0
+        ]  # be careful to not do the grad over grad1!!!
+        term2 = torch.sum(n_vectors * grad_v, dim=-1)
+
+        if x.shape[0] > 1:
+            term1 = term1.view(self.n_projections, -1).mean(dim=0)
+            term2 = term2.view(self.n_projections, -1).mean(dim=0)
+
+        loss = term2 + term1
+
+        return loss.mean()
+
+        # old code
         def loss_for_single_sample_and_projection(x_single, v_single):
             """Compute loss for a single sample and single projection to avoid graph conflicts."""
             # Ensure single sample has batch dimension
@@ -1144,91 +1183,89 @@ class SlicedScoreMatching(BaseScoreMatching):
             # Don't clone to maintain gradient connection
             x_single.requires_grad_(True)
 
-            if self.use_mixed_precision and self.autocast_available:
-                from torch.cuda.amp import autocast
+            # if self.use_mixed_precision and self.autocast_available:
+            #     from torch.cuda.amp import autocast
+            #
+            #     with autocast():
+            #         # Compute energy
+            #         energy = self.energy_function(x_single)
+            #
+            #         # Compute score
+            #         score = torch.autograd.grad(
+            #             energy.sum(), x_single, create_graph=True, retain_graph=True
+            #         )[0]
+            #
+            #         # First term: 1/2 * (v^T ∇E)²
+            #         v_score = torch.sum(
+            #             v_single * score, dim=tuple(range(1, len(x_single.shape)))
+            #         )
+            #         term1 = 0.5 * torch.mean(v_score**2)
+            #
+            #         # Second term: v^T ∇²E v using Hutchinson's trick
+            #         hvp = torch.autograd.grad(
+            #             v_score.sum(), x_single, create_graph=True, allow_unused=True
+            #         )[0]
+            #         if hvp is not None:
+            #             term2 = torch.mean(
+            #                 torch.sum(
+            #                     v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
+            #                 )
+            #             )
+            #         else:
+            #             term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
+            # else:
+            # energy = self.energy_function(x_single)
+            #
+            # # Compute score
+            # score = torch.autograd.grad(
+            #     energy.sum(), x_single, create_graph=True, retain_graph=True
+            # )[0]
+            #
+            # # First term: 1/2 * (v^T ∇E)^2
+            # v_score = torch.sum(
+            #     v_single * score, dim=tuple(range(1, len(x_single.shape)))
+            # )
+            # term1 = 0.5 * torch.mean(v_score**2)
+            #
+            # # Second term: v^T ∇²E v using Hutchinson's trick
+            # hvp = torch.autograd.grad(
+            #     v_score.sum(), x_single, create_graph=True, allow_unused=True
+            # )[0]
+            # if hvp is not None:
+            #     term2 = torch.mean(
+            #         torch.sum(
+            #             v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
+            #         )
+            #     )
+            # else:
+            #     term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
 
-                with autocast():
-                    # Compute energy
-                    energy = self.energy_function(x_single)
+            # new code:
+            logp = -torch.sum(self.energy_function(x_single))
+            grad1 = torch.autograd.grad(logp, x_single, create_graph=True)[0]  # ∇logp
+            gradv = torch.sum(grad1 * v_single)  # v^T ∇logp
+            term1 = 0.5 * torch.sum(gradv, dim=-1) ** 2  # 1/2 (v^T ∇logp)^2
 
-                    # Compute score
-                    score = torch.autograd.grad(
-                        energy.sum(), x_single, create_graph=True, retain_graph=True
-                    )[0]
+            # if self.detach:
+            #     term1.detach()
 
-                    # First term: 1/2 * (v^T ∇E)²
-                    v_score = torch.sum(
-                        v_single * score, dim=tuple(range(1, len(x_single.shape)))
-                    )
-                    term1 = 0.5 * torch.mean(v_score**2)
+            grad2 = torch.autograd.grad(gradv, x_single, create_graph=True)[
+                0
+            ]  # ∇(v^T ∇logp)
+            term2 = torch.sum(v_single * grad2, dim=-1)  # v^T ∇²logp v
 
-                    # Second term: v^T ∇²E v using Hutchinson's trick
-                    hvp = torch.autograd.grad(
-                        v_score.sum(), x_single, create_graph=True, allow_unused=True
-                    )[0]
-                    if hvp is not None:
-                        term2 = torch.mean(
-                            torch.sum(
-                                v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
-                            )
-                        )
-                    else:
-                        term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
-            else:
-                # energy = self.energy_function(x_single)
-                #
-                # # Compute score
-                # score = torch.autograd.grad(
-                #     energy.sum(), x_single, create_graph=True, retain_graph=True
-                # )[0]
-                #
-                # # First term: 1/2 * (v^T ∇E)^2
-                # v_score = torch.sum(
-                #     v_single * score, dim=tuple(range(1, len(x_single.shape)))
-                # )
-                # term1 = 0.5 * torch.mean(v_score**2)
-                #
-                # # Second term: v^T ∇²E v using Hutchinson's trick
-                # hvp = torch.autograd.grad(
-                #     v_score.sum(), x_single, create_graph=True, allow_unused=True
-                # )[0]
-                # if hvp is not None:
-                #     term2 = torch.mean(
-                #         torch.sum(
-                #             v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
-                #         )
-                #     )
-                # else:
-                #     term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
+            loss = (
+                term1 + term2
+            )  # [v^T ∇²logp v + 1/2 (v^T ∇logp)^2] -> in the prev code, I was using E with + sign!
 
-                # new code:
-                logp = -torch.sum(self.energy_function(x_single))
-                grad1 = torch.autograd.grad(logp, x_single, create_graph=True)[
-                    0
-                ]  # ∇logp
-                gradv = torch.sum(grad1 * v_single)  # v^T ∇logp
-                term1 = 0.5 * torch.sum(gradv, dim=-1) ** 2  # 1/2 (v^T ∇logp)^2
-
-                # if self.detach:
-                #     term1.detach()
-
-                grad2 = torch.autograd.grad(gradv, x_single, create_graph=True)[
-                    0
-                ]  # ∇(v^T ∇logp)
-                term2 = torch.sum(v_single * grad2, dim=-1)  # v^T ∇²logp v
-
-                loss = (
-                    term1 + term2
-                )  # [v^T ∇²logp v + 1/2 (v^T ∇logp)^2] -> in the prev code, I was using E with + sign!
-            # v^T ∇²E v
-            # return term1 - term2
+            # return term1 - term2 # wrong! this is because it was trying to solve the sliced fisher div formula rather than ssm
             return loss
 
         batch_size = x.shape[0]
         total_loss = 0.0
 
         # Process samples in smaller batches to maintain efficiency while avoiding graph conflicts
-        for i in range(self.n_projections):
+        for i in range(self.n_projections):  # todo: vectorize this process completely
             # Generate random projection for the entire batch
             # v = self._get_random_projections(x.shape)
             v = self._get_random_projections(x)  # new code
