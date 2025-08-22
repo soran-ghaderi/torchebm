@@ -2,6 +2,8 @@
 Core functionality for energy-based models, including energy functions, base sampler class, and training utilities.
 """
 
+from .device_mixin import DeviceMixin, normalize_device
+
 from .base_energy_function import (
     BaseEnergyFunction,
     DoubleWellEnergy,
@@ -30,6 +32,8 @@ from .base_optimizer import Optimizer
 
 __all__ = [
     # Energy functions
+    "DeviceMixin",
+    "normalize_device",
     "BaseEnergyFunction",
     "DoubleWellEnergy",
     "GaussianEnergy",

@@ -19,9 +19,10 @@ from torch import nn
 
 from torchebm.core import BaseEnergyFunction
 from torchebm.core import BaseSampler
+from torchebm.core import DeviceMixin
 
 
-class BaseLoss(nn.Module, ABC):
+class BaseLoss(DeviceMixin, nn.Module, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
 
@@ -46,20 +47,17 @@ class BaseLoss(nn.Module, ABC):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
+        clip_value: Optional[float] = None,
         *args: Any,
         **kwargs: Any,
     ):
         """Initialize the base loss class."""
-        super().__init__(*args, **kwargs)
-        if isinstance(device, str):
-            device = torch.device(device)
+        super().__init__(device=device, *args, **kwargs)
+
+        # if isinstance(device, str):
+        #     device = torch.device(device)
         self.dtype = dtype
-        # self.device = device or (
-        #     torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        # )
-        self._device = device or (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        self.clip_value = clip_value
         self.use_mixed_precision = use_mixed_precision
 
         if self.use_mixed_precision:
@@ -78,16 +76,16 @@ class BaseLoss(nn.Module, ABC):
         else:
             self.autocast_available = False
 
-    @property
-    def device(self) -> torch.device:
-        """Returns the device associated with the module's parameters/buffers (if any)."""
-        try:
-            return next(self.parameters()).device
-        except StopIteration:
-            try:
-                return next(self.buffers()).device
-            except StopIteration:
-                return self._device
+    # @property
+    # def device(self) -> torch.device:
+    #     """Returns the device associated with the module's parameters/buffers (if any)."""
+    #     try:
+    #         return next(self.parameters()).device
+    #     except StopIteration:
+    #         try:
+    #             return next(self.buffers()).device
+    #         except StopIteration:
+    #             return self._device
 
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
@@ -134,9 +132,13 @@ class BaseLoss(nn.Module, ABC):
             from torch.cuda.amp import autocast
 
             with autocast():
-                return self.forward(x, *args, **kwargs)
+                loss = self.forward(x, *args, **kwargs)
         else:
-            return self.forward(x, *args, **kwargs)
+            loss = self.forward(x, *args, **kwargs)
+
+        if self.clip_value:
+            loss = torch.clamp(loss, -self.clip_value, self.clip_value)
+        return loss
 
 
 class BaseContrastiveDivergence(BaseLoss):
@@ -183,16 +185,20 @@ class BaseContrastiveDivergence(BaseLoss):
         buffer_size: int = 100,
         new_sample_ratio: float = 0.0,
         init_steps: int = 0,
-        # dtype: torch.dtype = torch.float32,
-        # device: Optional[Union[str, torch.device]] = None,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
+        clip_value: Optional[float] = None,
         *args,
         **kwargs,
     ):
         super().__init__(
+            dtype=dtype,
+            device=device,
             use_mixed_precision=use_mixed_precision,
+            clip_value=clip_value,
             *args,
-            **kwargs,  # dtype=dtype, device=device,
+            **kwargs,
         )
         self.energy_function = energy_function
         self.sampler = sampler
@@ -513,13 +519,17 @@ class BaseScoreMatching(BaseLoss):
         hutchinson_samples: int = 1,
         custom_regularization: Optional[Callable] = None,
         use_mixed_precision: bool = False,
-        dtype: torch.dtype = torch.float32,
-        device: Optional[Union[str, torch.device]] = None,
+        clip_value: Optional[float] = None,
+        # dtype: torch.dtype = torch.float32,
+        # device: Optional[Union[str, torch.device]] = None,
         *args,
         **kwargs,
     ):
         super().__init__(
-            dtype=dtype, device=device, use_mixed_precision=use_mixed_precision
+            use_mixed_precision=use_mixed_precision,
+            clip_value=clip_value,
+            *args,
+            **kwargs,  # dtype=dtype, device=device,
         )
         self.energy_function = energy_function.to(device=self.device)
         self.noise_scale = noise_scale

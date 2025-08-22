@@ -55,8 +55,8 @@ Classes:
     Score Matching minimizes the expected squared distance between the model's score and the data's score:
 
     $$
-    J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] + 
-    \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
+    J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right]
+    - \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
     $$
 
     where:
@@ -91,9 +91,8 @@ Classes:
     SSM uses random projections to estimate the score matching objective:
 
     $$
-    J_{\text{SSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
-    \left[ (v^T \nabla_x E_\theta(x))^2 \right] - \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} 
-    \left[ v^T \nabla_x^2 E_\theta(x) v \right]
+    J_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{p(v)} \Big[ 
+    \tfrac{1}{2} (v^T \nabla_x E_\theta(x))^2 - v^T \nabla_x^2 E_\theta(x) v \Big]
     $$
 
     where \( v \) is a random projection vector.
@@ -447,8 +446,8 @@ class ScoreMatching(BaseScoreMatching):
         This computes the score matching objective:
 
         \[
-        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] +
-        \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
+        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right]
+        - \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
         \]
 
         where the trace of the Hessian is computed exactly by calculating each diagonal element.
@@ -548,8 +547,8 @@ class ScoreMatching(BaseScoreMatching):
             # Add to trace
             hessian_trace += grad_grad_i.mean()
 
-        # Combine terms for full loss
-        loss = score_square_term + hessian_trace
+        # Combine terms for full loss (minus Laplacian of energy)
+        loss = score_square_term - hessian_trace
 
         return loss
 
@@ -611,8 +610,8 @@ class ScoreMatching(BaseScoreMatching):
             dim=list(range(1, len(x.shape))),
         ).mean() / (epsilon**2 * data_dim)
 
-        # Combine terms for full loss
-        loss = score_square_term + hessian_trace
+        # Combine terms for full loss (minus Laplacian of energy)
+        loss = score_square_term - hessian_trace
 
         return loss
 
@@ -889,7 +888,7 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     \[
     J_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v \sim \mathcal{N}(0, I)}
-    \left[ v^T \nabla_x^2 E_\theta(x) v + \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 \right]
+    \left[ \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 - v^T \nabla_x^2 E_\theta(x) v \right]
     \]
 
     The key insight is that we can estimate the trace of the Hessian using random projections:
@@ -1015,7 +1014,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         self.projection_type = projection_type
 
         # Validate projection_type
-        valid_types = ["rademacher", "gaussian"]
+        valid_types = ["rademacher", "sphere", "gaussian"]
         if self.projection_type not in valid_types:
             warnings.warn(
                 f"Invalid projection_type '{self.projection_type}'. "
@@ -1047,14 +1046,25 @@ class SlicedScoreMatching(BaseScoreMatching):
             >>> v = loss_fn._get_random_projections((32, 2))  # 32 samples of dim 2
             >>> # v will be of shape (32, 2) with values in {-1, +1} (Rademacher)
         """
+        vectors = torch.randn_like(shape)
         if self.projection_type == "rademacher":
+            # new code:
+            return vectors.sign()
             # Rademacher (+1/-1) distribution
             return (torch.randint(0, 2, shape, device=self.device) * 2 - 1).to(
                 dtype=self.dtype
             )
+        elif self.projection_type == "sphere":
+            # Uniformly sample from unit sphere
+            return (
+                vectors
+                / torch.norm(vectors, dim=-1, keepdim=True)
+                * torch.sqrt(vectors.shape[-1])
+            )
         else:  # "gaussian"
             # Standard normal distribution
-            return torch.randn(shape, device=self.device, dtype=self.dtype)
+            # return torch.randn(shape, device=self.device, dtype=self.dtype)
+            return vectors
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
@@ -1108,7 +1118,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         The objective is:
         \[
         \mathcal{L}_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v}
-        \left[ v^T \nabla_x^2 E_\theta(x) v + \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 \right]
+        \left[ \frac{1}{2} (v^T \nabla_x E_\theta(x))^2 - v^T \nabla_x^2 E_\theta(x) v \right]
         \]
 
         !!! tip
@@ -1165,34 +1175,54 @@ class SlicedScoreMatching(BaseScoreMatching):
                     else:
                         term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
             else:
-                # Compute energy
-                energy = self.energy_function(x_single)
+                # energy = self.energy_function(x_single)
+                #
+                # # Compute score
+                # score = torch.autograd.grad(
+                #     energy.sum(), x_single, create_graph=True, retain_graph=True
+                # )[0]
+                #
+                # # First term: 1/2 * (v^T ∇E)^2
+                # v_score = torch.sum(
+                #     v_single * score, dim=tuple(range(1, len(x_single.shape)))
+                # )
+                # term1 = 0.5 * torch.mean(v_score**2)
+                #
+                # # Second term: v^T ∇²E v using Hutchinson's trick
+                # hvp = torch.autograd.grad(
+                #     v_score.sum(), x_single, create_graph=True, allow_unused=True
+                # )[0]
+                # if hvp is not None:
+                #     term2 = torch.mean(
+                #         torch.sum(
+                #             v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
+                #         )
+                #     )
+                # else:
+                #     term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
 
-                # Compute score
-                score = torch.autograd.grad(
-                    energy.sum(), x_single, create_graph=True, retain_graph=True
-                )[0]
+                # new code:
+                logp = -torch.sum(self.energy_function(x_single))
+                grad1 = torch.autograd.grad(logp, x_single, create_graph=True)[
+                    0
+                ]  # ∇logp
+                gradv = torch.sum(grad1 * v_single)  # v^T ∇logp
+                term1 = 0.5 * torch.sum(gradv, dim=-1) ** 2  # 1/2 (v^T ∇logp)^2
 
-                # First term: 1/2 * (v^T ∇E)²
-                v_score = torch.sum(
-                    v_single * score, dim=tuple(range(1, len(x_single.shape)))
-                )
-                term1 = 0.5 * torch.mean(v_score**2)
+                # if self.detach:
+                #     term1.detach()
 
-                # Second term: v^T ∇²E v using Hutchinson's trick
-                hvp = torch.autograd.grad(
-                    v_score.sum(), x_single, create_graph=True, allow_unused=True
-                )[0]
-                if hvp is not None:
-                    term2 = torch.mean(
-                        torch.sum(
-                            v_single * hvp, dim=tuple(range(1, len(x_single.shape)))
-                        )
-                    )
-                else:
-                    term2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
+                grad2 = torch.autograd.grad(gradv, x_single, create_graph=True)[
+                    0
+                ]  # ∇(v^T ∇logp)
+                term2 = torch.sum(v_single * grad2, dim=-1)  # v^T ∇²logp v
 
-            return term1 + term2
+                loss = (
+                    term1 + term2
+                )  # [v^T ∇²logp v + 1/2 (v^T ∇logp)^2] -> in the prev code, I was using E with + sign!
+            # v^T ∇²E v
+            # return term1 - term2
+            return loss
 
         batch_size = x.shape[0]
         total_loss = 0.0
@@ -1200,7 +1230,8 @@ class SlicedScoreMatching(BaseScoreMatching):
         # Process samples in smaller batches to maintain efficiency while avoiding graph conflicts
         for i in range(self.n_projections):
             # Generate random projection for the entire batch
-            v = self._get_random_projections(x.shape)
+            # v = self._get_random_projections(x.shape)
+            v = self._get_random_projections(x)  # new code
 
             # Compute loss for this projection across the batch
             projection_loss = loss_for_single_sample_and_projection(x, v)
@@ -1210,7 +1241,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         loss = total_loss / self.n_projections
 
         # Basic stability check without arbitrary clipping
-        if torch.isnan(loss) or torch.isinf(loss):
+        if torch.isnan(loss).all() or torch.isinf(loss).all():
             warnings.warn(
                 f"Sliced Score Matching loss is unstable: {loss.item()}. "
                 "This may indicate numerical issues with the energy function or gradients.",
@@ -1221,4 +1252,4 @@ class SlicedScoreMatching(BaseScoreMatching):
                 0.0, device=self.device, dtype=self.dtype, requires_grad=True
             )
 
-        return loss
+        return torch.sum(loss)

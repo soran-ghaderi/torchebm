@@ -116,7 +116,7 @@ def test_base_loss_forward():
 def test_base_loss_to_device():
     """Test moving the loss to a specific device."""
     loss = MockLoss()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     loss = loss.to(device)
     assert hasattr(loss, "device")
     assert loss.device == device
@@ -186,7 +186,7 @@ def test_base_contrastive_divergence_initialize_buffer():
 
 def test_base_contrastive_divergence_to_device(mock_cd):
     """Test moving the loss to a specific device."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     mock_cd = mock_cd.to(device)
     assert mock_cd.device == device
 

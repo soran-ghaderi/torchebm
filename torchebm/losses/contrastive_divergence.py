@@ -240,8 +240,9 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         max_temp=2.0,
         temp_decay=0.999,
         dtype=torch.float32,
-        device=None,
-        **kwargs
+        device=torch.device("cpu"),
+        *args,
+        **kwargs,
     ):
         super().__init__(
             energy_function=energy_function,
@@ -253,7 +254,8 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             init_steps=init_steps,
             dtype=dtype,
             device=device,
-            **kwargs
+            *args,
+            **kwargs,
         )
         # Additional parameters for improved stability
         self.energy_reg_weight = energy_reg_weight
@@ -262,10 +264,12 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         self.max_temp = max_temp
         self.temp_decay = temp_decay
         self.current_temp = max_temp
-        
+
         # Register temperature as buffer for persistence
-        self.register_buffer("temperature", torch.tensor(max_temp, dtype=self.dtype))
-        
+        self.register_buffer(
+            "temperature", torch.tensor(max_temp, dtype=self.dtype, device=self.device)
+        )
+
     def forward(
         self, x: torch.Tensor, *args, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -301,7 +305,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         if self.use_temperature_annealing and self.training:
             self.current_temp = max(self.min_temp, self.current_temp * self.temp_decay)
             self.temperature[...] = self.current_temp  # Use ellipsis instead of index
-            
+
             # If sampler has a temperature parameter, update it
             if hasattr(self.sampler, "temperature"):
                 self.sampler.temperature = self.current_temp
@@ -309,14 +313,16 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
                 # For samplers like Langevin, adjust noise scale based on temperature
                 original_noise = getattr(self.sampler, "_original_noise_scale", None)
                 if original_noise is None:
-                    setattr(self.sampler, "_original_noise_scale", self.sampler.noise_scale)
+                    setattr(
+                        self.sampler, "_original_noise_scale", self.sampler.noise_scale
+                    )
                     original_noise = self.sampler.noise_scale
-                
+
                 self.sampler.noise_scale = original_noise * math.sqrt(self.current_temp)
 
         # Get starting points for chains (either from buffer or data)
         start_points = self.get_start_points(x)
-        
+
         # Run MCMC chains to get negative samples
         pred_samples = self.sampler.sample(
             x=start_points,
@@ -329,8 +335,10 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
                 self.update_buffer(pred_samples.detach())
 
         # Add energy regularization to kwargs for compute_loss
-        kwargs['energy_reg_weight'] = kwargs.get('energy_reg_weight', self.energy_reg_weight)
-        
+        kwargs["energy_reg_weight"] = kwargs.get(
+            "energy_reg_weight", self.energy_reg_weight
+        )
+
         # Compute contrastive divergence loss
         loss = self.compute_loss(x, pred_samples, *args, **kwargs)
 
@@ -366,38 +374,40 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         # Compute energy of real and generated samples
         with torch.set_grad_enabled(True):
             # Add small noise to real data for stability (optional)
-            if kwargs.get('add_noise_to_real', False):
-                noise_scale = kwargs.get('noise_scale', 1e-4)
+            if kwargs.get("add_noise_to_real", False):
+                noise_scale = kwargs.get("noise_scale", 1e-4)
                 x_noisy = x + noise_scale * torch.randn_like(x)
                 x_energy = self.energy_function(x_noisy)
             else:
                 x_energy = self.energy_function(x)
-                
+
             pred_x_energy = self.energy_function(pred_x)
 
         # Compute mean energies with improved numerical stability
         mean_x_energy = torch.mean(x_energy)
         mean_pred_energy = torch.mean(pred_x_energy)
-        
+
         # Basic contrastive divergence loss: E[data] - E[model]
         loss = mean_x_energy - mean_pred_energy
-        
+
         # Optional: Regularization to prevent energies from becoming too large
         # This helps with stability especially in the early phases of training
-        energy_reg_weight = kwargs.get('energy_reg_weight', 0.001)
+        energy_reg_weight = kwargs.get("energy_reg_weight", 0.001)
         if energy_reg_weight > 0:
-            energy_reg = energy_reg_weight * (torch.mean(x_energy**2) + torch.mean(pred_x_energy**2))
+            energy_reg = energy_reg_weight * (
+                torch.mean(x_energy**2) + torch.mean(pred_x_energy**2)
+            )
             loss = loss + energy_reg
-        
+
         # Prevent extremely large gradients with a safety check
         if torch.isnan(loss) or torch.isinf(loss):
             warnings.warn(
                 f"NaN or Inf detected in CD loss. x_energy: {mean_x_energy}, pred_energy: {mean_pred_energy}",
-                RuntimeWarning
+                RuntimeWarning,
             )
             # Return a small positive constant instead of NaN/Inf to prevent training collapse
             return torch.tensor(0.1, device=self.device, dtype=self.dtype)
-            
+
         return loss
 
 

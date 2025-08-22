@@ -5,8 +5,10 @@ import torch
 from torch import nn
 from typing import Optional, Union
 
+from torchebm.core import DeviceMixin
 
-class BaseEnergyFunction(nn.Module, ABC):
+
+class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
     """
     Abstract base class for energy functions (Potential Energy \(E(x)\)).
 
@@ -40,16 +42,18 @@ class BaseEnergyFunction(nn.Module, ABC):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
+        *args,
+        **kwargs,
     ):
         """Initializes the BaseEnergyFunction base class."""
-        super().__init__()
-        if isinstance(device, str):
-            device = torch.device(device)
+        super().__init__(*args, **kwargs)
+        # if isinstance(device, str):
+        #     device = torch.device(device)
 
         self.dtype = dtype
-        self._device = device or (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        # self._device = device or (
+        #     torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        # )
         self.use_mixed_precision = use_mixed_precision
 
         if self.use_mixed_precision:
@@ -68,16 +72,16 @@ class BaseEnergyFunction(nn.Module, ABC):
         else:
             self.autocast_available = False
 
-    @property
-    def device(self) -> torch.device:
-        """Returns the device associated with the module's parameters/buffers (if any)."""
-        try:
-            return next(self.parameters()).device
-        except StopIteration:
-            try:
-                return next(self.buffers()).device
-            except StopIteration:
-                return self._device
+    # @property
+    # def device(self) -> torch.device:
+    #     """Returns the device associated with the module's parameters/buffers (if any)."""
+    #     try:
+    #         return next(self.parameters()).device
+    #     except StopIteration:
+    #         try:
+    #             return next(self.buffers()).device
+    #         except StopIteration:
+    #             return self._device
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -247,11 +251,13 @@ class GaussianEnergy(BaseEnergyFunction):
             x - self.mean
         )  # avoid detaching or converting x to maintain grad tracking
         # energy = 0.5 * torch.einsum("bi,ij,bj->b", delta, cov_inv, delta)
-        
+
         if delta.shape[0] > 1:  # batch size > 1
             delta_expanded = delta.unsqueeze(-1)  # (batch_size, dim, 1)
-            cov_inv_expanded = cov_inv.unsqueeze(0).expand(delta.shape[0], -1, -1)  # (batch_size, dim, dim)
-            
+            cov_inv_expanded = cov_inv.unsqueeze(0).expand(
+                delta.shape[0], -1, -1
+            )  # (batch_size, dim, dim)
+
             temp = torch.bmm(cov_inv_expanded, delta_expanded)  # (batch_size, dim, 1)
             energy = 0.5 * torch.bmm(delta.unsqueeze(1), temp).squeeze(-1).squeeze(-1)
         else:
