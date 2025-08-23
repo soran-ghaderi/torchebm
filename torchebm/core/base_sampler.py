@@ -4,10 +4,10 @@ import warnings
 
 import torch
 
-from torchebm.core import BaseEnergyFunction, BaseScheduler
+from torchebm.core import BaseEnergyFunction, BaseScheduler, DeviceMixin
 
 
-class BaseSampler(ABC):
+class BaseSampler(DeviceMixin, ABC):
     """
     Base class for samplers.
 
@@ -30,21 +30,27 @@ class BaseSampler(ABC):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
+        *args,
+        **kwargs,
     ):
+        super().__init__(device=device, dtype=dtype, *args, **kwargs)
         self.energy_function = energy_function
         self.dtype = dtype
-        if isinstance(device, str):
-            device = torch.device(device)
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # if isinstance(device, str):
+        #     device = torch.device(device)
+        # self.device = device or torch.device(
+        #     "cuda" if torch.cuda.is_available() else "cpu"
+        # )
         self.use_mixed_precision = use_mixed_precision
-        
+
         # Check if mixed precision is available
         if self.use_mixed_precision:
             try:
                 from torch.cuda.amp import autocast
+
                 self.autocast_available = True
                 # Ensure device is CUDA for mixed precision
-                if not self.device.type.startswith('cuda'):
+                if not self.device.type.startswith("cuda"):
                     warnings.warn(
                         f"Mixed precision requested but device is {self.device}. "
                         f"Mixed precision requires CUDA. Falling back to full precision.",
@@ -64,9 +70,14 @@ class BaseSampler(ABC):
             self.autocast_available = False
 
         self.schedulers: Dict[str, BaseScheduler] = {}
-        
+
+        # Align child components using the mixin helper
+        self.energy_function = DeviceMixin.safe_to(
+            self.energy_function, device=self.device, dtype=self.dtype
+        )
+
         # Ensure the energy function has matching precision settings
-        if hasattr(self.energy_function, 'use_mixed_precision'):
+        if hasattr(self.energy_function, "use_mixed_precision"):
             self.energy_function.use_mixed_precision = self.use_mixed_precision
 
     @abstractmethod
@@ -164,55 +175,74 @@ class BaseSampler(ABC):
         }
         # raise NotImplementedError
 
-    def to(self, device: Union[str, torch.device], dtype: Optional[torch.dtype] = None) -> "BaseSampler":
-        """
-        Move sampler to the specified device and optionally change its dtype.
-        
-        Args:
-            device: Target device for computations
-            dtype: Optional data type to convert to
-            
-        Returns:
-            The sampler instance moved to the specified device/dtype
-        """
-        if isinstance(device, str):
-            device = torch.device(device)
-            
-        self.device = device
-        
-        if dtype is not None:
-            self.dtype = dtype
-            
-        # Update mixed precision availability if device changed
-        if self.use_mixed_precision and not self.device.type.startswith('cuda'):
-            warnings.warn(
-                f"Mixed precision active but moving to {self.device}. "
-                f"Mixed precision requires CUDA. Disabling mixed precision.",
-                UserWarning,
-            )
-            self.use_mixed_precision = False
-            
-        # Move energy function if it has a to method
-        if hasattr(self.energy_function, "to") and callable(getattr(self.energy_function, "to")):
-            self.energy_function = self.energy_function.to(device=self.device, dtype=self.dtype)
-            
-        return self
-        
+    # def to(
+    #     self, device: Union[str, torch.device], dtype: Optional[torch.dtype] = None
+    # ) -> "BaseSampler":
+    #     """
+    #     Move sampler to the specified device and optionally change its dtype.
+    #
+    #     Args:
+    #         device: Target device for computations
+    #         dtype: Optional data type to convert to
+    #
+    #     Returns:
+    #         The sampler instance moved to the specified device/dtype
+    #     """
+    #     if isinstance(device, str):
+    #         device = torch.device(device)
+    #
+    #     self.device = device
+    #
+    #     if dtype is not None:
+    #         self.dtype = dtype
+    #
+    #     # Update mixed precision availability if device changed
+    #     if self.use_mixed_precision and not self.device.type.startswith("cuda"):
+    #         warnings.warn(
+    #             f"Mixed precision active but moving to {self.device}. "
+    #             f"Mixed precision requires CUDA. Disabling mixed precision.",
+    #             UserWarning,
+    #         )
+    #         self.use_mixed_precision = False
+    #
+    #     # Move energy function if it has a to method
+    #     if hasattr(self.energy_function, "to") and callable(
+    #         getattr(self.energy_function, "to")
+    #     ):
+    #         self.energy_function = self.energy_function.to(
+    #             device=self.device, dtype=self.dtype
+    #         )
+    #
+    #     return self
+
     def apply_mixed_precision(self, func):
         """
         Decorator to apply mixed precision context to a method.
-        
+
         Args:
             func: Function to wrap with mixed precision
-            
+
         Returns:
             Wrapped function with mixed precision support
         """
+
         def wrapper(*args, **kwargs):
             if self.use_mixed_precision and self.autocast_available:
                 from torch.cuda.amp import autocast
+
                 with autocast():
                     return func(*args, **kwargs)
             else:
                 return func(*args, **kwargs)
+
         return wrapper
+
+    def to(self, *args, **kwargs):
+        """Move sampler and its children; update mixin state and propagate."""
+        # Let DeviceMixin update internal state and parent class handle movement
+        result = super().to(*args, **kwargs)
+        # After move, make sure energy_function follows
+        self.energy_function = DeviceMixin.safe_to(
+            self.energy_function, device=self.device, dtype=self.dtype
+        )
+        return result

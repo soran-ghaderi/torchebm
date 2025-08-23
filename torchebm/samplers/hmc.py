@@ -222,6 +222,8 @@ class HamiltonianMonteCarlo(BaseSampler):
         mass: Optional[Tuple[float, torch.Tensor]] = None,
         dtype: torch.Tensor = torch.float32,
         device: Optional[Union[Tuple[str, torch.device]]] = None,
+        *args,
+        **kwargs,
     ):
         """Initialize the Hamiltonian Monte Carlo sampler.
 
@@ -251,16 +253,15 @@ class HamiltonianMonteCarlo(BaseSampler):
             raise ValueError("n_leapfrog_steps must be positive")
 
         # Ensure device consistency: convert device to torch.device and move energy_function
-        if device is not None:
-            self.device = torch.device(device)
-            energy_function = energy_function.to(self.device)
-        else:
-            self.device = torch.device("cpu")
+        # if device is not None:
+        #     self.device = torch.device(device)
+        #     energy_function = energy_function.to(self.device)
+        # else:
+        #     self.device = torch.device("cpu")
 
         # Respect user-provided dtype
         self.dtype = dtype
         self.n_leapfrog_steps = n_leapfrog_steps
-        self.energy_function = energy_function
         if mass is not None and not isinstance(mass, float):
             self.mass = mass.to(self.device)
         else:
@@ -545,7 +546,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         """
         # Reset schedulers to their initial values at the start of sampling
         self.reset_schedulers()
-        
+
         if x is None:
             # If dim is not provided, try to infer from the energy function
             if dim is None:
@@ -576,12 +577,12 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         with torch.amp.autocast(
             device_type="cuda" if self.device.type == "cuda" else "cpu",
-            dtype=self.dtype if self.device.type == "cuda" else None
+            dtype=self.dtype if self.device.type == "cuda" else None,
         ):
             for i in range(n_steps):
                 # Perform single HMC step
                 x, acceptance_prob, accepted = self.hmc_step(x)
-                
+
                 # Step all schedulers after each HMC step
                 scheduler_values = self.step_schedulers()
 
@@ -631,11 +632,15 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         if return_trajectory:
             if return_diagnostics:
-                return trajectory.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)  # , acceptance_rates
+                return trajectory.to(dtype=self.dtype), diagnostics.to(
+                    dtype=self.dtype
+                )  # , acceptance_rates
             return trajectory.to(dtype=self.dtype)
 
         if return_diagnostics:
-            return x.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)  # , acceptance_rates
+            return x.to(dtype=self.dtype), diagnostics.to(
+                dtype=self.dtype
+            )  # , acceptance_rates
 
         return x.to(dtype=self.dtype)
 

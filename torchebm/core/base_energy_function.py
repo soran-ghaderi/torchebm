@@ -40,7 +40,7 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
     def __init__(
         self,
         dtype: torch.dtype = torch.float32,
-        device: Optional[Union[str, torch.device]] = None,
+        # device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
         *args,
         **kwargs,
@@ -166,7 +166,8 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """Alias for the forward method for standard PyTorch module usage."""
-        x = x.to(device=self.device, dtype=self.dtype)
+        if (x.device != self.device) or (x.dtype != self.dtype):
+            x = x.to(device=self.device, dtype=self.dtype)
 
         if self.use_mixed_precision and self.autocast_available:
             from torch.cuda.amp import autocast
@@ -228,7 +229,10 @@ class GaussianEnergy(BaseEnergyFunction):
         self.register_buffer("mean", mean.to(dtype=self.dtype, device=self.device))
         try:
             cov_inv = torch.inverse(cov)
-            self.register_buffer("cov_inv", cov_inv)
+            # Ensure covariance inverse matches module dtype/device for consistent math
+            self.register_buffer(
+                "cov_inv", cov_inv.to(dtype=self.dtype, device=self.device)
+            )
         except RuntimeError as e:
             raise ValueError(
                 f"Failed to invert covariance matrix: {e}. Ensure it is invertible."
@@ -245,7 +249,7 @@ class GaussianEnergy(BaseEnergyFunction):
 
         x = x.to(dtype=self.dtype, device=self.device)
         # mean = self.mean.to(device=x.device)
-        cov_inv = self.cov_inv.to(device=x.device)
+        cov_inv = self.cov_inv.to(dtype=self.dtype, device=x.device)
 
         delta = (
             x - self.mean
