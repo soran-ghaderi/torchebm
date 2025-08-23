@@ -863,27 +863,20 @@ class DenoisingScoreMatching(BaseScoreMatching):
         """
         # Perturb the data with noise
         x_perturbed, noise = self.perturb_data(x)
-        # new code:
-        logp = (-self.energy_function(x_perturbed)).sum()
-        score = (self.noise_scale**2) * torch.autograd.grad(
-            logp, x_perturbed, create_graph=True
-        )
-        kernel = noise
-        loss = (0.5 * torch.sum(score + kernel, dim=-1) ** 2).mean()
 
-        # old code:
-        # score = self.compute_score(x_perturbed)
-        #
-        # # target score is -noise/sigma²
-        # target_score = -noise / (self.noise_scale**2)
-        #
-        # # Compute loss as mean squared error between score and target
-        # loss = (
-        #     0.5
-        #     * torch.sum(
-        #         (score - target_score) ** 2, dim=list(range(1, len(x.shape)))
-        #     ).mean()
-        # )
+        # Compute score at perturbed inputs
+        score = self.compute_score(x_perturbed)
+
+        # Target score is -epsilon/sigma^2
+        target_score = -noise / (self.noise_scale**2)
+
+        # DSM loss: 1/2 * ||score - target||^2 averaged over batch
+        loss = (
+            0.5
+            * torch.sum(
+                (score - target_score) ** 2, dim=list(range(1, len(x.shape)))
+            ).mean()
+        )
 
         return loss
 
