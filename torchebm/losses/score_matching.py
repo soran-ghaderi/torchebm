@@ -863,20 +863,27 @@ class DenoisingScoreMatching(BaseScoreMatching):
         """
         # Perturb the data with noise
         x_perturbed, noise = self.perturb_data(x)
-
-        # Compute score at the perturbed point
-        score = self.compute_score(x_perturbed)
-
-        # Target score is -noise/sigma²
-        target_score = -noise / (self.noise_scale**2)
-
-        # Compute loss as mean squared error between score and target
-        loss = (
-            0.5
-            * torch.sum(
-                (score - target_score) ** 2, dim=list(range(1, len(x.shape)))
-            ).mean()
+        # new code:
+        logp = (-self.energy_function(x_perturbed)).sum()
+        score = (self.noise_scale**2) * torch.autograd.grad(
+            logp, x_perturbed, create_graph=True
         )
+        kernel = noise
+        loss = (0.5 * torch.sum(score + kernel, dim=-1) ** 2).mean()
+
+        # old code:
+        # score = self.compute_score(x_perturbed)
+        #
+        # # target score is -noise/sigma²
+        # target_score = -noise / (self.noise_scale**2)
+        #
+        # # Compute loss as mean squared error between score and target
+        # loss = (
+        #     0.5
+        #     * torch.sum(
+        #         (score - target_score) ** 2, dim=list(range(1, len(x.shape)))
+        #     ).mean()
+        # )
 
         return loss
 
@@ -1172,7 +1179,7 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         n_vectors = self._get_random_projections(dup_x)
 
-        logp = -self.energy_function(dup_x).sum()
+        logp = (-self.energy_function(dup_x)).sum()
         grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
         v_score = torch.sum(grad1 * n_vectors, dim=-1)
         term1 = 0.5 * (v_score**2)
