@@ -1,7 +1,7 @@
 r"""
 Contrastive Divergence Loss Module.
 
-This module provides implementations of Contrastive Divergence (CD) and its variants for training energy-based models (EBMs). 
+This module provides implementations of Contrastive Divergence (CD) and its variants for training energy-based models (EBMs).
 Contrastive Divergence is a computationally efficient approximation to the maximum likelihood estimation that avoids the need 
 for complete MCMC sampling from the model distribution.
 
@@ -302,7 +302,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         data_shape = x.shape[1:]
 
         # Update temperature if annealing is enabled
-        if self.use_temperature_annealing and self.training:
+        if self.use_temperature_annealing and self.is_training:
             self.current_temp = max(self.min_temp, self.current_temp * self.temp_decay)
             self.temperature[...] = self.current_temp  # Use ellipsis instead of index
 

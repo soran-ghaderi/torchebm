@@ -18,7 +18,7 @@ without requiring MCMC sampling, making it more computationally efficient and st
 
 Classes:
     ScoreMatching: Original score matching with exact or approximate Hessian computation
-    DenosingScoreMatching: Denoising variant that avoids Hessian computation
+    DenoisingScoreMatching: Denoising variant that avoids Hessian computation
     SlicedScoreMatching: Efficient variant using random projections
 
 ---
@@ -148,7 +148,7 @@ Classes:
 
 !!! example "Denoising Score Matching with Annealing"
     ```python
-    from torchebm.losses import DenosingScoreMatching
+    from torchebm.losses import DenoisingScoreMatching
     from torchebm.core import LinearScheduler
 
     # Create noise scale scheduler
@@ -159,7 +159,7 @@ Classes:
     )
 
     # Create DSM loss with dynamic noise scale
-    dsm_loss = DenosingScoreMatching(
+    dsm_loss = DenoisingScoreMatching(
         energy_function=energy_fn,
         noise_scale=noise_scheduler
     )
@@ -215,8 +215,19 @@ class ScoreMatching(BaseScoreMatching):
     The score matching objective minimizes:
 
     \[
-    J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right] +
-    \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
+    J(\theta) = \frac{1}{2}
+    \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|_2^2 \right]
+    - \mathbb{E}_{p_{\text{data}}} \left[ \operatorname{tr}(\nabla_x^2 E_\theta(x)) \right]
+    \]
+
+    which is equivalent (up to an additive constant independent of \(\theta\)) to the
+    log-density formulation:
+
+    \[
+    J(\theta) = \mathbb{E}_{p_{\text{data}}} \left[
+        \operatorname{tr}(\nabla_x^2 \log p_\theta(x))
+        + \tfrac{1}{2} \| \nabla_x \log p_\theta(x) \|_2^2
+    \right] + \text{const.},\quad \text{with }\ \nabla_x \log p_\theta(x) = -\nabla_x E_\theta(x).
     \]
 
     where:
@@ -314,6 +325,7 @@ class ScoreMatching(BaseScoreMatching):
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
         use_mixed_precision: bool = False,
+        is_training=True,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -332,26 +344,17 @@ class ScoreMatching(BaseScoreMatching):
         )
 
         self.hessian_method = hessian_method
-
+        self.training = is_training
         # Validate hessian_method - remove hutchinson since it should use SlicedScoreMatching
         valid_methods = ["exact", "approx"]
         if self.hessian_method not in valid_methods:
-            if self.hessian_method == "hutchinson":
-                warnings.warn(
-                    "hutchinson method for ScoreMatching is deprecated. "
-                    "Use SlicedScoreMatching for efficient trace estimation.",
-                    UserWarning,
-                )
-                self.hessian_method = "exact"
-            else:
-                warnings.warn(
-                    f"Invalid hessian_method '{self.hessian_method}'. "
-                    f"Using 'exact' instead. Valid options are: {valid_methods}",
-                    UserWarning,
-                )
-                self.hessian_method = "exact"
+            warnings.warn(
+                f"Invalid hessian_method '{self.hessian_method}'. "
+                f"Using 'exact' instead. Valid options are: {valid_methods}",
+                UserWarning,
+            )
+            self.hessian_method = "exact"
 
-        # For mixed precision, exact method may be unstable
         if self.use_mixed_precision and self.hessian_method == "exact":
             warnings.warn(
                 "Using 'exact' Hessian method with mixed precision may be unstable. "
@@ -385,13 +388,17 @@ class ScoreMatching(BaseScoreMatching):
             >>> loss = loss_fn(x)  # Compute the score matching loss
             >>> loss.backward()  # Backpropagate the loss
         """
-        # Ensure x is on the correct device and dtype
-        x = x.to(device=self.device, dtype=self.dtype)
+        if (x.device != self.device) or (x.dtype != self.dtype):
+            x = x.to(device=self.device, dtype=self.dtype)
 
-        # Compute the loss using the specified method
-        loss = self.compute_loss(x, *args, **kwargs)
+        if self.use_mixed_precision and self.autocast_available:
+            from torch.cuda.amp import autocast
 
-        # Add regularization if needed
+            with autocast():
+                loss = self.compute_loss(x, *args, **kwargs)
+        else:
+            loss = self.compute_loss(x, *args, **kwargs)
+
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
 
@@ -431,13 +438,12 @@ class ScoreMatching(BaseScoreMatching):
             >>> # For efficient high-dimensional computation, use SlicedScoreMatching:
             >>> loss_fn_sliced = SlicedScoreMatching(energy_fn, n_projections=10)
         """
-        # Handle different Hessian computation methods
-        if self.hessian_method == "exact":
-            return self._exact_score_matching(x)
-        elif self.hessian_method == "approx":
+
+        # new code:
+
+        if self.hessian_method == "approx":
             return self._approx_score_matching(x)
         else:
-            # This should never happen due to validation in __init__
             return self._exact_score_matching(x)
 
     def _exact_score_matching(self, x: torch.Tensor) -> torch.Tensor:
@@ -447,8 +453,8 @@ class ScoreMatching(BaseScoreMatching):
         This computes the score matching objective:
 
         \[
-        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right]
-        - \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
+        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|_2^2 \right]
+        - \mathbb{E}_{p_{\text{data}}} \left[ \operatorname{tr}(\nabla_x^2 E_\theta(x)) \right]
         \]
 
         where the trace of the Hessian is computed exactly by calculating each diagonal element.
@@ -470,86 +476,83 @@ class ScoreMatching(BaseScoreMatching):
             torch.Tensor: The score matching loss (scalar)
         """
         batch_size = x.shape[0]
-        data_dim = x.numel() // batch_size
+        feature_dim = x.numel() // batch_size
 
-        # Clone and detach x to avoid modifying the original tensor
-        x_detached = x.detach().clone()
-        x_detached.requires_grad_(True)
+        x_leaf = x.detach().clone()
+        x_leaf.requires_grad_(True)
 
+        # ∇x log pθ(x) = -∇x Eθ(x)
+        energy = self.energy_function(x_leaf)
+        logp_sum = (-energy).sum()
+        grad1 = torch.autograd.grad(
+            logp_sum, x_leaf, create_graph=True, retain_graph=True
+        )[0]
+
+        # 1/2 ||∇ log p||^2, summed over all non-batch dims, per sample
+        grad1_flat = grad1.view(batch_size, -1)
+        term1 = 0.5 * grad1_flat.pow(2).sum(dim=1)
+
+        # tr(∇² log p) via diagonal of Hessian, computed exactly.
+        # This requires D backward passes where D is the flattened feature dimension.
+        laplacian = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
+        for i in range(feature_dim):
+            comp_sum = grad1_flat[:, i].sum()
+            grad2_full = torch.autograd.grad(
+                comp_sum,
+                x_leaf,
+                create_graph=True,
+                retain_graph=True,
+                allow_unused=True,
+            )[0]
+            if grad2_full is None:
+                grad2_comp = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
+            else:
+                grad2_comp = grad2_full.view(batch_size, -1)[:, i]
+            laplacian += grad2_comp
+
+        loss_per_sample = term1 + laplacian
+        return loss_per_sample.mean()
+
+        # old code -> to be removed
         # Compute first term: 1/2 * ||∇E(x)||²
-        # Use mixed precision if enabled
-        if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                # Compute the score (gradient of energy w.r.t. input)
-                score = self.compute_score(x_detached)
-                score_square_term = (
-                    0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
-                )
-        else:
-            # Compute the score (gradient of energy w.r.t. input)
-            score = self.compute_score(x_detached)
-            score_square_term = (
-                0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
-            )
-
-        # Compute second term: tr(∇²E(x))
-        # Create vector of second derivatives for each dimension
-        hessian_trace = 0
-
-        # Iterate over each dimension to compute diagonal elements of Hessian
-        for i in range(data_dim):
-            # Reshape x for easier indexing if needed
-            x_flat = x_detached.view(batch_size, -1)
-
-            # Compute ∂E/∂x_i
-            if self.use_mixed_precision and self.autocast_available:
-                from torch.cuda.amp import autocast
-
-                with autocast():
-                    # Get energy
-                    energy = self.energy_function(x_detached)
-
-                    # Compute first derivative
-                    grad_i = torch.autograd.grad(
-                        energy.sum(),
-                        x_detached,
-                        create_graph=True,
-                    )[0].view(batch_size, -1)[:, i]
-            else:
-                # Get energy
-                energy = self.energy_function(x_detached)
-
-                # Compute first derivative
-                grad_i = torch.autograd.grad(
-                    energy.sum(),
-                    x_detached,
-                    create_graph=True,
-                )[0].view(batch_size, -1)[:, i]
-
-            # Compute second derivative ∂²E/∂x_i²
-            if self.use_mixed_precision and self.autocast_available:
-                from torch.cuda.amp import autocast
-
-                with autocast():
-                    grad_grad_i = torch.autograd.grad(
-                        grad_i.sum(),
-                        x_detached,
-                        create_graph=True,
-                    )[0].view(batch_size, -1)[:, i]
-            else:
-                grad_grad_i = torch.autograd.grad(
-                    grad_i.sum(),
-                    x_detached,
-                    create_graph=True,
-                )[0].view(batch_size, -1)[:, i]
-
-            # Add to trace
-            hessian_trace += grad_grad_i.mean()
-
-        # Combine terms for full loss (minus Laplacian of energy)
-        loss = score_square_term - hessian_trace
+        # score = self.compute_score(x_detached)
+        #
+        # score_square_term = (
+        #     0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
+        # )
+        #
+        # # Compute second term: tr(∇²E(x))
+        # hessian_trace = 0
+        #
+        # # Iterate over each dimension to compute diagonal elements of Hessian
+        # for i in range(data_dim):
+        #     # Reshape x for easier indexing if needed
+        #     x_flat = x_detached.view(batch_size, -1)
+        #
+        #     # Compute ∂E/∂x_i
+        #     energy = self.energy_function(x_detached)
+        #
+        #     # Compute first derivative
+        #     grad_i = torch.autograd.grad(
+        #         energy.sum(),
+        #         x_detached,
+        #         create_graph=True,
+        #     )[
+        #         0
+        #     ].view(batch_size, -1)[:, i]
+        #
+        #     # Compute second derivative ∂²E/∂x_i²
+        #     grad_grad_i = torch.autograd.grad(
+        #         grad_i.sum(),
+        #         x_detached,
+        #         create_graph=True,
+        #     )[0].view(batch_size, -1)[:, i]
+        #
+        #     # Add to trace
+        #     hessian_trace += grad_grad_i.mean()
+        #
+        # # Combine terms for full loss (minus Laplacian of energy)
+        # loss = score_square_term - hessian_trace
 
         return loss
 
@@ -583,6 +586,11 @@ class ScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The score matching loss (scalar)
         """
+        # warnings.warn(
+        #     "ScoreMatching._approx_score_matching is deprecated. "
+        #     "Use SlicedScoreMatching for efficient trace estimation instead.",
+        #     DeprecationWarning,
+        # )
         batch_size = x.shape[0]
         data_dim = x.numel() // batch_size
 
@@ -632,7 +640,7 @@ class ScoreMatching(BaseScoreMatching):
         return self._exact_score_matching(x)
 
 
-class DenosingScoreMatching(BaseScoreMatching):
+class DenoisingScoreMatching(BaseScoreMatching):
     r"""
     Implementation of Denoising Score Matching (DSM) by Vincent (2011).
 
@@ -689,7 +697,7 @@ class DenosingScoreMatching(BaseScoreMatching):
         energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
 
         # Initialize DSM with default noise scale
-        dsm_loss = DenosingScoreMatching(
+        dsm_loss = DenoisingScoreMatching(
             energy_function=energy_fn,
             noise_scale=0.01
         )
@@ -715,13 +723,13 @@ class DenosingScoreMatching(BaseScoreMatching):
             n_steps=1000
         )
 
-        dsm_loss = DenosingScoreMatching(
+        dsm_loss = DenoisingScoreMatching(
             energy_function=energy_fn,
             noise_scale=noise_scheduler
         )
 
         # With mixed precision training
-        dsm_loss = DenosingScoreMatching(
+        dsm_loss = DenoisingScoreMatching(
             energy_function=energy_fn,
             noise_scale=0.01,
             use_mixed_precision=True
@@ -788,7 +796,7 @@ class DenosingScoreMatching(BaseScoreMatching):
 
         Examples:
             >>> energy_fn = MLPEnergyFunction(dim=2, hidden_dim=32)
-            >>> loss_fn = DenosingScoreMatching(
+            >>> loss_fn = DenoisingScoreMatching(
             ...     energy_fn,
             ...     noise_scale=0.01  # Controls the noise level added to data
             ... )
@@ -796,13 +804,17 @@ class DenosingScoreMatching(BaseScoreMatching):
             >>> loss = loss_fn(x)  # Compute the DSM loss
             >>> loss.backward()  # Backpropagate the loss
         """
-        # Ensure x is on the correct device and dtype
-        x = x.to(device=self.device, dtype=self.dtype)
+        if (x.device != self.device) or (x.dtype != self.dtype):
+            x = x.to(device=self.device, dtype=self.dtype)
 
-        # Compute the loss
-        loss = self.compute_loss(x, *args, **kwargs)
+        if self.use_mixed_precision and self.autocast_available:
+            from torch.cuda.amp import autocast
 
-        # Add regularization if needed
+            with autocast():
+                loss = self.compute_loss(x, *args, **kwargs)
+        else:
+            loss = self.compute_loss(x, *args, **kwargs)
+
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
 
@@ -840,10 +852,10 @@ class DenosingScoreMatching(BaseScoreMatching):
         Examples:
             >>> # Creating loss functions with different noise scales:
             >>> # Small noise for capturing fine details
-            >>> fine_dsm = DenosingScoreMatching(energy_fn, noise_scale=0.01)
+            >>> fine_dsm = DenoisingScoreMatching(energy_fn, noise_scale=0.01)
             >>>
             >>> # Larger noise for stability
-            >>> stable_dsm = DenosingScoreMatching(energy_fn, noise_scale=0.1)
+            >>> stable_dsm = DenoisingScoreMatching(energy_fn, noise_scale=0.1)
             >>>
             >>> # Computing loss
             >>> x = torch.randn(32, 2)  # 32 samples of 2D data
@@ -1099,7 +1111,9 @@ class SlicedScoreMatching(BaseScoreMatching):
             >>> loss = loss_fn(x)  # Compute the SSM loss
             >>> loss.backward()  # Backpropagate the loss
         """
-        x = x.to(device=self.device, dtype=self.dtype)
+        if (x.device != self.device) or (x.dtype != self.dtype):
+            x = x.to(device=self.device, dtype=self.dtype)
+
         if self.use_mixed_precision and self.autocast_available:
             from torch.cuda.amp import autocast
 

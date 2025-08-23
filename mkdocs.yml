@@ -183,7 +183,7 @@ nav:
         - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
       - Score_matching:
         - api/torchebm/losses/score_matching/index.md
-        - DenosingScoreMatching: api/torchebm/losses/score_matching/classes/DenosingScoreMatching.md
+        - DenosingScoreMatching: api/torchebm/losses/score_matching/classes/DenoisingScoreMatching.md
         - ScoreMatching: api/torchebm/losses/score_matching/classes/ScoreMatching.md
         - SlicedScoreMatching: api/torchebm/losses/score_matching/classes/SlicedScoreMatching.md
     - Models:
