@@ -345,7 +345,6 @@ class ScoreMatching(BaseScoreMatching):
 
         self.hessian_method = hessian_method
         self.training = is_training
-        # Validate hessian_method - remove hutchinson since it should use SlicedScoreMatching
         valid_methods = ["exact", "approx"]
         if self.hessian_method not in valid_methods:
             warnings.warn(
@@ -439,8 +438,6 @@ class ScoreMatching(BaseScoreMatching):
             >>> loss_fn_sliced = SlicedScoreMatching(energy_fn, n_projections=10)
         """
 
-        # new code:
-
         if self.hessian_method == "approx":
             return self._approx_score_matching(x)
         else:
@@ -481,19 +478,15 @@ class ScoreMatching(BaseScoreMatching):
         x_leaf = x.detach().clone()
         x_leaf.requires_grad_(True)
 
-        # ∇x log pθ(x) = -∇x Eθ(x)
         energy = self.energy_function(x_leaf)
         logp_sum = (-energy).sum()
         grad1 = torch.autograd.grad(
             logp_sum, x_leaf, create_graph=True, retain_graph=True
         )[0]
 
-        # 1/2 ||∇ log p||^2, summed over all non-batch dims, per sample
         grad1_flat = grad1.view(batch_size, -1)
         term1 = 0.5 * grad1_flat.pow(2).sum(dim=1)
 
-        # tr(∇² log p) via diagonal of Hessian, computed exactly.
-        # This requires D backward passes where D is the flattened feature dimension.
         laplacian = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
         for i in range(feature_dim):
             comp_sum = grad1_flat[:, i].sum()
@@ -512,49 +505,6 @@ class ScoreMatching(BaseScoreMatching):
 
         loss_per_sample = term1 + laplacian
         return loss_per_sample.mean()
-
-        # old code -> to be removed
-        # Compute first term: 1/2 * ||∇E(x)||²
-        # score = self.compute_score(x_detached)
-        #
-        # score_square_term = (
-        #     0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
-        # )
-        #
-        # # Compute second term: tr(∇²E(x))
-        # hessian_trace = 0
-        #
-        # # Iterate over each dimension to compute diagonal elements of Hessian
-        # for i in range(data_dim):
-        #     # Reshape x for easier indexing if needed
-        #     x_flat = x_detached.view(batch_size, -1)
-        #
-        #     # Compute ∂E/∂x_i
-        #     energy = self.energy_function(x_detached)
-        #
-        #     # Compute first derivative
-        #     grad_i = torch.autograd.grad(
-        #         energy.sum(),
-        #         x_detached,
-        #         create_graph=True,
-        #     )[
-        #         0
-        #     ].view(batch_size, -1)[:, i]
-        #
-        #     # Compute second derivative ∂²E/∂x_i²
-        #     grad_grad_i = torch.autograd.grad(
-        #         grad_i.sum(),
-        #         x_detached,
-        #         create_graph=True,
-        #     )[0].view(batch_size, -1)[:, i]
-        #
-        #     # Add to trace
-        #     hessian_trace += grad_grad_i.mean()
-        #
-        # # Combine terms for full loss (minus Laplacian of energy)
-        # loss = score_square_term - hessian_trace
-
-        return loss
 
     def _approx_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         r"""
@@ -586,40 +536,29 @@ class ScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The score matching loss (scalar)
         """
-        # warnings.warn(
-        #     "ScoreMatching._approx_score_matching is deprecated. "
-        #     "Use SlicedScoreMatching for efficient trace estimation instead.",
-        #     DeprecationWarning,
-        # )
+
         batch_size = x.shape[0]
         data_dim = x.numel() // batch_size
 
-        # Clone and detach x to avoid modifying the original tensor
         x_detached = x.detach().clone()
         x_detached.requires_grad_(True)
 
-        # Compute first term: 1/2 * ||∇E(x)||²
         score = self.compute_score(x_detached)
         score_square_term = (
             0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
         )
 
-        # Compute an efficient approximation for the Hessian trace
-        # Add small noise to input for finite difference approximation
         epsilon = 1e-5
         x_noise = x_detached + epsilon * torch.randn_like(x_detached)
 
-        # Compute score at original and perturbed points
         score_x = self.compute_score(x_detached)
         score_x_noise = self.compute_score(x_noise)
 
-        # Approximate Hessian trace using differential quotient
         hessian_trace = torch.sum(
             (score_x_noise - score_x) * (x_noise - x_detached),
             dim=list(range(1, len(x.shape))),
         ).mean() / (epsilon**2 * data_dim)
 
-        # Combine terms for full loss (minus Laplacian of energy)
         loss = score_square_term - hessian_trace
 
         return loss
@@ -636,7 +575,6 @@ class ScoreMatching(BaseScoreMatching):
             "Use SlicedScoreMatching for efficient trace estimation instead.",
             DeprecationWarning,
         )
-        # Fall back to exact method
         return self._exact_score_matching(x)
 
 
@@ -861,16 +799,12 @@ class DenoisingScoreMatching(BaseScoreMatching):
             >>> x = torch.randn(32, 2)  # 32 samples of 2D data
             >>> loss = fine_dsm(x)
         """
-        # Perturb the data with noise
         x_perturbed, noise = self.perturb_data(x)
 
-        # Compute score at perturbed inputs
         score = self.compute_score(x_perturbed)
 
-        # Target score is -epsilon/sigma^2
         target_score = -noise / (self.noise_scale**2)
 
-        # DSM loss: 1/2 * ||score - target||^2 averaged over batch
         loss = (
             0.5
             * torch.sum(
@@ -1063,22 +997,14 @@ class SlicedScoreMatching(BaseScoreMatching):
         """
         vectors = torch.randn_like(shape)
         if self.projection_type == "rademacher":
-            # new code:
             return vectors.sign()
-            # Rademacher (+1/-1) distribution
-            return (torch.randint(0, 2, shape, device=self.device) * 2 - 1).to(
-                dtype=self.dtype
-            )
         elif self.projection_type == "sphere":
-            # uniformly sample from unit sphere
             return (
                 vectors
                 / torch.norm(vectors, dim=-1, keepdim=True)
                 * torch.sqrt(vectors.shape[-1])
             )
-        else:  # "gaussian"
-            # standard normal distribution
-            # return torch.randn(shape, device=self.device, dtype=self.dtype)
+        else:
             return vectors
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
@@ -1121,7 +1047,6 @@ class SlicedScoreMatching(BaseScoreMatching):
                 loss = self.compute_loss(x, *args, **kwargs)
         else:
             loss = self.compute_loss(x, *args, **kwargs)
-        # loss = self.compute_loss(x, *args, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
@@ -1177,12 +1102,9 @@ class SlicedScoreMatching(BaseScoreMatching):
         v_score = torch.sum(grad1 * n_vectors, dim=-1)
         term1 = 0.5 * (v_score**2)
 
-        grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[
-            0
-        ]  # be careful to not do the grad over grad1!!!
+        grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[0]
         term2 = torch.sum(n_vectors * grad_v, dim=-1)
 
-        # if x.shape[0] > 1:
         term1 = term1.view(self.n_projections, -1).mean(dim=0)
         term2 = term2.view(self.n_projections, -1).mean(dim=0)
 

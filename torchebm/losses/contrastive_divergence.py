@@ -302,7 +302,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         data_shape = x.shape[1:]
 
         # Update temperature if annealing is enabled
-        if self.use_temperature_annealing and self.is_training:
+        if self.use_temperature_annealing and self.training:
             self.current_temp = max(self.min_temp, self.current_temp * self.temp_decay)
             self.temperature[...] = self.current_temp  # Use ellipsis instead of index
 
