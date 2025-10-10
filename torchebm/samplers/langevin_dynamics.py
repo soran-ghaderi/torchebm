@@ -197,6 +197,8 @@ class LangevinDynamics(BaseSampler):
         decay: float = 0.0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
+        *args,
+        **kwargs,
     ):
         super().__init__(energy_function=energy_function, dtype=dtype, device=device)
 
@@ -215,12 +217,12 @@ class LangevinDynamics(BaseSampler):
                 raise ValueError("noise_scale must be positive")
             self.register_scheduler("noise_scale", ConstantScheduler(noise_scale))
 
-        if device is not None:
-            self.device = torch.device(device)
-            energy_function = energy_function.to(self.device)
-        else:
-            self.device = torch.device("cpu")
-        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        # if device is not None:
+        #     self.device = torch.device(device)
+        #     energy_function = energy_function.to(self.device)
+        # else:
+        #     self.device = torch.device("cpu")
+        # Respect dtype from BaseSampler; do not override based on device
         self.energy_function = energy_function
         self.step_size = step_size
         self.noise_scale = noise_scale
@@ -341,9 +343,43 @@ class LangevinDynamics(BaseSampler):
         if return_diagnostics:
             diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
-        with torch.amp.autocast(
-            device_type="cuda" if self.device.type == "cuda" else "cpu"
-        ):
+        if self.use_mixed_precision:
+            with torch.amp.autocast(
+                device_type="cuda" if self.device.type == "cuda" else "cpu"
+            ):
+                for i in range(n_steps):
+                    # todo: Add decay logic
+                    # Generate fresh noise for each step
+                    noise = torch.randn_like(x, device=self.device)
+
+                    # Step all schedulers before each MCMC step
+                    scheduler_values = self.step_schedulers()
+
+                    x = self.langevin_step(x, noise)
+
+                    if return_trajectory:
+                        trajectory[:, i, :] = x
+
+                    if return_diagnostics:
+                        # Handle mean and variance safely regardless of batch size
+                        if n_samples > 1:
+                            mean_x = x.mean(dim=0, keepdim=True)
+                            var_x = x.var(dim=0, unbiased=False, keepdim=True)
+                            var_x = torch.clamp(var_x, min=1e-10, max=1e10)
+                        else:
+                            # For single sample, just use the value and zeros for variance
+                            mean_x = x.clone()
+                            var_x = torch.zeros_like(x)
+
+                        # Compute energy values
+                        energy = self.energy_function(x)
+
+                        # Store the diagnostics safely
+                        for b in range(n_samples):
+                            diagnostics[i, 0, b, :] = mean_x[b if n_samples > 1 else 0]
+                            diagnostics[i, 1, b, :] = var_x[b if n_samples > 1 else 0]
+                            diagnostics[i, 2, b, :] = energy[b].reshape(-1)
+        else:
             for i in range(n_steps):
                 # todo: Add decay logic
                 # Generate fresh noise for each step

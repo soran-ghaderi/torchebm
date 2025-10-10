@@ -40,7 +40,7 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
     def __init__(
         self,
         dtype: torch.dtype = torch.float32,
-        device: Optional[Union[str, torch.device]] = None,
+        # device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
         *args,
         **kwargs,
@@ -135,7 +135,7 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
             else:
                 energy = self.forward(x_for_grad)
 
-            if energy.shape != (x_for_grad.shape[0],):  # a scalar per batch item
+            if energy.shape != (x_for_grad.shape[0],):
                 raise ValueError(
                     f"BaseEnergyFunction forward() output expected batch_shape ({x_for_grad.shape[0]},), but got {energy.shape}."
                 )
@@ -153,9 +153,7 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
                 retain_graph=None,  # since create_graph=False, let PyTorch decide
             )[0]
 
-        if (
-            gradient_float32 is None
-        ):  # theoretically shouldn't happen but for triple checking!
+        if gradient_float32 is None:  # for triple checking!
             raise RuntimeError(
                 "Gradient computation failed unexpectedly. Check the forward pass implementation."
             )
@@ -166,7 +164,8 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """Alias for the forward method for standard PyTorch module usage."""
-        x = x.to(device=self.device, dtype=self.dtype)
+        if (x.device != self.device) or (x.dtype != self.dtype):
+            x = x.to(device=self.device, dtype=self.dtype)
 
         if self.use_mixed_precision and self.autocast_available:
             from torch.cuda.amp import autocast
@@ -174,7 +173,7 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
             with autocast():
                 return super().__call__(x, *args, **kwargs)
         else:
-            return super().__call__(x, *args, **kwargs)  # Use nn.Module's __call__
+            return super().__call__(x, *args, **kwargs)
 
 
 class DoubleWellEnergy(BaseEnergyFunction):
@@ -228,7 +227,9 @@ class GaussianEnergy(BaseEnergyFunction):
         self.register_buffer("mean", mean.to(dtype=self.dtype, device=self.device))
         try:
             cov_inv = torch.inverse(cov)
-            self.register_buffer("cov_inv", cov_inv)
+            self.register_buffer(
+                "cov_inv", cov_inv.to(dtype=self.dtype, device=self.device)
+            )
         except RuntimeError as e:
             raise ValueError(
                 f"Failed to invert covariance matrix: {e}. Ensure it is invertible."
@@ -245,14 +246,14 @@ class GaussianEnergy(BaseEnergyFunction):
 
         x = x.to(dtype=self.dtype, device=self.device)
         # mean = self.mean.to(device=x.device)
-        cov_inv = self.cov_inv.to(device=x.device)
+        cov_inv = self.cov_inv.to(dtype=self.dtype, device=x.device)
 
         delta = (
             x - self.mean
         )  # avoid detaching or converting x to maintain grad tracking
         # energy = 0.5 * torch.einsum("bi,ij,bj->b", delta, cov_inv, delta)
 
-        if delta.shape[0] > 1:  # batch size > 1
+        if delta.shape[0] > 1:
             delta_expanded = delta.unsqueeze(-1)  # (batch_size, dim, 1)
             cov_inv_expanded = cov_inv.unsqueeze(0).expand(
                 delta.shape[0], -1, -1
@@ -283,8 +284,7 @@ class HarmonicEnergy(BaseEnergyFunction):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the harmonic oscillator energy: \(\frac{1}{2} k \sum_{i=1}^{n} x_i^{2}\)."""
-        # Ensure x is compatible batch_shape
-        if x.ndim == 1:  # Handle single sample case
+        if x.ndim == 1:
             x = x.unsqueeze(0)
 
         return 0.5 * self.k * x.pow(2).sum(dim=-1)
@@ -323,8 +323,8 @@ class RosenbrockEnergy(BaseEnergyFunction):
         #     for i in range(len(x) - 1)
         # )
 
-        x_i = x[:, :-1]  # All but last dimension
-        x_ip1 = x[:, 1:]  # All but first dimension
+        x_i = x[:, :-1]
+        x_ip1 = x[:, 1:]
         term1 = (self.a - x_i).pow(2)
         term2 = self.b * (x_ip1 - x_i.pow(2)).pow(2)
         return (term1 + term2).sum(dim=-1)
@@ -372,7 +372,7 @@ class AckleyEnergy(BaseEnergyFunction):
         \end{aligned}
         $$
         """
-        if x.ndim == 1:  # Handle single sample case
+        if x.ndim == 1:
             x = x.unsqueeze(0)
 
         n = x.shape[-1]
@@ -409,7 +409,7 @@ class RastriginEnergy(BaseEnergyFunction):
 
         $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$
         """
-        if x.ndim == 1:  # Handle single sample case
+        if x.ndim == 1:
             x = x.unsqueeze(0)
 
         n = x.shape[-1]

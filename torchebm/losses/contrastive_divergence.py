@@ -1,7 +1,7 @@
 r"""
 Contrastive Divergence Loss Module.
 
-This module provides implementations of Contrastive Divergence (CD) and its variants for training energy-based models (EBMs). 
+This module provides implementations of Contrastive Divergence (CD) and its variants for training energy-based models (EBMs).
 Contrastive Divergence is a computationally efficient approximation to the maximum likelihood estimation that avoids the need 
 for complete MCMC sampling from the model distribution.
 

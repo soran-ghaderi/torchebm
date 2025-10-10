@@ -9,7 +9,7 @@ from .contrastive_divergence import (
 )
 from torchebm.losses.score_matching import (
     ScoreMatching,
-    DenosingScoreMatching,
+    DenoisingScoreMatching,
     SlicedScoreMatching,
 )
 
@@ -18,6 +18,6 @@ __all__ = [
     "PersistentContrastiveDivergence",
     "ParallelTemperingCD",
     "ScoreMatching",
-    "DenosingScoreMatching",
+    "DenoisingScoreMatching",
     "SlicedScoreMatching",
 ]
