@@ -1,0 +1,265 @@
+/* Custom styling for TorchEBM documentation */
+
+/* Animated elements */
+.animate__animated {
+  animation-duration: 1s;
+  animation-fill-mode: both;
+}
+
+.animate__fadeIn {
+  animation-name: fadeIn;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Lead text */
+.lead {
+  font-size: 1.2rem;
+  font-weight: 300;
+  line-height: 1.5;
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+/* Cards */
+.md-typeset .grid.cards > :is(ul, ol) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-gap: 1rem;
+  margin: 1rem 0 !important;
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li {
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 1rem;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li:hover {
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 0.2rem 0.5rem rgba(0, 0, 0, 0.1);
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li > hr {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li > :first-child {
+  margin-top: 0;
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li > :last-child {
+  margin-bottom: 0;
+}
+
+/* Custom figures */
+figure {
+  margin: 1em 0;
+  text-align: center;
+}
+
+figcaption {
+  font-size: 0.9rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0.5rem;
+}
+
+/* Code blocks */
+.md-typeset pre > code {
+  border-radius: 0.5rem;
+}
+
+/* Buttons */
+.md-button {
+  border-radius: 0.25rem;
+}
+
+/* Spotlight effect for highlighted images */
+.spotlight {
+  border: 3px solid var(--md-accent-fg-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: scale(1.02);
+  transition: all 0.2s ease-in-out;
+}
+
+.spotlight:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Energy function display layout */
+.energy-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  align-items: center;
+}
+
+.energy-main {
+  text-align: center;
+}
+
+.energy-main img {
+  max-width: 100%;
+  height: auto;
+  width: 320px;
+}
+
+.energy-caption {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  background-color: var(--md-code-bg-color);
+  display: inline-block;
+  text-align: center;
+  border-left: 3px solid var(--md-accent-fg-color);
+  max-width: 95%;
+  font-size: 0.9rem;
+  margin: 0 auto;
+}
+
+.energy-caption.energy-caption-top {
+  margin-bottom: 0.75rem;
+}
+
+.energy-caption.energy-caption-bottom {
+  margin-top: 0.75rem;
+}
+
+.energy-caption p {
+  margin: 0.25rem 0;
+}
+
+.energy-caption .arithmatex {
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  padding: 0.25rem 0;
+  font-size: 0.95rem;
+  display: block;
+  background-color: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+  padding: 0.5rem;
+}
+
+/* Adjust mobile responsiveness for energy captions */
+@media screen and (max-width: 768px) {
+  .energy-caption {
+    max-width: 95%;
+    margin-left: auto;
+    margin-right: auto;
+    font-size: 0.85rem;
+  }
+  
+  .energy-caption .arithmatex {
+    font-size: 0.9rem;
+  }
+}
+
+.energy-others {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.energy-others img {
+  max-width: 100%;
+  height: auto;
+  width: 150px;
+  opacity: 0.7;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 4px;
+  transition: all 0.2s ease-in-out;
+}
+
+.energy-others img:hover {
+  opacity: 1;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile responsiveness for energy function display */
+@media screen and (max-width: 768px) {
+  .energy-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .energy-others {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: 1fr;
+  }
+  
+  .energy-main img {
+    width: 280px;
+  }
+  
+  .energy-others img {
+    width: 100px;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .energy-others {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+  
+  .energy-main img {
+    width: 240px;
+  }
+  
+  .energy-others img {
+    width: 80px;
+  }
+}
+
+/* Grid layout for energy function displays - old version */
+.grid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.grid-item.grid-small {
+  flex: 1;
+}
+
+.grid-item.grid-small .grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.grid-item.grid-small .grid > div {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.grid-item.grid-small img {
+  opacity: 0.7;
+  transition: opacity 0.2s ease-in-out;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 4px;
+}
+
+.grid-item.grid-small img:hover {
+  opacity: 1;
+} 
