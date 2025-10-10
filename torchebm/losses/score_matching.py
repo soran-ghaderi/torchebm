@@ -1111,3 +1111,5 @@ class SlicedScoreMatching(BaseScoreMatching):
         loss = term2 + term1
 
         return loss.mean()
+
+    
