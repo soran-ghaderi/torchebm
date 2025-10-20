@@ -88,15 +88,6 @@ nav:
     - Overview: api/index.md
     - Core:
       - api/torchebm/core/index.md
-      - Base_energy_function:
-        - api/torchebm/core/base_energy_function/index.md
-        - AckleyEnergy: api/torchebm/core/base_energy_function/classes/AckleyEnergy.md
-        - BaseEnergyFunction: api/torchebm/core/base_energy_function/classes/BaseEnergyFunction.md
-        - DoubleWellEnergy: api/torchebm/core/base_energy_function/classes/DoubleWellEnergy.md
-        - GaussianEnergy: api/torchebm/core/base_energy_function/classes/GaussianEnergy.md
-        - HarmonicEnergy: api/torchebm/core/base_energy_function/classes/HarmonicEnergy.md
-        - RastriginEnergy: api/torchebm/core/base_energy_function/classes/RastriginEnergy.md
-        - RosenbrockEnergy: api/torchebm/core/base_energy_function/classes/RosenbrockEnergy.md
       - Base_evaluator: api/torchebm/core/base_evaluator/index.md
       - Base_loss:
         - api/torchebm/core/base_loss/index.md
@@ -108,6 +99,22 @@ nav:
         - BaseMetric: api/torchebm/core/base_metric/classes/BaseMetric.md
         - EnergySampleMetric: api/torchebm/core/base_metric/classes/EnergySampleMetric.md
         - SampleQualityMetric: api/torchebm/core/base_metric/classes/SampleQualityMetric.md
+      - Base_model:
+        - api/torchebm/core/base_model/index.md
+        - AckleyEnergy: api/torchebm/core/base_model/classes/AckleyEnergy.md
+        - AckleyModel: api/torchebm/core/base_model/classes/AckleyModel.md
+        - BaseEnergyFunction: api/torchebm/core/base_model/classes/BaseEnergyFunction.md
+        - BaseModel: api/torchebm/core/base_model/classes/BaseModel.md
+        - DoubleWellEnergy: api/torchebm/core/base_model/classes/DoubleWellEnergy.md
+        - DoubleWellModel: api/torchebm/core/base_model/classes/DoubleWellModel.md
+        - GaussianEnergy: api/torchebm/core/base_model/classes/GaussianEnergy.md
+        - GaussianModel: api/torchebm/core/base_model/classes/GaussianModel.md
+        - HarmonicEnergy: api/torchebm/core/base_model/classes/HarmonicEnergy.md
+        - HarmonicModel: api/torchebm/core/base_model/classes/HarmonicModel.md
+        - RastriginEnergy: api/torchebm/core/base_model/classes/RastriginEnergy.md
+        - RastriginModel: api/torchebm/core/base_model/classes/RastriginModel.md
+        - RosenbrockEnergy: api/torchebm/core/base_model/classes/RosenbrockEnergy.md
+        - RosenbrockModel: api/torchebm/core/base_model/classes/RosenbrockModel.md
       - Base_optimizer:
         - api/torchebm/core/base_optimizer/index.md
         - Optimizer: api/torchebm/core/base_optimizer/classes/Optimizer.md
@@ -127,6 +134,9 @@ nav:
         - api/torchebm/core/base_trainer/index.md
         - BaseTrainer: api/torchebm/core/base_trainer/classes/BaseTrainer.md
         - ContrastiveDivergenceTrainer: api/torchebm/core/base_trainer/classes/ContrastiveDivergenceTrainer.md
+      - Device_mixin:
+        - api/torchebm/core/device_mixin/index.md
+        - DeviceMixin: api/torchebm/core/device_mixin/classes/DeviceMixin.md
     - Cuda: api/torchebm/cuda/index.md
     - Datasets:
       - api/torchebm/datasets/index.md
@@ -141,38 +151,38 @@ nav:
         - PinwheelDataset: api/torchebm/datasets/generators/classes/PinwheelDataset.md
         - SwissRollDataset: api/torchebm/datasets/generators/classes/SwissRollDataset.md
         - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
-#    - Evaluation:
-#      - api/torchebm/evaluation/index.md
-#      - Evaluators:
-#        - api/torchebm/evaluation/evaluators/index.md
-#        - Base:
-#          - api/torchebm/evaluation/evaluators/base/index.md
-#          - BaseEvaluator: api/torchebm/evaluation/evaluators/base/classes/BaseEvaluator.md
-#          - TimeMetric: api/torchebm/evaluation/evaluators/base/classes/TimeMetric.md
-#        - Model_evaluator:
-#          - api/torchebm/evaluation/evaluators/model_evaluator/index.md
-#          - EnsembleEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/EnsembleEvaluator.md
-#          - ModelEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/ModelEvaluator.md
-#        - Sampler_evaluator:
-#          - api/torchebm/evaluation/evaluators/sampler_evaluator/index.md
-#          - ComparativeSamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/ComparativeSamplerEvaluator.md
-#          - SamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/SamplerEvaluator.md
-#      - Metrics:
-#        - api/torchebm/evaluation/metrics/index.md
-#        - Base:
-#          - api/torchebm/evaluation/metrics/base/index.md
-#          - BaseMetric: api/torchebm/evaluation/metrics/base/classes/BaseMetric.md
-#          - EnergySampleMetric: api/torchebm/evaluation/metrics/base/classes/EnergySampleMetric.md
-#          - SampleQualityMetric: api/torchebm/evaluation/metrics/base/classes/SampleQualityMetric.md
-#        - Likelihood:
-#          - api/torchebm/evaluation/metrics/likelihood/index.md
-#          - KLDivergence: api/torchebm/evaluation/metrics/likelihood/classes/KLDivergence.md
-#          - LogLikelihood: api/torchebm/evaluation/metrics/likelihood/classes/LogLikelihood.md
-#        - Sample_quality:
-#          - api/torchebm/evaluation/metrics/sample_quality/index.md
-#          - FrechetDistance: api/torchebm/evaluation/metrics/sample_quality/classes/FrechetDistance.md
-#          - InceptionScore: api/torchebm/evaluation/metrics/sample_quality/classes/InceptionScore.md
-#          - MaximumMeanDiscrepancy: api/torchebm/evaluation/metrics/sample_quality/classes/MaximumMeanDiscrepancy.md
+    - Evaluation:
+      - api/torchebm/evaluation/index.md
+      - Evaluators:
+        - api/torchebm/evaluation/evaluators/index.md
+        - Base:
+          - api/torchebm/evaluation/evaluators/base/index.md
+          - BaseEvaluator: api/torchebm/evaluation/evaluators/base/classes/BaseEvaluator.md
+          - TimeMetric: api/torchebm/evaluation/evaluators/base/classes/TimeMetric.md
+        - Model_evaluator:
+          - api/torchebm/evaluation/evaluators/model_evaluator/index.md
+          - EnsembleEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/EnsembleEvaluator.md
+          - ModelEvaluator: api/torchebm/evaluation/evaluators/model_evaluator/classes/ModelEvaluator.md
+        - Sampler_evaluator:
+          - api/torchebm/evaluation/evaluators/sampler_evaluator/index.md
+          - ComparativeSamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/ComparativeSamplerEvaluator.md
+          - SamplerEvaluator: api/torchebm/evaluation/evaluators/sampler_evaluator/classes/SamplerEvaluator.md
+      - Metrics:
+        - api/torchebm/evaluation/metrics/index.md
+        - Base:
+          - api/torchebm/evaluation/metrics/base/index.md
+          - BaseMetric: api/torchebm/evaluation/metrics/base/classes/BaseMetric.md
+          - EnergySampleMetric: api/torchebm/evaluation/metrics/base/classes/EnergySampleMetric.md
+          - SampleQualityMetric: api/torchebm/evaluation/metrics/base/classes/SampleQualityMetric.md
+        - Likelihood:
+          - api/torchebm/evaluation/metrics/likelihood/index.md
+          - KLDivergence: api/torchebm/evaluation/metrics/likelihood/classes/KLDivergence.md
+          - LogLikelihood: api/torchebm/evaluation/metrics/likelihood/classes/LogLikelihood.md
+        - Sample_quality:
+          - api/torchebm/evaluation/metrics/sample_quality/index.md
+          - FrechetDistance: api/torchebm/evaluation/metrics/sample_quality/classes/FrechetDistance.md
+          - InceptionScore: api/torchebm/evaluation/metrics/sample_quality/classes/InceptionScore.md
+          - MaximumMeanDiscrepancy: api/torchebm/evaluation/metrics/sample_quality/classes/MaximumMeanDiscrepancy.md
       - Examples: api/torchebm/evaluation/examples/index.md
     - Losses:
       - api/torchebm/losses/index.md
@@ -183,14 +193,9 @@ nav:
         - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
       - Score_matching:
         - api/torchebm/losses/score_matching/index.md
-        - DenosingScoreMatching: api/torchebm/losses/score_matching/classes/DenoisingScoreMatching.md
+        - DenoisingScoreMatching: api/torchebm/losses/score_matching/classes/DenoisingScoreMatching.md
         - ScoreMatching: api/torchebm/losses/score_matching/classes/ScoreMatching.md
         - SlicedScoreMatching: api/torchebm/losses/score_matching/classes/SlicedScoreMatching.md
-    - Models:
-      - api/torchebm/models/index.md
-      - Base_model:
-        - api/torchebm/models/base_model/index.md
-        - BaseModel: api/torchebm/models/base_model/classes/BaseModel.md
     - Samplers:
       - api/torchebm/samplers/index.md
       - Hmc:
@@ -199,6 +204,9 @@ nav:
       - Langevin_dynamics:
         - api/torchebm/samplers/langevin_dynamics/index.md
         - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
+      - Nestrov_accelerated_gradient:
+        - api/torchebm/samplers/nestrov_accelerated_gradient/index.md
+        - NestrovAcceleratedGradient: api/torchebm/samplers/nestrov_accelerated_gradient/classes/NestrovAcceleratedGradient.md
     - Utils:
       - api/torchebm/utils/index.md
       - Visualization: api/torchebm/utils/visualization/index.md
@@ -307,8 +315,8 @@ markdown_extensions:
   - pymdownx.caret
   - pymdownx.details
   - pymdownx.emoji:
-      emoji_index: !!python/name:materialx.emoji.twemoji
-      emoji_generator: !!python/name:materialx.emoji.to_svg
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       linenums: true
       anchor_linenums: true

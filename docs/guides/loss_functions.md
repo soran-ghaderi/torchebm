@@ -18,12 +18,12 @@ Contrastive Divergence (CD) is one of the most popular methods for training ener
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.losses import ContrastiveDivergence
 from torchebm.samplers import LangevinDynamics
 
-# Define a custom energy function
-class MLPEnergy(BaseEnergyFunction):
+# Define a custom model
+class MLPModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=64):
         super().__init__()
         self.network = nn.Sequential(
@@ -38,27 +38,27 @@ class MLPEnergy(BaseEnergyFunction):
     def forward(self, x):
         return self.network(x).squeeze(-1)
 
-# Create energy model, sampler, and loss function
+# Create model, sampler, and loss function
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-energy_fn = MLPEnergy(input_dim=2, hidden_dim=64).to(device)
+model = MLPModel(input_dim=2, hidden_dim=64).to(device)
 
 # Set up sampler for negative samples
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.1,
     device=device
 )
 
 # Create Contrastive Divergence loss
 loss_fn = ContrastiveDivergence(
-    energy_function=energy_fn,
+    model=model,
     sampler=sampler,
     k_steps=10,  # Number of MCMC steps
     persistent=False,  # Standard CD (non-persistent)
 )
 
 # Define optimizer
-optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # During training:
 data_batch = torch.randn(128, 2).to(device)  # Your real data batch
@@ -79,7 +79,7 @@ PCD maintains a buffer of negative samples across training iterations, which can
 ```python
 # Create Persistent Contrastive Divergence loss
 loss_fn = ContrastiveDivergence(
-    energy_function=energy_fn,
+    model=model,
     sampler=sampler,
     k_steps=10,
     persistent=True,  # Enable PCD
@@ -110,7 +110,7 @@ noise_scheduler = CosineScheduler(
 
 # Create sampler with schedulers
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=step_size_scheduler,
     noise_scale=noise_scheduler,
     device=device
@@ -118,7 +118,7 @@ sampler = LangevinDynamics(
 
 # Create CD loss with this sampler
 loss_fn = ContrastiveDivergence(
-    energy_function=energy_fn,
+    model=model,
     sampler=sampler,
     k_steps=10,
     persistent=True
@@ -136,12 +136,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.losses import ScoreMatching
 from torchebm.datasets import GaussianMixtureDataset
 
-# Define a custom energy function
-class MLPEnergy(BaseEnergyFunction):
+# Define a custom model
+class MLPModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=64):
         super().__init__()
         self.net = nn.Sequential(
@@ -157,18 +157,18 @@ class MLPEnergy(BaseEnergyFunction):
 
 # Setup model and device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-energy_fn = MLPEnergy(input_dim=2).to(device)
+model = MLPModel(input_dim=2).to(device)
 
 # Create score matching loss
 sm_loss_fn = ScoreMatching(
-    energy_function=energy_fn,
+    model=model,
     hessian_method="hutchinson",  # More efficient for higher dimensions
     hutchinson_samples=5,
     device=device
 )
 
 # Setup optimizer
-optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Setup data
 dataset = GaussianMixtureDataset(
@@ -199,11 +199,11 @@ TorchEBM supports different variants of score matching:
 
 #### Explicit Score Matching
 
-This is the standard form of score matching, which requires computing the Hessian of the energy function:
+This is the standard form of score matching, which requires computing the Hessian of the model:
 
 ```python
 sm_loss_fn = ScoreMatching(
-    energy_function=energy_fn,
+    model=model,
     hessian_method="exact",  # Explicitly compute Hessian (slow for high dimensions)
     device=device
 )
@@ -215,7 +215,7 @@ To make score matching more efficient, we can use Hutchinson's trick to estimate
 
 ```python
 sm_loss_fn = ScoreMatching(
-    energy_function=energy_fn,
+    model=model,
     hessian_method="hutchinson",  # Use Hutchinson's trick
     hutchinson_samples=5,  # Number of noise samples to use
     device=device
@@ -230,7 +230,7 @@ Denoising score matching adds noise to data points and tries to learn the score 
 from torchebm.losses import DenoisingScoreMatching
 
 dsm_loss_fn = DenoisingScoreMatching(
-    energy_function=energy_fn,
+    model=model,
     sigma=0.1,  # Noise level
     device=device
 )
@@ -255,7 +255,7 @@ noise_dist = D.Normal(0, 1)
 
 # Create NCE loss
 nce_loss_fn = NoiseContrastiveEstimation(
-    energy_function=energy_fn,
+    model=model,
     noise_distribution=noise_dist,
     noise_samples_per_data=10,
     device=device
@@ -280,13 +280,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import ContrastiveDivergence
 from torchebm.datasets import TwoMoonsDataset
 
-# Define energy function
-class MLPEnergy(BaseEnergyFunction):
+# Define model
+class MLPModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=64):
         super().__init__()
         self.network = nn.Sequential(
@@ -318,14 +318,14 @@ dataset = TwoMoonsDataset(n_samples=3000, noise=0.05, seed=42, device=device)
 dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
 
 # Create model, sampler, and loss function
-energy_model = MLPEnergy(INPUT_DIM, HIDDEN_DIM).to(device)
+model = MLPModel(INPUT_DIM, HIDDEN_DIM).to(device)
 sampler = LangevinDynamics(
-    energy_function=energy_model,
+    model=model,
     step_size=0.1,
     device=device,
 )
 loss_fn = ContrastiveDivergence(
-    energy_function=energy_model,
+    model=model,
     sampler=sampler,
     k_steps=CD_K,
     persistent=USE_PCD,
@@ -333,13 +333,13 @@ loss_fn = ContrastiveDivergence(
 ).to(device)
 
 # Optimizer
-optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # Training loop
 losses = []
 print("Starting training...")
 for epoch in range(EPOCHS):
-    energy_model.train()
+    model.train()
     epoch_loss = 0.0
     
     for i, data_batch in enumerate(dataloader):
@@ -352,7 +352,7 @@ for epoch in range(EPOCHS):
         loss.backward()
         
         # Optional: Gradient clipping for stability
-        torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
         optimizer.step()
         

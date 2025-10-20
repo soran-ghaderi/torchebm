@@ -10,7 +10,7 @@ Sampling from energy-based models is a core task in TorchEBM. This guide explain
 
 ## Overview of Sampling
 
-In energy-based models, we need to sample from the probability distribution defined by the energy function:
+In energy-based models, we need to sample from the probability distribution defined by the model:
 
 $$p(x) = \frac{e^{-E(x)}}{Z}$$
 
@@ -24,12 +24,12 @@ Langevin Dynamics is a gradient-based MCMC method that updates samples using the
 
 ```python
 import torch
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.samplers import LangevinDynamics
 import torch.nn as nn
 
-# Define a custom energy function
-class MLPEnergy(BaseEnergyFunction):
+# Define a custom model
+class MLPModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=64):
         super().__init__()
         self.network = nn.Sequential(
@@ -43,13 +43,13 @@ class MLPEnergy(BaseEnergyFunction):
     def forward(self, x):
         return self.network(x).squeeze(-1)
 
-# Create an energy function
-energy_fn = MLPEnergy(input_dim=2, hidden_dim=32)
+# Create a model
+model = MLPModel(input_dim=2, hidden_dim=32)
         
 # Create a Langevin dynamics sampler
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 langevin_sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.1,
     noise_scale=0.01,
     device=device
@@ -68,7 +68,7 @@ print(samples.shape)  # Shape: [100, 2]
 
 ### Parameters
 
-- `energy_function`: The energy function to sample from
+- `model`: The model to sample from
 - `step_size`: Step size for gradient updates (controls exploration vs. stability)
 - `noise_scale`: Scale of the noise (default is sqrt(2*step_size))
 - `device`: The device to perform sampling on (e.g., "cuda" or "cpu")
@@ -113,7 +113,7 @@ noise_scheduler = CosineScheduler(
 
 # Create sampler with schedulers
 dynamic_sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=step_size_scheduler,
     noise_scale=noise_scheduler,
     device=device
@@ -126,14 +126,14 @@ HMC uses Hamiltonian dynamics to make more efficient proposals, leading to bette
 
 ```python
 from torchebm.samplers import HamiltonianMonteCarlo
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 
-# Create an energy function
-energy_fn = DoubleWellEnergy()
+# Create a model
+model = DoubleWellModel()
 
 # Create an HMC sampler
 hmc_sampler = HamiltonianMonteCarlo(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.1,
     n_leapfrog_steps=10,
     device=device
@@ -156,7 +156,7 @@ from torchebm.losses import ContrastiveDivergence
 
 # Create a loss function that uses the sampler internally
 loss_fn = ContrastiveDivergence(
-    energy_function=energy_fn,
+    model=model,
     sampler=langevin_sampler,
     k_steps=10,
     persistent=True,
@@ -196,11 +196,11 @@ Visualizing the sampling process can help understand the behavior of your model.
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-from torchebm.core import DoubleWellEnergy, LinearScheduler, WarmupScheduler
+from torchebm.core import DoubleWellModel, LinearScheduler, WarmupScheduler
 from torchebm.samplers import LangevinDynamics
 
-# Create energy function and sampler
-energy_fn = DoubleWellEnergy(barrier_height=5.0)
+# Create model and sampler
+model = DoubleWellModel(barrier_height=5.0)
 
 # Define a cosine scheduler for the Langevin dynamics
 scheduler_linear = LinearScheduler(
@@ -216,7 +216,7 @@ scheduler = WarmupScheduler(
 )
 
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=scheduler
 
 )
@@ -241,7 +241,7 @@ Z = np.zeros_like(X)
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = energy_fn(point).item()
+        Z[i, j] = model(point).item()
 
 # Visualize
 plt.figure(figsize=(10, 8))
@@ -270,7 +270,7 @@ plt.show()
 
 ## Choosing a Sampler
 
-- **Langevin Dynamics**: Good for general-purpose sampling, especially with neural network energy functions
+- **Langevin Dynamics**: Good for general-purpose sampling, especially with neural network models
 - **Hamiltonian Monte Carlo**: Better exploration of complex energy landscapes, but more computationally expensive
 - **Metropolis-Adjusted Langevin Algorithm (MALA)**: Similar to Langevin Dynamics but with an accept/reject step
 
@@ -291,19 +291,19 @@ TorchEBM provides flexible base classes for creating your own custom sampling al
 To implement a custom sampler, you need to subclass `BaseSampler` and implement at minimum the `sample()` method:
 
 ```python
-from torchebm.core import BaseSampler, BaseEnergyFunction
+from torchebm.core import BaseSampler, BaseModel
 import torch
 from typing import Optional, Union, Tuple, List, Dict
 
 class MyCustomSampler(BaseSampler):
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         my_parameter: float = 0.1,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
-        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
+        super().__init__(model=model, dtype=dtype, device=device)
         self.my_parameter = my_parameter
         
         # You can register schedulers for parameters that change during sampling
@@ -314,8 +314,8 @@ class MyCustomSampler(BaseSampler):
         # Get current parameter value (if using schedulers)
         param_value = self.get_scheduled_value("my_parameter")
         
-        # Compute gradient of the energy function
-        gradient = self.energy_function.gradient(x)
+        # Compute gradient of the model
+        gradient = self.model.gradient(x)
         
         # Implement your sampling logic
         noise = torch.randn_like(x)
@@ -396,7 +396,7 @@ class MyCustomSampler(BaseSampler):
 
 When implementing a custom sampler, consider these key aspects:
 
-1. **Energy Function**: All samplers work with an energy function that defines the target distribution.
+1. **Model**: All samplers work with a model that defines the target distribution.
 
 2. **Parameter Scheduling**: Use the built-in scheduler system to manage parameters that change during sampling:
    ```python
@@ -426,13 +426,13 @@ Here's a simplified example of a Langevin dynamics sampler:
 class SimpleLangevin(BaseSampler):
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         step_size: float = 0.01,
         noise_scale: float = 1.0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
-        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
+        super().__init__(model=model, dtype=dtype, device=device)
         self.register_scheduler("step_size", ConstantScheduler(step_size))
         self.register_scheduler("noise_scale", ConstantScheduler(noise_scale))
     
@@ -440,7 +440,7 @@ class SimpleLangevin(BaseSampler):
         step_size = self.get_scheduled_value("step_size")
         noise_scale = self.get_scheduled_value("noise_scale")
         
-        gradient = self.energy_function.gradient(x)
+        gradient = self.model.gradient(x)
         noise = torch.randn_like(x)
         
         new_x = (

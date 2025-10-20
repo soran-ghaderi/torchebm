@@ -18,7 +18,7 @@ TorchEBM is organized into several modules:
 
     ---
 
-    Base classes and core functionality for energy functions, samplers, and trainers.
+    Base classes and core functionality for models, samplers, and trainers.
 
     [:octicons-arrow-right-24: Core Module](./torchebm/core)
 
@@ -60,24 +60,24 @@ TorchEBM is organized into several modules:
 
 If you're new to TorchEBM, we recommend starting with the following classes:
 
-- [`BaseEnergyFunction`](./torchebm/core/energy_function/classes/EnergyFunction): Base class for all energy functions
+- [`BaseModel`](./torchebm/core/base_model/classes/BaseModel.md): Base class for all models
 - [`BaseSampler`](./torchebm/core/basesampler/classes/BaseSampler): Base class for all sampling algorithms
 - [`LangevinDynamics`](./torchebm/samplers/langevin_dynamics/classes/LangevinDynamics): Implementation of Langevin dynamics sampling
 
 ## Core Components
 
-### Energy Functions
+### Models
 
-TorchEBM provides various built-in energy functions:
+TorchEBM provides various built-in models:
 
-| Energy Function | Description |
+| Model | Description |
 | --------------- | ----------- |
-| [`GaussianEnergy`](./torchebm/core/energy_function/classes/GaussianEnergy.md) | Multivariate Gaussian energy function |
-| [`DoubleWellEnergy`](./torchebm/core/energy_function/classes/DoubleWellEnergy.md) | Double well potential energy function |
-| [`RastriginEnergy`](./torchebm/core/energy_function/classes/RastriginEnergy.md) | Rastrigin function for testing optimization algorithms |
-| [`RosenbrockEnergy`](./torchebm/core/energy_function/classes/RosenbrockEnergy.md) | Rosenbrock function (banana function) |
-| [`AckleyEnergy`](./torchebm/core/energy_function/classes/AckleyEnergy.md) | Ackley function, a multimodal test function |
-| [`HarmonicEnergy`](./torchebm/core/energy_function/classes/HarmonicEnergy.md) | Harmonic oscillator energy function |
+| [`GaussianModel`](./torchebm/core/base_model/classes/GaussianModel.md) | Multivariate Gaussian energy function |
+| [`DoubleWellModel`](./torchebm/core/base_model/classes/DoubleWellModel.md) | Double well potential energy function |
+| [`RastriginModel`](./torchebm/core/base_model/classes/RastriginModel.md) | Rastrigin function for testing optimization algorithms |
+| [`RosenbrockModel`](./torchebm/core/base_model/classes/RosenbrockModel.md) | Rosenbrock function (banana function) |
+| [`AckleyModel`](./torchebm/core/base_model/classes/AckleyModel.md) | Ackley function, a multimodal test function |
+| [`HarmonicModel`](./torchebm/core/base_model/classes/HarmonicModel.md) | Harmonic oscillator energy function |
 
 ### Samplers
 
@@ -105,7 +105,6 @@ For detailed information about each module, follow the links below:
 - [Core Module](./torchebm/core)
 - [Samplers](./torchebm/samplers)
 - [Losses](./torchebm/losses)
-- [Models](./torchebm/models)
 - [Utils](./torchebm/utils)
 - [CUDA](./torchebm/cuda)
 

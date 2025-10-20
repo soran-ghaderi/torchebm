@@ -1,6 +1,6 @@
 ---
 title: Core Components
-description: Detailed explanation of TorchEBM's energy_functions components and their implementation
+description: Detailed explanation of TorchEBM's models components and their implementation
 icon: material/function
 ---
 
@@ -13,14 +13,14 @@ icon: material/function
 
 <div class="grid cards" markdown>
 
--   :material-function-variant:{ .lg .middle } __Energy Functions__
+-   :material-function-variant:{ .lg .middle } __Models__
 
     ---
 
     Define the energy landscape for probability distributions.
 
     ```python
-    energy = energy_fn(x)  # Evaluate energy at point x
+    energy = model(x)  # Evaluate energy at point x
     ```
 
 -   :material-chart-scatter-plot:{ .lg .middle } __Samplers__
@@ -43,31 +43,31 @@ icon: material/function
     loss = loss_fn(model, data_samples)  # Compute training loss
     ```
 
--   :material-graph:{ .lg .middle } __Models__
+-   :material-graph:{ .lg .middle } __Neural Network Models__
 
     ---
 
-    Parameterize energy functions with neural networks.
+    Parameterize models with neural networks.
 
     ```python
-    model = EnergyModel(network=nn.Sequential(...))
+    model = BaseModel(network=nn.Sequential(...))
     ```
 
 </div>
 
-## Energy Functions
+## Models
 
-Energy functions are the core building block of TorchEBM. They define a scalar energy value for each point in the sample space.
+Models are the core building block of TorchEBM. They define a scalar energy value for each point in the sample space.
 
-### Base Energy Function
+### Base Model
 
-The `BaseEnergyFunction` class is the foundation for all energy functions:
+The `BaseModel` class is the foundation for all models:
 
 ```python
-class BaseEnergyFunction(nn.Module):
-    """Base class for all energy functions.
+class BaseModel(nn.Module):
+    """Base class for all models.
     
-    An energy function maps points in the sample space to scalar energy values.
+    A model maps points in the sample space to scalar energy values.
     Lower energy corresponds to higher probability density.
     """
     
@@ -96,22 +96,22 @@ class BaseEnergyFunction(nn.Module):
         return torch.autograd.grad(energy.sum(), x, create_graph=True)[0]
 ```
 
-### Analytical Energy Functions
+### Analytical Models
 
-TorchEBM provides several analytical energy functions for testing and benchmarking:
+TorchEBM provides several analytical models for testing and benchmarking:
 
-=== "Gaussian Energy"
+=== "Gaussian Model"
 
     ```python
-    class GaussianEnergy(BaseEnergyFunction):
-        """Gaussian energy function.
+    class GaussianModel(BaseModel):
+        """Gaussian model.
         
-        Energy function defined by a multivariate Gaussian distribution:
+        Model defined by a multivariate Gaussian distribution:
         E(x) = 0.5 * (x - mean)^T * precision * (x - mean)
         """
         
         def __init__(self, mean: torch.Tensor, cov: torch.Tensor):
-            """Initialize Gaussian energy function.
+            """Initialize Gaussian model.
             
             Args:
                 mean: Mean vector of shape (dim,)
@@ -139,18 +139,18 @@ TorchEBM provides several analytical energy functions for testing and benchmarki
             )
     ```
 
-=== "Double Well Energy"
+=== "Double Well Model"
 
     ```python
-    class DoubleWellEnergy(BaseEnergyFunction):
-        """Double well energy function.
+    class DoubleWellModel(BaseModel):
+        """Double well model.
         
-        Energy function with two local minima:
+        Model with two local minima:
         E(x) = a * (x^2 - b)^2
         """
         
         def __init__(self, a: float = 1.0, b: float = 2.0):
-            """Initialize double well energy function.
+            """Initialize double well model.
             
             Args:
                 a: Scale parameter
@@ -172,28 +172,28 @@ TorchEBM provides several analytical energy functions for testing and benchmarki
             return self.a * torch.sum((x**2 - self.b)**2, dim=1)
     ```
 
-### Composite Energy Functions
+### Composite Models
 
-Energy functions can be composed to create more complex landscapes:
+Models can be composed to create more complex landscapes:
 
 ```python
-class CompositeEnergy(BaseEnergyFunction):
-    """Composite energy function.
+class CompositeModel(BaseModel):
+    """Composite model.
     
-    Combines multiple energy functions through addition.
+    Combines multiple models through addition.
     """
     
-    def __init__(self, energy_functions: List[BaseEnergyFunction], weights: Optional[List[float]] = None):
-        """Initialize composite energy function.
+    def __init__(self, models: List[BaseModel], weights: Optional[List[float]] = None):
+        """Initialize composite model.
         
         Args:
-            energy_functions: List of energy functions to combine
-            weights: Optional weights for each energy function
+            models: List of models to combine
+            weights: Optional weights for each model
         """
         super().__init__()
-        self.energy_functions = nn.ModuleList(energy_functions)
+        self.models = nn.ModuleList(models)
         if weights is None:
-            weights = [1.0] * len(energy_functions)
+            weights = [1.0] * len(models)
         self.weights = weights
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -205,7 +205,7 @@ class CompositeEnergy(BaseEnergyFunction):
         Returns:
             Tensor of batch_shape (batch_size,) containing energy values
         """
-        return sum(w * f(x) for w, f in zip(self.weights, self.energy_functions))
+        return sum(w * f(x) for w, f in zip(self.weights, self.models))
 ```
 
 ## Samplers
@@ -223,13 +223,13 @@ class Sampler(ABC):
     A sampler generates samples from an energy-based distribution.
     """
     
-    def __init__(self, energy_function: BaseEnergyFunction):
+    def __init__(self, model: BaseModel):
         """Initialize sampler.
         
         Args:
-            energy_function: Energy function to sample from
+            model: Model to sample from
         """
-        self.energy_function = energy_function
+        self.model = model
         
     @abstractmethod
     def sample(self, n_samples: int, **kwargs) -> torch.Tensor:
@@ -273,18 +273,18 @@ class LangevinDynamics(Sampler):
     
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         step_size: float = 0.01,
         noise_scale: float = 1.0
     ):
         """Initialize Langevin dynamics sampler.
         
         Args:
-            energy_function: Energy function to sample from
+            model: Model to sample from
             step_size: Step size for updates
             noise_scale: Scale of noise added at each step
         """
-        super().__init__(energy_function)
+        super().__init__(model)
         self.step_size = step_size
         self.noise_scale = noise_scale
         
@@ -298,7 +298,7 @@ class LangevinDynamics(Sampler):
             Updated samples of batch_shape (n_samples, dim)
         """
         # Compute score (gradient of energy)
-        score = self.energy_function.score(x)
+        score = self.model.score(x)
         
         # Update samples
         noise = torch.randn_like(x) * np.sqrt(2 * self.step_size * self.noise_scale)
@@ -364,11 +364,11 @@ class LangevinDynamics(Sampler):
         return self.sample_chain(dim=dim, n_steps=n_steps, n_samples=n_samples, **kwargs)
 ```
 
-## BaseLoss Functions
+## Loss Functions
 
-BaseLoss functions are used to train energy-based models from data. They provide methods to compute gradients for model updates.
+Loss functions are used to train energy-based models from data. They provide methods to compute gradients for model updates.
 
-### Base BaseLoss Function
+### Base Loss Function
 
 The `BaseLoss` class is the foundation for all loss functions:
 
@@ -448,8 +448,8 @@ class ContrastiveDivergence(BaseLoss):
         batch_size = self.batch_size or data_samples.size(0)
         dim = data_samples.size(1)
 
-        # Set the model as the sampler's energy function
-        self.sampler.energy_function = model
+        # Set the model as the sampler's model
+        self.sampler.model = model
 
         # Generate model samples
         model_samples = self.sampler.sample(
@@ -469,23 +469,23 @@ class ContrastiveDivergence(BaseLoss):
         return loss
 ```
 
-## Models
+## Neural Network Models
 
-Models parameterize energy functions using neural networks.
+Models can be parameterized using neural networks.
 
-### Energy Model
+### Neural Network Model
 
-The `EnergyModel` class wraps a neural network as an energy function:
+A class can be used to wrap a neural network as a model:
 
 ```python
-class EnergyModel(BaseEnergyFunction):
-    """Neural network-based energy model.
+class NeuralNetworkModel(BaseModel):
+    """Neural network-based model.
     
-    Uses a neural network to parameterize an energy function.
+    Uses a neural network to parameterize a model.
     """
     
     def __init__(self, network: nn.Module):
-        """Initialize energy model.
+        """Initialize model.
         
         Args:
             network: Neural network that outputs scalar energy values
@@ -511,40 +511,40 @@ The following diagram illustrates how the core components interact:
 
 ```mermaid
 graph TD
-    A[Energy Function] -->|Defines landscape| B[Sampler]
+    A[Model] -->|Defines landscape| B[Sampler]
     B -->|Generates samples| C[Training Process]
-    D[BaseLoss Function] -->|Guides training| C
-    C -->|Updates| E[Energy Model]
+    D[Loss Function] -->|Guides training| C
+    C -->|Updates| E[Neural Network Model]
     E -->|Parameterizes| A
 ```
 
 ### Typical Usage Flow
 
-1. **Define an energy function** - Either analytical or neural network-based
-2. **Create a sampler** - Using the energy function
+1. **Define a model** - Either analytical or neural network-based
+2. **Create a sampler** - Using the model
 3. **Generate samples** - Using the sampler
 4. **Train a model** - Using the loss function and sampler
 5. **Use the trained model** - For tasks like generation or density estimation
 
 ```python
-# Define energy function
-energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
+# Define model
+model = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
 
 # Create sampler
-sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01)
+sampler = LangevinDynamics(model=model, step_size=0.01)
 
 # Generate samples
 samples = sampler.sample(dim=2, n_steps=1000, n_samples=100)
 
 # Create and train a model
-model = EnergyModel(network=MLP(input_dim=2, hidden_dims=[32, 32], output_dim=1))
+nn_model = NeuralNetworkModel(network=MLP(input_dim=2, hidden_dims=[32, 32], output_dim=1))
 loss_fn = ContrastiveDivergence(sampler=sampler, k=10)
 
 # Training loop
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(nn_model.parameters(), lr=0.001)
 for epoch in range(100):
     optimizer.zero_grad()
-    loss = loss_fn(model, data_samples)
+    loss = loss_fn(nn_model, data_samples)
     loss.backward()
     optimizer.step()
 ```
@@ -553,10 +553,10 @@ for epoch in range(100):
 
 TorchEBM is designed to be extensible at several points:
 
-* **New Energy Functions** - Create by subclassing `BaseEnergyFunction`
+* **New Models** - Create by subclassing `BaseModel`
 * **New Samplers** - Create by subclassing `Sampler`
-* **New BaseLoss Functions** - Create by subclassing `BaseLoss`
-* **New Models** - Create by subclassing `EnergyModel` or using custom networks
+* **New Loss Functions** - Create by subclassing `BaseLoss`
+* **New Neural Network Models** - Create by subclassing `BaseModel` or using custom networks
 
 ## Component Lifecycle
 
@@ -573,23 +573,23 @@ Understanding this lifecycle helps when implementing new components or extending
 
 When working with TorchEBM components, follow these best practices:
 
-* **Energy Functions**: Ensure they're properly normalized for stable training
+* **Models**: Ensure they're properly normalized for stable training
 * **Samplers**: Check mixing time and adjust parameters accordingly
-* **BaseLoss Functions**: Monitor training stability and adjust hyperparameters
-* **Models**: Use appropriate architecture for the problem domain
+* **Loss Functions**: Monitor training stability and adjust hyperparameters
+* **Neural Network Models**: Use appropriate architecture for the problem domain
 
 !!! tip "Performance Optimization"
     For large-scale applications, consider using CUDA-optimized implementations and batch processing for better performance.
 
 <div class="grid cards" markdown>
 
--   :material-code-json:{ .lg .middle } __Energy Functions__
+-   :material-code-json:{ .lg .middle } __Models__
 
     ---
 
-    Learn about energy function implementation details.
+    Learn about model implementation details.
 
-    [:octicons-arrow-right-24: Energy Functions](implementation_energy.md)
+    [:octicons-arrow-right-24: Models](implementation_energy.md)
 
 -   :material-access-point:{ .lg .middle } __Samplers__
 
@@ -605,6 +605,6 @@ When working with TorchEBM components, follow these best practices:
 
     Understand loss function implementation details.
 
-    [:octicons-arrow-right-24: BaseLoss Functions](implementation_losses.md)
+    [:octicons-arrow-right-24: Loss Functions](implementation_losses.md)
 
 </div> 

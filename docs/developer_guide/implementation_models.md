@@ -7,7 +7,7 @@ icon: material/vector-square
 # Models Implementation
 
 !!! abstract "Implementation Details"
-    This guide explains the implementation of neural network models in TorchEBM, including architecture designs, training workflows, and integration with energy functions.
+    This guide explains the implementation of neural network models in TorchEBM, including architecture designs, training workflows, and integration with the `BaseModel`.
 
 ## Base Model Architecture
 
@@ -64,10 +64,10 @@ class BaseModel(nn.Module):
         return self.network(x)
 ```
 
-## MLP Energy Model
+## MLP Model
 
 ```python
-class MLPEnergyModel(BaseModel):
+class MLPModel(BaseModel):
     """Multi-layer perceptron energy model."""
     
     def __init__(
@@ -116,12 +116,12 @@ class MLPEnergyModel(BaseModel):
         return energy.squeeze(-1)
 ```
 
-## Convolutional Energy Models
+## Convolutional Models
 
 For image data, convolutional architectures are more appropriate:
 
 ```python
-class ConvEnergyModel(nn.Module):
+class ConvModel(nn.Module):
     """Convolutional energy model for image data."""
     
     def __init__(
@@ -194,19 +194,19 @@ class ConvEnergyModel(nn.Module):
         return energy.squeeze(-1)
 ```
 
-## Neural Energy Functions
+## Neural Network Models as `BaseModel`
 
-Neural networks can be used to create energy functions:
+Neural networks can be used to create models:
 
 ```python
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 
 
-class NeuralEnergyFunction(BaseEnergyFunction):
-    """Energy function implemented using a neural network."""
+class NeuralNetworkModel(BaseModel):
+    """Model implemented using a neural network."""
 
     def __init__(self, model: nn.Module):
-        """Initialize neural energy function.
+        """Initialize neural model.
         
         Args:
             model: Neural network model
@@ -260,7 +260,7 @@ class ResidualBlock(nn.Module):
         """
         return x + self.block(x)
 
-class ResNetEnergyModel(nn.Module):
+class ResNetModel(nn.Module):
     """ResNet-style energy model."""
     
     def __init__(
@@ -323,7 +323,7 @@ class EBMTrainer:
     
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         sampler: "Sampler",
         optimizer: torch.optim.Optimizer,
         loss_fn: "BaseLoss"
@@ -331,12 +331,12 @@ class EBMTrainer:
         """Initialize EBM trainer.
         
         Args:
-            energy_function: Energy function to train
+            model: Model to train
             sampler: Sampler for negative samples
             optimizer: Optimizer for model parameters
-            loss_fn: BaseLoss function
+            loss_fn: Loss function
         """
-        self.energy_function = energy_function
+        self.model = model
         self.sampler = sampler
         self.optimizer = optimizer
         self.loss_fn = loss_fn
@@ -449,7 +449,7 @@ When implementing custom models, follow these best practices:
 
 !!! example "Custom Model Example"
     ```python
-    class CustomEnergyModel(nn.Module):
+    class CustomModel(nn.Module):
         def __init__(self, input_dim, hidden_dim=128):
             super().__init__()
             self.network = nn.Sequential(
@@ -482,13 +482,13 @@ When implementing custom models, follow these best practices:
 
     [:octicons-arrow-right-24: Core Components](core_components.md)
 
--   :material-code-json:{ .lg .middle } __Energy Functions__
+-   :material-code-json:{ .lg .middle } __Models__
 
     ---
 
-    Explore energy function implementation details.
+    Explore model implementation details.
 
-    [:octicons-arrow-right-24: Energy Functions](implementation_energy.md)
+    [:octicons-arrow-right-24: Models](implementation_energy.md)
 
 -   :material-function-variant:{ .lg .middle } __Samplers__
 

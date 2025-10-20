@@ -1,24 +1,24 @@
 ---
-title: Energy Functions
-description: Examples of various energy functions and their visualization
+title: Models
+description: Examples of various models and their visualization
 ---
 
-# Energy Function Examples
+# Model Examples
 
-This section demonstrates the various energy functions available in TorchEBM and how to visualize them.
+This section demonstrates the various models available in TorchEBM and how to visualize them.
 
 ## Basic Energy Landscapes
 
-The `landscape_2d.py` example shows how to create and visualize basic energy functions:
+The `landscape_2d.py` example shows how to create and visualize basic models:
 
 ```python
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 
-# Create the energy function
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
+# Create the model
+model = DoubleWellModel(barrier_height=2.0)
 
 # Create a grid for visualization
 x = np.linspace(-3, 3, 100)
@@ -30,7 +30,7 @@ Z = np.zeros_like(X)
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = energy_fn(point).item()
+        Z[i, j] = model(point).item()
 
 # Create 3D surface plot
 fig = plt.figure(figsize=(10, 8))
@@ -40,7 +40,7 @@ surf = ax.plot_surface(X, Y, Z, cmap="viridis", alpha=0.8)
 
 ## Multimodal Energy Functions
 
-The `multimodal.py` example demonstrates more complex energy functions with multiple local minima:
+The `multimodal.py` example demonstrates more complex models with multiple local minima:
 
 ```python
 class MultimodalEnergy:
@@ -71,9 +71,9 @@ class MultimodalEnergy:
         return energy
 ```
 
-## Parametric Energy Functions
+## Parametric Models
 
-The `parametric.py` example shows how to create energy functions with adjustable parameters:
+The `parametric.py` example shows how to create models with adjustable parameters:
 
 ```python
 # Create a figure with multiple subplots
@@ -84,8 +84,8 @@ axes = axes.flatten()
 barrier_heights = [0.5, 1.0, 2.0, 4.0]
 
 for i, barrier_height in enumerate(barrier_heights):
-    # Create energy function with the specified barrier height
-    energy_fn = DoubleWellEnergy(barrier_height=barrier_height)
+    # Create model with the specified barrier height
+    model = DoubleWellModel(barrier_height=barrier_height)
     
     # Compute energy values
     # ...
@@ -101,19 +101,19 @@ for i, barrier_height in enumerate(barrier_heights):
 To run these examples:
 
 ```bash
-# List available energy function examples
+# List available model examples
 python examples/main.py --list
 
 # Run a specific example
-python examples/main.py energy_functions/energy_functions/landscape_2d
-python examples/main.py energy_functions/energy_functions/multimodal
-python examples/main.py energy_functions/energy_functions/parametric
+python examples/main.py models/landscape_2d
+python examples/main.py models/multimodal
+python examples/main.py models/parametric
 ```
 
 ## Additional Resources
 
-For more information on energy functions, see:
+For more information on models, see:
 
-- [API Reference: Energy Functions](../../api/torchebm/core/energy_function/index.md)
-- [Guide: Energy Functions](../../guides/energy_functions.md) 
+- [API Reference: Models](../../api/torchebm/core/base_model/index.md)
+- [Guide: Models](../../guides/models.md) 
 - [Visualization Guide](../visualization/energy_visualization.md)

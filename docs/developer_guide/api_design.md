@@ -23,14 +23,14 @@ This document outlines the design principles and patterns used in TorchEBM's API
 
 <div class="grid cards" markdown>
 
--   :material-function-variant:{ .lg .middle } __Energy Functions__
+-   :material-function-variant:{ .lg .middle } __Models__
 
     ---
 
-    Energy functions define the energy landscape that characterizes a probability distribution.
+    Models define the energy landscape that characterizes a probability distribution.
 
     ```python
-    class BaseEnergyFunction(nn.Module):
+    class BaseModel(nn.Module):
         def forward(self, x):
             # Return energy values for inputs x
             pass
@@ -44,12 +44,12 @@ This document outlines the design principles and patterns used in TorchEBM's API
 
     ---
 
-    Samplers generate samples from energy functions via various algorithms.
+    Samplers generate samples from models via various algorithms.
 
     ```python
     class BaseSampler:
-        def __init__(self, energy_function, device="cpu"):
-            self.energy_function = energy_function
+        def __init__(self, model, device="cpu"):
+            self.model = model
             self.device = device
             
         def sample_chain(self, dim, n_steps, n_samples=1):
@@ -61,12 +61,12 @@ This document outlines the design principles and patterns used in TorchEBM's API
 
     ---
 
-    BaseLoss functions are used to train energy-based models, often using samplers.
+    Loss functions are used to train energy-based models, often using samplers.
 
     ```python
     class ContrastiveDivergence(nn.Module):
-        def __init__(self, energy_fn, sampler, mcmc_steps=1):
-            self.energy_fn = energy_fn
+        def __init__(self, model, sampler, mcmc_steps=1):
+            self.model = model
             self.sampler = sampler
             self.mcmc_steps = mcmc_steps
             
@@ -75,14 +75,14 @@ This document outlines the design principles and patterns used in TorchEBM's API
             pass
     ```
 
--   :material-cube-outline:{ .lg .middle } __Models__
+-   :material-cube-outline:{ .lg .middle } __Neural Network Models__
 
     ---
 
     Neural network models that can be used as energy functions.
 
     ```python
-    class BaseModel(BaseEnergyFunction):
+    class BaseModel(BaseModel):
         def __init__(self):
             super().__init__()
             # Define model architecture
@@ -102,8 +102,8 @@ TorchEBM follows consistent naming patterns:
 
 | Pattern | Example | Purpose |
 |---------|---------|---------|
-| `forward()` | `energy_fn.forward(x)` | Core computation (energy) |
-| `gradient()` | `energy_fn.gradient(x)` | Compute gradients |
+| `forward()` | `model.forward(x)` | Core computation (energy) |
+| `gradient()` | `model.gradient(x)` | Compute gradients |
 | `sample_chain()` | `sampler.sample_chain(dim, n_steps)` | Generate samples |
 | `step()` | `sampler.step(x)` | Single sampling step |
 
@@ -143,8 +143,8 @@ The primary extension pattern is to subclass the appropriate base class:
 
 ```python
 class MyCustomSampler(BaseSampler):
-    def __init__(self, energy_function, special_param, device="cpu"):
-        super().__init__(energy_function, device)
+    def __init__(self, model, special_param, device="cpu"):
+        super().__init__(model, device)
         self.special_param = special_param
         
     def sample_chain(self, x, step_idx=None):
@@ -158,8 +158,8 @@ For more complex extensions, composition can be used:
 
 ```python
 class HybridSampler(BaseSampler):
-    def __init__(self, energy_function, sampler1, sampler2, switch_freq=10):
-        super().__init__(energy_function)
+    def __init__(self, model, sampler1, sampler2, switch_freq=10):
+        super().__init__(model)
         self.sampler1 = sampler1
         self.sampler2 = sampler2
         self.switch_freq = switch_freq
@@ -181,7 +181,7 @@ Features are enabled and configured primarily through constructor parameters:
 ```python
 # Configure through constructor parameters
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.01,
     noise_scale=0.1,
     thinning=5,
@@ -279,8 +279,8 @@ def sample_chain(
             - diagnostics: Dict with sampling statistics
             
     Example:
-        >>> energy_fn = GaussianEnergy(torch.zeros(2), torch.eye(2))
-        >>> sampler = LangevinDynamics(energy_fn, step_size=0.1)
+        >>> model = GaussianModel(torch.zeros(2), torch.eye(2))
+        >>> sampler = LangevinDynamics(model, step_size=0.1)
         >>> samples, _ = sampler.sample_chain(dim=2, k_steps=100, n_samples=10)
     """
     # Implementation

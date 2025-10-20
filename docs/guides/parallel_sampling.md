@@ -6,7 +6,7 @@ description: Guide to efficient parallel sampling with TorchEBM
 
 # Parallel Sampling
 
-This guide explains how to efficiently sample from energy functions in parallel using TorchEBM.
+This guide explains how to efficiently sample from models in parallel using TorchEBM.
 
 ## Overview
 
@@ -18,12 +18,12 @@ The simplest way to perform parallel sampling is to initialize multiple chains a
 
 ```python
 import torch
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.samplers import LangevinDynamics
 import torch.nn as nn
 
-# Define a simple energy function
-class MLPEnergy(BaseEnergyFunction):
+# Define a simple model
+class MLPModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=64):
         super().__init__()
         self.network = nn.Sequential(
@@ -37,13 +37,13 @@ class MLPEnergy(BaseEnergyFunction):
     def forward(self, x):
         return self.network(x).squeeze(-1)
 
-# Create the energy function
+# Create the model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-energy_fn = MLPEnergy(input_dim=2, hidden_dim=32).to(device)
+model = MLPModel(input_dim=2, hidden_dim=32).to(device)
 
 # Create the sampler
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.1,
     noise_scale=0.01,
     device=device
@@ -71,19 +71,19 @@ For maximum performance, TorchEBM leverages GPU acceleration when available. Thi
 ```python
 import time
 import torch
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 from torchebm.samplers import LangevinDynamics
 
-# Create energy function
-energy_fn = DoubleWellEnergy()
+# Create model
+model = DoubleWellModel()
 
 # Check if CUDA is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-energy_fn = energy_fn.to(device)
+model = model.to(device)
 
 # Create sampler
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.01,
     device=device
 )
@@ -115,14 +115,14 @@ When generating a very large number of samples, you might need to process them i
 ```python
 import torch
 import numpy as np
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.samplers import LangevinDynamics
 
-# Create energy function and sampler
+# Create model and sampler
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-energy_fn = MLPEnergy(input_dim=2, hidden_dim=64).to(device)
+model = MLPModel(input_dim=2, hidden_dim=64).to(device)
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.01,
     device=device
 )
@@ -165,17 +165,17 @@ For even larger-scale sampling, you can distribute the workload across multiple 
 ```python
 import torch
 import torch.multiprocessing as mp
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 from torchebm.samplers import LangevinDynamics
 
 def sample_on_device(rank, n_samples, n_steps, result_queue):
     # Set device based on process rank
     device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
     
-    # Create energy function and sampler for this device
-    energy_fn = DoubleWellEnergy().to(device)
+    # Create model and sampler for this device
+    model = DoubleWellModel().to(device)
     sampler = LangevinDynamics(
-        energy_function=energy_fn,
+        model=model,
         step_size=0.01,
         device=device
     )
@@ -247,9 +247,9 @@ if __name__ == "__main__":
 ```python
 # Use half precision for faster sampling
 initial_points = torch.randn(10000, 2, device=device, dtype=torch.float16)
-energy_fn = energy_fn.half()  # Convert model to half precision
+model = model.half()  # Convert model to half precision
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.01,
     device=device
 )

@@ -10,20 +10,20 @@ Data visualization is an essential tool for understanding, analyzing, and commun
 
 ## Energy Landscape Visualization
 
-Visualizing energy landscapes is crucial for understanding the structure of the probability distribution you're working with. TorchEBM provides utilities to create both 2D and 3D visualizations of energy functions.
+Visualizing energy landscapes is crucial for understanding the structure of the probability distribution you're working with. TorchEBM provides utilities to create both 2D and 3D visualizations of models.
 
 ### Basic Energy Landscape Visualization
 
-Here's a simple example to visualize a 2D energy function:
+Here's a simple example to visualize a 2D model:
 
 ```python
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 
-# Create the energy function
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
+# Create the model
+model = DoubleWellModel(barrier_height=2.0)
 
 # Create a grid for visualization
 x = np.linspace(-3, 3, 100)
@@ -35,7 +35,7 @@ Z = np.zeros_like(X)
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = energy_fn(point).item()
+        Z[i, j] = model(point).item()
 
 # Create 3D surface plot
 fig = plt.figure(figsize=(10, 8))
@@ -60,10 +60,10 @@ Often, it's more intuitive to visualize the probability density (exp(-Energy)) r
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 
-# Create the energy function
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
+# Create the model
+model = DoubleWellModel(barrier_height=2.0)
 
 # Create a grid for visualization
 grid_size = 100
@@ -77,7 +77,7 @@ Z = np.zeros_like(X)
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = energy_fn(point).item()
+        Z[i, j] = model(point).item()
 
 # Convert energy to probability density (unnormalized)
 # Subtract max for numerical stability before exponentiating
@@ -106,11 +106,11 @@ Visualizing the trajectory of sampling algorithms can provide insights into thei
 ### Visualizing Langevin Dynamics Trajectories
 
 ```python
-from torchebm.core import DoubleWellEnergy, LinearScheduler, WarmupScheduler
+from torchebm.core import DoubleWellModel, LinearScheduler, WarmupScheduler
 from torchebm.samplers import LangevinDynamics
 
-# Create energy function and sampler
-energy_fn = DoubleWellEnergy(barrier_height=5.0)
+# Create model and sampler
+model = DoubleWellModel(barrier_height=5.0)
 
 # Define a cosine scheduler for the Langevin dynamics
 scheduler_linear = LinearScheduler(
@@ -126,7 +126,7 @@ scheduler = WarmupScheduler(
 )
 
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=scheduler
 
 )
@@ -151,7 +151,7 @@ Z = np.zeros_like(X)
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = energy_fn(point).item()
+        Z[i, j] = model(point).item()
 
 # Visualize
 plt.figure(figsize=(10, 8))
@@ -184,17 +184,17 @@ plt.show()
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import RastriginEnergy
+from torchebm.core import RastriginModel
 from torchebm.samplers import LangevinDynamics
 
 # Set random seed for reproducibility
 torch.manual_seed(44)
 np.random.seed(43)
 
-# Create energy function and sampler
-energy_fn = RastriginEnergy(a=10.0)
+# Create model and sampler
+model = RastriginModel(a=10.0)
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.008
 )
 
@@ -225,7 +225,7 @@ print(trajectories.shape)
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
         point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = energy_fn(point).item()
+        Z[i, j] = model(point).item()
 
 # Plot contour
 plt.figure(figsize=(12, 10))
@@ -267,17 +267,17 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
-from torchebm.core import GaussianEnergy
+from torchebm.core import GaussianModel
 from torchebm.samplers import LangevinDynamics
 
-# Create a Gaussian energy function
+# Create a Gaussian model
 mean = torch.tensor([1.0, -1.0])
 cov = torch.tensor([[1.0, 0.5], [0.5, 1.0]])
-energy_fn = GaussianEnergy(mean=mean, cov=cov)
+model = GaussianModel(mean=mean, cov=cov)
 
 # Sample using Langevin dynamics
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.01
 )
 
@@ -353,7 +353,7 @@ Tracking how energy values evolve during sampling can help assess convergence.
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy, GaussianEnergy, CosineScheduler
+from torchebm.core import DoubleWellModel, GaussianModel, CosineScheduler
 from torchebm.samplers import LangevinDynamics
 
 
@@ -365,10 +365,10 @@ SAMPLER_NOISE_SCALE = CosineScheduler(
     initial_value=2e-1, final_value=1e-2, total_steps=50
 )
 
-# Create energy function and sampler
-energy_fn = GaussianEnergy(mean=torch.tensor([0.0, 0.0]), cov=torch.eye(2) * 0.5)
+# Create model and sampler
+model = GaussianModel(mean=torch.tensor([0.0, 0.0]), cov=torch.eye(2) * 0.5)
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=SAMPLER_STEP_SIZE,
     noise_scale=SAMPLER_NOISE_SCALE
 )
@@ -386,7 +386,7 @@ current_sample = initial_point.clone()
 for i in range(n_steps):
     noise = torch.randn_like(current_sample)
     current_sample = sampler.langevin_step(current_sample, noise)
-    energy_values.append(energy_fn(current_sample).item())
+    energy_values.append(model(current_sample).item())
 
 # Convert to numpy for plotting
 energy_values_np = np.array(energy_values)
@@ -414,15 +414,15 @@ You can also visualize how different loss functions affect the training dynamics
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.losses import ContrastiveDivergence, ScoreMatching
 from torchebm.samplers import LangevinDynamics
 from torchebm.datasets import TwoMoonsDataset
 import torch.nn as nn
 import torch.optim as optim
 
-# Define a simple MLP energy function
-class MLPEnergy(BaseEnergyFunction):
+# Define a simple MLP model
+class MLPModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=64):
         super().__init__()
         self.network = nn.Sequential(
@@ -439,29 +439,29 @@ class MLPEnergy(BaseEnergyFunction):
 # Training function
 def train_and_record_loss(loss_type, n_epochs=100):
     # Reset model
-    energy_model = MLPEnergy(input_dim=2, hidden_dim=32).to(device)
+    model = MLPModel(input_dim=2, hidden_dim=32).to(device)
     
     # Setup sampler and loss
     sampler = LangevinDynamics(
-        energy_function=energy_model,
+        model=model,
         step_size=0.1,
         device=device
     )
     
     if loss_type == 'CD':
         loss_fn = ContrastiveDivergence(
-            energy_function=energy_model,
+            model=model,
             sampler=sampler,
             k_steps=10,
             persistent=True
         )
     elif loss_type == 'SM':
         loss_fn = ScoreMatching(
-            energy_function=energy_model,
+            model=model,
             hutchinson_samples=5
         )
     
-    optimizer = optim.Adam(energy_model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # Record loss
     losses = []

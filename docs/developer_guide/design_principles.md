@@ -48,8 +48,8 @@ TorchEBM aims to be:
 TorchEBM is built around a set of extensible base classes that provide common interface:
 
 ```python
-class BaseEnergyFunction(nn.Module):
-    """Base class for all energy functions."""
+class BaseModel(nn.Module):
+    """Base class for all models."""
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute energy for input x."""
@@ -64,9 +64,9 @@ class BaseEnergyFunction(nn.Module):
 
 This design allows for:
 
-* **Composition**: Combining energy functions via addition, multiplication, etc.
-* **Extension**: Creating new energy functions by subclassing
-* **Integration**: Using energy functions with any sampler that follows the interface
+* **Composition**: Combining models via addition, multiplication, etc.
+* **Extension**: Creating new models by subclassing
+* **Integration**: Using models with any sampler that follows the interface
 
 ### Factory Methods
 
@@ -74,8 +74,8 @@ Factory methods create configured instances with sensible defaults:
 
 ```python
 @classmethod
-def create_standard(cls, dim: int = 2) -> 'GaussianEnergy':
-    """Create a standard Gaussian energy function."""
+def create_standard(cls, dim: int = 2) -> 'GaussianModel':
+    """Create a standard Gaussian model."""
     return cls(mean=torch.zeros(dim), cov=torch.eye(dim))
 ```
 
@@ -85,7 +85,7 @@ Classes are configured through their constructor rather than setter methods:
 
 ```python
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.01,
     noise_scale=1.0
 )
@@ -116,7 +116,7 @@ Computations are performed lazily when possible to avoid unnecessary work:
 
 ```python
 # Create a sampler with a sampling trajectory
-sampler = LangevinDynamics(energy_fn)
+sampler = LangevinDynamics(model)
 trajectory = sampler.sample_trajectory(dim=2, n_steps=1000)
 
 # Compute statistics only when needed
@@ -130,10 +130,9 @@ variance = trajectory.variance()  # Computation happens here
 
 Components have clearly defined responsibilities:
 
-* **Energy Functions**: Define the energy landscape
-* **Samplers**: Generate samples from energy functions
-* **Losses**: Train energy functions from data
-* **Models**: Parameterize energy functions using neural networks
+* **Models**: Define the energy landscape
+* **Samplers**: Generate samples from models
+* **Losses**: Train models from data
 * **Utils**: Provide supporting functionality
 
 ### Minimizing Dependencies
@@ -176,12 +175,12 @@ Simple use cases are simple, while advanced functionality is available but not r
 
 ```python
 # Simple usage
-sampler = LangevinDynamics(energy_fn)
+sampler = LangevinDynamics(model)
 samples = sampler.sample(n_samples=1000)
 
 # Advanced usage
 sampler = LangevinDynamics(
-    energy_fn,
+    model,
     step_size=0.01,
     noise_scale=1.0,
     step_size_schedule=LinearSchedule(0.01, 0.001),

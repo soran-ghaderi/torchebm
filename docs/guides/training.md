@@ -10,26 +10,26 @@ This guide covers the fundamental techniques for training energy-based models (E
 
 ## Overview
 
-Training energy-based models involves estimating the parameters of an energy function such that the corresponding probability distribution matches a target data distribution. Unlike in traditional supervised learning, this is often an unsupervised task where the goal is to learn the underlying structure of the data.
+Training energy-based models involves estimating the parameters of a model such that the corresponding probability distribution matches a target data distribution. Unlike in traditional supervised learning, this is often an unsupervised task where the goal is to learn the underlying structure of the data.
 
 The training process typically involves:
 
-1. Defining an energy function (parameterized by a neural network or analytical form)
+1. Defining a model (parameterized by a neural network or analytical form)
 2. Choosing a training method and loss function
-3. Optimizing the energy function parameters
+3. Optimizing the model parameters
 4. Evaluating the model using sampling and visualization techniques
 
-## Defining an Energy Function
+## Defining a Model
 
-In TorchEBM, you can create custom energy functions by subclassing `BaseEnergyFunction`:
+In TorchEBM, you can create custom models by subclassing `BaseModel`:
 
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 
-class MLPEnergy(BaseEnergyFunction):
-    """A simple MLP to act as the energy function."""
+class MLPModel(BaseModel):
+    """A simple MLP to act as the model."""
 
     def __init__(self, input_dim: int, hidden_dim: int = 64):
         super().__init__()
@@ -59,7 +59,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import os
 
-from torchebm.core import BaseEnergyFunction, CosineScheduler
+from torchebm.core import BaseModel, CosineScheduler
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import ContrastiveDivergence
 from torchebm.datasets import TwoMoonsDataset
@@ -103,15 +103,15 @@ dataloader = DataLoader(
 )
 
 # Setup model components
-energy_model = MLPEnergy(INPUT_DIM, HIDDEN_DIM).to(device)
+model = MLPModel(INPUT_DIM, HIDDEN_DIM).to(device)
 sampler = LangevinDynamics(
-    energy_function=energy_model,
+    model=model,
     step_size=SAMPLER_STEP_SIZE,
     noise_scale=SAMPLER_NOISE_SCALE,
     device=device,
 )
 loss_fn = ContrastiveDivergence(
-    energy_function=energy_model,
+    model=model,
     sampler=sampler,
     k_steps=CD_K,
     persistent=USE_PCD,
@@ -119,13 +119,13 @@ loss_fn = ContrastiveDivergence(
 ).to(device)
 
 # Optimizer
-optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE)
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # Training loop
 losses = []
 print("Starting training...")
 for epoch in range(EPOCHS):
-    energy_model.train()
+    model.train()
     epoch_loss = 0.0
     
     for i, data_batch in enumerate(dataloader):
@@ -139,7 +139,7 @@ for epoch in range(EPOCHS):
         loss.backward()
         
         # Optional: Gradient clipping for stability
-        torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
         # Update parameters
         optimizer.step()
@@ -155,7 +155,7 @@ for epoch in range(EPOCHS):
     if (epoch + 1) % VISUALIZE_EVERY == 0 or epoch == 0:
         print("Generating visualization...")
         plot_energy_and_samples(
-            energy_fn=energy_model,
+            model=model,
             real_samples=real_data_for_plotting,
             sampler=sampler,
             epoch=epoch + 1,
@@ -183,12 +183,12 @@ It's important to visualize the model's progress during training. Here's a helpe
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.samplers import LangevinDynamics
 
 @torch.no_grad()
 def plot_energy_and_samples(
-    energy_fn: BaseEnergyFunction,
+    model: BaseModel,
     real_samples: torch.Tensor,
     sampler: LangevinDynamics,
     epoch: int,
@@ -207,8 +207,8 @@ def plot_energy_and_samples(
     grid = torch.stack([xv.flatten(), yv.flatten()], dim=1)
 
     # Calculate energy on the grid
-    energy_fn.eval()
-    energy_values = energy_fn(grid).cpu().numpy().reshape(grid_size, grid_size)
+    model.eval()
+    energy_values = model(grid).cpu().numpy().reshape(grid_size, grid_size)
     
     # Plot energy surface (using probability density for better visualization)
     log_prob_values = -energy_values
@@ -275,7 +275,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.losses import ScoreMatching
 from torchebm.datasets import GaussianMixtureDataset
 
@@ -283,14 +283,14 @@ from torchebm.datasets import GaussianMixtureDataset
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Setup model, loss, and optimizer
-energy_fn = MLPEnergy(input_dim=2).to(device)
+model = MLPModel(input_dim=2).to(device)
 sm_loss_fn = ScoreMatching(
-    energy_function=energy_fn,
+    model=model,
     hessian_method="hutchinson",  # More efficient for higher dimensions
     hutchinson_samples=5,
     device=device,
 )
-optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Setup data
 dataset = GaussianMixtureDataset(
@@ -348,7 +348,7 @@ Gradient clipping is essential for stable EBM training:
 
 ```python
 # After loss.backward()
-torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 optimizer.step()
 ```
 
@@ -359,12 +359,12 @@ Adding regularization can help stabilize training:
 ```python
 # L2 regularization
 weight_decay = 1e-4
-optimizer = optim.Adam(energy_model.parameters(), lr=LEARNING_RATE, weight_decay=weight_decay)
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=weight_decay)
 
 # Spectral normalization for stability
 from torch.nn.utils import spectral_norm
 
-class RegularizedMLPEnergy(BaseEnergyFunction):
+class RegularizedMLPModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=64):
         super().__init__()
         self.network = nn.Sequential(
@@ -381,7 +381,7 @@ class RegularizedMLPEnergy(BaseEnergyFunction):
 
 ## Tips for Successful Training
 
-1. **Start Simple**: Begin with a simple energy function and dataset, then increase complexity
+1. **Start Simple**: Begin with a simple model and dataset, then increase complexity
 2. **Monitor Energy Values**: Watch for energy collapse (very negative values) which indicates instability
 3. **Adjust Sampling Parameters**: Tune MCMC step size and noise scale for effective exploration
 4. **Use Persistent CD**: For complex distributions, persistent CD often yields better results

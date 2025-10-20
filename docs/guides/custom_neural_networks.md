@@ -1,32 +1,32 @@
 ---
 sidebar_position: 6
 title: Custom Neural Networks
-description: Creating custom neural network-based energy functions
+description: Creating custom neural network-based models
 ---
 
-# Custom Neural Network Energy Functions
+# Custom Neural Network Models
 
-Energy-based models (EBMs) are highly flexible, and one of their key advantages is that the energy function can be parameterized using neural networks. This guide explains how to create and use neural network-based energy functions in TorchEBM.
+Energy-based models (EBMs) are highly flexible, and one of their key advantages is that the model can be parameterized using neural networks. This guide explains how to create and use neural network-based models in TorchEBM.
 
 ## Overview
 
-Neural networks provide a powerful way to represent complex energy landscapes that can't be easily defined analytically. By using neural networks as energy functions:
+Neural networks provide a powerful way to represent complex energy landscapes that can't be easily defined analytically. By using neural networks as models:
 
 - You can capture complex, high-dimensional distributions
-- The energy function can be learned from data
+- The model can be learned from data
 - You gain the expressivity of modern deep learning architectures
 
-## Basic Neural Network Energy Function
+## Basic Neural Network Model
 
-To create a neural network-based energy function in TorchEBM, you need to subclass the `BaseEnergyFunction` base class and implement the `forward` method:
+To create a neural network-based model in TorchEBM, you need to subclass the `BaseModel` base class and implement the `forward` method:
 
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 
 
-class NeuralNetEnergyFunction(BaseEnergyFunction):
+class NeuralNetModel(BaseModel):
     def __init__(self, input_dim, hidden_dim=128):
         super().__init__()
 
@@ -47,7 +47,7 @@ class NeuralNetEnergyFunction(BaseEnergyFunction):
 
 ## Design Considerations
 
-When designing neural network energy functions, consider the following:
+When designing neural network models, consider the following:
 
 ### Network Architecture
 
@@ -62,7 +62,7 @@ The choice of architecture depends on the data type and complexity:
 
 Remember the following key points:
 
-1. The energy function should output a scalar value for each sample in the batch
+1. The model should output a scalar value for each sample in the batch
 2. Lower energy values should correspond to higher probability density
 3. The neural network must be differentiable for gradient-based sampling methods to work
 
@@ -71,17 +71,17 @@ Remember the following key points:
 Energy values should be properly scaled to avoid numerical issues:
 
 - Very large energy values can cause instability in sampling
-- Energy functions that grow too quickly may cause sampling algorithms to fail
+- Models that grow too quickly may cause sampling algorithms to fail
 
-## Example: MLP Energy Function for 2D Data
+## Example: MLP Model for 2D Data
 
-Here's a complete example with a simple MLP energy function:
+Here's a complete example with a simple MLP model:
 
 ```python
 import torch
 import torch.nn as nn
 from torchebm.core import (
-    BaseEnergyFunction,
+    BaseModel,
     CosineScheduler,
 )
 from torchebm.samplers import LangevinDynamics
@@ -94,8 +94,8 @@ SEED = 42
 torch.manual_seed(SEED)
 
 
-# Create a simple MLP energy function
-class MLPEnergyFunction(BaseEnergyFunction):
+# Create a simple MLP model
+class MLPModel(BaseModel):
     def __init__(self, input_dim=2, hidden_dim=64):
         super().__init__()
         self.model = nn.Sequential(
@@ -127,14 +127,14 @@ dataset = GaussianMixtureDataset(
 dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
 # Create model
-model = MLPEnergyFunction(input_dim=2, hidden_dim=64).to(device)
+model = MLPModel(input_dim=2, hidden_dim=64).to(device)
 SAMPLER_NOISE_SCALE = CosineScheduler(
     initial_value=2e-1, final_value=1e-2, total_steps=50
 )
 
 # Create sampler
 sampler = LangevinDynamics(
-    energy_function=model,
+    model=model,
     step_size=0.01,
     device=device,
     noise_scale=SAMPLER_NOISE_SCALE,
@@ -142,7 +142,7 @@ sampler = LangevinDynamics(
 
 # Create loss function
 loss_fn = ContrastiveDivergence(
-    energy_function=model,
+    model=model,
     sampler=sampler,
     k_steps=10,  # Number of MCMC steps
     persistent=False,  # Set to True for Persistent Contrastive Divergence
@@ -180,7 +180,7 @@ for epoch in range(n_epochs):
 # Generate samples from the trained model
 def generate_samples(model, n_samples=500):
     # Create sampler
-    sampler = LangevinDynamics(energy_function=model, step_size=0.005, device=device)
+    sampler = LangevinDynamics(model=model, step_size=0.005, device=device)
 
     # Initialize from random noise
     initial_samples = torch.randn(n_samples, 2).to(device)
@@ -203,17 +203,17 @@ print(f"Generated {len(samples)} samples from the energy-based model")
 
 ```
 
-## Example: Convolutional Energy Function for Images
+## Example: Convolutional Model for Images
 
 For image data, convolutional architectures are more appropriate:
 
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 
 
-class ConvolutionalEnergyFunction(BaseEnergyFunction):
+class ConvolutionalModel(BaseModel):
     def __init__(self, channels=1, width=28, height=28):
         super().__init__()
 
@@ -258,22 +258,22 @@ class ConvolutionalEnergyFunction(BaseEnergyFunction):
         return energy
 ```
 
-## Advanced Pattern: Composed Energy Functions
+## Advanced Pattern: Composed Models
 
-You can combine multiple analytical energy functions with multiple neural networks for best of both worlds:
+You can combine multiple analytical models with multiple neural networks for best of both worlds:
 
 ```python
 import torch
 import torch.nn as nn
-from torchebm.core import BaseEnergyFunction, GaussianEnergy
+from torchebm.core import BaseModel, GaussianModel
 
 
-class CompositionalEnergyFunction(BaseEnergyFunction):
+class CompositionalModel(BaseModel):
     def __init__(self, input_dim=2, hidden_dim=64):
         super().__init__()
 
-        # Analytical component: Gaussian energy
-        self.analytical_component = GaussianEnergy(
+        # Analytical component: Gaussian model
+        self.analytical_component = GaussianModel(
             mean=torch.zeros(input_dim),
             cov=torch.eye(input_dim)
         )
@@ -307,7 +307,7 @@ class CompositionalEnergyFunction(BaseEnergyFunction):
 
 ## Training Strategies
 
-Training neural network energy functions requires special techniques:
+Training neural network models requires special techniques:
 
 ### Contrastive Divergence
 
@@ -315,7 +315,7 @@ A common approach is contrastive divergence, which minimizes the energy of data 
 
 ```python
 loss_fn = ContrastiveDivergence(
-    energy_function=model,
+    model=model,
     sampler=sampler,
     k_steps=10,  # Number of MCMC steps
     persistent=False,  # Set to True for Persistent Contrastive Divergence
@@ -346,7 +346,7 @@ Score matching is another approach that avoids the need for MCMC sampling:
 
 # Use score matching for training
 sm_loss_fn = ScoreMatching(
-    energy_function=energy_fn,
+    model=model,
     hessian_method="hutchinson",  # More efficient for higher dimensions
     hutchinson_samples=5,
     device=device,
@@ -355,7 +355,7 @@ sm_loss_fn = ScoreMatching(
 batch_loss = train_step_contrastive_divergence(data_batch)
 ```
 
-## Tips for Neural Network Energy Functions
+## Tips for Neural Network Models
 
 1. **Start Simple**: Begin with a simple architecture and gradually increase complexity
 2. **Regularization**: Use weight decay or spectral normalization to prevent extreme energy values
@@ -367,6 +367,6 @@ batch_loss = train_step_contrastive_divergence(data_batch)
 
 ## Conclusion
 
-Neural network energy functions provide a powerful way to model complex distributions in energy-based models. By leveraging the flexibility of deep learning architectures, you can create expressive energy functions that capture intricate patterns in your data.
+Neural network models provide a powerful way to model complex distributions in energy-based models. By leveraging the flexibility of deep learning architectures, you can create expressive models that capture intricate patterns in your data.
 
-Remember to carefully design your architecture, choose appropriate training methods, and monitor the behavior of your energy function during training and sampling. 
+Remember to carefully design your architecture, choose appropriate training methods, and monitor the behavior of your model during training and sampling. 

@@ -340,13 +340,13 @@ TorchEBM is structured around several key components:
 
 <div class="grid cards" markdown>
 
--   :material-function-variant:{ .lg .middle } __Energy Functions__
+-   :material-function-variant:{ .lg .middle } __Models__
 
     ---
 
-    Implement energy functions using `BaseEnergyFunction`. Includes predefined analytical functions (Gaussian, Double Well) and supports custom neural network architectures.
+    Implement models using `BaseModel`. Includes predefined analytical functions (Gaussian, Double Well) and supports custom neural network architectures.
 
-    [:octicons-arrow-right-24: Details](examples/energy_functions/index.md)
+    [:octicons-arrow-right-24: Details](examples/models/index.md)
 
 -   :material-chart-scatter-plot:{ .lg .middle } __Samplers__
 
@@ -408,15 +408,15 @@ Here's a minimal example of defining an energy function and a sampler:
     ---
     ```python
     import torch
-    from torchebm.core import GaussianEnergy
+    from torchebm.core import GaussianModel
     from torchebm.samplers import LangevinDynamics
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Define an (analytical) energy function -> next example: trainable
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2), device=device)
+    # Define an (analytical) model -> next example: trainable
+    model = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2), device=device)
     
     # Define a sampler
-    sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
+    sampler = LangevinDynamics(model=model, step_size=0.01, device=device)
     
     # Generate samples
     initial_points = torch.randn(500, 2, device=device)
@@ -446,7 +446,7 @@ Here's an example of setting up training using `ContrastiveDivergence` and `Lang
   from torchebm.datasets import GaussianMixtureDataset
   
   # A trainable EBM
-  class MLPEnergy(BaseEnergyFunction):
+  class MLPModel(BaseModel):
       def __init__(self, input_dim, hidden_dim=64):
           super().__init__()
           self.net = nn.Sequential(
@@ -460,15 +460,15 @@ Here's an example of setting up training using `ContrastiveDivergence` and `Lang
       def forward(self, x):
           return self.net(x).squeeze(-1) # a scalar value
 
-  energy_fn = MLPEnergy(input_dim=2).to(device)
+  model = MLPModel(input_dim=2).to(device)
   
   cd_loss_fn = ContrastiveDivergence(
-      energy_function=energy_fn,
+      model=model,
       sampler=sampler, # from the previous example
       k_steps=10 # MCMC steps for negative samples gen
   )
   
-  optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
+  optimizer = optim.Adam(model.parameters(), lr=0.001)
   
   mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123).get_data()
   dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
@@ -587,14 +587,14 @@ Visualizing the learned energy landscape during training can be insightful. Belo
     
     These are some TorchEBM's built-in toy analytical energy landscapes for functionality and performance testing purposes.
 
-=== "Gaussian Energy"
+=== "Gaussian Model"
 
     <div class="energy-grid" markdown>
     <div class="energy-main" markdown>
     ![Gaussian Energy](assets/images/e_functions/gaussian.png){ .spotlight }
     
     <div class="energy-caption energy-caption-bottom">
-    **Gaussian Energy**
+    **Gaussian Model**
     
     $E(x) = \frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)$
     </div>
@@ -607,23 +607,23 @@ Visualizing the learned energy landscape during training can be insightful. Belo
     </div>
     
     ```python
-    from torchebm.core import GaussianEnergy
+    from torchebm.core import GaussianModel
     import torch
     
-    energy_fn = GaussianEnergy(
+    model = GaussianModel(
         mean=torch.zeros(2),
         cov=torch.eye(2)
     )
     ```
 
-=== "Double Well Energy"
+=== "Double Well Model"
 
     <div class="energy-grid" markdown>
     <div class="energy-main" markdown>
     ![Double Well Energy](assets/images/e_functions/double_well.png){ .spotlight }
     
     <div class="energy-caption energy-caption-bottom">
-    **Double Well Energy**
+    **Double Well Model**
     
     $E(x) = h \sum_{i=1}^n \left[(x_i^2 - 1)^2\right]$
     </div>
@@ -636,21 +636,21 @@ Visualizing the learned energy landscape during training can be insightful. Belo
     </div>
     
     ```python
-    from torchebm.core import DoubleWellEnergy
+    from torchebm.core import DoubleWellModel
     
-    energy_fn = DoubleWellEnergy(
+    model = DoubleWellModel(
         barrier_height=2.0
     )
     ```
 
-=== "Rastrigin Energy"
+=== "Rastrigin Model"
 
     <div class="energy-grid" markdown>
     <div class="energy-main" markdown>
     ![Rastrigin Energy](assets/images/e_functions/rastrigin.png){ .spotlight }
     
     <div class="energy-caption energy-caption-bottom">
-    **Rastrigin Energy**
+    **Rastrigin Model**
     
     $E(x) = an + \sum_{i=1}^n \left[ x_i^2 - a\cos(2\pi x_i) \right]$
     </div>
@@ -663,21 +663,21 @@ Visualizing the learned energy landscape during training can be insightful. Belo
     </div>
     
     ```python
-    from torchebm.core import RastriginEnergy
+    from torchebm.core import RastriginModel
     
-    energy_fn = RastriginEnergy(
+    model = RastriginModel(
         a=10.0
     )
     ```
 
-=== "Rosenbrock Energy"
+=== "Rosenbrock Model"
 
     <div class="energy-grid" markdown>
     <div class="energy-main" markdown>
     ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png){ .spotlight }
     
     <div class="energy-caption energy-caption-bottom">
-    **Rosenbrock Energy**
+    **Rosenbrock Model**
     
     $E(x) = \sum_{i=1}^{n-1} \left[ a(x_{i+1} - x_i^2)^2 + (x_i - 1)^2 \right]$
     </div>
@@ -690,9 +690,9 @@ Visualizing the learned energy landscape during training can be insightful. Belo
     </div>
     
     ```python
-    from torchebm.core import RosenbrockEnergy
+    from torchebm.core import RosenbrockModel
     
-    energy_fn = RosenbrockEnergy(
+    model = RosenbrockModel(
         a=1.0, 
         b=100.0
     )
