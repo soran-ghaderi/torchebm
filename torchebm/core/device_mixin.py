@@ -1,6 +1,4 @@
 """
-Author: Soran Ghaderi
-Email: soran.gdr.cs@gmail.com
 This module handles the device management or TorchEBM modules
 """
 
@@ -12,11 +10,10 @@ from contextlib import nullcontext
 
 def normalize_device(device):
     """
-    Normalize the device for consistent usage across the library.
+    Normalizes the device identifier for consistent usage.
 
-    - str to device object
-    - remove unnecessary device indices
-    - default device to 'cuda:0' if not specified
+    Converts string identifiers to `torch.device` objects and defaults to
+    'cuda' if available, otherwise 'cpu'.
     """
     if device is None:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,9 +31,10 @@ def normalize_device(device):
 
 
 class DeviceMixin:
-    """Consistent device management across all modules.
+    """
+    A mixin for consistent device and dtype management across all modules.
 
-    This should be inherited by all classes.
+    This should be inherited by all classes that are sensitive to device or dtype.
     """
 
     def __init__(self, device: Union[str, torch.device, None] = None, dtype: Optional[torch.dtype] = None, *args, **kwargs):
@@ -117,7 +115,7 @@ class DeviceMixin:
     @staticmethod
     def safe_to(obj, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
         """
-        Safely move an object supporting .to(...) to device/dtype, handling different signatures.
+        Safely moves an object to a device and/or dtype, if it supports the `.to()` method.
         """
         if not hasattr(obj, "to") or not callable(getattr(obj, "to")):
             return obj
@@ -141,7 +139,7 @@ class DeviceMixin:
 
     # Mixed precision helpers
     def setup_mixed_precision(self, use_mixed_precision: bool) -> None:
-        """Configure mixed precision flags consistently across modules."""
+        """Configures mixed precision settings."""
         self.use_mixed_precision = bool(use_mixed_precision)
         if self.use_mixed_precision:
             try:
@@ -166,7 +164,10 @@ class DeviceMixin:
             self.autocast_available = False
 
     def autocast_context(self):
-        """Return a context manager for autocast if enabled, else a no-op."""
+        """
+        Returns a `torch.cuda.amp.autocast` context manager if mixed precision is enabled,
+        otherwise a `nullcontext`.
+        """
         if getattr(self, "use_mixed_precision", False) and getattr(self, "autocast_available", False):
             from torch.cuda.amp import autocast
             return autocast()

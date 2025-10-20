@@ -1,105 +1,4 @@
-r"""
-Dataset Generators Module.
-
-This module provides a collection of classes for generating synthetic datasets commonly used
-in testing and evaluating energy-based models. These generators create various 2D distributions
-with different characteristics, making them ideal for visualization and demonstration purposes.
-They are implemented as PyTorch Datasets for easy integration with DataLoaders.
-
-!!! success "Key Features"
-    - Diverse collection of 2D synthetic distributions via classes.
-    - Configurable sample sizes, noise levels, and distribution parameters.
-    - Direct compatibility with `torch.utils.data.Dataset` and `DataLoader`.
-    - Device and dtype support for tensor outputs.
-    - Reproducibility through random seeds.
-    - Visualization support for generated datasets.
-
----
-
-## Module Components
-
-Classes:
-    BaseSyntheticDataset: Abstract base class for synthetic dataset generators.
-    GaussianMixtureDataset: Generates samples from a 2D Gaussian mixture arranged in a circle.
-    EightGaussiansDataset: Generates samples from a specific 8-component Gaussian mixture.
-    TwoMoonsDataset: Generates the classic "two moons" dataset.
-    SwissRollDataset: Generates a 2D Swiss roll dataset.
-    CircleDataset: Generates points sampled uniformly on a circle with noise.
-    CheckerboardDataset: Generates points in a 2D checkerboard pattern.
-    PinwheelDataset: Generates the pinwheel dataset with specified number of "blades".
-    GridDataset: Generates points on a regular 2D grid with optional noise.
-
----
-
-## Usage Example
-
-!!! example "Generating and Using Datasets"
-    ```python
-    from torchebm.datasets.generators import TwoMoonsDataset, GaussianMixtureDataset
-    from torch.utils.data import DataLoader
-    import matplotlib.pyplot as plt
-    import torch
-
-    # Instantiate dataset objects
-    moons_dataset = TwoMoonsDataset(n_samples=1000, noise=0.05, seed=42)
-    mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123)
-
-    # Access the full dataset tensor
-    moons_data = moons_dataset.get_data()
-    mixture_data = mixture_dataset.get_data()
-    print(f"Two Moons data batch_shape: {moons_data.batch_shape}")
-    print(f"Mixture data batch_shape: {mixture_data.batch_shape}")
-
-    # Use with DataLoader
-    dataloader = DataLoader(moons_dataset, batch_size=32, shuffle=True)
-    first_batch = next(iter(dataloader))
-    print(f"First batch batch_shape: {first_batch.batch_shape}")
-
-    # Visualize the datasets
-    plt.figure(figsize=(10, 5))
-    plt.subplot(1, 2, 1)
-    plt.scatter(moons_data[:, 0], moons_data[:, 1], s=5)
-    plt.title("Two Moons")
-    plt.subplot(1, 2, 2)
-    plt.scatter(mixture_data[:, 0], mixture_data[:, 1], s=5)
-    plt.title("Gaussian Mixture")
-    plt.show()
-    ```
-
----
-
-## Mathematical Background
-
-!!! info "Distribution Characteristics"
-    Each dataset generator creates points from a different probability distribution:
-
-    - **Gaussian Mixtures**: Weighted combinations of Gaussian distributions, often arranged
-      in specific patterns like circles.
-    - **Two Moons**: Two interlocking half-circles with added noise, creating a challenging
-      bimodal distribution that's not linearly separable.
-    - **Checkerboard**: Alternating high and low density regions in a grid pattern, testing
-      an EBM's ability to capture multiple modes in a regular structure.
-    - **Swiss Roll**: A 2D manifold with spiral structure, testing the model's ability to
-      learn curved manifolds.
-
-!!! tip "Choosing a Dataset"
-    - For testing basic density estimation: use `GaussianMixtureDataset`
-    - For evaluating mode-seeking behavior: use `EightGaussiansDataset` or `CheckerboardDataset`
-    - For testing separation of entangled distributions: use `TwoMoonsDataset`
-    - For manifold learning: use `SwissRollDataset` or `CircleDataset`
-
----
-
-## Implementation Details
-
-!!! note "Device Handling"
-    The `device` parameter determines where the generated dataset tensor resides.
-    Set this appropriately (e.g., 'cuda') for efficient GPU usage.
-
-!!! warning "Random Number Generation"
-    The generators use PyTorch and NumPy random functions. For reproducible results,
-    provide a `seed` argument during instantiation.
-"""
+r"""Dataset Generators Module."""
 
 import warnings
 
@@ -117,17 +16,7 @@ def _to_tensor(
     dtype: torch.dtype = torch.float32,
     device: Optional[Union[str, torch.device]] = None,
 ) -> torch.Tensor:
-    """
-    Convert NumPy array to PyTorch tensor with specified dtype and device.
-
-    Args:
-        data: NumPy array to convert.
-        dtype: PyTorch data type for the output tensor.
-        device: Device to place the tensor on.
-
-    Returns:
-        PyTorch tensor with the specified properties.
-    """
+    """Converts a NumPy array to a PyTorch tensor."""
     tensor = torch.from_numpy(data).to(dtype)
     if device:
         tensor = tensor.to(torch.device(device))
@@ -139,18 +28,13 @@ def _to_tensor(
 
 class BaseSyntheticDataset(Dataset, ABC):
     """
-    Abstract Base Class for generating 2D synthetic datasets.
-
-    Provides common functionality for handling sample size, device, dtype,
-    seeding, and PyTorch Dataset integration. Subclasses must implement
-    the `_generate_data` method.
+    Abstract base class for generating 2D synthetic datasets.
 
     Args:
-        n_samples (int): Total number of samples to generate.
-        device (Optional[Union[str, torch.device]]): Device to place the tensor on.
-        dtype (torch.dtype): Data type for the output tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility. If None, generation
-            will be non-deterministic.
+        n_samples (int): The total number of samples to generate.
+        device (Optional[Union[str, torch.device]]): The device to place the tensor on.
+        dtype (torch.dtype): The data type for the output tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -187,11 +71,6 @@ class BaseSyntheticDataset(Dataset, ABC):
     def _generate_data(self) -> torch.Tensor:
         """
         Core data generation logic to be implemented by subclasses.
-
-        This method should perform the actual sampling based on the dataset's
-        specific parameters and return the generated data as a NumPy array
-        or directly as a PyTorch tensor (without final device/dtype conversion,
-        as that's handled by the base class).
         """
         pass
 
@@ -227,8 +106,7 @@ class BaseSyntheticDataset(Dataset, ABC):
         Re-generates the dataset, optionally with a new seed.
 
         Args:
-            seed (Optional[int]): New random seed. If None, uses the original seed
-                                  (if provided) or remains non-deterministic.
+            seed (Optional[int]): A new random seed. If `None`, the original seed is used.
         """
         if seed is not None:
             self.seed = seed  # Update the seed if a new one is provided
@@ -237,9 +115,6 @@ class BaseSyntheticDataset(Dataset, ABC):
     def get_data(self) -> torch.Tensor:
         """
         Returns the entire generated dataset as a single tensor.
-
-        Returns:
-            torch.Tensor: The generated data tensor.
         """
         if self.data is None:
             # Should not happen if _generate() is called in __init__
@@ -253,12 +128,6 @@ class BaseSyntheticDataset(Dataset, ABC):
     def __getitem__(self, idx: int) -> torch.Tensor:
         """
         Returns the sample at the specified index.
-
-        Args:
-            idx (int): The index of the sample to retrieve.
-
-        Returns:
-            torch.Tensor: The data sample at the given index.
         """
         if self.data is None:
             self._generate()  # Ensure data exists
@@ -282,19 +151,16 @@ class BaseSyntheticDataset(Dataset, ABC):
 
 class GaussianMixtureDataset(BaseSyntheticDataset):
     """
-    Generates samples from a 2D Gaussian mixture arranged uniformly in a circle.
-
-    Creates a mixture of Gaussian distributions with centers equally spaced on a circle.
-    This distribution is useful for testing mode-seeking behavior in energy-based models.
+    Generates a 2D Gaussian mixture dataset with components arranged in a circle.
 
     Args:
-        n_samples (int): Total number of samples to generate.
-        n_components (int): Number of Gaussian components (modes). Default: 8.
-        std (float): Standard deviation of each Gaussian component. Default: 0.05.
-        radius (float): Radius of the circle on which the centers lie. Default: 1.0.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility.
+        n_samples (int): The total number of samples.
+        n_components (int): The number of Gaussian components (modes).
+        std (float): The standard deviation of each Gaussian component.
+        radius (float): The radius of the circle on which the centers lie.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -351,18 +217,15 @@ class GaussianMixtureDataset(BaseSyntheticDataset):
 
 class EightGaussiansDataset(BaseSyntheticDataset):
     """
-    Generates samples from the specific '8 Gaussians' mixture.
-
-    This creates a specific arrangement of 8 Gaussian modes commonly used in the
-    energy-based modeling literature.
+    Generates samples from the '8 Gaussians' mixture distribution.
 
     Args:
-        n_samples (int): Total number of samples. Default: 2000.
-        std (float): Standard deviation of each component. Default: 0.02.
-        scale (float): Scaling factor for the centers (often 2). Default: 2.0.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility.
+        n_samples (int): The total number of samples.
+        std (float): The standard deviation of each component.
+        scale (float): A scaling factor for the centers of the Gaussians.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -423,14 +286,12 @@ class TwoMoonsDataset(BaseSyntheticDataset):
     """
     Generates the 'two moons' dataset.
 
-    Creates two interleaving half-circles with added Gaussian noise.
-
     Args:
-        n_samples (int): Total number of samples. Default: 2000.
-        noise (float): Standard deviation of Gaussian noise added. Default: 0.05.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility.
+        n_samples (int): The total number of samples.
+        noise (float): The standard deviation of the Gaussian noise to add.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -480,12 +341,12 @@ class SwissRollDataset(BaseSyntheticDataset):
     Generates a 2D Swiss roll dataset.
 
     Args:
-        n_samples (int): Number of samples. Default: 2000.
-        noise (float): Standard deviation of Gaussian noise added. Default: 0.05.
-        arclength (float): Controls how many rolls (pi*arclength). Default: 3.0.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility.
+        n_samples (int): The number of samples.
+        noise (float): The standard deviation of the Gaussian noise to add.
+        arclength (float): A factor controlling how many rolls the spiral has.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -525,12 +386,12 @@ class CircleDataset(BaseSyntheticDataset):
     Generates points sampled uniformly on a circle with noise.
 
     Args:
-        n_samples (int): Number of samples. Default: 2000.
-        noise (float): Standard deviation of Gaussian noise added. Default: 0.05.
-        radius (float): Radius of the circle. Default: 1.0.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility.
+        n_samples (int): The number of samples.
+        noise (float): The standard deviation of the Gaussian noise to add.
+        radius (float): The radius of the circle.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -564,12 +425,12 @@ class CheckerboardDataset(BaseSyntheticDataset):
     Generates points in a 2D checkerboard pattern using rejection sampling.
 
     Args:
-        n_samples (int): Target number of samples. Default: 2000.
-        range_limit (float): Defines the square region [-lim, lim] x [-lim, lim]. Default: 4.0.
-        noise (float): Small Gaussian noise added to points. Default: 0.01.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility.
+        n_samples (int): The target number of samples.
+        range_limit (float): Defines the square region `[-lim, lim] x [-lim, lim]`.
+        noise (float): Small Gaussian noise added to the points.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -616,15 +477,15 @@ class PinwheelDataset(BaseSyntheticDataset):
     Generates the pinwheel dataset with curved blades.
 
     Args:
-        n_samples (int): Total number of samples. Default: 2000.
-        n_classes (int): Number of 'blades'. Default: 5.
-        noise (float): Std dev of final additive Cartesian noise. Default: 0.05.
-        radial_scale (float): Controls max radius/length of blades. Default: 2.0.
-        angular_scale (float): Controls std dev of angle noise (thickness). Default: 0.1.
-        spiral_scale (float): Controls spiral tightness. Default: 5.0.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed for reproducibility.
+        n_samples (int): The total number of samples.
+        n_classes (int): The number of 'blades' in the pinwheel.
+        noise (float): The standard deviation of the final additive Cartesian noise.
+        radial_scale (float): Controls the maximum radius/length of the blades.
+        angular_scale (float): Controls the standard deviation of the angle noise (thickness).
+        spiral_scale (float): Controls the tightness of the spiral.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility.
     """
 
     def __init__(
@@ -683,18 +544,17 @@ class PinwheelDataset(BaseSyntheticDataset):
 
 # class GridDataset(BaseSyntheticDataset):
 #     """
-#     Generates points on a 2D grid within [-range_limit, range_limit].
+#     Generates points on a 2D grid.
 #
-#     Note: The total number of samples will be n_samples_per_dim ** 2.
-#           The `n_samples` parameter in the base class will be overridden.
+#     Note: The total number of samples will be `n_samples_per_dim` ** 2.
 #
 #     Args:
-#         n_samples_per_dim (int): Number of points along each dimension. Default: 10.
-#         range_limit (float): Defines the square region [-lim, lim] x [-lim, lim]. Default: 1.0.
-#         noise (float): Standard deviation of Gaussian noise added. Default: 0.01.
-#         device (Optional[Union[str, torch.device]]): Device for the tensor.
-#         dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-#         seed (Optional[int]): Random seed (primarily affects noise).
+#         n_samples_per_dim (int): The number of points along each dimension.
+#         range_limit (float): Defines the square region `[-lim, lim] x [-lim, lim]`.
+#         noise (float): The standard deviation of the Gaussian noise to add.
+#         device (Optional[Union[str, torch.device]]): The device for the tensor.
+#         dtype (torch.dtype): The data type for the tensor.
+#         seed (Optional[int]): A random seed for reproducibility (primarily affects noise).
 #     """
 #
 #     def __init__(
@@ -734,18 +594,18 @@ class PinwheelDataset(BaseSyntheticDataset):
 
 
 class GridDataset(BaseSyntheticDataset):
-    """Generates points on a 2D grid within [-range_limit, range_limit].
+    """
+    Generates points on a 2D grid.
 
-    Note: The total number of samples will be n_samples_per_dim ** 2.
-          The `n_samples` parameter in the base class will be overridden.
+    Note: The total number of samples will be `n_samples_per_dim` ** 2.
 
     Args:
-        n_samples_per_dim (int): Number of points along each dimension. Default: 10.
-        range_limit (float): Defines the square region [-lim, lim] x [-lim, lim]. Default: 1.0.
-        noise (float): Standard deviation of Gaussian noise added. Default: 0.01.
-        device (Optional[Union[str, torch.device]]): Device for the tensor.
-        dtype (torch.dtype): Data type for the tensor. Default: torch.float32.
-        seed (Optional[int]): Random seed (primarily affects noise).
+        n_samples_per_dim (int): The number of points along each dimension.
+        range_limit (float): Defines the square region `[-lim, lim] x [-lim, lim]`.
+        noise (float): The standard deviation of the Gaussian noise to add.
+        device (Optional[Union[str, torch.device]]): The device for the tensor.
+        dtype (torch.dtype): The data type for the tensor.
+        seed (Optional[int]): A random seed for reproducibility (primarily affects noise).
     """
 
     def __init__(

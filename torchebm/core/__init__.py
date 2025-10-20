@@ -36,7 +36,7 @@ from .base_sampler import BaseSampler
 from .base_loss import BaseLoss, BaseContrastiveDivergence
 
 # from .trainer import Trainer
-from .base_optimizer import Optimizer
+# from .base_optimizer import Optimizer
 
 __all__ = [
     # Energy functions

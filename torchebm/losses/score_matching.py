@@ -1,192 +1,4 @@
-r"""
-Score Matching Loss Module.
-
-This module provides implementations of various Score Matching techniques for training energy-based models (EBMs).
-Score Matching offers a powerful alternative to Contrastive Divergence by directly estimating the score function
-without requiring MCMC sampling, making it more computationally efficient and stable in many cases.
-
-!!! success "Key Features"
-    - Original Score Matching (Hyvärinen, 2005)
-    - Denoising Score Matching (Vincent, 2011)
-    - Sliced Score Matching (Song et al., 2019)
-    - Support for different Hessian computation methods
-    - Mixed precision training support
-
----
-
-## Module Components
-
-Classes:
-    ScoreMatching: Original score matching with exact or approximate Hessian computation
-    DenoisingScoreMatching: Denoising variant that avoids Hessian computation
-    SlicedScoreMatching: Efficient variant using random projections
-
----
-
-## Usage Example
-
-!!! example "Basic Score Matching Usage"
-    ```python
-    from torchebm.losses import ScoreMatching
-    from torchebm.energy_functions import MLPEnergyFunction
-    import torch
-
-    # Define the energy function
-    energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
-
-    # Create the score matching loss
-    sm_loss = ScoreMatching(
-        energy_function=energy_fn,
-        hessian_method="hutchinson",  # More efficient for high dimensions
-        hutchinson_samples=5
-    )
-
-    # In the training loop:
-    data_batch = torch.randn(32, 2)  # Real data samples
-    loss = sm_loss(data_batch)
-    loss.backward()
-    ```
-
----
-
-## Mathematical Foundations
-
-!!! info "Score Matching Principles"
-    Score Matching minimizes the expected squared distance between the model's score and the data's score:
-
-    $$
-    J(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|^2 \right]
-    - \mathbb{E}_{p_{\text{data}}} \left[ \text{tr}(\nabla_x^2 E_\theta(x)) \right]
-    $$
-
-    where:
-    - \( E_\theta(x) \) is the energy function with parameters \( \theta \)
-    - \( \nabla_x E_\theta(x) \) is the score function (gradient of energy w.r.t. input)
-    - \( \nabla_x^2 E_\theta(x) \) is the Hessian of the energy function
-
-!!! question "Why Score Matching Works"
-    - **No MCMC Required**: Directly estimates the score function without sampling
-    - **Computational Efficiency**: Avoids the need for expensive MCMC chains
-    - **Stability**: More stable training dynamics compared to CD
-    - **Theoretical Guarantees**: Consistent estimator under mild conditions
-
-### Variants
-
-!!! note "Denoising Score Matching (DSM)"
-    DSM avoids computing the Hessian trace by working with noise-perturbed data:
-
-    $$
-    J_{\text{DSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{\varepsilon} 
-    \left[ \left\| \nabla_x E_\theta(x + \varepsilon) + \frac{\varepsilon}{\sigma^2} \right\|^2 \right]
-    $$
-
-    where \( \varepsilon \sim \mathcal{N}(0, \sigma^2 I) \) is the added noise.
-
-    !!! tip "Noise Scale Selection"
-        - Smaller \( \sigma \): Better for fine details but may be unstable
-        - Larger \( \sigma \): More stable but may lose fine structure
-        - Annealing \( \sigma \) during training can help
-
-!!! note "Sliced Score Matching (SSM)"
-    SSM uses random projections to estimate the score matching objective:
-
-    $$
-    J_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \left[
-    v^T \nabla_x \log p_\theta(x) v + \frac{1}{2} \left( v^T \nabla_x \log p_\theta(x) \right)^2 \right] + \text{const.}
-    $$
-
-    where \( v \) is a random projection vector.
-
-    !!! tip "Projection Types"
-        - **Rademacher**: Values in \(\{-1, +1\}\), often lower variance
-        - **Gaussian**: Standard normal distribution, more general
-        - **Sphere**: Uniformly sampled unit vectors on the hypersphere, preserving direction norms
-
----
-
-## Practical Considerations
-
-!!! warning "Hessian Computation Methods"
-    - **exact**: Computes full Hessian diagonal, accurate but expensive
-    - **hutchinson**: Uses random projections, efficient for high dimensions
-    - **approx**: Uses finite differences, numerically stable
-
-!!! question "How to Choose the Right Method?"
-    Consider these factors when selecting a score matching variant:
-
-    - **Data Dimension**: For high dimensions, prefer SSM or DSM
-    - **Computational Resources**: Exact Hessian requires more memory
-    - **Training Stability**: DSM often more stable than original SM
-    - **Accuracy Requirements**: Exact method most accurate but slowest
-
-!!! warning "Common Pitfalls"
-    - **Numerical Instability**: Hessian computation can be unstable
-    - **Gradient Explosion**: Score terms can grow very large
-    - **Memory Usage**: Exact Hessian requires \( O(d^2) \) memory
-    - **Noise Scale**: Poor choice of \( \sigma \) in DSM can hurt performance
-
----
-
-## Useful Insights
-
-!!! abstract "When to Use Score Matching"
-    Score Matching is particularly effective when:
-
-    - Training high-dimensional energy-based models
-    - Working with continuous data distributions
-    - Computational efficiency is important
-    - MCMC sampling is unstable or expensive
-
-???+ info "Further Reading"
-    - Hyvärinen, A. (2005). "Estimation of non-normalized statistical models by score matching."
-    - Vincent, P. (2011). "A connection between score matching and denoising autoencoders."
-    - Song, Y., et al. (2019). "Sliced score matching: A scalable approach to density and score estimation."
-
----
-
-## Other Examples
-
-!!! example "Denoising Score Matching with Annealing"
-    ```python
-    from torchebm.losses import DenoisingScoreMatching
-    from torchebm.core import LinearScheduler
-
-    # Create noise scale scheduler
-    noise_scheduler = LinearScheduler(
-        start_value=0.1,
-        end_value=0.01,
-        n_steps=1000
-    )
-
-    # Create DSM loss with dynamic noise scale
-    dsm_loss = DenoisingScoreMatching(
-        energy_function=energy_fn,
-        noise_scale=noise_scheduler
-    )
-    ```
-
-!!! example "Sliced Score Matching with Multiple Projections"
-    ```python
-    from torchebm.losses import SlicedScoreMatching
-
-    # Create SSM loss with multiple projections
-    ssm_loss = SlicedScoreMatching(
-        energy_function=energy_fn,
-        n_projections=10,
-        projection_type="rademacher"
-    )
-    ```
-
-!!! example "Mixed Precision Training"
-    ```python
-    # Enable mixed precision for better performance
-    sm_loss = ScoreMatching(
-        energy_function=energy_fn,
-        hessian_method="hutchinson",
-        use_mixed_precision=True
-    )
-    ```
-"""
+r"""Score Matching Loss Module"""
 
 import torch
 import warnings
@@ -198,124 +10,22 @@ from torchebm.core.base_loss import BaseScoreMatching
 
 class ScoreMatching(BaseScoreMatching):
     r"""
-    Implementation of the original Score Matching method by Hyvärinen (2005).
+    Original Score Matching loss from Hyvärinen (2005).
 
-    Score Matching trains energy-based models by making the gradient of the model's
-    energy function (score) match the gradient of the data's log density. This method
-    avoids the need for MCMC sampling that is typically required in contrastive divergence.
-
-    !!! success "Key Advantages"
-        - No MCMC sampling required
-        - Direct estimation of score function
-        - More stable training dynamics
-        - Consistent estimator under mild conditions
-
-    ## Mathematical Formulation
-
-    The score matching objective minimizes:
-
-    \[
-    J(\theta) = \frac{1}{2}
-    \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|_2^2 \right]
-    - \mathbb{E}_{p_{\text{data}}} \left[ \operatorname{tr}(\nabla_x^2 E_\theta(x)) \right]
-    \]
-
-    which is equivalent (up to an additive constant independent of \(\theta\)) to the
-    log-density formulation:
-
-    \[
-    J(\theta) = \mathbb{E}_{p_{\text{data}}} \left[
-        \operatorname{tr}(\nabla_x^2 \log p_\theta(x))
-        + \tfrac{1}{2} \| \nabla_x \log p_\theta(x) \|_2^2
-    \right] + \text{const.},\quad \text{with }\ \nabla_x \log p_\theta(x) = -\nabla_x E_\theta(x).
-    \]
-
-    where:
-    - \( E_\theta(x) \) is the energy function with parameters \( \theta \)
-    - \( \nabla_x E_\theta(x) \) is the score function (gradient of energy w.r.t. input)
-    - \( \nabla_x^2 E_\theta(x) \) is the Hessian of the energy function
-    - \( \text{tr}(\cdot) \) denotes the trace operator
-
-    !!! tip "Computational Considerations"
-        The computational cost varies significantly with the choice of Hessian computation method:
-        - Exact method: \( O(d^2) \) for d-dimensional data
-        - Hutchinson method: \( O(d) \) with variance depending on number of samples
-        - Approximation method: \( O(d) \) but may be less accurate
-
-    ## Implementation Details
-
-    This implementation provides three different methods for computing the Hessian trace:
-
-    1. **exact**: Computes the full Hessian diagonal elements directly. Most accurate but
-       computationally expensive for high-dimensional data.
-
-    2. **hutchinson**: Uses Hutchinson's trace estimator, which approximates the trace using
-       random projections: \( \text{tr}(H) \approx \mathbb{E}_v[v^T H v] \) where v is typically
-       sampled from a Rademacher distribution. More efficient for high dimensions.
-
-    3. **approx**: Uses a finite-difference approximation of the Hessian trace which can be
-       more numerically stable in some cases.
-
-    !!! warning "Numerical Stability"
-        - The exact method can be unstable with mixed precision training
-        - Large values in the Hessian can cause numerical issues
-        - Gradient clipping is applied automatically to prevent instability
-
-    !!! example "Basic Usage"
-        ```python
-        # Create a simple energy function
-        model = MLPModel(input_dim=2, hidden_dim=64)
-
-        # Initialize score matching with Hutchinson estimator
-        sm_loss = ScoreMatching(
-            model=model,
-            hessian_method="hutchinson",
-            hutchinson_samples=5
-        )
-
-        # Training loop
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-        for batch in dataloader:
-            optimizer.zero_grad()
-            loss = sm_loss(batch)
-            loss.backward()
-            optimizer.step()
-        ```
-
-    !!! example "Advanced Configuration"
-        ```python
-        # With mixed precision training
-        sm_loss = ScoreMatching(
-            model=model,
-            hessian_method="hutchinson",
-            use_mixed_precision=True
-        )
-
-        # With custom regularization
-        def l2_regularization(model, x):
-            return torch.mean(model(x)**2)
-
-        sm_loss = ScoreMatching(
-            model=model,
-            regularization_strength=0.1,
-            custom_regularization=l2_regularization
-        )
-        ```
+    This method trains an energy-based model by matching the model's score function
+    (\(\nabla_x \log p_\theta(x)\)) to the data's score function. It avoids MCMC
+    sampling but requires computing the trace of the Hessian.
 
     Args:
-        model (BaseModel): Energy function to train
-        hessian_method (str): Method to compute Hessian trace. One of {"exact", "hutchinson", "approx"}
-        regularization_strength (float): Coefficient for regularization terms
-        hutchinson_samples (int): Number of random vectors for Hutchinson's trace estimator
-        custom_regularization (Optional[Callable]): Optional function for custom regularization
-        use_mixed_precision (bool): Whether to use mixed precision training
-        dtype (torch.dtype): Data type for computations
-        device (Optional[Union[str, torch.device]]): Device for computations
-
-    References:
-        Hyvärinen, A. (2005). Estimation of non-normalized statistical models by score matching.
-        Journal of Machine Learning Research, 6, 695-709.
+        model (BaseModel): The energy-based model to train.
+        hessian_method (str): Method for computing the Hessian trace. One of
+            `{"exact", "approx"}`. `"hutchinson"` is deprecated in favor of
+            `SlicedScoreMatching`.
+        regularization_strength (float): Coefficient for regularization.
+        custom_regularization (Optional[Callable]): A custom regularization function.
+        use_mixed_precision (bool): Whether to use mixed-precision training.
+        dtype (torch.dtype): Data type for computations.
+        device (Optional[Union[str, torch.device]]): Device for computations.
     """
 
     def __init__(
@@ -363,29 +73,15 @@ class ScoreMatching(BaseScoreMatching):
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
-        Compute the score matching loss for a batch of data.
-
-        This method first calculates the loss using the specified Hessian computation method,
-        then adds regularization if needed.
-
-        !!! note
-            The input tensor is automatically converted to the device and dtype specified
-            during initialization.
+        Computes the score matching loss for a batch of data.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
-            *args: Additional positional arguments passed to compute_loss
-            **kwargs: Additional keyword arguments passed to compute_loss
+            x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The score matching loss (scalar)
-
-        Examples:
-            >>> energy_fn = MLPEnergyFunction(dim=2, hidden_dim=32)
-            >>> loss_fn = ScoreMatching(energy_fn, hessian_method="hutchinson")
-            >>> x = torch.randn(128, 2)  # 128 samples of 2D data
-            >>> loss = loss_fn(x)  # Compute the score matching loss
-            >>> loss.backward()  # Backpropagate the loss
+            torch.Tensor: The scalar score matching loss.
         """
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
@@ -400,37 +96,15 @@ class ScoreMatching(BaseScoreMatching):
 
     def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
-        Compute the score matching loss using the specified Hessian computation method.
-
-        This method selects between different implementations of the score matching loss
-        based on the `hessian_method` attribute.
-
-        !!! note
-            For high-dimensional data, SlicedScoreMatching is recommended for better
-            computational efficiency and numerical stability.
-
-        !!! warning
-            The "exact" method requires computing the full Hessian diagonal, which can be
-            computationally expensive for high-dimensional data.
+        Computes the score matching loss using the specified Hessian computation method.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
-            *args: Additional arguments passed to the specific method implementation
-            **kwargs: Additional keyword arguments passed to the specific method implementation
+            x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The score matching loss (scalar)
-
-        Examples:
-            >>> # Different Hessian methods can be chosen at initialization:
-            >>> # Exact method (computationally expensive but accurate)
-            >>> loss_fn_exact = ScoreMatching(energy_fn, hessian_method="exact")
-            >>>
-            >>> # Approximation method (using finite differences)
-            >>> loss_fn_approx = ScoreMatching(energy_fn, hessian_method="approx")
-            >>>
-            >>> # For efficient high-dimensional computation, use SlicedScoreMatching:
-            >>> loss_fn_sliced = SlicedScoreMatching(energy_fn, n_projections=10)
+            torch.Tensor: The scalar score matching loss.
         """
 
         if self.hessian_method == "approx":
@@ -440,32 +114,15 @@ class ScoreMatching(BaseScoreMatching):
 
     def _exact_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         r"""
-        Compute score matching loss using exact Hessian trace computation.
+        Computes score matching loss with an exact Hessian trace.
 
-        This computes the score matching objective:
-
-        \[
-        \mathcal{L}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}} \left[ \| \nabla_x E_\theta(x) \|_2^2 \right]
-        - \mathbb{E}_{p_{\text{data}}} \left[ \operatorname{tr}(\nabla_x^2 E_\theta(x)) \right]
-        \]
-
-        where the trace of the Hessian is computed exactly by calculating each diagonal element.
-
-        !!! warning
-            This method computes the full Hessian diagonal elements and can be very
-            computationally expensive for high-dimensional data. Consider using the
-            Hutchinson estimator via `hessian_method="hutchinson"` for high dimensions.
-
-        !!! note
-            For each dimension \( i \), this computes \( \frac{\partial^2 E}{\partial x_i^2} \),
-            requiring a separate backward pass, making it \( O(d^2) \) in computational complexity
-            where \( d \) is the data dimension.
+        This method is computationally expensive for high-dimensional data.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
+            x (torch.Tensor): Input data tensor.
 
         Returns:
-            torch.Tensor: The score matching loss (scalar)
+            torch.Tensor: The score matching loss.
         """
         batch_size = x.shape[0]
         feature_dim = x.numel() // batch_size
@@ -503,33 +160,13 @@ class ScoreMatching(BaseScoreMatching):
 
     def _approx_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         r"""
-        Compute score matching loss using a more efficient finite-difference approximation.
-
-        This method combines the exact computation of the score term with a more
-        efficient approximation of the Hessian trace using finite differences:
-
-        \[
-        \text{tr}(\nabla_x^2 E_\theta(x)) \approx \frac{1}{\epsilon^2 d} \mathbb{E}_{\delta \sim \mathcal{N}(0, \epsilon^2 I)}
-        \left[ (\nabla_x E_\theta(x + \delta) - \nabla_x E_\theta(x))^T \delta \right]
-        \]
-
-        where \( \epsilon \) is a small constant and \( d \) is the data dimension.
-
-        !!! note
-            This approximation requires only two score computations regardless of the
-            data dimensionality, making it more efficient than the exact method for
-            high-dimensional data.
-
-        !!! warning
-            The approximation quality depends on the choice of \( \epsilon \). Too small
-            values may lead to numerical instability, while too large values may give
-            inaccurate estimates.
+        Computes score matching loss using a finite-difference approximation for the Hessian trace.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
+            x (torch.Tensor): Input data tensor.
 
         Returns:
-            torch.Tensor: The score matching loss (scalar)
+            torch.Tensor: The score matching loss.
         """
 
         batch_size = x.shape[0]
@@ -575,112 +212,20 @@ class ScoreMatching(BaseScoreMatching):
 
 class DenoisingScoreMatching(BaseScoreMatching):
     r"""
-    Implementation of Denoising Score Matching (DSM) by Vincent (2011).
+    Denoising Score Matching (DSM) from Vincent (2011).
 
-    DSM is a variant of score matching that avoids computing the trace of the Hessian
-    by instead matching the score function to the score of noise-perturbed data. This makes
-    it more computationally efficient and numerically stable than the original score matching.
-
-    !!! success "Key Advantages"
-        - No Hessian computation required
-        - More stable than original score matching
-        - Computationally efficient
-        - Works well with high-dimensional data
-
-    ## Mathematical Formulation
-
-    For data \( x \), we add noise \( \varepsilon \sim \mathcal{N}(0, \sigma^2 I) \) to get
-    perturbed data \( \tilde{x} = x + \varepsilon \). The DSM objective is:
-
-    \[
-    J_{\text{DSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{\varepsilon}
-    \left[ \left\| \nabla_{\tilde{x}} E_\theta(\tilde{x}) + \frac{\varepsilon}{\sigma^2} \right\|^2 \right]
-    \]
-
-    The key insight is that the score of the noise-perturbed data distribution can be related to
-    the original data distribution and the noise model:
-
-    \[
-    \nabla_{\tilde{x}} \log p(\tilde{x}) \approx \frac{x - \tilde{x}}{\sigma^2} = -\frac{\varepsilon}{\sigma^2}
-    \]
-
-    This allows us to train the model without computing Hessians, using only first-order gradients.
-
-    !!! tip "Noise Scale Selection"
-        The choice of noise scale \( \sigma \) is crucial:
-        - Small \( \sigma \): Better for fine details but may be unstable
-        - Large \( \sigma \): More stable but may lose fine structure
-        - Annealing \( \sigma \) during training can help balance these trade-offs
-
-    ## Practical Considerations
-
-    - The noise scale \( \sigma \) is a critical hyperparameter that affects the training dynamics
-    - Smaller noise scales focus on fine details of the data distribution
-    - Larger noise scales help with stability but may lose some detailed structure
-    - Annealing the noise scale during training can sometimes improve results
-
-    !!! warning "Common Issues"
-        - Too small noise scale can lead to numerical instability
-        - Too large noise scale can cause loss of fine details
-        - Noise scale should be tuned based on data characteristics
-
-    !!! example "Basic Usage"
-        ```python
-        # Create energy function
-        model = MLPModel(input_dim=2, hidden_dim=64)
-
-        # Initialize DSM with default noise scale
-        dsm_loss = DenoisingScoreMatching(
-            model=model,
-            noise_scale=0.01
-        )
-
-        # Training loop
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-        for batch in dataloader:
-            optimizer.zero_grad()
-            loss = dsm_loss(batch)
-            loss.backward()
-            optimizer.step()
-        ```
-
-    !!! example "Advanced Configuration"
-        ```python
-        # With noise scale annealing
-        from torchebm.core import LinearScheduler
-
-        noise_scheduler = LinearScheduler(
-            start_value=0.1,
-            end_value=0.01,
-            n_steps=1000
-        )
-
-        dsm_loss = DenoisingScoreMatching(
-            model=model,
-            noise_scale=noise_scheduler
-        )
-
-        # With mixed precision training
-        dsm_loss = DenoisingScoreMatching(
-            model=model,
-            noise_scale=0.01,
-            use_mixed_precision=True
-        )
-        ```
+    DSM avoids computing the Hessian trace by matching the score of noise-perturbed
+    data. It is more computationally efficient and often more stable than
+    standard Score Matching.
 
     Args:
-        model (BaseModel): Energy function to train
-        noise_scale (float): Scale of Gaussian noise for data perturbation
-        regularization_strength (float): Coefficient for regularization terms
-        custom_regularization (Optional[Callable]): Optional function for custom regularization
-        use_mixed_precision (bool): Whether to use mixed precision training
-        dtype (torch.dtype): Data type for computations
-        device (Optional[Union[str, torch.device]]): Device for computations
-
-    References:
-        Vincent, P. (2011). A connection between score matching and denoising autoencoders.
-        Neural Computation, 23(7), 1661-1674.
+        model (BaseModel): The energy-based model to train.
+        noise_scale (float): The standard deviation of the Gaussian noise to add to the data.
+        regularization_strength (float): Coefficient for regularization.
+        custom_regularization (Optional[Callable]): A custom regularization function.
+        use_mixed_precision (bool): Whether to use mixed-precision training.
+        dtype (torch.dtype): Data type for computations.
+        device (Optional[Union[str, torch.device]]): Device for computations.
     """
 
     def __init__(
@@ -710,32 +255,15 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
-        Compute the denoising score matching loss for a batch of data.
-
-        This method first computes the denoising score matching loss using perturbed data,
-        then adds regularization if needed.
-
-        !!! note
-            The input tensor is automatically converted to the device and dtype specified
-            during initialization.
+        Computes the denoising score matching loss for a batch of data.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
-            *args: Additional positional arguments passed to compute_loss
-            **kwargs: Additional keyword arguments passed to compute_loss
+            x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The denoising score matching loss (scalar)
-
-        Examples:
-            >>> energy_fn = MLPEnergyFunction(dim=2, hidden_dim=32)
-            >>> loss_fn = DenoisingScoreMatching(
-            ...     energy_fn,
-            ...     noise_scale=0.01  # Controls the noise level added to data
-            ... )
-            >>> x = torch.randn(128, 2)  # 128 samples of 2D data
-            >>> loss = loss_fn(x)  # Compute the DSM loss
-            >>> loss.backward()  # Backpropagate the loss
+            torch.Tensor: The scalar denoising score matching loss.
         """
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
@@ -750,44 +278,15 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
     def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
-        Compute the denoising score matching loss.
-
-        DSM adds noise \( \varepsilon \sim \mathcal{N}(0, \sigma^2 I) \) to the data and
-        trains the score network to predict \( -\varepsilon/\sigma^2 \):
-
-        \[
-        \mathcal{L}_{\text{DSM}}(\theta) = \frac{1}{2} \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{\varepsilon}
-        \left[ \left\| \nabla_{\tilde{x}} E_\theta(\tilde{x}) + \frac{\varepsilon}{\sigma^2} \right\|^2 \right]
-        \]
-
-        where \( \tilde{x} = x + \varepsilon \) is the perturbed data point.
-
-        !!! note
-            The noise scale \( \sigma \) is a critical hyperparameter that affects the learning dynamics.
-
-        !!! tip
-            - Smaller noise scales focus on fine details of the data distribution
-            - Larger noise scales help with stability but may lose some detailed structure
+        Computes the denoising score matching loss.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
-            *args: Additional arguments (not used)
-            **kwargs: Additional keyword arguments (not used)
+            x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The denoising score matching loss (scalar)
-
-        Examples:
-            >>> # Creating loss functions with different noise scales:
-            >>> # Small noise for capturing fine details
-            >>> fine_dsm = DenoisingScoreMatching(energy_fn, noise_scale=0.01)
-            >>>
-            >>> # Larger noise for stability
-            >>> stable_dsm = DenoisingScoreMatching(energy_fn, noise_scale=0.1)
-            >>>
-            >>> # Computing loss
-            >>> x = torch.randn(32, 2)  # 32 samples of 2D data
-            >>> loss = fine_dsm(x)
+            torch.Tensor: The scalar denoising score matching loss.
         """
         x_perturbed, noise = self.perturb_data(x)
 
@@ -807,121 +306,22 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
 class SlicedScoreMatching(BaseScoreMatching):
     r"""
-    Implementation of Sliced Score Matching (SSM) by Song et al. (2019).
+    Sliced Score Matching (SSM) from Song et al. (2019).
 
-    SSM is a computationally efficient variant of score matching that uses random projections
-    to estimate the score matching objective. It avoids computing the full Hessian matrix and
-    instead uses random projections to estimate the trace of the Hessian.
-
-    !!! success "Key Advantages"
-        - Significantly more efficient than exact score matching
-        - Scales well to high dimensions
-        - No need for MCMC sampling
-        - Works with any energy function architecture
-
-    ## Mathematical Formulation
-
-    For data \( x \) and random projection vectors \( v \), the SSM objective is:
-
-    \[
-    J_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)} \mathbb{E}_{v \sim \mathcal{N}(0, I)}
-    \left[ v^T \nabla_x \log p_\theta(x) v + \frac{1}{2} \left( v^T \nabla_x \log p_\theta(x) \right)^2 \right] + \text{const.}
-    \]
-
-    The key insight is that this provides a tractable alternative to score matching by obtaining
-    the following tractable alternative:
-
-    \[
-    \nabla_x \log p_\theta(x) = -\nabla_x E_\theta(x)
-    \]
-
-    This allows us to compute the score matching objective using only first-order gradients
-    and avoids computing the full Hessian matrix, which is much more efficient.
-
-    !!! tip "Projection Selection"
-        The choice of projection type and number of projections affects the accuracy:
-        - Gaussian projections: Most common, works well in practice
-        - Rademacher projections: Binary values, can be more efficient
-        - sphere projections:
-        - More projections: Better accuracy but higher computational cost
-        - Fewer projections: Faster but may be less accurate
-
-    ## Practical Considerations
-
-    - The number of projections \( n_{\text{projections}} \) is a key hyperparameter
-    - More projections lead to better accuracy but higher computational cost
-    - The projection type (Gaussian, Rademacher, or sphere) can affect performance
-    - SSM is particularly useful for high-dimensional data where exact score matching is infeasible
-
-    !!! warning "Common Issues"
-        - Too few projections can lead to high variance in the gradient estimates
-        - Projection type should be chosen based on the data characteristics
-        - May require more iterations than exact score matching for convergence
-
-    !!! example "Basic Usage"
-        ```python
-        # Create energy function
-        model = MLPModel(input_dim=2, hidden_dim=64)
-
-        # Initialize SSM with default parameters
-        ssm_loss = SlicedScoreMatching(
-            model=model,
-            n_projections=10,
-            projection_type="gaussian"
-        )
-
-        # Training loop
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-        for batch in dataloader:
-            optimizer.zero_grad()
-            loss = ssm_loss(batch)
-            loss.backward()
-            optimizer.step()
-        ```
-
-    !!! example "Advanced Configuration"
-        ```python
-        # With Rademacher projections
-        ssm_loss = SlicedScoreMatching(
-            model=model,
-            n_projections=20,
-            projection_type="rademacher"
-        )
-
-        # With mixed precision training
-        ssm_loss = SlicedScoreMatching(
-            model=model,
-            n_projections=10,
-            projection_type="gaussian",
-            use_mixed_precision=True
-        )
-
-        # With custom regularization
-        def custom_reg(model, x):
-            return torch.mean(model(x)**2)
-
-        ssm_loss = SlicedScoreMatching(
-            model=model,
-            n_projections=10,
-            projection_type="gaussian",
-            custom_regularization=custom_reg
-        )
-        ```
+    SSM is a scalable variant of Score Matching that uses random projections to
+    efficiently approximate the score matching objective, avoiding the expensive
+    computation of the Hessian trace.
 
     Args:
-        model (BaseModel): Energy function to train
-        n_projections (int): Number of random projections to use
-        projection_type (str): Type of random projections ("gaussian", "rademacher", or "sphere")
-        regularization_strength (float): Coefficient for regularization terms
-        custom_regularization (Optional[Callable]): Optional function for custom regularization
-        use_mixed_precision (bool): Whether to use mixed precision training
-        dtype (torch.dtype): Data type for computations
-        device (Optional[Union[str, torch.device]]): Device for computations
-
-    References:
-        Song, Y., Garg, S., Shi, J., & Ermon, S. (2019). Sliced score matching: A scalable approach
-        to density and score estimation. In Uncertainty in Artificial Intelligence (pp. 574-584).
+        model (BaseModel): The energy-based model to train.
+        n_projections (int): The number of random projections to use.
+        projection_type (str): The type of random projections. One of
+            `{"rademacher", "sphere", "gaussian"}`.
+        regularization_strength (float): Coefficient for regularization.
+        custom_regularization (Optional[Callable]): A custom regularization function.
+        use_mixed_precision (bool): Whether to use mixed-precision training.
+        dtype (torch.dtype): Data type for computations.
+        device (Optional[Union[str, torch.device]]): Device for computations.
     """
 
     def __init__(
@@ -964,26 +364,13 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     def _get_random_projections(self, shape: torch.Size) -> torch.Tensor:
         r"""
-        Generate random vectors for projection-based score matching.
-
-        This function samples vectors from either a Rademacher or Gaussian distribution
-        based on the `projection_type` parameter.
-
-        !!! note
-            Rademacher distributions (values in \(\{-1, +1\}\)) often have lower variance
-            in the trace estimator compared to Gaussian distributions.
+        Generates random vectors for projections.
 
         Args:
-            shape (torch.Size): Shape of vectors to generate
+            shape (torch.Size): The shape of the vectors to generate.
 
         Returns:
-            torch.Tensor: Random projection vectors of the specified shape
-
-        Examples:
-            >>> loss_fn = SlicedScoreMatching(energy_fn)
-            >>> # Internally used to generate projection vectors:
-            >>> v = loss_fn._get_random_projections((32, 2))  # 32 samples of dim 2
-            >>> # v will be of shape (32, 2) with values in {-1, +1} (Rademacher)
+            torch.Tensor: A tensor of random projection vectors.
         """
         vectors = torch.randn_like(shape)
         if self.projection_type == "rademacher":
@@ -999,33 +386,15 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
-        Compute the sliced score matching loss for a batch of data.
-
-        This method first calculates the sliced score matching loss using random
-        projections, then adds regularization if needed.
-
-        !!! note
-            The input tensor is automatically converted to the device and dtype specified
-            during initialization.
+        Computes the sliced score matching loss for a batch of data.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
-            *args: Additional positional arguments passed to compute_loss
-            **kwargs: Additional keyword arguments passed to compute_loss
+            x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The sliced score matching loss (scalar)
-
-        Examples:
-            >>> energy_fn = MLPEnergyFunction(dim=2, hidden_dim=32)
-            >>> loss_fn = SlicedScoreMatching(
-            ...     energy_fn,
-            ...     n_projections=10,  # Number of random projections to use
-            ...     projection_type="rademacher"  # Type of random vectors
-            ... )
-            >>> x = torch.randn(128, 2)  # 128 samples of 2D data
-            >>> loss = loss_fn(x)  # Compute the SSM loss
-            >>> loss.backward()  # Backpropagate the loss
+            torch.Tensor: The scalar sliced score matching loss.
         """
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
@@ -1040,34 +409,15 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
-        Compute the sliced score matching loss using random projections efficiently.
-
-        This implementation computes the sliced score matching objective efficiently using
-        the tractable alternative formulation. The key insight is that we can compute the
-        objective using only first-order gradients by leveraging the relationship:
-
-        \[
-        \nabla_x \log p_\theta(x) = - \nabla_x E_\theta(x)
-        \]
-
-        The objective is:
-
-        \[
-        \mathcal{L}_{\text{SSM}}(\theta) = \mathbb{E}_{p_{\text{data}}(x)}
-        \left[ v^T \nabla_x \log p_\theta(x) v + \frac{1}{2} \left( v^T \nabla_x \log p_\theta(x) \right)^2 \right] + \text{const.}
-        \]
-
-        !!! tip
-            This method is computationally efficient for high-dimensional data with O(d)
-            complexity rather than O(d²) for exact score matching, where d is the data dimension.
+        Computes the sliced score matching loss using random projections.
 
         Args:
-            x (torch.Tensor): Input data tensor of shape (batch_size, *data_dims)
-            *args: Additional arguments (not used)
-            **kwargs: Additional keyword arguments (not used)
+            x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
+            *args: Additional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The sliced score matching loss (scalar)
+            torch.Tensor: The scalar sliced score matching loss.
         """
 
         dup_x = (

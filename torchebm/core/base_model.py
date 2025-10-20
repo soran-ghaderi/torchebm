@@ -10,36 +10,14 @@ from torchebm.core import DeviceMixin
 
 class BaseModel(DeviceMixin, nn.Module, ABC):
     r"""
-    Abstract base class for energy-based models (EBMs), representing the
-    unnormalized negative log-likelihood of a probability distribution,
-    often denoted as the potential energy \(E(x)\).
+    Abstract base class for energy-based models (EBMs).
 
-    This class provides a unified interface for defining EBMs within the
-    torchebm library, accommodating both pre-defined analytical models (e.g.,
-    `GaussianModel`, `DoubleWellModel`) and trainable neural network models.
-    The energy \(E(x)\) is related to a probability distribution \(p(x)\) by
-    the formula: \(p(x) = \frac{e^{-E(x)}}{Z}\), where \(Z\) is the intractable
-    partition function.
+    This class provides a unified interface for defining EBMs, which represent
+    the unnormalized negative log-likelihood of a probability distribution.
+    It supports both analytical models and trainable neural networks.
 
-    Core Requirements for Subclasses:
-
-    1.  Implement the `forward(x)` method, which computes the scalar energy
-        value for each input sample.
-    2.  Optionally, override the `gradient(x)` method if a more efficient
-        analytical gradient calculation is available. If not provided, the
-        default implementation will use `torch.autograd`.
-
-    Inheritance from `torch.nn.Module` ensures that:
-
-    - Subclasses can define and manage trainable parameters (`nn.Parameter`).
-    - Standard PyTorch functionalities such as `.to(device)`, `.parameters()`,
-      `.state_dict()`, and seamless integration with `torch.optim` are
-      fully supported.
-
-    Args:
-        dtype (torch.dtype): Data type for model computations.
-        use_mixed_precision (bool): Whether to use mixed-precision for forward and
-                                    gradient computations (requires PyTorch 1.6+).
+    Subclasses must implement the `forward(x)` method and can optionally
+    override the `gradient(x)` method for analytical gradients.
     """
     def __init__(
         self,
@@ -70,30 +48,25 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
         Computes the scalar energy value for each input sample.
 
         Args:
-            x (torch.Tensor): Input tensor of batch_shape (batch_size, *input_dims).
-                              It's recommended that subclasses handle moving `x`
-                              to the correct device if necessary, although callers
-                              should ideally provide `x` on the correct device.
+            x (torch.Tensor): Input tensor of shape (batch_size, *input_dims).
 
         Returns:
-            torch.Tensor: Tensor of scalar energy values with batch_shape (batch_size,).
-                          Lower values typically indicate higher probability density.
+            torch.Tensor: Tensor of scalar energy values with shape (batch_size,).
         """
         pass
 
     def gradient(self, x: torch.Tensor) -> torch.Tensor:
         r"""
-        Computes the gradient of the energy function with respect to the input \(x\) \((\nabla_x E(x))\).
+        Computes the gradient of the energy function with respect to the input, \(\nabla_x E(x)\).
 
-        This default implementation uses automatic differentiation based on the
-        `forward` method. Subclasses should override this method if a more
-        efficient or numerically stable analytical gradient is available.
+        This default implementation uses `torch.autograd`. Subclasses can override it
+        for analytical gradients.
 
         Args:
-            x (torch.Tensor): Input tensor of batch_shape (batch_size, *input_dims).
+            x (torch.Tensor): Input tensor of shape (batch_size, *input_dims).
 
         Returns:
-            torch.Tensor: Gradient tensor of the same batch_shape as x.
+            torch.Tensor: Gradient tensor of the same shape as `x`.
         """
 
         original_dtype = x.dtype
@@ -151,11 +124,6 @@ class DoubleWellModel(BaseModel):
     r"""
     Energy-based model for a double-well potential.
 
-    The energy is defined as: \( E(x) = h \sum_{i=1}^{n} (x_i^2 - b^2)^2 \),
-    where \(h\) is the barrier height. This function creates a bimodal
-    distribution with two modes at \( x_i = \pm b \) in each dimension,
-    separated by an energy barrier of height \(h\) at \(x_i = 0\).
-
     Args:
         barrier_height (float): The height of the energy barrier between the wells.
         b (float): The position of the wells (default is 1.0, creating wells at ±1).
@@ -176,8 +144,6 @@ class DoubleWellModel(BaseModel):
 class GaussianModel(BaseModel):
     r"""
     Energy-based model for a Gaussian distribution.
-
-    The energy is defined as: \(E(x) = \frac{1}{2} (x - \mu)^{\top} \Sigma^{-1} (x - \mu)\).
 
     Args:
         mean (torch.Tensor): The mean vector (μ) of the Gaussian distribution.
@@ -241,11 +207,6 @@ class HarmonicModel(BaseModel):
     r"""
     Energy-based model for a harmonic oscillator.
 
-    The energy is defined as: \(E(x) = \frac{1}{2} k \sum_{i=1}^{n} x_i^{2}\).
-    This represents a quadratic potential centered at the origin, which is
-    equivalent to a Gaussian distribution with a zero mean and variance
-    proportional to \(\frac{1}{k}\).
-
     Args:
         k (float): The spring constant.
     """
@@ -264,11 +225,6 @@ class HarmonicModel(BaseModel):
 class RosenbrockModel(BaseModel):
     r"""
     Energy-based model for the Rosenbrock function.
-
-    The energy is defined as: \(E(x) = \sum_{i=1}^{n-1} \left[ b(x_{i+1} - x_i^2)^2 + (a - x_i)^2 \right]\).
-    This function creates a challenging, narrow, parabolic-shaped valley, which
-    is commonly used to benchmark optimization algorithms. The global minimum
-    is located at \((a, a^2, \ldots, a^2)\).
 
     Args:
         a (float): The `a` parameter of the Rosenbrock function.
@@ -305,17 +261,6 @@ class AckleyModel(BaseModel):
     r"""
     Energy-based model for the Ackley function.
 
-    The Ackley energy is defined as:
-    $$
-    \begin{aligned}
-    E(x) &= -a \exp\left(-b \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) \\
-    &\quad - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c x_i)\right) + a + \exp(1)
-    \end{aligned}
-    $$
-    This function has a global minimum at the origin, surrounded by many local
-    minima, creating a challenging optimization landscape for testing an
-    algorithm's ability to escape local optima.
-
     Args:
         a (float): The `a` parameter of the Ackley function.
         b (float): The `b` parameter of the Ackley function.
@@ -330,16 +275,7 @@ class AckleyModel(BaseModel):
         self.c = c
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""
-        Computes the Ackley energy.
-
-        $$
-        \begin{aligned}
-        E(x) &= -a \exp\left(-b \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) \\
-        &\quad - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c x_i)\right) + a + \exp(1)
-        \end{aligned}
-        $$
-        """
+        r"""Computes the Ackley energy."""
         if x.ndim == 1:
             x = x.unsqueeze(0)
 
@@ -355,12 +291,6 @@ class RastriginModel(BaseModel):
     r"""
     Energy-based model for the Rastrigin function.
 
-    The Rastrigin energy is defined as:
-    $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$
-    This function is characterized by a large number of local minima arranged
-    in a regular lattice, with a global minimum at the origin. It is a classic
-    benchmark for optimization algorithms due to its highly multimodal nature.
-
     Args:
         a (float): The `a` parameter of the Rastrigin function.
     """
@@ -369,11 +299,7 @@ class RastriginModel(BaseModel):
         self.a = a
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""
-        Computes the Rastrigin energy.
-
-        $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$
-        """
+        r"""Computes the Rastrigin energy."""
         if x.ndim == 1:
             x = x.unsqueeze(0)
 
