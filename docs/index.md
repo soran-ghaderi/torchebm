@@ -95,13 +95,17 @@ icon: octicons/home-fill-16
     }
     
     [data-md-color-scheme="default"] .banner-base-layer {
-      background: rgba(255, 255, 255, 0.3); /* Reduced from 0.7 to 0.3 */
+      background: rgba(16, 24, 32, 0.7);
     }
     
     [data-md-color-scheme="default"] #glassBanner {
-      color: rgba(0, 0, 0, 1.0);
+      color: rgba(255, 255, 255, 1.0) !important;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(16, 24, 32, 0.1) 100%); /* More transparent */
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.2) 0%, rgba(16, 24, 32, 0.1) 100%); /* More transparent */
+    }
+
+    [data-md-color-scheme="default"] #glassBanner h1 {
+      color: rgba(255, 255, 255, 1.0) !important;
     }
     
     [data-md-color-scheme="default"] #radialBg {
@@ -139,10 +143,14 @@ icon: octicons/home-fill-16
     }
     
     [data-md-color-scheme="slate"] #glassBanner {
-      color: rgba(255, 255, 255, 1.0);
+      color: rgba(255, 255, 255, 1.0) !important;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
       border-color: rgba(255, 255, 255, 0.05);
       background: linear-gradient(135deg, rgba(16, 24, 32, 0.4) 0%, rgba(16, 24, 32, 0.2) 100%);
+    }
+
+    [data-md-color-scheme="slate"] #glassBanner h1 {
+      color: rgba(255, 255, 255, 1.0) !important;
     }
     
     [data-md-color-scheme="slate"] #radialBg {
@@ -324,13 +332,8 @@ icon: octicons/home-fill-16
 
 ## What is TorchEBM?
 
-**Energy-Based Models (EBMs)** offer a powerful and flexible framework for generative modeling by assigning an unnormalized probability (or "energy") to each data point. Lower energy corresponds to higher probability.
+**TorchEBM** is a PyTorch library for Energy-Based Models (EBMs), a powerful class of generative models. It provides a flexible framework to define, train, and generate samples using energy-based models.
 
-**TorchEBM** simplifies working with EBMs in [PyTorch](https://pytorch.org/). It provides a suite of tools designed for researchers and practitioners, enabling efficient implementation and exploration of:
-
-*   **Defining complex energy functions:** Easily create custom energy landscapes using PyTorch modules.
-*   **Training:** Loss functions and procedures suitable for EBM parameter estimation including score matching and contrastive divergence variants.
-*   **Sampling:** Algorithms to draw samples from the learned distribution \( p(x) \).
 
 ---
 
@@ -344,7 +347,7 @@ TorchEBM is structured around several key components:
 
     ---
 
-    Implement models using `BaseModel`. Includes predefined analytical functions (Gaussian, Double Well) and supports custom neural network architectures.
+    Define energy functions using `BaseModel`, from analytical forms to custom neural networks.
 
     [:octicons-arrow-right-24: Details](examples/models/index.md)
 
@@ -352,7 +355,7 @@ TorchEBM is structured around several key components:
 
     ---
 
-    MCMC samplers like Langevin Dynamics (`LangevinDynamics`), Hamiltonian Monte Carlo, and more are provided for generating samples from the energy distribution.
+    Generate samples with MCMC samplers like Langevin Dynamics and Hamiltonian Monte Carlo.
 
     [:octicons-arrow-right-24: Details](api/torchebm/samplers/index.md)
 
@@ -360,7 +363,7 @@ TorchEBM is structured around several key components:
 
     ---
 
-    Comprehensive loss functions for EBM training, including Contrastive Divergence, Score Matching, and Noise Contrastive Estimation.
+    Train models with loss functions like Contrastive Divergence and Score Matching.
 
     [:octicons-arrow-right-24: Details](api/torchebm/losses/index.md)
 
@@ -368,7 +371,7 @@ TorchEBM is structured around several key components:
 
     ---
 
-    Helper functions to generate synthetic datasets (e.g., `make_gaussian_mixture`) useful for testing, debugging, and visualization purposes.
+    Use synthetic dataset generators for testing and visualization.
 
     [:octicons-arrow-right-24: Details](examples/datasets/index.md)
 
@@ -376,7 +379,7 @@ TorchEBM is structured around several key components:
 
     ---
 
-    Tools for visualizing energy landscapes, sampling processes, and training progression to better understand model behavior.
+    Visualize energy landscapes, sampling, and training dynamics.
 
     [:octicons-arrow-right-24: Details](examples/visualization/index.md)
 
@@ -384,7 +387,7 @@ TorchEBM is structured around several key components:
 
     ---
 
-    CUDA implementations of key algorithms for dramatically faster sampling and training on GPU hardware.
+    Accelerate sampling and training with CUDA implementations.
 
     [:octicons-arrow-right-24: Details](api/torchebm/cuda/index.md)
 
@@ -428,276 +431,9 @@ Here's a minimal example of defining an energy function and a sampler:
 </div>
 ---
 
-## Training and Visualization Example
-
-Training EBMs typically involves adjusting the energy function's parameters so that observed data points have lower energy than samples generated by the model. Contrastive Divergence (CD) is a common approach.
-
-Here's an example of setting up training using `ContrastiveDivergence` and `LangevinDynamics`:
-<div class="grid cards" markdown>
-
-- __Train an EBM__
-
-    ---
-  ```python
-  import torch.optim as optim
-  from torch.utils.data import DataLoader
-
-  from torchebm.losses import ContrastiveDivergence
-  from torchebm.datasets import GaussianMixtureDataset
-  
-  # A trainable EBM
-  class MLPModel(BaseModel):
-      def __init__(self, input_dim, hidden_dim=64):
-          super().__init__()
-          self.net = nn.Sequential(
-              nn.Linear(input_dim, hidden_dim),
-              nn.SiLU(),
-              nn.Linear(hidden_dim, hidden_dim),
-              nn.SiLU(),
-              nn.Linear(hidden_dim, 1),
-          )
-  
-      def forward(self, x):
-          return self.net(x).squeeze(-1) # a scalar value
-
-  model = MLPModel(input_dim=2).to(device)
-  
-  cd_loss_fn = ContrastiveDivergence(
-      model=model,
-      sampler=sampler, # from the previous example
-      k_steps=10 # MCMC steps for negative samples gen
-  )
-  
-  optimizer = optim.Adam(model.parameters(), lr=0.001)
-  
-  mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123).get_data()
-  dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
-  
-  # Training Loop
-  for epoch in range(10):
-      epoch_loss = 0.0
-      for i, batch_data in enumerate(dataloader):
-          batch_data = batch_data.to(device)
-  
-          optimizer.zero_grad()
-  
-          loss, neg_samples = cd_loss(batch_data)
-  
-          loss.backward()
-          optimizer.step()
-  
-          epoch_loss += loss.item()
-  
-      avg_loss = epoch_loss / len(dataloader)
-      print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
-  ```
-</div>
-
-Visualizing the learned energy landscape during training can be insightful. Below shows the evolution of an MLP-based energy function trained on a 2D Gaussian mixture:
-
-!!! example "Training Progression (Gaussian Mixture Example)"
-
-    === "Epoch 100 (Final)"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-        <figure markdown>
-          ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-          <figcaption>Learned landscape matching the target distribution.</figcaption>
-        </figure>
-
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-        </div>
-        </div>
-
-    === "Epoch 30"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-        <figure markdown>
-          ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-          <figcaption>Modes become more distinct.</figcaption>
-        </figure>
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-        </div>
-        </div>
-
-    === "Epoch 20"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-
-        <figure markdown>
-          ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-          <figcaption>Energy landscape refinement.</figcaption>
-        </figure>
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-        </div>
-        </div>
-
-    === "Epoch 10"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-
-        <figure markdown>
-          ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-          <figcaption>Early stage: Model starts identifying modes.</figcaption>
-        </figure>
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-        </div>
-        </div>
----
-
 !!! info "Latest Release"
 
     TorchEBM is currently in early development. Check our [GitHub repository](https://github.com/soran-ghaderi/torchebm) for the latest updates and features.
-
-## Example Analytical Energy Landscapes
-
-!!! note "Toy Examples"
-    
-    These are some TorchEBM's built-in toy analytical energy landscapes for functionality and performance testing purposes.
-
-=== "Gaussian Model"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Gaussian Model**
-    
-    $E(x) = \frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Double Well Energy](assets/images/e_functions/double_well.png)
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png)
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import GaussianModel
-    import torch
-    
-    model = GaussianModel(
-        mean=torch.zeros(2),
-        cov=torch.eye(2)
-    )
-    ```
-
-=== "Double Well Model"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Double Well Energy](assets/images/e_functions/double_well.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Double Well Model**
-    
-    $E(x) = h \sum_{i=1}^n \left[(x_i^2 - 1)^2\right]$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png)
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png)
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import DoubleWellModel
-    
-    model = DoubleWellModel(
-        barrier_height=2.0
-    )
-    ```
-
-=== "Rastrigin Model"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Rastrigin Model**
-    
-    $E(x) = an + \sum_{i=1}^n \left[ x_i^2 - a\cos(2\pi x_i) \right]$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png)
-    ![Double Well Energy](assets/images/e_functions/double_well.png)
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import RastriginModel
-    
-    model = RastriginModel(
-        a=10.0
-    )
-    ```
-
-=== "Rosenbrock Model"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Rosenbrock Model**
-    
-    $E(x) = \sum_{i=1}^{n-1} \left[ a(x_{i+1} - x_i^2)^2 + (x_i - 1)^2 \right]$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png)
-    ![Double Well Energy](assets/images/e_functions/double_well.png)
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import RosenbrockModel
-    
-    model = RosenbrockModel(
-        a=1.0, 
-        b=100.0
-    )
-    ```
-
 
 ## Community & Contribution
 

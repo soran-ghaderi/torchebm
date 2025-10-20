@@ -184,6 +184,6 @@ __pycache__/
 *.egg-info/
 
 # Generated images and assets that might be created by scripts
-docs/assets/images/loss_functions/*.png
-docs/assets/images/training/*.png
-docs/assets/images/visualization/*.png
+# docs/assets/images/loss_functions/*.png
+# docs/assets/images/training/*.png
+# docs/assets/images/visualization/*.png

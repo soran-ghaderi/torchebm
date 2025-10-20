@@ -1,36 +1,31 @@
 ---
-sidebar_position: 6
+sidebar_position: 2
 title: Custom Neural Networks
-description: Creating custom neural network-based models
+description: Creating custom neural network-based models in TorchEBM.
 ---
 
 # Custom Neural Network Models
 
-Energy-based models (EBMs) are highly flexible, and one of their key advantages is that the model can be parameterized using neural networks. This guide explains how to create and use neural network-based models in TorchEBM.
+A key advantage of Energy-Based Models (EBMs) is their flexibility; the model can be parameterized using any standard neural network. This guide explains how to create and use your own neural network-based models in TorchEBM.
 
-## Overview
+## Creating a Custom Model
 
-Neural networks provide a powerful way to represent complex energy landscapes that can't be easily defined analytically. By using neural networks as models:
+Any `torch.nn.Module` that outputs a single scalar energy value for each input sample can be used as an EBM. To ensure compatibility with the TorchEBM ecosystem, your custom model should inherit from `torchebm.core.BaseModel`.
 
-- You can capture complex, high-dimensional distributions
-- The model can be learned from data
-- You gain the expressivity of modern deep learning architectures
+The only requirement is to implement the `forward` method, which should take a batch of data `x` with shape `(batch_size, *dims)` and return a tensor of energy values with shape `(batch_size,)`.
 
-## Basic Neural Network Model
+### Example: MLP Model for 2D Data
 
-To create a neural network-based model in TorchEBM, you need to subclass the `BaseModel` base class and implement the `forward` method:
+Here's how to define a simple Multi-Layer Perceptron (MLP) as an EBM for 2D data.
 
 ```python
 import torch
 import torch.nn as nn
 from torchebm.core import BaseModel
 
-
-class NeuralNetModel(BaseModel):
-    def __init__(self, input_dim, hidden_dim=128):
+class MLPModel(BaseModel):
+    def __init__(self, input_dim=2, hidden_dim=128):
         super().__init__()
-
-        # Define neural network architecture
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.SELU(),
@@ -40,203 +35,38 @@ class NeuralNetModel(BaseModel):
         )
 
     def forward(self, x):
-        # x has batch_shape (batch_size, input_dim)
-        # Output should have batch_shape (batch_size,)
         return self.network(x).squeeze(-1)
+
+# You can now use this model with TorchEBM samplers and losses.
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = MLPModel().to(device)
 ```
 
-## Design Considerations
+### Example: Convolutional Model for Images
 
-When designing neural network models, consider the following:
-
-### Network Architecture
-
-The choice of architecture depends on the data type and complexity:
-
-- **MLPs**: Good for generic, low-dimensional data
-- **CNNs**: Effective for images and data with spatial structure
-- **Transformers**: Useful for sequential data or when attention mechanisms are beneficial
-- **Graph Neural Networks**: For data with graph structure
-
-### Output Requirements
-
-Remember the following key points:
-
-1. The model should output a scalar value for each sample in the batch
-2. Lower energy values should correspond to higher probability density
-3. The neural network must be differentiable for gradient-based sampling methods to work
-
-### Scale and Normalization
-
-Energy values should be properly scaled to avoid numerical issues:
-
-- Very large energy values can cause instability in sampling
-- Models that grow too quickly may cause sampling algorithms to fail
-
-## Example: MLP Model for 2D Data
-
-Here's a complete example with a simple MLP model:
-
-```python
-import torch
-import torch.nn as nn
-from torchebm.core import (
-    BaseModel,
-    CosineScheduler,
-)
-from torchebm.samplers import LangevinDynamics
-from torchebm.losses import ContrastiveDivergence
-from torchebm.datasets import GaussianMixtureDataset
-from torch.utils.data import DataLoader
-
-# Set random seeds for reproducibility
-SEED = 42
-torch.manual_seed(SEED)
-
-
-# Create a simple MLP model
-class MLPModel(BaseModel):
-    def __init__(self, input_dim=2, hidden_dim=64):
-        super().__init__()
-        self.model = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SELU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, x):
-        return self.model(x).squeeze(-1)
-
-
-# Set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Create the dataset
-dataset = GaussianMixtureDataset(
-    n_samples=1000,
-    n_components=5,  # 5 Gaussian components
-    std=0.1,  # Standard deviation
-    radius=1.5,  # Radius of the mixture
-    device=device,
-    seed=SEED,
-)
-
-# Create dataloader
-dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
-
-# Create model
-model = MLPModel(input_dim=2, hidden_dim=64).to(device)
-SAMPLER_NOISE_SCALE = CosineScheduler(
-    initial_value=2e-1, final_value=1e-2, total_steps=50
-)
-
-# Create sampler
-sampler = LangevinDynamics(
-    model=model,
-    step_size=0.01,
-    device=device,
-    noise_scale=SAMPLER_NOISE_SCALE,
-)
-
-# Create loss function
-loss_fn = ContrastiveDivergence(
-    model=model,
-    sampler=sampler,
-    k_steps=10,  # Number of MCMC steps
-    persistent=False,  # Set to True for Persistent Contrastive Divergence
-    device=device,
-)
-
-# Create optimizer
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-# Training loop
-n_epochs = 200
-for epoch in range(n_epochs):
-    epoch_loss = 0.0
-
-    for batch in dataloader:
-        # Zero gradients
-        optimizer.zero_grad()
-
-        # Compute loss (automatically handles positive and negative samples)
-        loss, neg_samples = loss_fn(batch)
-
-        # Backpropagation
-        loss.backward()
-
-        # Update parameters
-        optimizer.step()
-
-        epoch_loss += loss.item()
-
-    # Print progress every 10 epochs
-    if (epoch + 1) % 10 == 0:
-        print(f"Epoch {epoch + 1}/{n_epochs}, Loss: {epoch_loss / len(dataloader):.4f}")
-
-
-# Generate samples from the trained model
-def generate_samples(model, n_samples=500):
-    # Create sampler
-    sampler = LangevinDynamics(model=model, step_size=0.005, device=device)
-
-    # Initialize from random noise
-    initial_samples = torch.randn(n_samples, 2).to(device)
-
-    # Sample using MCMC
-    with torch.no_grad():
-        samples = sampler.sample(
-            initial_state=initial_samples,
-            dim=initial_samples.shape[-1],
-            n_samples=n_samples,
-            n_steps=1000,
-        )
-
-    return samples.cpu()
-
-
-# Generate samples
-samples = generate_samples(model)
-print(f"Generated {len(samples)} samples from the energy-based model")
-
-```
-
-## Example: Convolutional Model for Images
-
-For image data, convolutional architectures are more appropriate:
+For image data, a convolutional architecture is more appropriate. The principle is the same: the network must output a single energy value per image.
 
 ```python
 import torch
 import torch.nn as nn
 from torchebm.core import BaseModel
 
-
 class ConvolutionalModel(BaseModel):
     def __init__(self, channels=1, width=28, height=28):
         super().__init__()
-
-        # Convolutional part
         self.conv_net = nn.Sequential(
             nn.Conv2d(channels, 32, kernel_size=3, stride=1, padding=1),
             nn.SELU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),  # 14x14
+            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),
             nn.SELU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.SELU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1),  # 7x7
-            nn.SELU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.SELU(),
-            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),  # 4x4
-            nn.SELU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1),
+            nn.SELU()
         )
 
-        # Calculate the size of the flattened features
-        feature_size = 128 * (width // 8) * (height // 8)
+        feature_size = 64 * (width // 4) * (height // 4)
 
-        # Final energy output
         self.energy_head = nn.Sequential(
             nn.Flatten(),
             nn.Linear(feature_size, 128),
@@ -245,128 +75,22 @@ class ConvolutionalModel(BaseModel):
         )
 
     def forward(self, x):
-        # Ensure x is batched and has correct channel dimension
-        if x.ndim == 3:  # Single image with channels
-            x = x.unsqueeze(0)
-        elif x.ndim == 2:  # Single grayscale image
-            x = x.unsqueeze(0).unsqueeze(0)
-
-        # Extract features and compute energy
         features = self.conv_net(x)
         energy = self.energy_head(features).squeeze(-1)
-
         return energy
+
+# Example with a batch of 28x28 grayscale images
+image_model = ConvolutionalModel(channels=1, width=28, height=28)
+dummy_images = torch.randn(64, 1, 28, 28) # (batch, channels, height, width)
+energies = image_model(dummy_images)
+print(energies.shape) # torch.Size([64])
 ```
 
-## Advanced Pattern: Composed Models
+## Design Considerations
 
-You can combine multiple analytical models with multiple neural networks for best of both worlds:
+-   **Architecture Choice**: The network architecture should match your data modality. Use MLPs for tabular data, CNNs for images, Transformers for sequences, etc.
+-   **Output Shape**: The `forward` method *must* return a 1D tensor of shape `(batch_size,)`. Using `.squeeze(-1)` is a common way to achieve this.
+-   **Differentiability**: The model must be differentiable for gradient-based samplers and training methods to work.
+-   **Numerical Stability**: Energy values can grow very large or small during training. Consider using techniques like weight decay, spectral normalization, or activation function clipping (e.g., `nn.Tanh`) on the output to improve stability.
 
-```python
-import torch
-import torch.nn as nn
-from torchebm.core import BaseModel, GaussianModel
-
-
-class CompositionalModel(BaseModel):
-    def __init__(self, input_dim=2, hidden_dim=64):
-        super().__init__()
-
-        # Analytical component: Gaussian model
-        self.analytical_component = GaussianModel(
-            mean=torch.zeros(input_dim),
-            cov=torch.eye(input_dim)
-        )
-
-        # Neural network component
-        self.neural_component = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SELU(),
-            nn.Linear(hidden_dim, 1)
-        )
-
-        # Weight for combining components
-        self.alpha = nn.Parameter(torch.tensor(0.5))
-
-    def forward(self, x):
-        # Analytical energy
-        analytical_energy = self.analytical_component(x)
-
-        # Neural network energy
-        neural_energy = self.neural_component(x).squeeze(-1)
-
-        # Combine using learned weight
-        # Use sigmoid to keep alpha between 0 and 1
-        alpha = torch.sigmoid(self.alpha)
-        combined_energy = alpha * analytical_energy + (1 - alpha) * neural_energy
-
-        return combined_energy
-```
-
-## Training Strategies
-
-Training neural network models requires special techniques:
-
-### Contrastive Divergence
-
-A common approach is contrastive divergence, which minimizes the energy of data samples while maximizing the energy of samples from the model:
-
-```python
-loss_fn = ContrastiveDivergence(
-    model=model,
-    sampler=sampler,
-    k_steps=10,  # Number of MCMC steps
-    persistent=False,  # Set to True for Persistent Contrastive Divergence
-    device=device,
-)
-
-def train_step_contrastive_divergence(data_batch):
-    # Zero gradients
-    optimizer.zero_grad()
-
-    # Compute loss (automatically handles positive and negative samples)
-    loss, neg_samples = loss_fn(data_batch)
-    
-    # Backpropagation
-    loss.backward()
-    
-    # Update parameters
-    optimizer.step()
-
-    return loss.item()
-```
-
-### Score Matching
-
-Score matching is another approach that avoids the need for MCMC sampling:
-
-```python
-
-# Use score matching for training
-sm_loss_fn = ScoreMatching(
-    model=model,
-    hessian_method="hutchinson",  # More efficient for higher dimensions
-    hutchinson_samples=5,
-    device=device,
-)
-
-batch_loss = train_step_contrastive_divergence(data_batch)
-```
-
-## Tips for Neural Network Models
-
-1. **Start Simple**: Begin with a simple architecture and gradually increase complexity
-2. **Regularization**: Use weight decay or spectral normalization to prevent extreme energy values
-3. **Gradient Clipping**: Apply gradient clipping during training to prevent instability
-4. **Initialization**: Careful initialization of weights can help convergence
-5. **Monitoring**: Track energy values during training to ensure they stay in a reasonable range
-6. **Batch Normalization**: Use with caution as it can affect the shape of the energy landscape
-7. **Residual Connections**: Can help with gradient flow in deeper networks
-
-## Conclusion
-
-Neural network models provide a powerful way to model complex distributions in energy-based models. By leveraging the flexibility of deep learning architectures, you can create expressive models that capture intricate patterns in your data.
-
-Remember to carefully design your architecture, choose appropriate training methods, and monitor the behavior of your model during training and sampling. 
+By following these simple guidelines, you can integrate any custom neural network into the TorchEBM framework. 

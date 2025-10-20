@@ -1,92 +1,124 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 title: Getting Started
-description: Get started with TorchEBM by installing it and running some basic examples
+description: A hands-on guide to installing TorchEBM and training your first Energy-Based Model.
 ---
 
-# Getting Started
+# Getting Started with TorchEBM
 
-This guide will help you get started with TorchEBM by walking you through the installation process and demonstrating some basic usage examples.
+This guide provides a hands-on introduction to TorchEBM. You'll learn how to install the library, understand its core components, and train your first Energy-Based Model (EBM) on a synthetic dataset.
 
 ## Installation
 
-TorchEBM can be installed directly from PyPI:
+TorchEBM can be installed from PyPI. Ensure you have PyTorch installed first.
 
 ```bash
 pip install torchebm
 ```
 
-### Prerequisites
+!!! tip "Prerequisites"
 
-- Python 3.8 or newer
-- PyTorch 1.10.0 or newer
-- CUDA (optional, but recommended for performance)
+    - Python 3.8+
+    - PyTorch 1.10.0+
+    - CUDA is optional but highly recommended for performance.
 
-### Installation from Source
+## Training Your First EBM
 
-If you wish to install the development version:
+Let's train an EBM with a neural network to learn the distribution of a synthetic "two moons" dataset.
 
-```bash
-git clone https://github.com/soran-ghaderi/torchebm.git
-cd torchebm
-pip install -e .
-```
+### Step 1: Create a Dataset
 
-## Quick Start
-
-Here's a simple example to get you started with TorchEBM:
+First, we'll generate a `TwoMoonsDataset` and create a `DataLoader` to iterate through it in batches.
 
 ```python
 import torch
-from torchebm.core import GaussianEnergy
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torch.utils.data import DataLoader
+from torchebm.datasets import TwoMoonsDataset
 
-# Set device for computation
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Define a 2D Gaussian energy function for visualization
-energy_fn = GaussianEnergy(
-    mean=torch.zeros(2, device=device),
-    cov=torch.eye(2, device=device)
-)
-
-# Initialize Langevin dynamics sampler
-sampler = LangevinDynamics(
-    energy_function=energy_fn,
-    step_size=0.01,
-    device=device
-).to(device)
-
-# Generate 1000 samples
-samples = sampler.sample(
-    dim=2,
-    n_steps=100,
-    n_samples=1000,
-    return_trajectory=False
-)
-
-print(f"Generated {samples.shape[0]} samples of dimension {samples.shape[1]}")
+dataset = TwoMoonsDataset(n_samples=5000)
+dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 ```
+
+### Step 2: Define the Model
+
+Next, we'll create a simple Multi-Layer Perceptron (MLP) to serve as our model. This network will take 2D points as input and output a single energy value for each. In TorchEBM, models inherit from `BaseModel`.
+
+```python
+import torch.nn as nn
+from torchebm.core import BaseModel
+
+class NeuralEnergyModel(BaseModel):
+    def __init__(self, input_dim=2, hidden_dim=64):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, x):
+        return self.network(x).squeeze(-1)
+
+model = NeuralEnergyModel().to(device)
+```
+
+### Step 3: Set up the Training Components
+
+To train the EBM, we need three things: a loss function, a sampler, and an optimizer.
+
+1.  **A Sampler**: We'll use `LangevinDynamics` to generate negative samples required by the loss function.
+2.  **A Loss Function**: We'll use `ContrastiveDivergence`, a standard loss function for EBMs. It works by pushing down the energy of real data ("positive" samples) and pushing up the energy of generated data ("negative" samples).
+3.  **An Optimizer**: A standard PyTorch optimizer like `Adam`.
+
+```python
+from torchebm.losses import ContrastiveDivergence
+from torchebm.samplers import LangevinDynamics
+from torch.optim import Adam
+
+sampler = LangevinDynamics(
+    model=model,
+    step_size=10.0,
+    noise_scale=0.1,
+    n_steps=60
+)
+
+cd_loss = ContrastiveDivergence(sampler=sampler)
+optimizer = Adam(model.parameters(), lr=1e-4)
+```
+
+### Step 4: The Training Loop
+
+Now we'll write a standard PyTorch training loop. For each batch of real data, we calculate the contrastive divergence loss and update the model's weights.
+
+```python
+for epoch in range(100):
+    for batch_data in dataloader:
+        real_samples = batch_data.to(device)
+
+        optimizer.zero_grad()
+        loss, _ = cd_loss(real_samples)
+        loss.backward()
+        optimizer.step()
+
+    if (epoch + 1) % 10 == 0:
+        print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
+
+print("Training finished!")
+```
+This loop adjusts the weights of our neural network so that its energy landscape matches the "two moons" data distribution.
 
 ## Next Steps
 
-- Learn about [Energy Functions](energy_functions.md) available in TorchEBM
-- Explore different [Sampling Algorithms](samplers.md)
-- Try out the [Examples](../examples/index.md) for visualizations and advanced usage
-- Check the [API Reference](../api/index.md) for detailed documentation
+Congratulations on training your first Energy-Based Model with TorchEBM!
 
-## Common Issues
-
-### CUDA Out of Memory
-
-If you encounter CUDA out of memory errors, try:
-- Reducing the number of samples
-- Reducing the dimension of the problem
-- Switching to CPU if needed
-
-### Support
-
-If you encounter any issues or have questions:
-- Check the [FAQ](../faq.md)
-- Open an issue on [GitHub](https://github.com/soran-ghaderi/torchebm/issues)
+-   Learn to create [Custom Neural Networks](custom_neural_networks.md) for more complex energy functions.
+-   Explore the different [Samplers](samplers.md) available.
+-   Discover other [Loss Functions](loss_functions.md) for training EBMs.
+-   Dive into the complete [Training](training.md) process.
+-   Check out the [Visualization](visualization.md) guide to see how you can plot your energy landscapes and samples.
+-   For advanced use-cases, see the guide on [Parallel Sampling](parallel_sampling.md).
 

@@ -31,9 +31,9 @@
 /* Cards */
 .md-typeset .grid.cards > :is(ul, ol) {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  grid-gap: 1rem;
-  margin: 1rem 0 !important;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  grid-gap: 0.75rem;
+  margin: 0.75rem 0 !important;
 }
 
 .md-typeset .grid.cards > :is(ul, ol) > li {
