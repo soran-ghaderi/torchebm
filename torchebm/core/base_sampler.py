@@ -41,33 +41,7 @@ class BaseSampler(DeviceMixin, ABC):
         # self.device = device or torch.device(
         #     "cuda" if torch.cuda.is_available() else "cpu"
         # )
-        self.use_mixed_precision = use_mixed_precision
-
-        # Check if mixed precision is available
-        if self.use_mixed_precision:
-            try:
-                from torch.cuda.amp import autocast
-
-                self.autocast_available = True
-                # Ensure device is CUDA for mixed precision
-                if not self.device.type.startswith("cuda"):
-                    warnings.warn(
-                        f"Mixed precision requested but device is {self.device}. "
-                        f"Mixed precision requires CUDA. Falling back to full precision.",
-                        UserWarning,
-                    )
-                    self.use_mixed_precision = False
-                    self.autocast_available = False
-            except ImportError:
-                warnings.warn(
-                    "Mixed precision requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
-                    UserWarning,
-                )
-                self.use_mixed_precision = False
-                self.autocast_available = False
-        else:
-            self.autocast_available = False
+        self.setup_mixed_precision(use_mixed_precision)
 
         self.schedulers: Dict[str, BaseScheduler] = {}
 
@@ -227,12 +201,7 @@ class BaseSampler(DeviceMixin, ABC):
         """
 
         def wrapper(*args, **kwargs):
-            if self.use_mixed_precision and self.autocast_available:
-                from torch.cuda.amp import autocast
-
-                with autocast():
-                    return func(*args, **kwargs)
-            else:
+            with self.autocast_context():
                 return func(*args, **kwargs)
 
         return wrapper

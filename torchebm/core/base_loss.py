@@ -58,34 +58,8 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
         #     device = torch.device(device)
         self.dtype = dtype
         self.clip_value = clip_value
-        self.use_mixed_precision = use_mixed_precision
+        self.setup_mixed_precision(use_mixed_precision)
 
-        if self.use_mixed_precision:
-            try:
-                from torch.cuda.amp import autocast
-
-                self.autocast_available = True
-            except ImportError:
-                warnings.warn(
-                    "Mixed precision training requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
-                    UserWarning,
-                )
-                self.use_mixed_precision = False
-                self.autocast_available = False
-        else:
-            self.autocast_available = False
-
-    # @property
-    # def device(self) -> torch.device:
-    #     """Returns the device associated with the module's parameters/buffers (if any)."""
-    #     try:
-    #         return next(self.parameters()).device
-    #     except StopIteration:
-    #         try:
-    #             return next(self.buffers()).device
-    #         except StopIteration:
-    #             return self._device
 
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
@@ -124,16 +98,7 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
         """
         x = x.to(device=self.device, dtype=self.dtype)
 
-        if (
-            hasattr(self, "use_mixed_precision")
-            and self.use_mixed_precision
-            and self.autocast_available
-        ):
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                loss = self.forward(x, *args, **kwargs)
-        else:
+        with self.autocast_context():
             loss = self.forward(x, *args, **kwargs)
 
         if self.clip_value:
@@ -265,14 +230,7 @@ class BaseContrastiveDivergence(BaseLoss):
                     end = min(i + chunk_size, self.buffer_size)
                     current_chunk = self.replay_buffer[i:end].clone()
                     try:
-                        if self.use_mixed_precision and self.autocast_available:
-                            from torch.cuda.amp import autocast
-
-                            with autocast():
-                                updated_chunk = self.sampler.sample(
-                                    x=current_chunk, n_steps=self.init_steps
-                                ).detach()
-                        else:
+                        with self.autocast_context():
                             updated_chunk = self.sampler.sample(
                                 x=current_chunk, n_steps=self.init_steps
                             ).detach()
@@ -541,21 +499,7 @@ class BaseScoreMatching(BaseLoss):
 
         self.model = self.model.to(device=self.device)
 
-        if self.use_mixed_precision:
-            try:
-                from torch.cuda.amp import autocast
-
-                self.autocast_available = True
-            except ImportError:
-                warnings.warn(
-                    "Mixed precision training requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
-                    UserWarning,
-                )
-                self.use_mixed_precision = False
-                self.autocast_available = False
-        else:
-            self.autocast_available = False
+        self.setup_mixed_precision(use_mixed_precision)
 
     def compute_score(
         self, x: torch.Tensor, noise: Optional[torch.Tensor] = None
@@ -582,12 +526,7 @@ class BaseScoreMatching(BaseLoss):
         if not x_perturbed.requires_grad:
             x_perturbed.requires_grad_(True)
 
-        if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                energy = self.model(x_perturbed)
-        else:
+        with self.autocast_context():
             energy = self.model(x_perturbed)
 
         if self.use_autograd:

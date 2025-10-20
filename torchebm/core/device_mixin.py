@@ -7,6 +7,7 @@ This module handles the device management or TorchEBM modules
 from typing import Union, Optional
 import warnings
 import torch
+from contextlib import nullcontext
 
 
 def normalize_device(device):
@@ -137,3 +138,36 @@ class DeviceMixin:
                 except Exception:
                     pass
             return obj
+
+    # Mixed precision helpers
+    def setup_mixed_precision(self, use_mixed_precision: bool) -> None:
+        """Configure mixed precision flags consistently across modules."""
+        self.use_mixed_precision = bool(use_mixed_precision)
+        if self.use_mixed_precision:
+            try:
+                # Import lazily to avoid hard dependency when not used
+                from torch.cuda.amp import autocast as _autocast  # noqa: F401
+                self.autocast_available = True
+                if not self.device.type.startswith("cuda"):
+                    warnings.warn(
+                        f"Mixed precision requested but device is {self.device}. Mixed precision requires CUDA. Falling back to full precision.",
+                        UserWarning,
+                    )
+                    self.use_mixed_precision = False
+                    self.autocast_available = False
+            except ImportError:
+                warnings.warn(
+                    "Mixed precision requested but torch.cuda.amp not available. Falling back to full precision. Requires PyTorch 1.6+.",
+                    UserWarning,
+                )
+                self.use_mixed_precision = False
+                self.autocast_available = False
+        else:
+            self.autocast_available = False
+
+    def autocast_context(self):
+        """Return a context manager for autocast if enabled, else a no-op."""
+        if getattr(self, "use_mixed_precision", False) and getattr(self, "autocast_available", False):
+            from torch.cuda.amp import autocast
+            return autocast()
+        return nullcontext()

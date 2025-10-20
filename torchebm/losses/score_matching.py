@@ -390,12 +390,7 @@ class ScoreMatching(BaseScoreMatching):
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 
-        if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                loss = self.compute_loss(x, *args, **kwargs)
-        else:
+        with self.autocast_context():
             loss = self.compute_loss(x, *args, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
@@ -745,12 +740,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 
-        if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                loss = self.compute_loss(x, *args, **kwargs)
-        else:
+        with self.autocast_context():
             loss = self.compute_loss(x, *args, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
@@ -1040,12 +1030,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 
-        if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                loss = self.compute_loss(x, *args, **kwargs)
-        else:
+        with self.autocast_context():
             loss = self.compute_loss(x, *args, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:

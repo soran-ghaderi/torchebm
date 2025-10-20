@@ -575,10 +575,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                 n_steps, device=self.device, dtype=self.dtype
             )
 
-        with torch.amp.autocast(
-            device_type="cuda" if self.device.type == "cuda" else "cpu",
-            dtype=self.dtype if self.device.type == "cuda" else None,
-        ):
+        with self.autocast_context():
             for i in range(n_steps):
                 # Perform single HMC step
                 x, acceptance_prob, accepted = self.hmc_step(x)

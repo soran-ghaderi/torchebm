@@ -1,4 +1,5 @@
 import warnings
+from contextlib import nullcontext
 import torch
 from typing import Dict, Optional, Union, Any, List, Callable
 from torch.utils.data import DataLoader
@@ -64,30 +65,24 @@ class BaseTrainer:
         # Configure mixed precision
         if self.use_mixed_precision:
             try:
-                from torch.cuda.amp import autocast, GradScaler
-
-                self.autocast_available = True
-                self.grad_scaler = GradScaler()
-
-                # Ensure device is CUDA for mixed precision
-                if not self.device.type.startswith("cuda"):
+                from torch.cuda.amp import GradScaler
+                self.autocast_available = self.device.type.startswith("cuda")
+                if self.autocast_available:
+                    self.grad_scaler = GradScaler()
+                else:
                     warnings.warn(
-                        f"Mixed precision requested but device is {self.device}. "
-                        f"Mixed precision requires CUDA. Falling back to full precision.",
+                        f"Mixed precision requested but device is {self.device}. Mixed precision requires CUDA. Falling back to full precision.",
                         UserWarning,
                     )
                     self.use_mixed_precision = False
                     self.autocast_available = False
             except ImportError:
                 warnings.warn(
-                    "Mixed precision requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
+                    "Mixed precision requested but torch.cuda.amp not available. Falling back to full precision. Requires PyTorch 1.6+.",
                     UserWarning,
                 )
                 self.use_mixed_precision = False
                 self.autocast_available = False
-        else:
-            self.autocast_available = False
 
         # Move model and loss function to appropriate device/dtype
         self.model = self.model.to(
@@ -107,6 +102,13 @@ class BaseTrainer:
         # Create metrics dictionary for tracking
         self.metrics: Dict[str, Any] = {"loss": []}
 
+    def autocast_context(self):
+        """Return autocast context if enabled, else no-op."""
+        if self.use_mixed_precision and self.autocast_available:
+            from torch.cuda.amp import autocast
+            return autocast()
+        return nullcontext()
+
     def train_step(self, batch: torch.Tensor) -> Dict[str, Any]:
         """
         Perform a single training step.
@@ -125,9 +127,7 @@ class BaseTrainer:
 
         # Forward pass with mixed precision if enabled
         if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
+            with self.autocast_context():
                 loss = self.loss_fn(batch)
 
             # Backward pass with gradient scaling
@@ -375,9 +375,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
 
         # Forward pass with mixed precision if enabled
         if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
+            with self.autocast_context():
                 # ContrastiveDivergence returns (loss, neg_samples)
                 loss, neg_samples = self.loss_fn(batch)
 

@@ -343,43 +343,7 @@ class LangevinDynamics(BaseSampler):
         if return_diagnostics:
             diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
-        if self.use_mixed_precision:
-            with torch.amp.autocast(
-                device_type="cuda" if self.device.type == "cuda" else "cpu"
-            ):
-                for i in range(n_steps):
-                    # todo: Add decay logic
-                    # Generate fresh noise for each step
-                    noise = torch.randn_like(x, device=self.device)
-
-                    # Step all schedulers before each MCMC step
-                    scheduler_values = self.step_schedulers()
-
-                    x = self.langevin_step(x, noise)
-
-                    if return_trajectory:
-                        trajectory[:, i, :] = x
-
-                    if return_diagnostics:
-                        # Handle mean and variance safely regardless of batch size
-                        if n_samples > 1:
-                            mean_x = x.mean(dim=0, keepdim=True)
-                            var_x = x.var(dim=0, unbiased=False, keepdim=True)
-                            var_x = torch.clamp(var_x, min=1e-10, max=1e10)
-                        else:
-                            # For single sample, just use the value and zeros for variance
-                            mean_x = x.clone()
-                            var_x = torch.zeros_like(x)
-
-                        # Compute energy values
-                        energy = self.model(x)
-
-                        # Store the diagnostics safely
-                        for b in range(n_samples):
-                            diagnostics[i, 0, b, :] = mean_x[b if n_samples > 1 else 0]
-                            diagnostics[i, 1, b, :] = var_x[b if n_samples > 1 else 0]
-                            diagnostics[i, 2, b, :] = energy[b].reshape(-1)
-        else:
+        with self.autocast_context():
             for i in range(n_steps):
                 # todo: Add decay logic
                 # Generate fresh noise for each step

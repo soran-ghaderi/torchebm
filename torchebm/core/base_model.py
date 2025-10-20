@@ -51,23 +51,7 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
         """Initializes the BaseModel base class."""
         super().__init__(*args, **kwargs)
         self.dtype = dtype
-        self.use_mixed_precision = use_mixed_precision
-
-        if self.use_mixed_precision:
-            try:
-                from torch.cuda.amp import autocast
-
-                self.autocast_available = True
-            except ImportError:
-                warnings.warn(
-                    "Mixed precision requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
-                    UserWarning,
-                )
-                self.use_mixed_precision = False
-                self.autocast_available = False
-        else:
-            self.autocast_available = False
+        self.setup_mixed_precision(use_mixed_precision)
 
     # @property
     # def device(self) -> torch.device:
@@ -124,12 +108,7 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
                 x.detach().to(dtype=torch.float32, device=device).requires_grad_(True)
             )
 
-            if self.use_mixed_precision and self.autocast_available:
-                from torch.cuda.amp import autocast
-
-                with autocast():
-                    energy = self.forward(x_for_grad)
-            else:
+            with self.autocast_context():
                 energy = self.forward(x_for_grad)
 
             if energy.shape != (x_for_grad.shape[0],):
@@ -164,12 +143,7 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 
-        if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                return super().__call__(x, *args, **kwargs)
-        else:
+        with self.autocast_context():
             return super().__call__(x, *args, **kwargs)
 
 
@@ -409,10 +383,7 @@ class RastriginModel(BaseModel):
         )
 
 
-# ######################################################################################################################
-# ############################################# Deprecated Classes #####################################################
-# ######################################################################################################################
-
+# Deprecated Classes -> will be removed in the next two pypi releases starting from v0.4.0 
 
 class BaseEnergyFunction(BaseModel):
     def __init__(self, *args, **kwargs):
