@@ -4,14 +4,22 @@ Core functionality for energy-based models, including energy functions, base sam
 
 from .device_mixin import DeviceMixin, normalize_device
 
-from .base_energy_function import (
+from .base_model import (
+    BaseModel,
+    DoubleWellModel,
+    GaussianModel,
+    HarmonicModel,
+    RastriginModel,
+    AckleyModel,
+    RosenbrockModel,
+    # deprecated
     BaseEnergyFunction,
     DoubleWellEnergy,
     GaussianEnergy,
     HarmonicEnergy,
     RastriginEnergy,
     AckleyEnergy,
-    RosenbrockEnergy,
+    RosenbrockEnergy
 )
 
 from .base_scheduler import (
@@ -34,6 +42,15 @@ __all__ = [
     # Energy functions
     "DeviceMixin",
     "normalize_device",
+    "BaseModel",
+    "DoubleWellModel",
+    "GaussianModel",
+    "HarmonicModel",
+    "RastriginModel",
+    "AckleyModel",
+    "RosenbrockModel",
+
+    # deprecated
     "BaseEnergyFunction",
     "DoubleWellEnergy",
     "GaussianEnergy",

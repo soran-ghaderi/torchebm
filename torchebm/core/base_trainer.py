@@ -3,7 +3,7 @@ import torch
 from typing import Dict, Optional, Union, Any, List, Callable
 from torch.utils.data import DataLoader
 
-from .base_energy_function import BaseEnergyFunction
+from .base_model import BaseModel
 from .base_sampler import BaseSampler
 from .base_loss import BaseLoss
 
@@ -16,7 +16,7 @@ class BaseTrainer:
     training methods and mixed precision training.
 
     Args:
-        energy_function: Energy function to train
+        model: Energy function to train
         optimizer: PyTorch optimizer to use
         loss_fn: Loss function for training
         device: Device to run training on
@@ -35,7 +35,7 @@ class BaseTrainer:
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         optimizer: torch.optim.Optimizer,
         loss_fn: BaseLoss,
         device: Optional[Union[str, torch.device]] = None,
@@ -43,7 +43,7 @@ class BaseTrainer:
         use_mixed_precision: bool = False,
         callbacks: Optional[List[Callable]] = None,
     ):
-        self.energy_function = energy_function
+        self.model = model
         self.optimizer = optimizer
         self.loss_fn = loss_fn
 
@@ -90,15 +90,15 @@ class BaseTrainer:
             self.autocast_available = False
 
         # Move model and loss function to appropriate device/dtype
-        self.energy_function = self.energy_function.to(
+        self.model = self.model.to(
             device=self.device, dtype=self.dtype
         )
 
         # Propagate mixed precision settings to components
         if hasattr(self.loss_fn, "use_mixed_precision"):
             self.loss_fn.use_mixed_precision = self.use_mixed_precision
-        if hasattr(self.energy_function, "use_mixed_precision"):
-            self.energy_function.use_mixed_precision = self.use_mixed_precision
+        if hasattr(self.model, "use_mixed_precision"):
+            self.model.use_mixed_precision = self.use_mixed_precision
 
         # Move loss function to appropriate device
         if hasattr(self.loss_fn, "to"):
@@ -154,7 +154,7 @@ class BaseTrainer:
             Dictionary with average metrics for the epoch
         """
         # Set model to training mode
-        self.energy_function.train()
+        self.model.train()
 
         # Initialize metrics for this epoch
         epoch_metrics: Dict[str, List[float]] = {"loss": []}
@@ -233,7 +233,7 @@ class BaseTrainer:
 
             # Validate if function provided
             if validate_fn is not None:
-                val_metrics = validate_fn(self.energy_function)
+                val_metrics = validate_fn(self.model)
                 print(f"Validation: {val_metrics}")
 
                 # Update validation metrics in history
@@ -263,7 +263,7 @@ class BaseTrainer:
             path: Path to save the checkpoint to
         """
         checkpoint = {
-            "energy_function_state_dict": self.energy_function.state_dict(),
+            "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "metrics": self.metrics,
         }
@@ -282,7 +282,7 @@ class BaseTrainer:
         """
         checkpoint = torch.load(path, map_location=self.device)
 
-        self.energy_function.load_state_dict(checkpoint["energy_function_state_dict"])
+        self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         if "metrics" in checkpoint:
@@ -301,7 +301,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
     Specialized trainer for contrastive divergence training of EBMs.
 
     Args:
-        energy_function: Energy function to train
+        model: Energy function to train
         sampler: MCMC sampler for generating negative samples
         optimizer: PyTorch optimizer
         learning_rate: Learning rate (if optimizer not provided)
@@ -315,7 +315,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         sampler: BaseSampler,
         optimizer: Optional[torch.optim.Optimizer] = None,
         learning_rate: float = 0.01,
@@ -328,14 +328,14 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
     ):
         # Create optimizer if not provided
         if optimizer is None:
-            optimizer = torch.optim.Adam(energy_function.parameters(), lr=learning_rate)
+            optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
         # Import here to avoid circular import
         from torchebm.losses.contrastive_divergence import ContrastiveDivergence
 
         # Create loss function
         loss_fn = ContrastiveDivergence(
-            energy_function=energy_function,
+            model=model,
             sampler=sampler,
             k_steps=k_steps,
             persistent=persistent,
@@ -347,7 +347,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
 
         # Initialize base trainer
         super().__init__(
-            energy_function=energy_function,
+            model=model,
             optimizer=optimizer,
             loss_fn=loss_fn,
             device=device,
@@ -394,6 +394,6 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
         # Return metrics
         return {
             "loss": loss.item(),
-            "pos_energy": self.energy_function(batch).mean().item(),
-            "neg_energy": self.energy_function(neg_samples).mean().item(),
+            "pos_energy": self.model(batch).mean().item(),
+            "neg_energy": self.model(neg_samples).mean().item(),
         }

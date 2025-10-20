@@ -326,7 +326,7 @@ class ConstantScheduler(BaseScheduler):
 
 
 class ExponentialDecayScheduler(BaseScheduler):
-    """
+    r"""
     Scheduler with exponential decay.
 
     This scheduler implements exponential decay of the parameter value according to:
@@ -731,7 +731,7 @@ class MultiStepScheduler(BaseScheduler):
 
 
 class WarmupScheduler(BaseScheduler):
-    """
+    r"""
     Scheduler that combines linear warmup with another scheduler.
     
     This scheduler implements a two-phase approach: first, it linearly increases
@@ -834,7 +834,7 @@ class WarmupScheduler(BaseScheduler):
         self.main_scheduler.reset()
 
     def _compute_value(self) -> float:
-        """
+        r"""
         Compute the value based on warmup phase or main scheduler.
 
         Returns:

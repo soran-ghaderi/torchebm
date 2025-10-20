@@ -28,22 +28,22 @@ Classes:
     ```python
     from torchebm.losses import ContrastiveDivergence
     from torchebm.samplers import LangevinDynamics
-    from torchebm.energy_functions import MLPEnergyFunction
+    from torchebm.models import MLPModel
     import torch
 
     # Define the energy function
-    energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
+    model = MLPModel(input_dim=2, hidden_dim=64)
 
     # Set up the sampler
     sampler = LangevinDynamics(
-        energy_function=energy_fn,
+        model=model,
         step_size=0.1,
         noise_scale=0.01
     )
 
     # Create the CD loss
     cd_loss = ContrastiveDivergence(
-        energy_function=energy_fn,
+        model=model,
         sampler=sampler,
         k_steps=10,
         persistent=False
@@ -183,7 +183,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
            c. Update the persistent state for next iteration
 
     Args:
-        energy_function (BaseEnergyFunction): Energy function to train
+        model (BaseModel): Energy function to train
         sampler (BaseSampler): MCMC sampler for generating negative samples
         k_steps (int): Number of MCMC steps (k in CD-k)
         persistent (bool): Whether to use persistent Contrastive Divergence
@@ -201,17 +201,17 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
     !!! example "Basic Usage"
         ```python
         # Setup energy function, sampler and CD loss
-        energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
-        sampler = LangevinDynamics(energy_fn, step_size=0.1)
+        model = MLPModel(input_dim=2, hidden_dim=64)
+        sampler = LangevinDynamics(model, step_size=0.1)
         cd_loss = ContrastiveDivergence(
-            energy_function=energy_fn,
+            model=model,
             sampler=sampler,
             k_steps=10,
             persistent=False
         )
 
         # In training loop
-        optimizer = torch.optim.Adam(energy_fn.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
         for batch in dataloader:
             optimizer.zero_grad()
@@ -227,7 +227,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
     def __init__(
         self,
-        energy_function,
+        model,
         sampler,
         k_steps=10,
         persistent=False,
@@ -245,7 +245,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         **kwargs,
     ):
         super().__init__(
-            energy_function=energy_function,
+            model=model,
             sampler=sampler,
             k_steps=k_steps,
             persistent=persistent,
@@ -377,11 +377,11 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             if kwargs.get("add_noise_to_real", False):
                 noise_scale = kwargs.get("noise_scale", 1e-4)
                 x_noisy = x + noise_scale * torch.randn_like(x)
-                x_energy = self.energy_function(x_noisy)
+                x_energy = self.model(x_noisy)
             else:
-                x_energy = self.energy_function(x)
+                x_energy = self.model(x)
 
-            pred_x_energy = self.energy_function(pred_x)
+            pred_x_energy = self.model(pred_x)
 
         # Compute mean energies with improved numerical stability
         mean_x_energy = torch.mean(x_energy)

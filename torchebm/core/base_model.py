@@ -8,52 +8,49 @@ from typing import Optional, Union
 from torchebm.core import DeviceMixin
 
 
-class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
-    """
-    Abstract base class for energy functions (Potential Energy \(E(x)\)).
+class BaseModel(DeviceMixin, nn.Module, ABC):
+    r"""
+    Abstract base class for energy-based models (EBMs), representing the
+    unnormalized negative log-likelihood of a probability distribution,
+    often denoted as the potential energy \(E(x)\).
 
-    This class serves as a standard interface for defining energy functions used
-    within the torchebm library. It is compatible with both pre-defined analytical
-    functions (like Gaussian, DoubleWell) and trainable neural network models.
-    It represents the potential energy \(E(x)\), often related to a probability
-    distribution \(p(x)\) by \(E(x) = -\log p(x) + \text{constant}\).
+    This class provides a unified interface for defining EBMs within the
+    torchebm library, accommodating both pre-defined analytical models (e.g.,
+    `GaussianModel`, `DoubleWellModel`) and trainable neural network models.
+    The energy \(E(x)\) is related to a probability distribution \(p(x)\) by
+    the formula: \(p(x) = \frac{e^{-E(x)}}{Z}\), where \(Z\) is the intractable
+    partition function.
 
     Core Requirements for Subclasses:
 
-    1.  Implement the `forward(x)` method to compute the scalar energy per sample.
-    2.  Optionally, override the `gradient(x)` method if an efficient analytical
-        gradient is available. Otherwise, the default implementation using
-        `torch.autograd` will be used.
+    1.  Implement the `forward(x)` method, which computes the scalar energy
+        value for each input sample.
+    2.  Optionally, override the `gradient(x)` method if a more efficient
+        analytical gradient calculation is available. If not provided, the
+        default implementation will use `torch.autograd`.
 
-    Inheriting from `torch.nn.Module` ensures that:
+    Inheritance from `torch.nn.Module` ensures that:
 
-    - Subclasses can contain trainable parameters (`nn.Parameter`).
-    - Standard PyTorch methods like `.to(device)`, `.parameters()`, `.state_dict()`,
-      and integration with `torch.optim` work as expected.
+    - Subclasses can define and manage trainable parameters (`nn.Parameter`).
+    - Standard PyTorch functionalities such as `.to(device)`, `.parameters()`,
+      `.state_dict()`, and seamless integration with `torch.optim` are
+      fully supported.
 
     Args:
-        dtype (torch.dtype): Data type for computations
-        device (Union[str, torch.device]): Device for computations
-        use_mixed_precision (bool): Whether to use mixed precision for forward and gradient computation
+        dtype (torch.dtype): Data type for model computations.
+        use_mixed_precision (bool): Whether to use mixed-precision for forward and
+                                    gradient computations (requires PyTorch 1.6+).
     """
-
     def __init__(
         self,
         dtype: torch.dtype = torch.float32,
-        # device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
         *args,
         **kwargs,
     ):
-        """Initializes the BaseEnergyFunction base class."""
+        """Initializes the BaseModel base class."""
         super().__init__(*args, **kwargs)
-        # if isinstance(device, str):
-        #     device = torch.device(device)
-
         self.dtype = dtype
-        # self._device = device or (
-        #     torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        # )
         self.use_mixed_precision = use_mixed_precision
 
         if self.use_mixed_precision:
@@ -137,7 +134,7 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
 
             if energy.shape != (x_for_grad.shape[0],):
                 raise ValueError(
-                    f"BaseEnergyFunction forward() output expected batch_shape ({x_for_grad.shape[0]},), but got {energy.shape}."
+                    f"BaseModel forward() output expected shape ({x_for_grad.shape[0]},), but got {energy.shape}."
                 )
 
             if not energy.grad_fn:
@@ -176,21 +173,19 @@ class BaseEnergyFunction(DeviceMixin, nn.Module, ABC):
             return super().__call__(x, *args, **kwargs)
 
 
-class DoubleWellEnergy(BaseEnergyFunction):
+class DoubleWellModel(BaseModel):
     r"""
-    Energy function for a double well potential. \( E(x) = h \sum_{i=1}^{n} (x_i^2 - b^2)^2 \) where h is the barrier height.
+    Energy-based model for a double-well potential.
 
-    This energy function creates a bimodal distribution with two modes at \( x_i = \pm b \)
-    (in each dimension), separated by a barrier of height h at \(x_i = 0\).
+    The energy is defined as: \( E(x) = h \sum_{i=1}^{n} (x_i^2 - b^2)^2 \),
+    where \(h\) is the barrier height. This function creates a bimodal
+    distribution with two modes at \( x_i = \pm b \) in each dimension,
+    separated by an energy barrier of height \(h\) at \(x_i = 0\).
 
     Args:
-        barrier_height (float): Height of the barrier between the wells.
-        b (float): Position of the wells (default is 1.0, wells at ±1).
-
-    Returns:
-        torch.Tensor: Energy values for each input sample, with lower values indicating higher probability density.
+        barrier_height (float): The height of the energy barrier between the wells.
+        b (float): The position of the wells (default is 1.0, creating wells at ±1).
     """
-
     def __init__(self, barrier_height: float = 2.0, b: float = 1.0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.barrier_height = barrier_height
@@ -204,15 +199,16 @@ class DoubleWellEnergy(BaseEnergyFunction):
         return self.barrier_height * (x.pow(2) - self.b**2).pow(2).sum(dim=-1)
 
 
-class GaussianEnergy(BaseEnergyFunction):
+class GaussianModel(BaseModel):
     r"""
-    Energy function for a Gaussian distribution. \(E(x) = \frac{1}{2} (x - \mu)^{\top} \Sigma^{-1} (x - \mu)\).
+    Energy-based model for a Gaussian distribution.
+
+    The energy is defined as: \(E(x) = \frac{1}{2} (x - \mu)^{\top} \Sigma^{-1} (x - \mu)\).
 
     Args:
-        mean (torch.Tensor): Mean vector (μ) of the Gaussian distribution.
-        cov (torch.Tensor): Covariance matrix (Σ) of the Gaussian distribution.
+        mean (torch.Tensor): The mean vector (μ) of the Gaussian distribution.
+        cov (torch.Tensor): The covariance matrix (Σ) of the Gaussian distribution.
     """
-
     def __init__(self, mean: torch.Tensor, cov: torch.Tensor, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if mean.ndim != 1:
@@ -267,17 +263,18 @@ class GaussianEnergy(BaseEnergyFunction):
         return energy
 
 
-class HarmonicEnergy(BaseEnergyFunction):
+class HarmonicModel(BaseModel):
     r"""
-    Energy function for a harmonic oscillator. \(E(x) = \frac{1}{2} k \sum_{i=1}^{n} x_i^{2}\).
+    Energy-based model for a harmonic oscillator.
 
-    This energy function represents a quadratic potential centered at the origin,
-    equivalent to a Gaussian distribution with zero mean and variance proportional to \(\frac{1}{k}\).
+    The energy is defined as: \(E(x) = \frac{1}{2} k \sum_{i=1}^{n} x_i^{2}\).
+    This represents a quadratic potential centered at the origin, which is
+    equivalent to a Gaussian distribution with a zero mean and variance
+    proportional to \(\frac{1}{k}\).
 
     Args:
-        k (float): Spring constant.
+        k (float): The spring constant.
     """
-
     def __init__(self, k: float = 1.0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.k = k
@@ -290,19 +287,19 @@ class HarmonicEnergy(BaseEnergyFunction):
         return 0.5 * self.k * x.pow(2).sum(dim=-1)
 
 
-class RosenbrockEnergy(BaseEnergyFunction):
+class RosenbrockModel(BaseModel):
     r"""
-    Energy function for the Rosenbrock function. \(E(x) = \sum_{i=1}^{n-1} \left[ b(x_{i+1} - x_i^2)^2 + (a - x_i)^2 \right]\).
+    Energy-based model for the Rosenbrock function.
 
-    This energy function creates a challenging valley-shaped distribution with the
-    global minimum at \((a, a^2, a^2, \ldots, a^2)\). It's commonly used as a benchmark for optimization algorithms
-    due to its curved, narrow valley which is difficult to traverse.
+    The energy is defined as: \(E(x) = \sum_{i=1}^{n-1} \left[ b(x_{i+1} - x_i^2)^2 + (a - x_i)^2 \right]\).
+    This function creates a challenging, narrow, parabolic-shaped valley, which
+    is commonly used to benchmark optimization algorithms. The global minimum
+    is located at \((a, a^2, \ldots, a^2)\).
 
     Args:
-        a (float): Parameter `a` of the Rosenbrock function.
-        b (float): Parameter `b` of the Rosenbrock function.
+        a (float): The `a` parameter of the Rosenbrock function.
+        b (float): The `b` parameter of the Rosenbrock function.
     """
-
     def __init__(self, a: float = 1.0, b: float = 100.0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.a = a
@@ -330,29 +327,26 @@ class RosenbrockEnergy(BaseEnergyFunction):
         return (term1 + term2).sum(dim=-1)
 
 
-class AckleyEnergy(BaseEnergyFunction):
+class AckleyModel(BaseModel):
     r"""
-    Energy function for the Ackley function.
+    Energy-based model for the Ackley function.
 
     The Ackley energy is defined as:
-
     $$
     \begin{aligned}
     E(x) &= -a \exp\left(-b \sqrt{\frac{1}{n}\sum_{i=1}^{n} x_i^2}\right) \\
     &\quad - \exp\left(\frac{1}{n}\sum_{i=1}^{n} \cos(c x_i)\right) + a + \exp(1)
     \end{aligned}
     $$
-
-    This function has a global minimum at the origin surrounded by many local minima,
-    creating a challenging optimization landscape that tests an algorithm's ability to
-    escape local optima.
+    This function has a global minimum at the origin, surrounded by many local
+    minima, creating a challenging optimization landscape for testing an
+    algorithm's ability to escape local optima.
 
     Args:
-        a (float): Parameter `a` of the Ackley function.
-        b (float): Parameter `b` of the Ackley function.
-        c (float): Parameter `c` of the Ackley function.
+        a (float): The `a` parameter of the Ackley function.
+        b (float): The `b` parameter of the Ackley function.
+        c (float): The `c` parameter of the Ackley function.
     """
-
     def __init__(
         self, a: float = 20.0, b: float = 0.2, c: float = 2 * math.pi, *args, **kwargs
     ):
@@ -383,22 +377,19 @@ class AckleyEnergy(BaseEnergyFunction):
         return term1 + term2 + self.a + math.e
 
 
-class RastriginEnergy(BaseEnergyFunction):
+class RastriginModel(BaseModel):
     r"""
-    Energy function for the Rastrigin function.
+    Energy-based model for the Rastrigin function.
 
     The Rastrigin energy is defined as:
-
     $$E(x) = an + \sum_{i=1}^{n} [x_i^2 - a \cos(2\pi x_i)]$$
-
-    This function is characterized by a large number of local minima arranged in a
-    regular lattice, with a global minimum at the origin. It's a classic test for
-    optimization algorithms due to its highly multimodal nature.
+    This function is characterized by a large number of local minima arranged
+    in a regular lattice, with a global minimum at the origin. It is a classic
+    benchmark for optimization algorithms due to its highly multimodal nature.
 
     Args:
-        a (float): Parameter `a` of the Rastrigin function.
+        a (float): The `a` parameter of the Rastrigin function.
     """
-
     def __init__(self, a: float = 10.0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.a = a
@@ -416,3 +407,85 @@ class RastriginEnergy(BaseEnergyFunction):
         return self.a * n + torch.sum(
             x**2 - self.a * torch.cos(2 * math.pi * x), dim=-1
         )
+
+
+# ######################################################################################################################
+# ############################################# Deprecated Classes #####################################################
+# ######################################################################################################################
+
+
+class BaseEnergyFunction(BaseModel):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "`BaseEnergyFunction` is deprecated and will be removed in a future version. "
+            "Please use `BaseModel` instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
+
+
+class DoubleWellEnergy(DoubleWellModel):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "`DoubleWellEnergy` is deprecated and will be removed in a future version. "
+            "Please use `DoubleWellModel` instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
+
+
+class GaussianEnergy(GaussianModel):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "`GaussianEnergy` is deprecated and will be removed in a future version. "
+            "Please use `GaussianModel` instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
+
+
+class HarmonicEnergy(HarmonicModel):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "`HarmonicEnergy` is deprecated and will be removed in a future version. "
+            "Please use `HarmonicModel` instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
+
+
+class RosenbrockEnergy(RosenbrockModel):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "`RosenbrockEnergy` is deprecated and will be removed in a future version. "
+            "Please use `RosenbrockModel` instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
+
+
+class AckleyEnergy(AckleyModel):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "`AckleyEnergy` is deprecated and will be removed in a future version. "
+            "Please use `AckleyModel` instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
+
+
+class RastriginEnergy(RastriginModel):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "`RastriginEnergy` is deprecated and will be removed in a future version. "
+            "Please use `RastriginModel` instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)

@@ -133,7 +133,7 @@ from typing import Optional, Union, Tuple, Callable
 import torch
 
 from torchebm.core import BaseSampler, BaseScheduler, ConstantScheduler
-from torchebm.core.base_energy_function import BaseEnergyFunction
+from torchebm.core.base_model import BaseModel
 
 
 class HamiltonianMonteCarlo(BaseSampler):
@@ -166,9 +166,9 @@ class HamiltonianMonteCarlo(BaseSampler):
         - **Adaptability**: Can be adjusted through mass matrices to handle varying scales
 
     Args:
-        energy_function (BaseEnergyFunction): Energy function to sample from.
-        step_size (float): Step size for leapfrog updates.
-        n_leapfrog_steps (int): Number of leapfrog steps per proposal.
+        model (BaseModel): Energy function to sample from.
+        step_size (Union[float, BaseScheduler]): Step size for leapfrog integration (epsilon in equations).
+        n_leapfrog_steps (int): Number of leapfrog steps per HMC trajectory.
         mass (Optional[Tuple[float, torch.Tensor]]): Optional mass matrix or scalar for momentum sampling.
             If float: Uses scalar mass for all dimensions.
             If Tensor: Uses diagonal mass matrix.
@@ -191,11 +191,11 @@ class HamiltonianMonteCarlo(BaseSampler):
     !!! example "Basic Usage"
         ```python
         # Define energy function for a 2D Gaussian
-        energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
+        energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
 
         # Initialize HMC sampler
         sampler = HamiltonianMonteCarlo(
-            energy_function=energy_fn,
+            model=energy_fn,
             step_size=0.1,
             n_leapfrog_steps=10
         )
@@ -216,7 +216,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         step_size: Union[float, BaseScheduler] = 1e-3,
         n_leapfrog_steps: int = 10,
         mass: Optional[Tuple[float, torch.Tensor]] = None,
@@ -228,7 +228,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         """Initialize the Hamiltonian Monte Carlo sampler.
 
         Args:
-            energy_function: Energy function to sample from.
+            model: Energy function to sample from.
             step_size: Step size for leapfrog integration (epsilon in equations).
             n_leapfrog_steps: Number of leapfrog steps per HMC trajectory.
             mass: Optional mass parameter or matrix for momentum.
@@ -241,7 +241,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         Raises:
             ValueError: If step_size or n_leapfrog_steps is non-positive.
         """
-        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
+        super().__init__(model=model, dtype=dtype, device=device)
         if isinstance(step_size, BaseScheduler):
             self.register_scheduler("step_size", step_size)
         else:
@@ -385,7 +385,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         Returns:
             Tuple of (final_position, final_momentum) after integration.
         """
-        gradient_fn = partial(self.energy_function.gradient)
+        gradient_fn = partial(self.model.gradient)
         x = position
         p = momentum
 
@@ -436,7 +436,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         # Compute current Hamiltonian: H = U(q) + K(p)
         # Add numerical stability with clamping
-        current_energy = self.energy_function(current_position)
+        current_energy = self.model(current_position)
         current_energy = torch.clamp(
             current_energy, min=-1e10, max=1e10
         )  # Prevent extreme energy values
@@ -454,7 +454,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         )
 
         # Compute proposed Hamiltonian with similar numerical stability
-        proposed_energy = self.energy_function(proposed_position)
+        proposed_energy = self.model(proposed_position)
         proposed_energy = torch.clamp(proposed_energy, min=-1e10, max=1e10)
 
         proposed_kinetic = self._compute_kinetic_energy(proposed_momentum)
@@ -551,8 +551,8 @@ class HamiltonianMonteCarlo(BaseSampler):
             # If dim is not provided, try to infer from the energy function
             if dim is None:
                 # Check if it's GaussianEnergy which has mean attribute
-                if hasattr(self.energy_function, "mean"):
-                    dim = self.energy_function.mean.shape[0]
+                if hasattr(self.model, "mean"):
+                    dim = self.model.mean.shape[0]
                 else:
                     raise ValueError(
                         "dim must be provided when x is None and cannot be inferred from the energy function"
@@ -612,9 +612,9 @@ class HamiltonianMonteCarlo(BaseSampler):
                         var_x = torch.zeros_like(x)
 
                     # Energy values (ensure finite values)
-                    energy = self.energy_function(
+                    energy = self.model(
                         x
-                    )  # assumed to have batch_shape (n_samples,)
+                    )  # assumed to have shape (n_samples,)
                     energy = torch.clamp(
                         energy, min=-1e10, max=1e10
                     )  # Prevent extreme energy values

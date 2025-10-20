@@ -192,7 +192,7 @@ import torch
 import warnings
 from typing import Optional, Union, Dict, Tuple, Any, Callable
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.core.base_loss import BaseScoreMatching
 
 
@@ -264,17 +264,17 @@ class ScoreMatching(BaseScoreMatching):
     !!! example "Basic Usage"
         ```python
         # Create a simple energy function
-        energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
+        model = MLPModel(input_dim=2, hidden_dim=64)
 
         # Initialize score matching with Hutchinson estimator
         sm_loss = ScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             hessian_method="hutchinson",
             hutchinson_samples=5
         )
 
         # Training loop
-        optimizer = torch.optim.Adam(energy_fn.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
         for batch in dataloader:
             optimizer.zero_grad()
@@ -287,24 +287,24 @@ class ScoreMatching(BaseScoreMatching):
         ```python
         # With mixed precision training
         sm_loss = ScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             hessian_method="hutchinson",
             use_mixed_precision=True
         )
 
         # With custom regularization
-        def l2_regularization(energy_fn, x):
-            return torch.mean(energy_fn(x)**2)
+        def l2_regularization(model, x):
+            return torch.mean(model(x)**2)
 
         sm_loss = ScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             regularization_strength=0.1,
             custom_regularization=l2_regularization
         )
         ```
 
     Args:
-        energy_function (BaseEnergyFunction): Energy function to train
+        model (BaseModel): Energy function to train
         hessian_method (str): Method to compute Hessian trace. One of {"exact", "hutchinson", "approx"}
         regularization_strength (float): Coefficient for regularization terms
         hutchinson_samples (int): Number of random vectors for Hutchinson's trace estimator
@@ -320,7 +320,7 @@ class ScoreMatching(BaseScoreMatching):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         hessian_method: str = "exact",
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
@@ -332,7 +332,7 @@ class ScoreMatching(BaseScoreMatching):
         **kwargs,
     ):
         super().__init__(
-            energy_function=energy_function,
+            model=model,
             regularization_strength=regularization_strength,
             use_autograd=True,
             custom_regularization=custom_regularization,
@@ -478,7 +478,7 @@ class ScoreMatching(BaseScoreMatching):
         x_leaf = x.detach().clone()
         x_leaf.requires_grad_(True)
 
-        energy = self.energy_function(x_leaf)
+        energy = self.model(x_leaf)
         logp_sum = (-energy).sum()
         grad1 = torch.autograd.grad(
             logp_sum, x_leaf, create_graph=True, retain_graph=True
@@ -632,16 +632,16 @@ class DenoisingScoreMatching(BaseScoreMatching):
     !!! example "Basic Usage"
         ```python
         # Create energy function
-        energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
+        model = MLPModel(input_dim=2, hidden_dim=64)
 
         # Initialize DSM with default noise scale
         dsm_loss = DenoisingScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             noise_scale=0.01
         )
 
         # Training loop
-        optimizer = torch.optim.Adam(energy_fn.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
         for batch in dataloader:
             optimizer.zero_grad()
@@ -662,20 +662,20 @@ class DenoisingScoreMatching(BaseScoreMatching):
         )
 
         dsm_loss = DenoisingScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             noise_scale=noise_scheduler
         )
 
         # With mixed precision training
         dsm_loss = DenoisingScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             noise_scale=0.01,
             use_mixed_precision=True
         )
         ```
 
     Args:
-        energy_function (BaseEnergyFunction): Energy function to train
+        model (BaseModel): Energy function to train
         noise_scale (float): Scale of Gaussian noise for data perturbation
         regularization_strength (float): Coefficient for regularization terms
         custom_regularization (Optional[Callable]): Optional function for custom regularization
@@ -690,7 +690,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         noise_scale: float = 0.01,
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
@@ -701,7 +701,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         **kwargs,
     ):
         super().__init__(
-            energy_function=energy_function,
+            model=model,
             noise_scale=noise_scale,
             regularization_strength=regularization_strength,
             use_autograd=True,
@@ -871,17 +871,17 @@ class SlicedScoreMatching(BaseScoreMatching):
     !!! example "Basic Usage"
         ```python
         # Create energy function
-        energy_fn = MLPEnergyFunction(input_dim=2, hidden_dim=64)
+        model = MLPModel(input_dim=2, hidden_dim=64)
 
         # Initialize SSM with default parameters
         ssm_loss = SlicedScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             n_projections=10,
             projection_type="gaussian"
         )
 
         # Training loop
-        optimizer = torch.optim.Adam(energy_fn.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
         for batch in dataloader:
             optimizer.zero_grad()
@@ -894,25 +894,25 @@ class SlicedScoreMatching(BaseScoreMatching):
         ```python
         # With Rademacher projections
         ssm_loss = SlicedScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             n_projections=20,
             projection_type="rademacher"
         )
 
         # With mixed precision training
         ssm_loss = SlicedScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             n_projections=10,
             projection_type="gaussian",
             use_mixed_precision=True
         )
 
         # With custom regularization
-        def custom_reg(energy_fn, x):
-            return torch.mean(energy_fn(x)**2)
+        def custom_reg(model, x):
+            return torch.mean(model(x)**2)
 
         ssm_loss = SlicedScoreMatching(
-            energy_function=energy_fn,
+            model=model,
             n_projections=10,
             projection_type="gaussian",
             custom_regularization=custom_reg
@@ -920,7 +920,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         ```
 
     Args:
-        energy_function (BaseEnergyFunction): Energy function to train
+        model (BaseModel): Energy function to train
         n_projections (int): Number of random projections to use
         projection_type (str): Type of random projections ("gaussian", "rademacher", or "sphere")
         regularization_strength (float): Coefficient for regularization terms
@@ -936,7 +936,7 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         n_projections: int = 5,
         projection_type: str = "rademacher",
         regularization_strength: float = 0.0,
@@ -948,7 +948,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         **kwargs,
     ):
         super().__init__(
-            energy_function=energy_function,
+            model=model,
             regularization_strength=regularization_strength,
             use_autograd=True,
             custom_regularization=custom_regularization,
@@ -1097,7 +1097,7 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         n_vectors = self._get_random_projections(dup_x)
 
-        logp = (-self.energy_function(dup_x)).sum()
+        logp = (-self.model(dup_x)).sum()
         grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
         v_score = torch.sum(grad1 * n_vectors, dim=-1)
         term1 = 0.5 * (v_score**2)

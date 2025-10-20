@@ -17,7 +17,7 @@ from typing import Tuple, Union, Optional, Dict, Any, Callable
 import torch
 from torch import nn
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.core import BaseSampler
 from torchebm.core import DeviceMixin
 
@@ -162,7 +162,7 @@ class BaseContrastiveDivergence(BaseLoss):
         - compute_loss: Computes the contrastive divergence loss from positive and negative samples.
 
     Args:
-        energy_function: The energy function being trained
+        model: The energy function being trained
         sampler: MCMC sampler for generating negative samples
         k_steps: Number of MCMC steps to perform for each update
         persistent: Whether to use replay buffer (PCD)
@@ -178,7 +178,7 @@ class BaseContrastiveDivergence(BaseLoss):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         sampler: BaseSampler,
         k_steps: int = 1,
         persistent: bool = False,
@@ -200,7 +200,7 @@ class BaseContrastiveDivergence(BaseLoss):
             *args,
             **kwargs,
         )
-        self.energy_function = energy_function
+        self.model = model
         self.sampler = sampler
         self.k_steps = k_steps
         self.persistent = persistent
@@ -208,7 +208,7 @@ class BaseContrastiveDivergence(BaseLoss):
         self.new_sample_ratio = new_sample_ratio
         self.init_steps = init_steps
 
-        self.energy_function = self.energy_function.to(device=self.device)
+        self.model = self.model.to(device=self.device)
         if hasattr(self.sampler, "to") and callable(getattr(self.sampler, "to")):
             self.sampler = self.sampler.to(device=self.device)
 
@@ -475,7 +475,7 @@ class BaseContrastiveDivergence(BaseLoss):
 
     def __repr__(self):
         """Return a string representation of the loss function."""
-        return f"{self.__class__.__name__}(energy_function={self.energy_function}, sampler={self.sampler})"
+        return f"{self.__class__.__name__}(model={self.model}, sampler={self.sampler})"
 
     def __str__(self):
         """Return a string representation of the loss function."""
@@ -497,7 +497,7 @@ class BaseScoreMatching(BaseLoss):
         - compute_loss: Computes the specific score matching loss variant
 
     Args:
-        energy_function: The energy function being trained
+        model: The energy function being trained
         noise_scale: Scale of noise for perturbation (used in denoising variants)
         regularization_strength: Coefficient for regularization terms
         use_autograd: Whether to use PyTorch autograd for computing derivatives
@@ -512,7 +512,7 @@ class BaseScoreMatching(BaseLoss):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         noise_scale: float = 0.01,
         regularization_strength: float = 0.0,
         use_autograd: bool = True,
@@ -531,7 +531,7 @@ class BaseScoreMatching(BaseLoss):
             *args,
             **kwargs,  # dtype=dtype, device=device,
         )
-        self.energy_function = energy_function.to(device=self.device)
+        self.model = model.to(device=self.device)
         self.noise_scale = noise_scale
         self.regularization_strength = regularization_strength
         self.use_autograd = use_autograd
@@ -539,7 +539,7 @@ class BaseScoreMatching(BaseLoss):
         self.custom_regularization = custom_regularization
         self.use_mixed_precision = use_mixed_precision
 
-        self.energy_function = self.energy_function.to(device=self.device)
+        self.model = self.model.to(device=self.device)
 
         if self.use_mixed_precision:
             try:
@@ -586,9 +586,9 @@ class BaseScoreMatching(BaseLoss):
             from torch.cuda.amp import autocast
 
             with autocast():
-                energy = self.energy_function(x_perturbed)
+                energy = self.model(x_perturbed)
         else:
-            energy = self.energy_function(x_perturbed)
+            energy = self.model(x_perturbed)
 
         if self.use_autograd:
             score = torch.autograd.grad(energy.sum(), x_perturbed, create_graph=True)[0]
@@ -691,10 +691,10 @@ class BaseScoreMatching(BaseLoss):
             return loss
 
         if custom_reg_fn is not None:
-            reg_term = custom_reg_fn(x, self.energy_function)
+            reg_term = custom_reg_fn(x, self.model)
 
         elif self.custom_regularization is not None:
-            reg_term = self.custom_regularization(x, self.energy_function)
+            reg_term = self.custom_regularization(x, self.model)
         # default: L2 norm of score
         else:
             score = self.compute_score(x)
@@ -704,7 +704,7 @@ class BaseScoreMatching(BaseLoss):
 
     def __repr__(self):
         """Return a string representation of the loss function."""
-        return f"{self.__class__.__name__}(energy_function={self.energy_function})"
+        return f"{self.__class__.__name__}(model={self.model})"
 
     def __str__(self):
         """Return a string representation of the loss function."""

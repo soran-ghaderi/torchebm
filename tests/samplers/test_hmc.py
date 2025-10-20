@@ -4,8 +4,8 @@ import numpy as np
 from functools import partial
 
 from torchebm.core import (
-    BaseEnergyFunction,
-    GaussianEnergy,
+    BaseModel,
+    GaussianModel,
     DoubleWellEnergy,
     BaseScheduler,
     ConstantScheduler,
@@ -24,7 +24,7 @@ requires_cuda = pytest.mark.skipif(
 ###############################################################################
 
 
-class NanInducingEnergy(BaseEnergyFunction):
+class NanInducingEnergy(BaseModel):
     """Energy function designed to produce NaNs during gradient calculation."""
 
     def __init__(self, dim=2, nan_threshold=5.0, device="cpu"):
@@ -72,7 +72,7 @@ def energy_function(request):
         dim = params.get("dim", 10)
         mean = params.get("mean", torch.zeros(dim, device=device))
         cov = params.get("cov", torch.eye(dim, device=device))
-        return GaussianEnergy(mean=mean, cov=cov).to(device)
+        return GaussianModel(mean=mean, cov=cov).to(device)
     elif params.get("type") == "double_well":
         dim = params.get("dim", 2)  # DoubleWell usually tested in 2D
         barrier_height = params.get("barrier_height", 2.0)
@@ -86,7 +86,7 @@ def energy_function(request):
     else:
         # Default to Gaussian
         dim = params.get("dim", 10)
-        return GaussianEnergy(mean=torch.zeros(dim), cov=torch.eye(dim)).to(device)
+        return GaussianModel(mean=torch.zeros(dim), cov=torch.eye(dim)).to(device)
 
 
 @pytest.fixture
@@ -129,7 +129,7 @@ def hmc_sampler(request, energy_function):
         mass = mass.to(device)
 
     return HamiltonianMonteCarlo(
-        energy_function=energy_function,
+        model=energy_function,
         step_size=step_size,
         n_leapfrog_steps=n_leapfrog_steps,
         mass=mass,
@@ -155,12 +155,12 @@ def test_hmc_initialization(hmc_sampler):
 def test_hmc_initialization_with_mass():
     """Test HMC initialization with different mass configurations."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
+    energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
 
     # With scalar mass
     scalar_mass = 2.0
     hmc_scalar = HamiltonianMonteCarlo(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.1,
         n_leapfrog_steps=10,
         mass=scalar_mass,
@@ -172,7 +172,7 @@ def test_hmc_initialization_with_mass():
     # With tensor mass
     tensor_mass = torch.tensor([2.0, 3.0], device=device)
     hmc_tensor = HamiltonianMonteCarlo(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.1,
         n_leapfrog_steps=10,
         mass=tensor_mass,
@@ -219,7 +219,7 @@ def test_hmc_initialization_invalid_params(energy_function):
 )
 def test_hmc_sample_basic(hmc_sampler):
     """Test basic sampling functionality."""
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 50
     final_state = hmc_sampler.sample(dim=dim, n_steps=n_steps)
     assert final_state.shape == (1, dim)
@@ -238,7 +238,7 @@ def test_hmc_sample_basic(hmc_sampler):
 )
 def test_hmc_sample_with_trajectory(hmc_sampler):
     """Test sampling with trajectory return."""
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 50
     trajectory = hmc_sampler.sample(dim=dim, n_steps=n_steps, return_trajectory=True)
     assert trajectory.shape == (1, n_steps, dim)
@@ -257,7 +257,7 @@ def test_hmc_sample_with_trajectory(hmc_sampler):
 )
 def test_hmc_sample_with_diagnostics(hmc_sampler):
     """Test sampling with diagnostics return."""
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 50
     final_state, diagnostics = hmc_sampler.sample(
         dim=dim, n_steps=n_steps, return_diagnostics=True
@@ -283,7 +283,7 @@ def test_hmc_sample_with_diagnostics(hmc_sampler):
 )
 def test_hmc_sample_multiple_samples(hmc_sampler):
     """Test sampling with multiple parallel chains."""
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 50
     n_samples = 10
     samples = hmc_sampler.sample(dim=dim, n_steps=n_steps, n_samples=n_samples)
@@ -305,7 +305,7 @@ def test_hmc_reproducibility(hmc_sampler):
     """Test that sampling with the same seed produces the same results."""
     torch.manual_seed(42)
     np.random.seed(42)
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 50
     result1 = hmc_sampler.sample(dim=dim, n_steps=n_steps)
 
@@ -382,7 +382,7 @@ def test_hmc_with_scheduler(hmc_sampler):
     assert np.isclose(initial_step_size, 0.1)  # Start value
 
     # Run sampling
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 50
     final_state = hmc_sampler.sample(dim=dim, n_steps=n_steps)
     assert final_state.shape == (1, dim)
@@ -417,7 +417,7 @@ def test_hmc_device_consistency(hmc_sampler):
     """Test that tensors are consistently on the correct device."""
     n_steps = 10
     device = hmc_sampler.device
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
 
     # Sample and check device
     samples = hmc_sampler.sample(dim=dim, n_steps=n_steps)
@@ -450,7 +450,7 @@ def test_hmc_float16_cuda(hmc_sampler):
     assert hmc_sampler.device.type == "cuda"
     assert hmc_sampler.dtype == torch.float16
 
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 20
     n_samples = 4
 
@@ -502,7 +502,7 @@ def test_hmc_float16_cuda(hmc_sampler):
 )
 def test_leapfrog_nan_handling(hmc_sampler):
     """Test _leapfrog_integration handles NaNs occurring mid-integration."""
-    dim = hmc_sampler.energy_function.dim
+    dim = hmc_sampler.model.dim
     shape = torch.Size([5, dim])
     # Start near the threshold to potentially cross it quickly
     position = (
@@ -529,10 +529,10 @@ def test_leapfrog_nan_handling(hmc_sampler):
 def test_hmc_small_step_size():
     """Test HMC with a very small step size."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
+    energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
     tiny_step = 1e-5
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=tiny_step,
         n_leapfrog_steps=10,
         device=device,
@@ -545,10 +545,10 @@ def test_hmc_small_step_size():
 def test_hmc_large_leapfrog_steps():
     """Test HMC with a large number of leapfrog steps."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
+    energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
     many_steps = 100
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.01,
         n_leapfrog_steps=many_steps,
         device=device,
@@ -563,9 +563,9 @@ def test_hmc_high_dimensions():
     """Test HMC in high-dimensional spaces."""
     dim = 100
     device = "cuda"
-    energy_fn = GaussianEnergy(mean=torch.zeros(dim), cov=torch.eye(dim)).to(device)
+    energy_fn = GaussianModel(mean=torch.zeros(dim), cov=torch.eye(dim)).to(device)
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.01,
         n_leapfrog_steps=20,
         device=device,
@@ -585,16 +585,16 @@ def test_hmc_high_dimensions():
 def test_hmc_custom_initial_state():
     """Test HMC with specific custom initial state."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
+    energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=10, device=device
+        model=energy_fn, step_size=0.1, n_leapfrog_steps=10, device=device
     )
     initial_state = torch.tensor([[10.0, -10.0]], device=hmc.device, dtype=hmc.dtype)
     samples = hmc.sample(x=initial_state, n_steps=200)
 
-    final_dist_to_mean = torch.norm(samples - hmc.energy_function.mean.to(hmc.device))
+    final_dist_to_mean = torch.norm(samples - hmc.model.mean.to(hmc.device))
     initial_dist_to_mean = torch.norm(
-        initial_state - hmc.energy_function.mean.to(hmc.device)
+        initial_state - hmc.model.mean.to(hmc.device)
     )
     assert final_dist_to_mean < initial_dist_to_mean
 
@@ -611,12 +611,12 @@ def test_hmc_custom_initial_state():
 )
 def test_hmc_dim_inference(hmc_sampler):
     """Test automatic dimension inference when x=None, dim=None."""
-    if not hasattr(hmc_sampler.energy_function, "mean"):
+    if not hasattr(hmc_sampler.model, "mean"):
         pytest.skip(
             "Dimension inference test requires energy_function with 'mean' attribute."
         )
 
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 10
 
     # Call sample without specifying dim or x
@@ -636,7 +636,7 @@ def test_hmc_dim_inference(hmc_sampler):
 )
 def test_hmc_dim_inference_failure(hmc_sampler):
     """Test ValueError when dim cannot be inferred."""
-    if hasattr(hmc_sampler.energy_function, "mean"):
+    if hasattr(hmc_sampler.model, "mean"):
         pytest.skip("Skipping failure test as energy function unexpectedly has 'mean'.")
 
     n_steps = 10
@@ -656,10 +656,10 @@ def test_hmc_gaussian_sampling_statistics():
     # Create a 2D Gaussian with known parameters
     mean = torch.tensor([1.0, -1.0], device=device)
     cov = torch.tensor([[1.0, 0.5], [0.5, 2.0]], device=device)
-    energy_fn = GaussianEnergy(mean=mean, cov=cov).to(device)
+    energy_fn = GaussianModel(mean=mean, cov=cov).to(device)
 
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.05,
         n_leapfrog_steps=15,
         device=device,
@@ -695,9 +695,9 @@ def test_hmc_gaussian_sampling_statistics():
 def test_hmc_step_internals():
     """Test internal HMC step components, including stability aspects."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
+    energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=0.1, n_leapfrog_steps=5, device=device
+        model=energy_fn, step_size=0.1, n_leapfrog_steps=5, device=device
     )
     dtype = hmc.dtype
     batch_size = 10
@@ -759,7 +759,7 @@ def test_hmc_step_internals():
 )
 def test_hmc_diagnostics_stability(hmc_sampler):
     """Test stability of diagnostics calculation, especially variance clamping."""
-    dim = hmc_sampler.energy_function.mean.shape[0]
+    dim = hmc_sampler.model.mean.shape[0]
     n_steps = 20
 
     # Case 1: Single sample (variance should be zero, then clamped)
@@ -800,7 +800,7 @@ def test_hmc_numerical_stability_extreme_values(start_val):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Use an energy function where energy grows quickly (e.g., quartic)
-    class QuarticEnergy(BaseEnergyFunction):
+    class QuarticEnergy(BaseModel):
         def __init__(self, dim=2, device="cpu"):
             super().__init__()
             self.dim = dim
@@ -830,7 +830,7 @@ def test_hmc_numerical_stability_extreme_values(start_val):
 
     # Use adjusted HMC params for stability
     hmc = HamiltonianMonteCarlo(
-        energy_function=energy_fn, step_size=1e-3, n_leapfrog_steps=5, device=device
+        model=energy_fn, step_size=1e-3, n_leapfrog_steps=5, device=device
     )
 
     # Extreme initial position

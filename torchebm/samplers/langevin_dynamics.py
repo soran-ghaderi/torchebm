@@ -116,7 +116,7 @@ from functools import partial
 
 import torch
 
-from torchebm.core.base_energy_function import BaseEnergyFunction, GaussianEnergy
+from torchebm.core.base_model import BaseModel, GaussianEnergy
 from torchebm.core.base_sampler import BaseSampler
 from torchebm.core import BaseScheduler, ConstantScheduler, ExponentialDecayScheduler
 
@@ -149,7 +149,7 @@ class LangevinDynamics(BaseSampler):
         4. Optionally collect diagnostics such as mean, variance, and energy gradients.
 
     Args:
-        energy_function (BaseEnergyFunction): Energy function to sample from.
+        model (BaseModel): Energy function to sample from.
         step_size (float): Step size for the Langevin update.
         noise_scale (float): Scale of the Gaussian noise.
         decay (float): Damping coefficient (not supported yet).
@@ -167,11 +167,11 @@ class LangevinDynamics(BaseSampler):
     !!! example "Basic Usage"
         ```python
         # Define energy function
-        energy_fn = QuadraticEnergy(A=torch.eye(2), b=torch.zeros(2))
+        energy_fn = GaussianModel(A=torch.eye(2), b=torch.zeros(2))
 
         # Initialize sampler
         sampler = LangevinDynamics(
-            energy_function=energy_fn,
+            model=energy_fn,
             step_size=0.01,
             noise_scale=0.1
         )
@@ -191,7 +191,7 @@ class LangevinDynamics(BaseSampler):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         step_size: Union[float, BaseScheduler] = 1e-3,
         noise_scale: Union[float, BaseScheduler] = 1.0,
         decay: float = 0.0,
@@ -200,7 +200,7 @@ class LangevinDynamics(BaseSampler):
         *args,
         **kwargs,
     ):
-        super().__init__(energy_function=energy_function, dtype=dtype, device=device)
+        super().__init__(model=model, dtype=dtype, device=device)
 
         # Register schedulers for step_size and noise_scale
         if isinstance(step_size, BaseScheduler):
@@ -223,7 +223,7 @@ class LangevinDynamics(BaseSampler):
         # else:
         #     self.device = torch.device("cpu")
         # Respect dtype from BaseSampler; do not override based on device
-        self.energy_function = energy_function
+        self.model = model
         self.step_size = step_size
         self.noise_scale = noise_scale
         self.decay = decay
@@ -255,7 +255,7 @@ class LangevinDynamics(BaseSampler):
         step_size = self.get_scheduled_value("step_size")
         noise_scale = self.get_scheduled_value("noise_scale")
 
-        gradient = self.energy_function.gradient(prev_x)
+        gradient = self.model.gradient(prev_x)
 
         # Apply noise scaling
         scaled_noise = noise_scale * noise
@@ -372,7 +372,7 @@ class LangevinDynamics(BaseSampler):
                             var_x = torch.zeros_like(x)
 
                         # Compute energy values
-                        energy = self.energy_function(x)
+                        energy = self.model(x)
 
                         # Store the diagnostics safely
                         for b in range(n_samples):
@@ -405,7 +405,7 @@ class LangevinDynamics(BaseSampler):
                         var_x = torch.zeros_like(x)
 
                     # Compute energy values
-                    energy = self.energy_function(x)
+                    energy = self.model(x)
 
                     # Store the diagnostics safely
                     for b in range(n_samples):

@@ -4,7 +4,7 @@ import warnings
 
 import torch
 
-from torchebm.core import BaseEnergyFunction, BaseScheduler, DeviceMixin
+from torchebm.core import BaseModel, BaseScheduler, DeviceMixin
 
 
 class BaseSampler(DeviceMixin, ABC):
@@ -12,7 +12,7 @@ class BaseSampler(DeviceMixin, ABC):
     Base class for samplers.
 
     Args:
-        energy_function (BaseEnergyFunction): Energy function to sample from.
+        model (BaseModel): Energy function to sample from.
         dtype (torch.dtype): Data type to use for the computations.
         device (Union[str, torch.device]): Device to run the computations on (e.g., "cpu" or "cuda").
         use_mixed_precision (bool): Whether to use mixed precision for sampling operations.
@@ -26,7 +26,7 @@ class BaseSampler(DeviceMixin, ABC):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
@@ -34,7 +34,7 @@ class BaseSampler(DeviceMixin, ABC):
         **kwargs,
     ):
         super().__init__(device=device, dtype=dtype, *args, **kwargs)
-        self.energy_function = energy_function
+        self.model = model
         self.dtype = dtype
         # if isinstance(device, str):
         #     device = torch.device(device)
@@ -72,13 +72,13 @@ class BaseSampler(DeviceMixin, ABC):
         self.schedulers: Dict[str, BaseScheduler] = {}
 
         # Align child components using the mixin helper
-        self.energy_function = DeviceMixin.safe_to(
-            self.energy_function, device=self.device, dtype=self.dtype
+        self.model = DeviceMixin.safe_to(
+            self.model, device=self.device, dtype=self.dtype
         )
 
         # Ensure the energy function has matching precision settings
-        if hasattr(self.energy_function, "use_mixed_precision"):
-            self.energy_function.use_mixed_precision = self.use_mixed_precision
+        if hasattr(self.model, "use_mixed_precision"):
+            self.model.use_mixed_precision = self.use_mixed_precision
 
     @abstractmethod
     def sample(
@@ -206,10 +206,10 @@ class BaseSampler(DeviceMixin, ABC):
     #         self.use_mixed_precision = False
     #
     #     # Move energy function if it has a to method
-    #     if hasattr(self.energy_function, "to") and callable(
-    #         getattr(self.energy_function, "to")
+    #     if hasattr(self.model, "to") and callable(
+    #         getattr(self.model, "to")
     #     ):
-    #         self.energy_function = self.energy_function.to(
+    #         self.model = self.model.to(
     #             device=self.device, dtype=self.dtype
     #         )
     #
@@ -242,7 +242,7 @@ class BaseSampler(DeviceMixin, ABC):
         # Let DeviceMixin update internal state and parent class handle movement
         result = super().to(*args, **kwargs)
         # After move, make sure energy_function follows
-        self.energy_function = DeviceMixin.safe_to(
-            self.energy_function, device=self.device, dtype=self.dtype
+        self.model = DeviceMixin.safe_to(
+            self.model, device=self.device, dtype=self.dtype
         )
         return result

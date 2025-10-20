@@ -6,10 +6,10 @@ from torch import nn
 from torchebm.core import (
     BaseLoss,
     BaseContrastiveDivergence,
-    BaseEnergyFunction,
+    BaseModel,
     BaseSampler,
 )
-from torchebm.core import GaussianEnergy
+from torchebm.core import GaussianModel
 from torchebm.samplers import LangevinDynamics
 from tests.conftest import requires_cuda
 
@@ -51,8 +51,8 @@ class MockCD(BaseContrastiveDivergence):
 
     def compute_loss(self, x, pred_x, *args, **kwargs):
         # Simple loss: difference in energy between positive and negative samples
-        x_energy = self.energy_function(x)
-        pred_x_energy = self.energy_function(pred_x)
+        x_energy = self.model(x)
+        pred_x_energy = self.model(pred_x)
         # Ensure the result maintains the correct dtype
         loss = torch.mean(x_energy - pred_x_energy)
         # Explicitly cast to the requested dtype to maintain consistency
@@ -62,7 +62,7 @@ class MockCD(BaseContrastiveDivergence):
 @pytest.fixture
 def energy_function():
     """Fixture to create a simple energy function for testing."""
-    return GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
+    return GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def sampler(energy_function):
     """Fixture to create a Langevin dynamics sampler for testing."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return LangevinDynamics(
-        energy_function=energy_function,
+        model=energy_function,
         step_size=0.1,
         noise_scale=0.01,
         device=device,
@@ -89,7 +89,7 @@ def mock_cd(energy_function, sampler):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
     return MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=False,
@@ -127,14 +127,14 @@ def test_base_contrastive_divergence_initialization(energy_function, sampler):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
     cd = MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=False,
         device=device,
     )
     assert isinstance(cd, BaseContrastiveDivergence)
-    assert cd.energy_function == energy_function
+    assert cd.model == energy_function
     assert cd.sampler == sampler
     assert cd.k_steps == 10
     assert cd.persistent is False
@@ -148,7 +148,7 @@ def test_base_contrastive_divergence_initialization_persistent(
     """Test BaseContrastiveDivergence initialization with persistence."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cd = MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=True,
@@ -162,9 +162,9 @@ def test_base_contrastive_divergence_initialize_buffer():
     """Test the initialization of the persistent chain."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     loss = MockCD(
-        energy_function=GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)),
+        model=GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)),
         sampler=LangevinDynamics(
-            energy_function=GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)),
+            model=GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)),
             step_size=0.1,
             noise_scale=0.01,
             device=device,
@@ -213,7 +213,7 @@ def test_contrastive_divergence_k_steps(energy_function, sampler, k_steps):
     """Test CD with different numbers of sampling steps."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cd = MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=k_steps,
         persistent=False,
@@ -231,7 +231,7 @@ def test_contrastive_divergence_persistent(energy_function, sampler):
     """Test CD with persistence enabled."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cd = MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=True,
@@ -261,18 +261,18 @@ def test_contrastive_divergence_cuda():
         pytest.skip("CUDA not available")
 
     device = torch.device("cuda")
-    energy_function = GaussianEnergy(
+    energy_function = GaussianModel(
         mean=torch.zeros(2, device=device), cov=torch.eye(2, device=device)
     )
     sampler = LangevinDynamics(
-        energy_function=energy_function,
+        model=energy_function,
         step_size=0.1,
         noise_scale=0.01,
         device=device,
     )
 
     cd = MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=False,
@@ -291,20 +291,20 @@ def test_contrastive_divergence_dtype():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float64
 
-    energy_function = GaussianEnergy(
+    energy_function = GaussianModel(
         mean=torch.zeros(2, dtype=dtype, device=device),
         cov=torch.eye(2, dtype=dtype, device=device),
     )
 
     sampler = LangevinDynamics(
-        energy_function=energy_function,
+        model=energy_function,
         step_size=0.1,
         noise_scale=0.01,
         device=device,
     )
 
     cd = MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=False,
@@ -334,7 +334,7 @@ def test_different_batch_sizes(energy_function, sampler):
     """Test CD with different batch sizes."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cd = MockCD(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=True,
