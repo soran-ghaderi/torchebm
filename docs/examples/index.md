@@ -10,37 +10,11 @@ This section contains practical examples that demonstrate how to use TorchEBM fo
 
 <div class="grid cards" markdown>
 
--   :material-terrain:{ .lg .middle } __Energy Functions__
-
-    ---
-
-    Explore and visualize various energy functions and their properties.
-
-    [:octicons-arrow-right-24: Energy Functions](energy_functions/index.md)
-
--   :material-sigma:{ .lg .middle } __Langevin Dynamics__
-
-    ---
-
-    Sample from various distributions using Langevin dynamics.
-
-    [:octicons-arrow-right-24: Langevin Dynamics](samplers/langevin_dynamics)
-
--   :material-axis-arrow:{ .lg .middle } __Hamiltonian Monte Carlo__
-
-    ---
-
-    Learn to use Hamiltonian Monte Carlo for efficient sampling.
-
-    [:octicons-arrow-right-24: Hamiltonian Monte Carlo](samplers/hmc.md)
-
--   :material-chart-line:{ .lg .middle } __Visualization Tools__
-
-    ---
-
-    Advanced visualization tools for energy landscapes and sampling results.
-
-    [:octicons-arrow-right-24: Visualization](visualization/index.md)
+- [:material-function-variant:{ .lg .middle } Models and Energy Functions](models/index.md)
+- [:material-database-search:{ .lg .middle } Datasets](datasets/index.md)
+- [:material-chart-scatter-plot:{ .lg .middle } Samplers](samplers/index.md)
+- [:material-chart-line:{ .lg .middle } Training an EBM](training/index.md)
+- [:material-chart-bar:{ .lg .middle } Visualization](visualization/index.md)
 
 </div>
 
@@ -85,7 +59,7 @@ To run these examples, you'll need:
 - NumPy
 - Matplotlib
 
-If you haven't installed TorchEBM yet, see the [Installation](../guides/index.md) guide.
+If you haven't installed TorchEBM yet, see the [Installation](../tutorials/index.md) guide.
 
 </div>
 <div markdown>
@@ -95,31 +69,13 @@ If you haven't installed TorchEBM yet, see the [Installation](../guides/index.md
 Most examples support GPU acceleration and will automatically use CUDA if available:
 
 ```python
+import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 energy_fn = GaussianEnergy(mean, cov).to(device)
 ```
 
 </div>
 </div>
-
-## Key Example Files
-
-You'll find examples organized into the following categories:
-
-| Category | Description | Key Files |
-|----------|-------------|-----------|
-| `core/energy_functions/` | Energy function visualization and properties | `landscape_2d.py`, `multimodal.py`, `parametric.py` |
-| `samplers/langevin/` | Langevin dynamics sampling examples | `gaussian_sampling.py`, `multimodal_sampling.py`, `visualization_trajectory.py` |
-| `samplers/hmc/` | Hamiltonian Monte Carlo examples | `gaussian_sampling.py`, `advanced.py`, `mass_matrix.py` |
-| `visualization/` | Advanced visualization tools | `basic/contour_plots.py`, `advanced/trajectory_animation.py`, `advanced/parallel_chains.py` |
-
-## Additional Resources
-
-For more in-depth information about the concepts demonstrated in these examples, see:
-
-- [Energy Functions Guide](../guides/energy_functions.md)
-- [Samplers Guide](../guides/samplers.md)
-- [API Reference](../api/index.md)
 
 ## What's Next?
 

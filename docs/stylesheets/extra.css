@@ -31,9 +31,9 @@
 /* Cards */
 .md-typeset .grid.cards > :is(ul, ol) {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  grid-gap: 1rem;
-  margin: 1rem 0 !important;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  grid-gap: 0.75rem;
+  margin: 0.75rem 0 !important;
 }
 
 .md-typeset .grid.cards > :is(ul, ol) > li {
@@ -43,12 +43,25 @@
   flex-direction: column;
   margin: 0;
   padding: 1rem;
-  transition: border-color 0.25s, box-shadow 0.25s;
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.2s;
+  position: relative;
 }
 
 .md-typeset .grid.cards > :is(ul, ol) > li:hover {
   border-color: var(--md-accent-fg-color);
   box-shadow: 0 0.2rem 0.5rem rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Make whole card clickable with overlay anchor */
+.md-typeset .grid.cards > :is(ul, ol) > li.card-clickable { cursor: pointer; }
+.md-typeset .grid.cards > :is(ul, ol) > li > a.card-link-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: inherit;
+  text-decoration: none;
+  color: inherit;
 }
 
 .md-typeset .grid.cards > :is(ul, ol) > li > hr {
@@ -79,6 +92,25 @@ figcaption {
 /* Code blocks */
 .md-typeset pre > code {
   border-radius: 0.5rem;
+}
+
+/* Code block header (macOS window style) */
+.md-typeset .highlight { position: relative; border-radius: 10px; overflow: hidden; }
+.md-typeset .highlight > pre { margin: 0; padding-top: 2.75rem; }
+
+[data-md-color-scheme="slate"] .md-typeset .highlight::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 36px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+[data-md-color-scheme="default"] .md-typeset .highlight::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 36px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.05), rgba(0,0,0,0.02));
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+.md-typeset .highlight::after {
+  content: ""; position: absolute; top: 11px; left: 12px; width: 10px; height: 10px; border-radius: 50%; background: #ff5f56;
+  box-shadow: 16px 0 0 #ffbd2e, 32px 0 0 #27c93f;
 }
 
 /* Buttons */

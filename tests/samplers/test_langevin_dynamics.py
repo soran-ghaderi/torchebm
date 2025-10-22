@@ -1,6 +1,6 @@
 import pytest
 import torch
-from torchebm.core.base_energy_function import BaseEnergyFunction, GaussianEnergy
+from torchebm.core.base_model import BaseModel, GaussianModel
 from torchebm.samplers import LangevinDynamics
 from tests.conftest import requires_cuda
 
@@ -8,13 +8,13 @@ from tests.conftest import requires_cuda
 @pytest.fixture
 def energy_function(request):
     if not hasattr(request, "param"):
-        return GaussianEnergy(mean=torch.zeros(10), cov=torch.eye(10))
+        return GaussianModel(mean=torch.zeros(10), cov=torch.eye(10))
 
     # Use parameters when provided through parametrize
     mean = request.param.get("mean", torch.zeros(10))
     cov = request.param.get("cov", torch.eye(10))
 
-    return GaussianEnergy(mean=mean, cov=cov)
+    return GaussianModel(mean=mean, cov=cov)
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def langevin_sampler(request, energy_function):
     energy_function = energy_function.to(device)
 
     return LangevinDynamics(
-        energy_function=energy_function, step_size=5e-3, device=device
+        model=energy_function, step_size=5e-3, device=device
     ).to(device)
 
 

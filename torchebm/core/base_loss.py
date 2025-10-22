@@ -1,13 +1,5 @@
 """
 Base Loss Classes for Energy-Based Models
-
-This module provides abstract base classes for defining loss functions for training
-energy-based models (EBMs). It includes the general BaseLoss class for arbitrary loss
-functions and the more specialized BaseContrastiveDivergence for contrastive divergence
-based training methods.
-
-Loss functions in TorchEBM are designed to work with energy functions and samplers
-to define the training objective for energy-based models.
 """
 
 import warnings
@@ -17,7 +9,7 @@ from typing import Tuple, Union, Optional, Dict, Any, Callable
 import torch
 from torch import nn
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.core import BaseSampler
 from torchebm.core import DeviceMixin
 
@@ -26,20 +18,11 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
 
-    This class builds on torch.nn.Module to allow loss functions to be part of PyTorch's
-    computational graph and have trainable parameters if needed. It serves as the foundation
-    for all loss functions in TorchEBM.
-
-    Inheriting from torch.nn.Module ensures compatibility with PyTorch's training
-    infrastructure, including device placement, parameter management, and gradient
-    computation.
-
-    Subclasses must implement the forward method to define the loss computation.
-
     Args:
-        dtype: Data type for computations
-        device: Device for computations
-        use_mixed_precision: Whether to use mixed precision training (requires PyTorch 1.6+)
+        dtype (torch.dtype): Data type for computations.
+        device (Optional[Union[str, torch.device]]): Device for computations.
+        use_mixed_precision (bool): Whether to use mixed precision training.
+        clip_value (Optional[float]): Optional value to clamp the loss.
     """
 
     def __init__(
@@ -58,42 +41,16 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
         #     device = torch.device(device)
         self.dtype = dtype
         self.clip_value = clip_value
-        self.use_mixed_precision = use_mixed_precision
+        self.setup_mixed_precision(use_mixed_precision)
 
-        if self.use_mixed_precision:
-            try:
-                from torch.cuda.amp import autocast
-
-                self.autocast_available = True
-            except ImportError:
-                warnings.warn(
-                    "Mixed precision training requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
-                    UserWarning,
-                )
-                self.use_mixed_precision = False
-                self.autocast_available = False
-        else:
-            self.autocast_available = False
-
-    # @property
-    # def device(self) -> torch.device:
-    #     """Returns the device associated with the module's parameters/buffers (if any)."""
-    #     try:
-    #         return next(self.parameters()).device
-    #     except StopIteration:
-    #         try:
-    #             return next(self.buffers()).device
-    #         except StopIteration:
-    #             return self._device
 
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
-        Compute the loss value given input data.
+        Computes the loss value.
 
         Args:
-            x: Input data tensor, typically real samples from the target distribution.
+            x (torch.Tensor): Input data tensor from the target distribution.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
 
@@ -112,10 +69,10 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
-        Call the forward method of the loss function.
+        Calls the forward method of the loss function.
 
         Args:
-            x: Input data tensor.
+            x (torch.Tensor): Input data tensor.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
 
@@ -124,16 +81,7 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
         """
         x = x.to(device=self.device, dtype=self.dtype)
 
-        if (
-            hasattr(self, "use_mixed_precision")
-            and self.use_mixed_precision
-            and self.autocast_available
-        ):
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                loss = self.forward(x, *args, **kwargs)
-        else:
+        with self.autocast_context():
             loss = self.forward(x, *args, **kwargs)
 
         if self.clip_value:
@@ -145,40 +93,23 @@ class BaseContrastiveDivergence(BaseLoss):
     """
     Abstract base class for Contrastive Divergence (CD) based loss functions.
 
-    Contrastive Divergence is a family of methods for training energy-based models that
-    approximate the gradient of the log-likelihood by comparing the energy between real
-    data samples (positive phase) and model samples (negative phase) generated through
-    MCMC sampling.
-
-    This class provides the common structure for CD variants, including standard CD,
-    Persistent CD (PCD), and others.
-
-    Methods:
-        - __call__: Calls the forward method of the loss function.
-        - initialize_buffer: Initializes the replay buffer with random noise.
-        - get_negative_samples: Generates negative samples using the replay buffer strategy.
-        - update_buffer: Updates the replay buffer with new samples.
-        - forward: Computes CD loss given real data samples.
-        - compute_loss: Computes the contrastive divergence loss from positive and negative samples.
-
     Args:
-        energy_function: The energy function being trained
-        sampler: MCMC sampler for generating negative samples
-        k_steps: Number of MCMC steps to perform for each update
-        persistent: Whether to use replay buffer (PCD)
-        buffer_size: Size of the buffer for storing replay buffer
-        new_sample_ratio: Ratio of new samples (default 5%). Adds noise to a fraction of buffer samples for exploration
-        init_steps: Number of steps to run when initializing new chain elements
-        dtype: Data type for computations
-        device: Device for computations
-        use_mixed_precision: Whether to use mixed precision training (requires PyTorch 1.6+)
-        *args: Additional positional arguments
-        **kwargs: Additional keyword arguments
+        model (BaseModel): The energy-based model to be trained.
+        sampler (BaseSampler): The MCMC sampler for generating negative samples.
+        k_steps (int): The number of MCMC steps to perform for each update.
+        persistent (bool): If `True`, uses a replay buffer for Persistent CD (PCD).
+        buffer_size (int): The size of the replay buffer for PCD.
+        new_sample_ratio (float): The ratio of new random samples to introduce into the MCMC chain.
+        init_steps (int): The number of MCMC steps to run when initializing new chain elements.
+        dtype (torch.dtype): Data type for computations.
+        device (Optional[Union[str, torch.device]]): Device for computations.
+        use_mixed_precision (bool): Whether to use mixed precision training.
+        clip_value (Optional[float]): Optional value to clamp the loss.
     """
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         sampler: BaseSampler,
         k_steps: int = 1,
         persistent: bool = False,
@@ -200,7 +131,7 @@ class BaseContrastiveDivergence(BaseLoss):
             *args,
             **kwargs,
         )
-        self.energy_function = energy_function
+        self.model = model
         self.sampler = sampler
         self.k_steps = k_steps
         self.persistent = persistent
@@ -208,7 +139,7 @@ class BaseContrastiveDivergence(BaseLoss):
         self.new_sample_ratio = new_sample_ratio
         self.init_steps = init_steps
 
-        self.energy_function = self.energy_function.to(device=self.device)
+        self.model = self.model.to(device=self.device)
         if hasattr(self.sampler, "to") and callable(getattr(self.sampler, "to")):
             self.sampler = self.sampler.to(device=self.device)
 
@@ -225,19 +156,15 @@ class BaseContrastiveDivergence(BaseLoss):
         init_noise_scale: float = 0.01,
     ) -> torch.Tensor:
         """
-        Initialize the replay buffer with random noise.
-
-        For persistent CD variants, this method initializes the replay buffer
-        with random noise. This is typically called the first time the loss
-        is computed or when the batch size changes.
+        Initializes the replay buffer with random noise for PCD.
 
         Args:
-            data_shape_no_batch: Shape of the data excluding batch dimension.
-            buffer_chunk_size: Size of the chunks to process during initialization.
-            init_noise_scale: Scale of the initial noise.
+            data_shape_no_batch (Tuple[int, ...]): The shape of the data excluding the batch dimension.
+            buffer_chunk_size (int): The size of chunks to process during initialization.
+            init_noise_scale (float): The scale of the initial noise.
 
         Returns:
-            The initialized buffer.
+            torch.Tensor: The initialized replay buffer.
         """
         if not self.persistent or self.buffer_initialized:
             return
@@ -265,14 +192,7 @@ class BaseContrastiveDivergence(BaseLoss):
                     end = min(i + chunk_size, self.buffer_size)
                     current_chunk = self.replay_buffer[i:end].clone()
                     try:
-                        if self.use_mixed_precision and self.autocast_available:
-                            from torch.cuda.amp import autocast
-
-                            with autocast():
-                                updated_chunk = self.sampler.sample(
-                                    x=current_chunk, n_steps=self.init_steps
-                                ).detach()
-                        else:
+                        with self.autocast_context():
                             updated_chunk = self.sampler.sample(
                                 x=current_chunk, n_steps=self.init_steps
                             ).detach()
@@ -295,14 +215,13 @@ class BaseContrastiveDivergence(BaseLoss):
         return self.replay_buffer
 
     def get_start_points(self, x: torch.Tensor) -> torch.Tensor:
-        """Gets the starting points for the MCMC sampler.
+        """
+        Gets the starting points for the MCMC sampler.
 
-        Handles both persistent (PCD) and non-persistent (CD-k) modes.
-        Initializes the buffer for PCD on the first call if needed.
+        For standard CD, this is the input data. For PCD, it's samples from the replay buffer.
 
         Args:
-            x (torch.Tensor): The input data batch. Used directly for non-persistent CD
-                              and for shape inference/initialization trigger for PCD.
+            x (torch.Tensor): The input data batch.
 
         Returns:
             torch.Tensor: The tensor of starting points for the sampler.
@@ -356,15 +275,16 @@ class BaseContrastiveDivergence(BaseLoss):
         return start_points
 
     def get_negative_samples(self, x, batch_size, data_shape) -> torch.Tensor:
-        """Get negative samples using the replay buffer strategy.
+        """
+        Gets negative samples using the replay buffer strategy.
 
         Args:
-            batch_size: Number of samples to generate.
-            data_shape: Shape of the data samples (excluding batch size).
+            x: (Unused) The input data tensor.
+            batch_size (int): The number of samples to generate.
+            data_shape (Tuple[int, ...]): The shape of the data samples (excluding batch size).
 
         Returns:
-            torch.Tensor: Negative samples generated from the replay buffer.
-
+            torch.Tensor: Negative samples.
         """
         if not self.persistent or not self.buffer_initialized:
             # For non-persistent CD, just return random noise
@@ -394,10 +314,11 @@ class BaseContrastiveDivergence(BaseLoss):
         return all_samples
 
     def update_buffer(self, samples: torch.Tensor) -> None:
-        """Update the replay buffer with new samples using FIFO strategy.
+        """
+        Updates the replay buffer with new samples using a FIFO strategy.
 
         Args:
-            samples: New samples to add to the buffer.
+            samples (torch.Tensor): New samples to add to the buffer.
         """
         if not self.persistent or not self.buffer_initialized:
             return
@@ -433,21 +354,15 @@ class BaseContrastiveDivergence(BaseLoss):
         self, x: torch.Tensor, *args, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Compute CD loss given real data samples.
-
-        This method should implement the specifics of the contrastive divergence
-        variant, typically:
-        1. Generate negative samples using the MCMC sampler
-        2. Compute energies for real and negative samples
-        3. Calculate the contrastive loss
+        Computes the CD loss given real data samples.
 
         Args:
-            x: Real data samples (positive samples).
+            x (torch.Tensor): Real data samples (positive samples).
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
-                - loss: The contrastive divergence loss
-                - pred_x: Generated negative samples
+                - The contrastive divergence loss.
+                - The generated negative samples.
         """
         pass
 
@@ -456,26 +371,22 @@ class BaseContrastiveDivergence(BaseLoss):
         self, x: torch.Tensor, pred_x: torch.Tensor, *args, **kwargs
     ) -> torch.Tensor:
         """
-        Compute the contrastive divergence loss from positive and negative samples.
-
-        This method defines how the loss is calculated given real samples (positive phase)
-        and samples from the model (negative phase). Typical implementations compute
-        the difference between mean energies of positive and negative samples.
+        Computes the contrastive divergence loss from positive and negative samples.
 
         Args:
-            x: Real data samples (positive samples).
-            pred_x: Generated negative samples.
+            x (torch.Tensor): Real data samples (positive samples).
+            pred_x (torch.Tensor): Generated negative samples.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The contrastive divergence loss
+            torch.Tensor: The contrastive divergence loss.
         """
         pass
 
     def __repr__(self):
         """Return a string representation of the loss function."""
-        return f"{self.__class__.__name__}(energy_function={self.energy_function}, sampler={self.sampler})"
+        return f"{self.__class__.__name__}(model={self.model}, sampler={self.sampler})"
 
     def __str__(self):
         """Return a string representation of the loss function."""
@@ -486,33 +397,20 @@ class BaseScoreMatching(BaseLoss):
     """
     Abstract base class for Score Matching based loss functions.
 
-    Score Matching is a family of methods for training energy-based models that
-    avoid the sampling problem by directly matching the score function (gradient of log density).
-    This class provides the common structure for different score matching variants including
-    original score matching (Hyvärinen), denoising score matching, sliced score matching, etc.
-
-    Methods:
-        - forward: Computes the score matching loss given data samples
-        - compute_score: Computes score function (gradient of energy w.r.t. input)
-        - compute_loss: Computes the specific score matching loss variant
-
     Args:
-        energy_function: The energy function being trained
-        noise_scale: Scale of noise for perturbation (used in denoising variants)
-        regularization_strength: Coefficient for regularization terms
-        use_autograd: Whether to use PyTorch autograd for computing derivatives
-        hutchinson_samples: Number of random samples for Hutchinson's trick in stochastic variants
-        custom_regularization: Optional function for custom regularization (signature: f(loss, x, energy_fn) -> loss)
-        use_mixed_precision: Whether to use mixed precision training (requires PyTorch 1.6+)
-        dtype: Data type for computations
-        device: Device for computations
-        *args: Additional positional arguments
-        **kwargs: Additional keyword arguments
+        model (BaseModel): The energy-based model to be trained.
+        noise_scale (float): The scale of noise for perturbation in denoising variants.
+        regularization_strength (float): The coefficient for regularization terms.
+        use_autograd (bool): Whether to use `torch.autograd` for computing derivatives.
+        hutchinson_samples (int): The number of random samples for Hutchinson's trick.
+        custom_regularization (Optional[Callable]): An optional function for custom regularization.
+        use_mixed_precision (bool): Whether to use mixed precision training.
+        clip_value (Optional[float]): Optional value to clamp the loss.
     """
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         noise_scale: float = 0.01,
         regularization_strength: float = 0.0,
         use_autograd: bool = True,
@@ -531,7 +429,7 @@ class BaseScoreMatching(BaseLoss):
             *args,
             **kwargs,  # dtype=dtype, device=device,
         )
-        self.energy_function = energy_function.to(device=self.device)
+        self.model = model.to(device=self.device)
         self.noise_scale = noise_scale
         self.regularization_strength = regularization_strength
         self.use_autograd = use_autograd
@@ -539,36 +437,22 @@ class BaseScoreMatching(BaseLoss):
         self.custom_regularization = custom_regularization
         self.use_mixed_precision = use_mixed_precision
 
-        self.energy_function = self.energy_function.to(device=self.device)
+        self.model = self.model.to(device=self.device)
 
-        if self.use_mixed_precision:
-            try:
-                from torch.cuda.amp import autocast
-
-                self.autocast_available = True
-            except ImportError:
-                warnings.warn(
-                    "Mixed precision training requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
-                    UserWarning,
-                )
-                self.use_mixed_precision = False
-                self.autocast_available = False
-        else:
-            self.autocast_available = False
+        self.setup_mixed_precision(use_mixed_precision)
 
     def compute_score(
         self, x: torch.Tensor, noise: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Compute the score function (gradient of energy function w.r.t. input).
+        Computes the score function, \(\nabla_x E(x)\).
 
         Args:
-            x: Input data tensor
-            noise: Optional noise tensor for perturbed variants
+            x (torch.Tensor): The input data tensor.
+            noise (Optional[torch.Tensor]): Optional noise tensor for perturbed variants.
 
         Returns:
-            torch.Tensor: The score function evaluated at x
+            torch.Tensor: The score function evaluated at `x` or `x + noise`.
         """
 
         x = x.to(device=self.device, dtype=self.dtype)
@@ -582,13 +466,8 @@ class BaseScoreMatching(BaseLoss):
         if not x_perturbed.requires_grad:
             x_perturbed.requires_grad_(True)
 
-        if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                energy = self.energy_function(x_perturbed)
-        else:
-            energy = self.energy_function(x_perturbed)
+        with self.autocast_context():
+            energy = self.model(x_perturbed)
 
         if self.use_autograd:
             score = torch.autograd.grad(energy.sum(), x_perturbed, create_graph=True)[0]
@@ -603,13 +482,14 @@ class BaseScoreMatching(BaseLoss):
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:  # todo: add more noise types
         """
-        Perturb the input data with Gaussian noise for denoising variants.
+        Perturbs the input data with Gaussian noise for denoising variants.
 
         Args:
-            x: Input data tensor
+            x (torch.Tensor): Input data tensor.
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Perturbed data and noise tensor
+            Tuple[torch.Tensor, torch.Tensor]: A tuple containing the perturbed data
+                and the noise that was added.
         """
 
         x = x.to(device=self.device, dtype=self.dtype)
@@ -621,15 +501,15 @@ class BaseScoreMatching(BaseLoss):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
-        Call the forward method of the loss function.
+        Calls the forward method of the loss function.
 
         Args:
-            x: Input data tensor
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            x (torch.Tensor): Input data tensor.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The computed loss
+            torch.Tensor: The computed loss.
         """
 
         x = x.to(device=self.device, dtype=self.dtype)
@@ -638,30 +518,30 @@ class BaseScoreMatching(BaseLoss):
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
-        Compute the score matching loss given input data.
+        Computes the score matching loss given input data.
 
         Args:
-            x: Input data tensor
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            x (torch.Tensor): Input data tensor.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The computed score matching loss
+            torch.Tensor: The computed score matching loss.
         """
         pass
 
     @abstractmethod
     def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
-        Compute the specific score matching loss variant.
+        Computes the specific score matching loss variant.
 
         Args:
-            x: Input data tensor
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            x (torch.Tensor): Input data tensor.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            torch.Tensor: The specific score matching loss
+            torch.Tensor: The specific score matching loss.
         """
         pass
 
@@ -672,16 +552,17 @@ class BaseScoreMatching(BaseLoss):
         custom_reg_fn: Optional[Callable] = None,
         reg_strength: Optional[float] = None,
     ) -> torch.Tensor:
-        """Add regularization terms to the loss.
+        """
+        Adds regularization terms to the loss.
 
         Args:
-            loss: Current loss value
-            x: Input tensor
-            custom_reg_fn: Optional custom regularization function with signature f(x, energy_fn) -> tensor
-            reg_strength: Optional regularization strength (overrides self.regularization_strength)
+            loss (torch.Tensor): The current loss value.
+            x (torch.Tensor): The input tensor.
+            custom_reg_fn (Optional[Callable]): An optional custom regularization function.
+            reg_strength (Optional[float]): An optional regularization strength.
 
         Returns:
-            regularized_loss: Loss with regularization
+            torch.Tensor: The loss with the regularization term added.
         """
         strength = (
             reg_strength if reg_strength is not None else self.regularization_strength
@@ -691,10 +572,10 @@ class BaseScoreMatching(BaseLoss):
             return loss
 
         if custom_reg_fn is not None:
-            reg_term = custom_reg_fn(x, self.energy_function)
+            reg_term = custom_reg_fn(x, self.model)
 
         elif self.custom_regularization is not None:
-            reg_term = self.custom_regularization(x, self.energy_function)
+            reg_term = self.custom_regularization(x, self.model)
         # default: L2 norm of score
         else:
             score = self.compute_score(x)
@@ -704,7 +585,7 @@ class BaseScoreMatching(BaseLoss):
 
     def __repr__(self):
         """Return a string representation of the loss function."""
-        return f"{self.__class__.__name__}(energy_function={self.energy_function})"
+        return f"{self.__class__.__name__}(model={self.model})"
 
     def __str__(self):
         """Return a string representation of the loss function."""

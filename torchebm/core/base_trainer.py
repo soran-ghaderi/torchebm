@@ -1,9 +1,10 @@
 import warnings
+from contextlib import nullcontext
 import torch
 from typing import Dict, Optional, Union, Any, List, Callable
 from torch.utils.data import DataLoader
 
-from .base_energy_function import BaseEnergyFunction
+from .base_model import BaseModel
 from .base_sampler import BaseSampler
 from .base_loss import BaseLoss
 
@@ -16,7 +17,7 @@ class BaseTrainer:
     training methods and mixed precision training.
 
     Args:
-        energy_function: Energy function to train
+        model: Energy function to train
         optimizer: PyTorch optimizer to use
         loss_fn: Loss function for training
         device: Device to run training on
@@ -35,7 +36,7 @@ class BaseTrainer:
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         optimizer: torch.optim.Optimizer,
         loss_fn: BaseLoss,
         device: Optional[Union[str, torch.device]] = None,
@@ -43,7 +44,7 @@ class BaseTrainer:
         use_mixed_precision: bool = False,
         callbacks: Optional[List[Callable]] = None,
     ):
-        self.energy_function = energy_function
+        self.model = model
         self.optimizer = optimizer
         self.loss_fn = loss_fn
 
@@ -64,41 +65,35 @@ class BaseTrainer:
         # Configure mixed precision
         if self.use_mixed_precision:
             try:
-                from torch.cuda.amp import autocast, GradScaler
-
-                self.autocast_available = True
-                self.grad_scaler = GradScaler()
-
-                # Ensure device is CUDA for mixed precision
-                if not self.device.type.startswith("cuda"):
+                from torch.cuda.amp import GradScaler
+                self.autocast_available = self.device.type.startswith("cuda")
+                if self.autocast_available:
+                    self.grad_scaler = GradScaler()
+                else:
                     warnings.warn(
-                        f"Mixed precision requested but device is {self.device}. "
-                        f"Mixed precision requires CUDA. Falling back to full precision.",
+                        f"Mixed precision requested but device is {self.device}. Mixed precision requires CUDA. Falling back to full precision.",
                         UserWarning,
                     )
                     self.use_mixed_precision = False
                     self.autocast_available = False
             except ImportError:
                 warnings.warn(
-                    "Mixed precision requested but torch.cuda.amp not available. "
-                    "Falling back to full precision. Requires PyTorch 1.6+.",
+                    "Mixed precision requested but torch.cuda.amp not available. Falling back to full precision. Requires PyTorch 1.6+.",
                     UserWarning,
                 )
                 self.use_mixed_precision = False
                 self.autocast_available = False
-        else:
-            self.autocast_available = False
 
         # Move model and loss function to appropriate device/dtype
-        self.energy_function = self.energy_function.to(
+        self.model = self.model.to(
             device=self.device, dtype=self.dtype
         )
 
         # Propagate mixed precision settings to components
         if hasattr(self.loss_fn, "use_mixed_precision"):
             self.loss_fn.use_mixed_precision = self.use_mixed_precision
-        if hasattr(self.energy_function, "use_mixed_precision"):
-            self.energy_function.use_mixed_precision = self.use_mixed_precision
+        if hasattr(self.model, "use_mixed_precision"):
+            self.model.use_mixed_precision = self.use_mixed_precision
 
         # Move loss function to appropriate device
         if hasattr(self.loss_fn, "to"):
@@ -106,6 +101,13 @@ class BaseTrainer:
 
         # Create metrics dictionary for tracking
         self.metrics: Dict[str, Any] = {"loss": []}
+
+    def autocast_context(self):
+        """Return autocast context if enabled, else no-op."""
+        if self.use_mixed_precision and self.autocast_available:
+            from torch.cuda.amp import autocast
+            return autocast()
+        return nullcontext()
 
     def train_step(self, batch: torch.Tensor) -> Dict[str, Any]:
         """
@@ -125,9 +127,7 @@ class BaseTrainer:
 
         # Forward pass with mixed precision if enabled
         if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
+            with self.autocast_context():
                 loss = self.loss_fn(batch)
 
             # Backward pass with gradient scaling
@@ -154,7 +154,7 @@ class BaseTrainer:
             Dictionary with average metrics for the epoch
         """
         # Set model to training mode
-        self.energy_function.train()
+        self.model.train()
 
         # Initialize metrics for this epoch
         epoch_metrics: Dict[str, List[float]] = {"loss": []}
@@ -233,7 +233,7 @@ class BaseTrainer:
 
             # Validate if function provided
             if validate_fn is not None:
-                val_metrics = validate_fn(self.energy_function)
+                val_metrics = validate_fn(self.model)
                 print(f"Validation: {val_metrics}")
 
                 # Update validation metrics in history
@@ -263,7 +263,7 @@ class BaseTrainer:
             path: Path to save the checkpoint to
         """
         checkpoint = {
-            "energy_function_state_dict": self.energy_function.state_dict(),
+            "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "metrics": self.metrics,
         }
@@ -282,7 +282,7 @@ class BaseTrainer:
         """
         checkpoint = torch.load(path, map_location=self.device)
 
-        self.energy_function.load_state_dict(checkpoint["energy_function_state_dict"])
+        self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         if "metrics" in checkpoint:
@@ -301,7 +301,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
     Specialized trainer for contrastive divergence training of EBMs.
 
     Args:
-        energy_function: Energy function to train
+        model: Energy function to train
         sampler: MCMC sampler for generating negative samples
         optimizer: PyTorch optimizer
         learning_rate: Learning rate (if optimizer not provided)
@@ -315,7 +315,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
 
     def __init__(
         self,
-        energy_function: BaseEnergyFunction,
+        model: BaseModel,
         sampler: BaseSampler,
         optimizer: Optional[torch.optim.Optimizer] = None,
         learning_rate: float = 0.01,
@@ -328,14 +328,14 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
     ):
         # Create optimizer if not provided
         if optimizer is None:
-            optimizer = torch.optim.Adam(energy_function.parameters(), lr=learning_rate)
+            optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
         # Import here to avoid circular import
         from torchebm.losses.contrastive_divergence import ContrastiveDivergence
 
         # Create loss function
         loss_fn = ContrastiveDivergence(
-            energy_function=energy_function,
+            model=model,
             sampler=sampler,
             k_steps=k_steps,
             persistent=persistent,
@@ -347,7 +347,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
 
         # Initialize base trainer
         super().__init__(
-            energy_function=energy_function,
+            model=model,
             optimizer=optimizer,
             loss_fn=loss_fn,
             device=device,
@@ -375,9 +375,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
 
         # Forward pass with mixed precision if enabled
         if self.use_mixed_precision and self.autocast_available:
-            from torch.cuda.amp import autocast
-
-            with autocast():
+            with self.autocast_context():
                 # ContrastiveDivergence returns (loss, neg_samples)
                 loss, neg_samples = self.loss_fn(batch)
 
@@ -394,6 +392,6 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
         # Return metrics
         return {
             "loss": loss.item(),
-            "pos_energy": self.energy_function(batch).mean().item(),
-            "neg_energy": self.energy_function(neg_samples).mean().item(),
+            "pos_energy": self.model(batch).mean().item(),
+            "neg_energy": self.model(neg_samples).mean().item(),
         }

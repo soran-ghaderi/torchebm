@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 import warnings
 
-from torchebm.core import BaseEnergyFunction, GaussianEnergy, DoubleWellEnergy
+from torchebm.core import BaseModel, GaussianModel, DoubleWellEnergy
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import (
     ContrastiveDivergence,
@@ -56,7 +56,7 @@ class BaseLoss(nn.Module):
 #     return grad.detach()
 
 
-class GaussianEnergy(BaseEnergyFunction):
+class GaussianEnergy(BaseModel):
     def __init__(self, mean, cov):
         super().__init__()
         self.register_buffer("mean", mean)
@@ -75,7 +75,7 @@ class GaussianEnergy(BaseEnergyFunction):
         return energy
 
 
-class DoubleWellEnergy(BaseEnergyFunction):
+class DoubleWellEnergy(BaseModel):
     def __init__(self, barrier_height=2.0, a=1.0, b=6.0):
         super().__init__()
         self.barrier_height = barrier_height
@@ -93,7 +93,7 @@ class DoubleWellEnergy(BaseEnergyFunction):
         return self.a * x_1d**4 - self.b * x_1d**2 + self.barrier_height
 
 
-class MLPEnergy(BaseEnergyFunction):
+class MLPEnergy(BaseModel):
     def __init__(self, input_dim=2, hidden_dim=8):
         super().__init__()
         self.model = nn.Sequential(
@@ -110,9 +110,9 @@ class MLPEnergy(BaseEnergyFunction):
 
 
 class BaseSampler(nn.Module):
-    def __init__(self, energy_function, dtype, device):
+    def __init__(self, model, dtype, device):
         super().__init__()
-        self.energy_function = energy_function
+        self.model = model
         self.dtype = dtype
         self.device = device
 
@@ -121,15 +121,15 @@ class BaseSampler(nn.Module):
 
     def to(self, device):
         self.device = device
-        self.energy_function.to(device)
+        self.model.to(device)
         return self
 
 
 class LangevinDynamics(BaseSampler):
     def __init__(
-        self, energy_function, step_size, noise_scale, device, dtype=torch.float32
+        self, model, step_size, noise_scale, device, dtype=torch.float32
     ):
-        super().__init__(energy_function, dtype, device)
+        super().__init__(model, dtype, device)
         self.step_size = step_size
         self.noise_scale = noise_scale
         self.temperature = 1.0  # Add temperature parameter for annealing tests
@@ -141,7 +141,7 @@ class LangevinDynamics(BaseSampler):
             noise = (
                 torch.randn_like(x_curr) * self.noise_scale * np.sqrt(self.temperature)
             )
-            grad = self.energy_function.gradient(x_curr).to(device=x.device)
+            grad = self.model.gradient(x_curr).to(device=x.device)
             step_term = (
                 torch.sqrt(torch.tensor(2.0 * self.step_size, device=x.device)) * noise
             )
@@ -156,13 +156,13 @@ class LangevinDynamics(BaseSampler):
 def energy_function(request):
     """Fixture to create energy functions for testing."""
     if not hasattr(request, "param"):
-        return GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
+        return GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
 
     params = request.param
     if params.get("type") == "gaussian":
         mean = params.get("mean", torch.zeros(2))
         cov = params.get("cov", torch.eye(2))
-        return GaussianEnergy(mean=mean, cov=cov)
+        return GaussianModel(mean=mean, cov=cov)
     elif params.get("type") == "double_well":
         barrier_height = params.get("barrier_height", 2.0)
         return DoubleWellEnergy(barrier_height=barrier_height)
@@ -171,7 +171,7 @@ def energy_function(request):
         hidden_dim = params.get("hidden_dim", 8)
         return MLPEnergy(input_dim=input_dim, hidden_dim=hidden_dim)
     else:
-        return GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
+        return GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
 
 
 @pytest.fixture
@@ -180,7 +180,7 @@ def sampler(request, energy_function):
     if not hasattr(request, "param"):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         return LangevinDynamics(
-            energy_function=energy_function,
+            model=energy_function,
             step_size=0.1,
             noise_scale=0.01,
             device=device,
@@ -195,7 +195,7 @@ def sampler(request, energy_function):
     energy_function = energy_function.to(device)
 
     return LangevinDynamics(
-        energy_function=energy_function,
+        model=energy_function,
         step_size=step_size,
         noise_scale=noise_scale,
         device=device,
@@ -208,7 +208,7 @@ def cd_loss(request, energy_function, sampler):
     if not hasattr(request, "param"):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         return ContrastiveDivergence(
-            energy_function=energy_function,
+            model=energy_function,
             sampler=sampler,
             k_steps=10,
             persistent=False,
@@ -225,7 +225,7 @@ def cd_loss(request, energy_function, sampler):
     use_temperature_annealing = params.get("use_temperature_annealing", False)
 
     return ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=k_steps,
         persistent=persistent,
@@ -256,7 +256,7 @@ def device(request):
 def test_contrastive_divergence_initialization(energy_function, sampler, device):
     """Test initialization of ContrastiveDivergence with new parameters."""
     cd = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=10,
         persistent=False,
@@ -271,7 +271,7 @@ def test_contrastive_divergence_initialization(energy_function, sampler, device)
     )
 
     assert isinstance(cd, ContrastiveDivergence)
-    assert cd.energy_function == energy_function
+    assert cd.model == energy_function
     assert cd.sampler == sampler
     assert cd.k_steps == 10
     assert cd.persistent is False
@@ -283,7 +283,7 @@ def test_contrastive_divergence_initialization(energy_function, sampler, device)
     assert cd.min_temp == 0.1
     assert cd.temp_decay == 0.99
     assert cd.current_temp == 1.5
-    assert cd.energy_function.device == device
+    assert cd.model.device == device
     assert cd.device == device
     assert cd.replay_buffer is None
 
@@ -339,7 +339,7 @@ def test_contrastive_divergence_persistence(
     dtype = torch.float32
 
     cd = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=k_steps,
         persistent=persistent,
@@ -408,7 +408,7 @@ def test_contrastive_divergence_with_different_energy_functions(cd_loss):
 def test_temperature_annealing(energy_function, sampler, device):
     """Test temperature annealing functionality."""
     cd = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=5,
         persistent=True,
@@ -451,7 +451,7 @@ def test_temperature_annealing(energy_function, sampler, device):
 def test_nan_handling_in_loss(energy_function, sampler, device):
     """Test that the compute_loss method handles NaNs appropriately."""
     cd = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=5,
         device=device,
@@ -475,7 +475,7 @@ def test_fifo_buffer_update(energy_function, sampler, device):
     buffer_size = 20
     batch_size = 5
     cd = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=1,
         persistent=True,
@@ -512,7 +512,7 @@ def test_stratified_sampling(energy_function, sampler, device):
     buffer_size = 100
     batch_size = 10
     cd = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=1,
         persistent=True,
@@ -557,7 +557,7 @@ def test_energy_regularization_effect(energy_function, sampler, device):
 
     # Test with no regularization
     cd_no_reg = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=1,
         energy_reg_weight=0.0,
@@ -566,7 +566,7 @@ def test_energy_regularization_effect(energy_function, sampler, device):
 
     # Test with high regularization
     cd_high_reg = ContrastiveDivergence(
-        energy_function=energy_function,
+        model=energy_function,
         sampler=sampler,
         k_steps=1,
         energy_reg_weight=0.5,  # Much higher regularization
@@ -601,7 +601,7 @@ def test_multiple_training_iterations(energy_function, sampler, device):
 
     # Create loss with PCD to better test stability
     cd = ContrastiveDivergence(
-        energy_function=energy_fn,
+        model=energy_fn,
         sampler=sampler,
         k_steps=5,
         persistent=True,
@@ -662,18 +662,18 @@ def test_contrastive_divergence_cuda():
         pytest.skip("CUDA not available")
 
     device = torch.device("cuda")
-    energy_fn = GaussianEnergy(
+    energy_fn = GaussianModel(
         mean=torch.zeros(2, device=device), cov=torch.eye(2, device=device)
     )
     sampler = LangevinDynamics(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.1,
         noise_scale=0.01,
         device=device,
     )
 
     cd = ContrastiveDivergence(
-        energy_function=energy_fn,
+        model=energy_fn,
         sampler=sampler,
         k_steps=10,
         persistent=True,
@@ -699,14 +699,14 @@ def test_contrastive_divergence_gradient_flow():
     # Create a trainable energy function (MLP)
     energy_fn = MLPEnergy(input_dim=2, hidden_dim=8).to(device)
     sampler = LangevinDynamics(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.1,
         noise_scale=0.01,
         device=device,
     )
 
     cd = ContrastiveDivergence(
-        energy_function=energy_fn,
+        model=energy_fn,
         sampler=sampler,
         k_steps=5,
         persistent=True,
@@ -737,9 +737,9 @@ def test_contrastive_divergence_gradient_flow():
 def test_small_buffer_warning():
     """Test warning when buffer size is smaller than batch size."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
+    energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
     sampler = LangevinDynamics(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.1,
         noise_scale=0.01,
         device=device,
@@ -749,7 +749,7 @@ def test_small_buffer_warning():
     batch_size = 10
 
     cd = ContrastiveDivergence(
-        energy_function=energy_fn,
+        model=energy_fn,
         sampler=sampler,
         k_steps=1,
         persistent=True,
@@ -780,7 +780,7 @@ def test_convergence_potential():
 
     # Create sampler
     sampler = LangevinDynamics(
-        energy_function=energy_fn,
+        model=energy_fn,
         step_size=0.1,
         noise_scale=0.05,
         device=device,
@@ -788,7 +788,7 @@ def test_convergence_potential():
 
     # Create CD loss with temperature annealing for better convergence
     cd = ContrastiveDivergence(
-        energy_function=energy_fn,
+        model=energy_fn,
         sampler=sampler,
         k_steps=10,
         persistent=True,

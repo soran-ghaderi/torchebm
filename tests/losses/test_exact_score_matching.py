@@ -2,11 +2,11 @@ import pytest
 import torch
 import torch.nn as nn
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.losses.score_matching import ScoreMatching
 
 
-class QuadraticEnergyND(BaseEnergyFunction):
+class QuadraticEnergyND(BaseModel):
     """E(x) = 1/2 * ||x||^2 over all non-batch dims.
 
     For standard normal data, exact score matching objective has expectation -d/2
@@ -17,7 +17,7 @@ class QuadraticEnergyND(BaseEnergyFunction):
         return 0.5 * (x.view(x.shape[0], -1) ** 2).sum(dim=1)
 
 
-class LinearEnergy(BaseEnergyFunction):
+class LinearEnergy(BaseModel):
     """E(x) = w^T x (flattened). Hessian is zero, gradient is constant w."""
 
     def __init__(self, dim: int):
@@ -44,7 +44,7 @@ class LinearEnergy(BaseEnergyFunction):
 def test_exact_sm_scalar_and_finite(device):
     torch.manual_seed(0)
     energy = QuadraticEnergyND().to(device)
-    loss_fn = ScoreMatching(energy_function=energy, hessian_method="exact", device=device)
+    loss_fn = ScoreMatching(model=energy, hessian_method="exact", device=device)
 
     x = torch.randn(64, 10, device=device)
     loss = loss_fn(x)
@@ -65,7 +65,7 @@ def test_exact_sm_matches_gaussian_constant_cpu(batch, dim, tol):
     torch.manual_seed(1)
     device = torch.device("cpu")
     energy = QuadraticEnergyND().to(device)
-    loss_fn = ScoreMatching(energy_function=energy, hessian_method="exact", device=device)
+    loss_fn = ScoreMatching(model=energy, hessian_method="exact", device=device)
 
     x = torch.randn(batch, dim, device=device)
     expected = -dim / 2.0
@@ -84,7 +84,7 @@ def test_exact_sm_multi_dimensional_inputs(shape):
     torch.manual_seed(2)
     device = torch.device("cpu")
     energy = QuadraticEnergyND().to(device)
-    loss_fn = ScoreMatching(energy_function=energy, hessian_method="exact", device=device)
+    loss_fn = ScoreMatching(model=energy, hessian_method="exact", device=device)
 
     x = torch.randn(*shape, device=device)
     d = int(torch.tensor(shape[1:]).prod().item())
@@ -99,7 +99,7 @@ def test_exact_sm_batch_consistency():
     torch.manual_seed(3)
     device = torch.device("cpu")
     energy = QuadraticEnergyND().to(device)
-    loss_fn = ScoreMatching(energy_function=energy, hessian_method="exact", device=device)
+    loss_fn = ScoreMatching(model=energy, hessian_method="exact", device=device)
 
     x = torch.randn(200, 16, device=device)
     full = loss_fn(x).item()
@@ -115,7 +115,7 @@ def test_exact_sm_gradient_flow_linear_energy():
     device = torch.device("cpu")
     dim = 20
     energy = LinearEnergy(dim=dim).to(device)
-    loss_fn = ScoreMatching(energy_function=energy, hessian_method="exact", device=device)
+    loss_fn = ScoreMatching(model=energy, hessian_method="exact", device=device)
 
     x = torch.randn(64, dim, device=device)
     loss = loss_fn(x)

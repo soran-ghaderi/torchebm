@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - name: Install image optimizers (pngquant, jpegoptim)
+        run: sudo apt-get update && sudo apt-get install -y pngquant jpegoptim
       - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
@@ -33,6 +35,16 @@ jobs:
       - name: Generate API Documentation
         run: |
           python generate_api_docs.py
+      - name: Optimize images (PNG/JPG)
+        run: |
+          echo "Optimizing PNGs in docs/ with pngquant"
+          if [ -d docs ]; then
+            find docs -type f -iname '*.png' -print0 | xargs -0 -r -P 2 -I{} pngquant --skip-if-larger --force --ext .png --quality=65-90 --speed 3 {}
+            echo "Optimizing JPGs in docs/ with jpegoptim"
+            find docs -type f \( -iname '*.jpg' -o -iname '*.jpeg' \) -print0 | xargs -0 -r -P 4 jpegoptim --strip-all --all-progressive --max=75 --preserve
+          else
+            echo "docs/ directory not found, skipping image optimization"
+          fi
       - name: Extract Version
         run: |
           # Get version from SCM (setuptools_scm)

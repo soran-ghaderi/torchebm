@@ -5,9 +5,9 @@ authors:
     url: https://soran-ghaderi.github.io/
     avatar: https://github.com/soran-ghaderi.png
     social:
-      - icon: simple/github
+      - icon: fontawesome/brands/github
         link: https://www.github.com/soran-ghaderi
-      - icon: simple/x
+      - icon: fontawesome/brands/x-twitter
         link: https://www.x.com/soranghadri
       - icon: fontawesome/brands/linkedin
         link: https://www.linkedin.com/in/soran-ghaderi

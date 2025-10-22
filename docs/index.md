@@ -12,7 +12,7 @@ icon: octicons/home-fill-16
 
 
 
-<div class="hero-banner" id="glassBanner" style="position: relative; border-radius: 16px; padding: 40px; margin-bottom: 40px; color: var(--md-default-fg-color); backdrop-filter: blur(12px); box-shadow: 0 10px 25px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; z-index: 1;">
+<div class="hero-banner" id="glassBanner" style="position: relative; border-radius: 16px; padding: 20px 40px; margin-bottom: 40px; color: var(--md-default-fg-color); backdrop-filter: blur(12px); box-shadow: 0 10px 25px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; z-index: 1;">
   <div style="position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: url('assets/images/energy_grid_bg.png') no-repeat center center; background-size: cover; z-index: 0;" class="banner-bg-image"></div>
   <!-- Glass background layers -->
   <div style="position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: -3;" class="banner-base-layer"></div>
@@ -26,14 +26,28 @@ icon: octicons/home-fill-16
   <div class="parallax-layer layer-1" data-depth="0.1"></div>
   <div class="parallax-layer layer-2" data-depth="0.2"></div>
   <div class="parallax-layer layer-3" data-depth="0.3"></div>
+  <div class="parallax-layer strawberry-layer" data-depth="0.12">
+    <!-- <span class="star-emoji" aria-hidden="true">⭐</span> -->
+    <span class="strawberry-emoji" aria-hidden="true">🍓</span>
+  </div>
   
   <!-- Content -->
   <div style="position: relative; z-index: 1;">
     <img src="assets/images/logo_with_text.svg" alt="TorchEBM Logo" width="300" style="display: block; margin: 0 auto 20px auto; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">
-    <h1 style="font-size: 2.5em; text-align: center; margin-bottom: 20px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);"><strong>PyTorch Toolkit for Generative Modeling</strong></h1>
-    <p style="font-size: 1.3em; text-align: center; max-width: 800px; margin: 0 auto 30px auto; line-height: 1.6;">
+    <h1 style="font-size: 2.5em; text-align: center; margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);"><strong>PyTorch Toolkit for Generative Modeling</strong></h1>
+    <p style="font-size: 1.3em; text-align: center; max-width: 800px; margin: 0 auto 20px auto; line-height: 1.6;">
       A high-performance PyTorch library that makes Energy-Based Models <strong>accessible</strong> and <strong>efficient</strong> for researchers and practitioners alike.
     </p>
+    <div style="display: flex; justify-content: center; gap: 12px; margin-top: 6px;">
+      <a id="starCtaBtn" href="https://github.com/soran-ghaderi/torchebm" target="_blank" rel="noopener" aria-label="Star TorchEBM on GitHub" class="glass-star-btn">
+        <div class="btn-glow"></div>
+        <div class="btn-content">
+          <span class="star-icon" aria-hidden="true">⭐</span>
+          <span class="btn-text">Star on GitHub</span>
+        </div>
+        <div class="btn-shine"></div>
+      </a>
+    </div>
   </div>
 
   <!-- Inline styles for animations -->
@@ -53,6 +67,12 @@ icon: octicons/home-fill-16
       0% { transform: translate(0, 0); }
       50% { transform: translate(10px, 5px); }
       100% { transform: translate(0, 0); }
+    }
+    
+    @keyframes berryFloat {
+      0% { transform: translateY(0) rotate(0deg) scale(1); }
+      50% { transform: translateY(-8px) rotate(2deg) scale(1.03); }
+      100% { transform: translateY(0) rotate(0deg) scale(1); }
     }
     
     .energy-pulse {
@@ -88,6 +108,28 @@ icon: octicons/home-fill-16
       animation: drift 15s ease-in-out infinite;
     }
     
+    .strawberry-layer {
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding: 24px;
+      gap: 16px;
+    }
+    
+    .strawberry-emoji, .star-emoji {
+      font-size: clamp(48px, 7vw, 96px);
+      line-height: 1;
+      user-select: none;
+      filter: drop-shadow(0 4px 10px rgba(0,0,0,0.25));
+      animation: berryFloat 10s ease-in-out infinite;
+      opacity: 0.95;
+    }
+
+    .star-emoji {
+      animation: berryFloat 12s ease-in-out infinite;
+    }
+
+    
     /* Light mode specific styles */
     [data-md-color-scheme="default"] .banner-bg-image {
       opacity: 0.6; /* Reduced from 0.55 for better visibility */
@@ -95,13 +137,25 @@ icon: octicons/home-fill-16
     }
     
     [data-md-color-scheme="default"] .banner-base-layer {
-      background: rgba(255, 255, 255, 0.3); /* Reduced from 0.7 to 0.3 */
+      background: rgba(16, 24, 32, 0.7);
     }
     
     [data-md-color-scheme="default"] #glassBanner {
-      color: rgba(0, 0, 0, 1.0);
+      color: rgba(255, 255, 255, 1.0) !important;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(16, 24, 32, 0.1) 100%); /* More transparent */
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.2) 0%, rgba(16, 24, 32, 0.1) 100%); /* More transparent */
+    }
+
+    [data-md-color-scheme="default"] .strawberry-emoji {
+      text-shadow: 0 0 8px rgba(255, 82, 82, 0.25), 0 0 18px rgba(255, 82, 82, 0.15);
+    }
+
+    [data-md-color-scheme="default"] .star-emoji {
+      text-shadow: 0 0 10px rgba(255, 215, 64, 0.35), 0 0 18px rgba(255, 215, 64, 0.2);
+    }
+
+    [data-md-color-scheme="default"] #glassBanner h1 {
+      color: rgba(255, 255, 255, 1.0) !important;
     }
     
     [data-md-color-scheme="default"] #radialBg {
@@ -139,10 +193,14 @@ icon: octicons/home-fill-16
     }
     
     [data-md-color-scheme="slate"] #glassBanner {
-      color: rgba(255, 255, 255, 1.0);
+      color: rgba(255, 255, 255, 1.0) !important;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
       border-color: rgba(255, 255, 255, 0.05);
       background: linear-gradient(135deg, rgba(16, 24, 32, 0.4) 0%, rgba(16, 24, 32, 0.2) 100%);
+    }
+
+    [data-md-color-scheme="slate"] #glassBanner h1 {
+      color: rgba(255, 255, 255, 1.0) !important;
     }
     
     [data-md-color-scheme="slate"] #radialBg {
@@ -168,6 +226,168 @@ icon: octicons/home-fill-16
       border-color: rgba(255, 255, 255, 0.4);
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
     }
+    
+    [data-md-color-scheme="slate"] .strawberry-emoji {
+      text-shadow: 0 0 10px rgba(255, 105, 180, 0.4), 0 0 22px rgba(255, 105, 180, 0.25);
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,0.35));
+    }
+
+    [data-md-color-scheme="slate"] .star-emoji {
+      text-shadow: 0 0 12px rgba(255, 215, 64, 0.4), 0 0 24px rgba(255, 215, 64, 0.25);
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,0.35));
+    }
+
+    /* Glass CTA Button Styles */
+    @keyframes glassShimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(400%); }
+    }
+    @keyframes starPulse {
+      0%, 100% { transform: scale(1) rotate(0deg); }
+      50% { transform: scale(1.15) rotate(5deg); }
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+    @keyframes ctaBurstFly {
+      to { transform: translate(var(--dx), var(--dy)) rotate(180deg); opacity: 0; }
+    }
+
+    .glass-star-btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 24px;
+      border-radius: 50px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 1.0em;
+      color: #fff;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      background: transparent;
+      box-shadow: none;
+      will-change: transform;
+    }
+
+    .btn-glow {
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      border-radius: 50px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      animation: glowPulse 3s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    .btn-content {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 2;
+    }
+
+    .star-icon {
+      font-size: 1.3em;
+      animation: starPulse 2s ease-in-out infinite;
+      filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
+    }
+
+    .btn-text {
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+
+    .btn-shine {
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.4),
+        transparent
+      );
+      transition: left 0.6s ease;
+      pointer-events: none;
+    }
+
+    .glass-star-btn:hover {
+      transform: translateY(-2px) scale(1.02);
+      border-color: rgba(255, 255, 255, 0.4);
+      box-shadow: none;
+    }
+
+    .glass-star-btn:hover .btn-glow {
+      opacity: 1;
+    }
+
+    .glass-star-btn:hover .btn-shine {
+      left: 100%;
+    }
+
+
+    .glass-star-btn:active {
+      transform: translateY(-1px) scale(0.98);
+    }
+
+    .burst-star {
+      position: absolute; left: 0; top: 0; width: 8px; height: 8px; border-radius: 2px;
+      clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+      pointer-events: none; opacity: 1; transform: translate(-50%, -50%);
+      animation: ctaBurstFly 700ms ease-out forwards;
+      box-shadow: 0 0 8px rgba(255,255,255,0.35);
+    }
+
+    /* Light mode glass button styles */
+    [data-md-color-scheme="default"] .glass-star-btn {
+      background: transparent;
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff !important;
+    }
+
+    [data-md-color-scheme="default"] .btn-glow {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    [data-md-color-scheme="default"] .glass-star-btn:hover {
+      color: #fff;
+      background: transparent;
+    }
+
+    /* Dark mode glass button styles */
+    [data-md-color-scheme="slate"] .glass-star-btn {
+      background: transparent;
+      border-color: rgba(255, 255, 255, 0.2);
+      color: #fff !important;
+    }
+
+    [data-md-color-scheme="slate"] .btn-glow {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    [data-md-color-scheme="slate"] .glass-star-btn:hover {
+      color: #fff;
+      background: transparent;
+    }
+
+    [data-md-color-scheme="default"] .burst-star {
+      background: linear-gradient(180deg, #fff59d, #ffb74d);
+    }
+
+    [data-md-color-scheme="slate"] .burst-star {
+      background: linear-gradient(180deg, #fff59d, #ffcc80);
+    }
   </style>
 
   <!-- Inline JavaScript -->
@@ -178,6 +398,7 @@ icon: octicons/home-fill-16
       const banner = document.getElementById('glassBanner');
       const energyContainer = document.getElementById('energyContainer');
       const parallaxLayers = document.querySelectorAll('.parallax-layer');
+      const starBtn = document.getElementById('starCtaBtn');
       
       // Mouse movement tracking for desktop - Enhanced radial effect
       document.addEventListener('mousemove', (e) => {
@@ -278,6 +499,38 @@ icon: octicons/home-fill-16
           createEnergyPulses();
         }
       }, 10000);
+
+      // Star burst effect on CTA (integrated into hero)
+      function burst(x, y) {
+        const n = 12;
+        for (let i = 0; i < n; i++) {
+          const s = document.createElement('span');
+          s.className = 'burst-star';
+          const size = 6 + Math.random() * 8;
+          const angle = (Math.PI * 2 * i) / n + (Math.random() * 0.6 - 0.3);
+          const distance = 50 + Math.random() * 70;
+          const dx = Math.cos(angle) * distance;
+          const dy = Math.sin(angle) * distance;
+          s.style.width = size + 'px';
+          s.style.height = size + 'px';
+          s.style.left = x + 'px';
+          s.style.top = y + 'px';
+          s.style.setProperty('--dx', dx + 'px');
+          s.style.setProperty('--dy', dy + 'px');
+          banner.appendChild(s);
+          s.addEventListener('animationend', () => s.remove());
+        }
+      }
+
+      if (starBtn) {
+        starBtn.addEventListener('click', function (e) {
+          const rect = banner.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          burst(x, y);
+        });
+
+      }
     });
   </script>
 </div>
@@ -314,23 +567,20 @@ icon: octicons/home-fill-16
 </p>
 
 <div style="text-align: center; margin-bottom: 40px;" markdown>
-[:material-rocket-launch:{ .lg .middle } Getting Started](guides/index.md){ .md-button .md-button--primary }
+[:material-rocket-launch:{ .lg .middle } Getting Started](tutorials/index.md){ .md-button .md-button--primary }
 [:material-flask-outline:{ .lg .middle } Examples](examples/index.md){ .md-button }
 [:material-file-document:{ .lg .middle } API Reference](api/index.md){ .md-button }
-[:material-tools: Development](developer_guide/contributing.md){ .md-button }
+[:material-tools: Development](developer_guide/index.md){ .md-button }
 </div>
+
+<!-- Star CTA moved into the hero banner above; removed separate card -->
 
 ---
 
-## What is TorchEBM?
+## What is 🍓 TorchEBM?
 
-**Energy-Based Models (EBMs)** offer a powerful and flexible framework for generative modeling by assigning an unnormalized probability (or "energy") to each data point. Lower energy corresponds to higher probability.
+**TorchEBM** is a PyTorch library for Energy-Based Models (EBMs), a powerful class of generative models. It provides a flexible framework to define, train, and generate samples using energy-based models.
 
-**TorchEBM** simplifies working with EBMs in [PyTorch](https://pytorch.org/). It provides a suite of tools designed for researchers and practitioners, enabling efficient implementation and exploration of:
-
-*   **Defining complex energy functions:** Easily create custom energy landscapes using PyTorch modules.
-*   **Training:** Loss functions and procedures suitable for EBM parameter estimation including score matching and contrastive divergence variants.
-*   **Sampling:** Algorithms to draw samples from the learned distribution \( p(x) \).
 
 ---
 
@@ -340,27 +590,27 @@ TorchEBM is structured around several key components:
 
 <div class="grid cards" markdown>
 
--   :material-function-variant:{ .lg .middle } __Energy Functions__
+-   :material-function-variant:{ .lg .middle } __Models__
 
     ---
 
-    Implement energy functions using `BaseEnergyFunction`. Includes predefined analytical functions (Gaussian, Double Well) and supports custom neural network architectures.
+    Define energy functions using `BaseModel`, from analytical forms to custom neural networks.
 
-    [:octicons-arrow-right-24: Details](examples/energy_functions/index.md)
+    [:octicons-arrow-right-24: Details](examples/training/index.md)
 
 -   :material-chart-scatter-plot:{ .lg .middle } __Samplers__
 
     ---
 
-    MCMC samplers like Langevin Dynamics (`LangevinDynamics`), Hamiltonian Monte Carlo, and more are provided for generating samples from the energy distribution.
+    Generate samples with MCMC samplers like Langevin Dynamics and Hamiltonian Monte Carlo.
 
-    [:octicons-arrow-right-24: Details](api/torchebm/samplers/index.md)
+    [:octicons-arrow-right-24: Details](examples/samplers/index.md)
 
 -   :material-calculator-variant:{ .lg .middle } __Loss Functions__
 
     ---
 
-    Comprehensive loss functions for EBM training, including Contrastive Divergence, Score Matching, and Noise Contrastive Estimation.
+    Train models with loss functions like Contrastive Divergence and Score Matching.
 
     [:octicons-arrow-right-24: Details](api/torchebm/losses/index.md)
 
@@ -368,15 +618,15 @@ TorchEBM is structured around several key components:
 
     ---
 
-    Helper functions to generate synthetic datasets (e.g., `make_gaussian_mixture`) useful for testing, debugging, and visualization purposes.
+    Use synthetic dataset generators for testing and visualization.
 
     [:octicons-arrow-right-24: Details](examples/datasets/index.md)
 
--   :material-view-grid-plus:{ .lg .middle } __Visualization__
+-   :material-chart-bar:{ .lg .middle } __Visualization__
 
     ---
 
-    Tools for visualizing energy landscapes, sampling processes, and training progression to better understand model behavior.
+    Visualize energy landscapes, sampling, and training dynamics.
 
     [:octicons-arrow-right-24: Details](examples/visualization/index.md)
 
@@ -384,7 +634,7 @@ TorchEBM is structured around several key components:
 
     ---
 
-    CUDA implementations of key algorithms for dramatically faster sampling and training on GPU hardware.
+    Accelerate sampling and training with CUDA implementations.
 
     [:octicons-arrow-right-24: Details](api/torchebm/cuda/index.md)
 
@@ -408,304 +658,33 @@ Here's a minimal example of defining an energy function and a sampler:
     ---
     ```python
     import torch
-    from torchebm.core import GaussianEnergy
+    from torchebm.core import GaussianModel
     from torchebm.samplers import LangevinDynamics
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Define an (analytical) energy function -> next example: trainable
-    energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2), device=device)
+    model = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2), device=device)
     
-    # Define a sampler
-    sampler = LangevinDynamics(energy_function=energy_fn, step_size=0.01, device=device)
+    sampler = LangevinDynamics(model=model, step_size=0.01, device=device)
     
-    # Generate samples
     initial_points = torch.randn(500, 2, device=device)
     samples = sampler.sample(x=initial_points, n_steps=100)
     
-    print(f"Output batch_shape: {samples.shape}")
-    # Output batch_shape: torch.Size([500, 2])
+    print(f"Output batch_shape: {samples.shape}") # (B, len) -> torch.Size([500, 2]) 
     ```
 </div>
----
-
-## Training and Visualization Example
-
-Training EBMs typically involves adjusting the energy function's parameters so that observed data points have lower energy than samples generated by the model. Contrastive Divergence (CD) is a common approach.
-
-Here's an example of setting up training using `ContrastiveDivergence` and `LangevinDynamics`:
-<div class="grid cards" markdown>
-
-- __Train an EBM__
-
-    ---
-  ```python
-  import torch.optim as optim
-  from torch.utils.data import DataLoader
-
-  from torchebm.losses import ContrastiveDivergence
-  from torchebm.datasets import GaussianMixtureDataset
-  
-  # A trainable EBM
-  class MLPEnergy(BaseEnergyFunction):
-      def __init__(self, input_dim, hidden_dim=64):
-          super().__init__()
-          self.net = nn.Sequential(
-              nn.Linear(input_dim, hidden_dim),
-              nn.SiLU(),
-              nn.Linear(hidden_dim, hidden_dim),
-              nn.SiLU(),
-              nn.Linear(hidden_dim, 1),
-          )
-  
-      def forward(self, x):
-          return self.net(x).squeeze(-1) # a scalar value
-
-  energy_fn = MLPEnergy(input_dim=2).to(device)
-  
-  cd_loss_fn = ContrastiveDivergence(
-      energy_function=energy_fn,
-      sampler=sampler, # from the previous example
-      k_steps=10 # MCMC steps for negative samples gen
-  )
-  
-  optimizer = optim.Adam(energy_fn.parameters(), lr=0.001)
-  
-  mixture_dataset = GaussianMixtureDataset(n_samples=500, n_components=4, std=0.1, seed=123).get_data()
-  dataloader = DataLoader(mixture_dataset, batch_size=32, shuffle=True)
-  
-  # Training Loop
-  for epoch in range(10):
-      epoch_loss = 0.0
-      for i, batch_data in enumerate(dataloader):
-          batch_data = batch_data.to(device)
-  
-          optimizer.zero_grad()
-  
-          loss, neg_samples = cd_loss(batch_data)
-  
-          loss.backward()
-          optimizer.step()
-  
-          epoch_loss += loss.item()
-  
-      avg_loss = epoch_loss / len(dataloader)
-      print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
-  ```
-</div>
-
-Visualizing the learned energy landscape during training can be insightful. Below shows the evolution of an MLP-based energy function trained on a 2D Gaussian mixture:
-
-!!! example "Training Progression (Gaussian Mixture Example)"
-
-    === "Epoch 100 (Final)"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-        <figure markdown>
-          ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-          <figcaption>Learned landscape matching the target distribution.</figcaption>
-        </figure>
-
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-        </div>
-        </div>
-
-    === "Epoch 30"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-        <figure markdown>
-          ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-          <figcaption>Modes become more distinct.</figcaption>
-        </figure>
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-        </div>
-        </div>
-
-    === "Epoch 20"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-
-        <figure markdown>
-          ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-          <figcaption>Energy landscape refinement.</figcaption>
-        </figure>
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-        </div>
-        </div>
-
-    === "Epoch 10"
-        <div class="energy-grid" markdown>
-        <div class="energy-main" markdown>
-
-        <figure markdown>
-          ![Training - Epoch 10](assets/images/examples/energy_landscape_epoch_10.png){ width="450" }
-          <figcaption>Early stage: Model starts identifying modes.</figcaption>
-        </figure>
-        This visualization demonstrates how the model learns regions of low energy (high probability density, warmer colors) corresponding to the data distribution (white points), while assigning higher energy elsewhere. Red points are samples generated from the EBM at that training stage.
-    
-        [:octicons-arrow-right-24: Full Training Example](examples/training/training_ebm_gaussian.md)
-        
-        </div>
-        <div class="energy-others" markdown>
-        ![Training - Epoch 20](assets/images/examples/energy_landscape_epoch_20.png){ width="450" }
-        ![Training - Epoch 30](assets/images/examples/energy_landscape_epoch_30.png){ width="450" }
-        ![Training - Epoch 100](assets/images/examples/energy_landscape_epoch_100.png){ width="450" }
-        </div>
-        </div>
 ---
 
 !!! info "Latest Release"
 
     TorchEBM is currently in early development. Check our [GitHub repository](https://github.com/soran-ghaderi/torchebm) for the latest updates and features.
 
-## Example Analytical Energy Landscapes
-
-!!! note "Toy Examples"
-    
-    These are some TorchEBM's built-in toy analytical energy landscapes for functionality and performance testing purposes.
-
-=== "Gaussian Energy"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Gaussian Energy**
-    
-    $E(x) = \frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Double Well Energy](assets/images/e_functions/double_well.png)
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png)
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import GaussianEnergy
-    import torch
-    
-    energy_fn = GaussianEnergy(
-        mean=torch.zeros(2),
-        cov=torch.eye(2)
-    )
-    ```
-
-=== "Double Well Energy"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Double Well Energy](assets/images/e_functions/double_well.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Double Well Energy**
-    
-    $E(x) = h \sum_{i=1}^n \left[(x_i^2 - 1)^2\right]$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png)
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png)
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import DoubleWellEnergy
-    
-    energy_fn = DoubleWellEnergy(
-        barrier_height=2.0
-    )
-    ```
-
-=== "Rastrigin Energy"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Rastrigin Energy**
-    
-    $E(x) = an + \sum_{i=1}^n \left[ x_i^2 - a\cos(2\pi x_i) \right]$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png)
-    ![Double Well Energy](assets/images/e_functions/double_well.png)
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import RastriginEnergy
-    
-    energy_fn = RastriginEnergy(
-        a=10.0
-    )
-    ```
-
-=== "Rosenbrock Energy"
-
-    <div class="energy-grid" markdown>
-    <div class="energy-main" markdown>
-    ![Rosenbrock Energy](assets/images/e_functions/rosenbrock.png){ .spotlight }
-    
-    <div class="energy-caption energy-caption-bottom">
-    **Rosenbrock Energy**
-    
-    $E(x) = \sum_{i=1}^{n-1} \left[ a(x_{i+1} - x_i^2)^2 + (x_i - 1)^2 \right]$
-    </div>
-    </div>
-    <div class="energy-others" markdown>
-    ![Gaussian Energy](assets/images/e_functions/gaussian.png)
-    ![Double Well Energy](assets/images/e_functions/double_well.png)
-    ![Rastrigin Energy](assets/images/e_functions/rastrigin.png)
-    </div>
-    </div>
-    
-    ```python
-    from torchebm.core import RosenbrockEnergy
-    
-    energy_fn = RosenbrockEnergy(
-        a=1.0, 
-        b=100.0
-    )
-    ```
-
-
 ## Community & Contribution
 
 TorchEBM is an open-source project developed with the research community in mind.
 
 *   **Bug Reports & Feature Requests:** Please use the [GitHub Issues](https://github.com/soran-ghaderi/torchebm/issues).
-*   **Contributing Code:** We welcome contributions! Please see the [Contributing Guidelines](developer_guide/contributing.md). Consider following the [Commit Conventions](developer_guide/contributing.md#commit-message-conventions).
-*   **Show Support:** If you find TorchEBM helpful for your work, consider starring the repository on [GitHub](https://github.com/soran-ghaderi/torchebm)! :material-star-outline:
+*   **Contributing Code:** We welcome contributions! Please see the [Contributing Guidelines](developer_guide/index.md). Consider following the [Commit Conventions](developer_guide/code_guidelines.md).
+*   **Show Support:** If you find TorchEBM helpful for your work, please consider starring the repository on [GitHub](https://github.com/soran-ghaderi/torchebm)! :star:
 
 ---
 

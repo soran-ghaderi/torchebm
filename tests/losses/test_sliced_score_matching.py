@@ -4,12 +4,12 @@ import torch.nn as nn
 import numpy as np
 import warnings
 
-from torchebm.core import BaseEnergyFunction
+from torchebm.core import BaseModel
 from torchebm.losses import SlicedScoreMatching
 from tests.conftest import requires_cuda
 
 
-class MLPEnergy(BaseEnergyFunction):
+class MLPEnergy(BaseModel):
     """A simple MLP to act as the energy function for testing."""
 
     def __init__(self, input_dim=2, hidden_dim=8):
@@ -26,7 +26,7 @@ class MLPEnergy(BaseEnergyFunction):
         return self.model(x).squeeze(-1)
 
 
-class GaussianEnergy(BaseEnergyFunction):
+class GaussianEnergy(BaseModel):
     def __init__(self, mean, cov):
         super().__init__()
         self.register_buffer("mean", mean)
@@ -43,7 +43,7 @@ class GaussianEnergy(BaseEnergyFunction):
         return energy
 
 
-class DoubleWellEnergy(BaseEnergyFunction):
+class DoubleWellEnergy(BaseModel):
     def __init__(self, barrier_height=2.0, a=1.0, b=6.0):
         super().__init__()
         self.barrier_height = barrier_height
@@ -86,7 +86,7 @@ def ssm_loss(request, energy_function):
     if not hasattr(request, "param"):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         return SlicedScoreMatching(
-            energy_function=energy_function,
+            model=energy_function,
             n_projections=5,
             projection_type="rademacher",
             device=device,
@@ -103,7 +103,7 @@ def ssm_loss(request, energy_function):
     use_mixed_precision = params.get("use_mixed_precision", False)
 
     return SlicedScoreMatching(
-        energy_function=energy_function,
+        model=energy_function,
         n_projections=n_projections,
         projection_type=projection_type,
         regularization_strength=regularization_strength,
@@ -134,7 +134,7 @@ def device(request):
 def test_sliced_score_matching_initialization(energy_function, device):
     """Test initialization of SlicedScoreMatching with different parameters."""
     ssm = SlicedScoreMatching(
-        energy_function=energy_function,
+        model=energy_function,
         n_projections=10,
         projection_type="gaussian",
         regularization_strength=0.01,
@@ -144,7 +144,7 @@ def test_sliced_score_matching_initialization(energy_function, device):
     )
 
     assert isinstance(ssm, SlicedScoreMatching)
-    assert ssm.energy_function == energy_function
+    assert ssm.model == energy_function
     assert ssm.n_projections == 10
     assert ssm.projection_type == "gaussian"
     assert ssm.regularization_strength == 0.01
@@ -156,7 +156,7 @@ def test_sliced_score_matching_invalid_projection_type(energy_function):
     """Test that invalid projection type is handled correctly."""
     with warnings.catch_warnings(record=True) as w:
         ssm = SlicedScoreMatching(
-            energy_function=energy_function,
+            model=energy_function,
             projection_type="invalid_type",
         )
         assert any("Invalid projection_type" in str(warning.message) for warning in w)
@@ -212,7 +212,7 @@ def test_forward_with_noise(energy_function):
     """Test forward method with noise scale > 0."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ssm = SlicedScoreMatching(
-        energy_function=energy_function,
+        model=energy_function,
         noise_scale=0.1,
         device=device,
     )
@@ -231,7 +231,7 @@ def test_forward_with_clipping(energy_function):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     clip_value = 1000.0  # Use a higher value that won't trigger the clipping
     ssm = SlicedScoreMatching(
-        energy_function=energy_function,
+        model=energy_function,
         clip_value=clip_value,
         device=device,
     )
@@ -253,7 +253,7 @@ def test_forward_with_regularization(energy_function):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     regularization_strength = 0.1
     ssm = SlicedScoreMatching(
-        energy_function=energy_function,
+        model=energy_function,
         regularization_strength=regularization_strength,
         device=device,
     )
@@ -281,14 +281,14 @@ def test_different_projections_yield_different_losses(energy_function):
 
     # Create two instances with different projection types
     ssm1 = SlicedScoreMatching(
-        energy_function=energy_function,
+        model=energy_function,
         projection_type="rademacher",
         n_projections=50,  # Use more projections to make difference more reliable
         device=device,
     )
 
     ssm2 = SlicedScoreMatching(
-        energy_function=energy_function,
+        model=energy_function,
         projection_type="gaussian",
         n_projections=50,  # Use more projections to make difference more reliable
         device=device,
@@ -354,7 +354,7 @@ def test_higher_dimensions():
     energy_fn = GaussianEnergy(mean=mean, cov=cov)
 
     ssm = SlicedScoreMatching(
-        energy_function=energy_fn,
+        model=energy_fn,
         n_projections=3,  # Use fewer projections for speed
         device=device,
     )
@@ -376,7 +376,7 @@ def test_numerical_stability():
     energy_fn = GaussianEnergy(mean=torch.zeros(2), cov=torch.eye(2))
 
     ssm = SlicedScoreMatching(
-        energy_function=energy_fn,
+        model=energy_fn,
         n_projections=5,
         clip_value=100.0,  # Large clip value to see if it handles extreme values
         device=device,
@@ -400,7 +400,7 @@ def test_gradient_flow():
     energy_fn = MLPEnergy(input_dim=2, hidden_dim=8).to(device)
 
     ssm = SlicedScoreMatching(
-        energy_function=energy_fn,
+        model=energy_fn,
         n_projections=3,
         device=device,
     )
@@ -440,7 +440,7 @@ def test_sliced_score_matching_cuda():
     )
 
     ssm = SlicedScoreMatching(
-        energy_function=energy_fn,
+        model=energy_fn,
         n_projections=5,
         projection_type="rademacher",
         device=device,
@@ -463,7 +463,7 @@ def test_convergence_potential():
 
     # Create SSM loss
     ssm = SlicedScoreMatching(
-        energy_function=energy_fn,
+        model=energy_fn,
         projection_type="gaussian",
         n_projections=10,
         regularization_strength=1e-4,

@@ -125,8 +125,10 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv13
 env/
 venv/
+venv13/
 ENV/
 env.bak/
 venv.bak/
@@ -160,6 +162,28 @@ cython_debug/
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+.idea/
 /scope.txt
 /.venv13/
+/.venv/
+.cursor/
+
+# Generated API documentation (except index.md files)
+docs/api/**/*.md
+# !docs/api/**/index.md
+!docs/api/index.md
+
+# VS Code
+.vscode/
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+
+# Generated images and assets that might be created by scripts
+# docs/assets/images/loss_functions/*.png
+# docs/assets/images/training/*.png
+# docs/assets/images/visualization/*.png
