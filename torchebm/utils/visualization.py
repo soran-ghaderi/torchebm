@@ -2,13 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import torch
-from torchebm.core.base_energy_function import BaseEnergyFunction
+from torchebm.core.base_model import BaseModel
 from typing import Optional, Tuple, List, Union
 import os
 
 
 def plot_2d_energy_landscape(
-    energy_fn: BaseEnergyFunction,
+    model: BaseModel,
     x_range: Tuple[float, float] = (-5, 5),
     y_range: Tuple[float, float] = (-5, 5),
     resolution: int = 100,
@@ -23,25 +23,25 @@ def plot_2d_energy_landscape(
     device: Optional[str] = None,
 ) -> plt.Figure:
     """
-    Plot a 2D energy landscape.
+    Plots a 2D energy landscape of a model.
 
     Args:
-        energy_fn: The energy function to visualize
-        x_range: Range for the x-axis
-        y_range: Range for the y-axis
-        resolution: Number of points in each dimension
-        log_scale: Whether to use log scale for the energy values
-        cmap: Colormap to use
-        title: Title of the plot
-        show_colorbar: Whether to show a colorbar
-        save_path: Path to save the figure, if not None
-        fig_size: Size of the figure
-        contour: Whether to overlay contour lines
-        contour_levels: Number of contour levels
-        device: Device to use for computation
+        model (BaseModel): The model to visualize.
+        x_range (Tuple[float, float]): The range for the x-axis.
+        y_range (Tuple[float, float]): The range for the y-axis.
+        resolution (int): The number of points in each dimension.
+        log_scale (bool): Whether to use a log scale for the energy values.
+        cmap (str): The colormap to use.
+        title (Optional[str]): The title of the plot.
+        show_colorbar (bool): Whether to show a colorbar.
+        save_path (Optional[str]): The path to save the figure.
+        fig_size (Tuple[int, int]): The size of the figure.
+        contour (bool): Whether to overlay contour lines.
+        contour_levels (int): The number of contour levels.
+        device (Optional[str]): The device to use for computation.
 
     Returns:
-        The matplotlib figure object
+        plt.Figure: The matplotlib figure object.
     """
     # Create the grid
     x = np.linspace(x_range[0], x_range[1], resolution)
@@ -54,11 +54,11 @@ def plot_2d_energy_landscape(
     )
     if device is not None:
         grid = grid.to(device)
-        energy_fn = energy_fn.to(device)
+        model = model.to(device)
 
     # Compute energy values
     with torch.no_grad():
-        Z = energy_fn(grid).cpu().numpy()
+        Z = model(grid).cpu().numpy()
     Z = Z.reshape(X.shape)
 
     # Apply log scale if requested
@@ -96,7 +96,7 @@ def plot_2d_energy_landscape(
 
 
 def plot_3d_energy_landscape(
-    energy_fn: BaseEnergyFunction,
+    model: BaseModel,
     x_range: Tuple[float, float] = (-5, 5),
     y_range: Tuple[float, float] = (-5, 5),
     resolution: int = 50,
@@ -112,26 +112,26 @@ def plot_3d_energy_landscape(
     device: Optional[str] = None,
 ) -> plt.Figure:
     """
-    Plot a 3D surface visualization of a 2D energy landscape.
+    Plots a 3D surface visualization of a 2D energy landscape.
 
     Args:
-        energy_fn: The energy function to visualize
-        x_range: Range for the x-axis
-        y_range: Range for the y-axis
-        resolution: Number of points in each dimension
-        log_scale: Whether to use log scale for the energy values
-        cmap: Colormap to use
-        title: Title of the plot
-        show_colorbar: Whether to show a colorbar
-        save_path: Path to save the figure, if not None
-        fig_size: Size of the figure
-        alpha: Transparency of the surface
-        elev: Elevation angle for the 3D view
-        azim: Azimuth angle for the 3D view
-        device: Device to use for computation
+        model (BaseModel): The model to visualize.
+        x_range (Tuple[float, float]): The range for the x-axis.
+        y_range (Tuple[float, float]): The range for the y-axis.
+        resolution (int): The number of points in each dimension.
+        log_scale (bool): Whether to use a log scale for the energy values.
+        cmap (str): The colormap to use.
+        title (Optional[str]): The title of the plot.
+        show_colorbar (bool): Whether to show a colorbar.
+        save_path (Optional[str]): The path to save the figure.
+        fig_size (Tuple[int, int]): The size of the figure.
+        alpha (float): The transparency of the surface.
+        elev (float): The elevation angle for the 3D view.
+        azim (float): The azimuth angle for the 3D view.
+        device (Optional[str]): The device to use for computation.
 
     Returns:
-        The matplotlib figure object
+        plt.Figure: The matplotlib figure object.
     """
     # Create the grid
     x = np.linspace(x_range[0], x_range[1], resolution)
@@ -144,11 +144,11 @@ def plot_3d_energy_landscape(
     )
     if device is not None:
         grid = grid.to(device)
-        energy_fn = energy_fn.to(device)
+        model = model.to(device)
 
     # Compute energy values
     with torch.no_grad():
-        Z = energy_fn(grid).cpu().numpy()
+        Z = model(grid).cpu().numpy()
     Z = Z.reshape(X.shape)
 
     # Apply log scale if requested
@@ -193,7 +193,7 @@ def plot_3d_energy_landscape(
 
 
 def plot_samples_on_energy(
-    energy_fn: BaseEnergyFunction,
+    model: BaseModel,
     samples: torch.Tensor,
     x_range: Tuple[float, float] = (-5, 5),
     y_range: Tuple[float, float] = (-5, 5),
@@ -212,32 +212,32 @@ def plot_samples_on_energy(
     device: Optional[str] = None,
 ) -> plt.Figure:
     """
-    Plot samples on a 2D energy landscape.
+    Plots samples on a 2D energy landscape.
 
     Args:
-        energy_fn: The energy function to visualize
-        samples: Tensor of samples with batch_shape [n_samples, 2]
-        x_range: Range for the x-axis
-        y_range: Range for the y-axis
-        resolution: Number of points in each dimension
-        log_scale: Whether to use log scale for the energy values
-        cmap: Colormap to use
-        title: Title of the plot
-        show_colorbar: Whether to show a colorbar
-        save_path: Path to save the figure, if not None
-        fig_size: Size of the figure
-        contour: Whether to overlay contour lines
-        contour_levels: Number of contour levels
-        sample_color: Color of the samples
-        sample_alpha: Transparency of the samples
-        sample_size: Size of the sample markers
-        device: Device to use for computation
+        model (BaseModel): The model to visualize.
+        samples (torch.Tensor): A tensor of samples of shape `(n_samples, 2)`.
+        x_range (Tuple[float, float]): The range for the x-axis.
+        y_range (Tuple[float, float]): The range for the y-axis.
+        resolution (int): The number of points in each dimension.
+        log_scale (bool): Whether to use a log scale for the energy values.
+        cmap (str): The colormap to use.
+        title (Optional[str]): The title of the plot.
+        show_colorbar (bool): Whether to show a colorbar.
+        save_path (Optional[str]): The path to save the figure.
+        fig_size (Tuple[int, int]): The size of the figure.
+        contour (bool): Whether to overlay contour lines.
+        contour_levels (int): The number of contour levels.
+        sample_color (str): The color of the samples.
+        sample_alpha (float): The transparency of the samples.
+        sample_size (float): The size of the sample markers.
+        device (Optional[str]): The device to use for computation.
 
     Returns:
-        The matplotlib figure object
+        plt.Figure: The matplotlib figure object.
     """
     fig = plot_2d_energy_landscape(
-        energy_fn=energy_fn,
+        model=model,
         x_range=x_range,
         y_range=y_range,
         resolution=resolution,
@@ -273,7 +273,7 @@ def plot_samples_on_energy(
 
 def plot_sample_trajectories(
     trajectories: torch.Tensor,
-    energy_fn: Optional[BaseEnergyFunction] = None,
+    model: Optional[BaseModel] = None,
     x_range: Tuple[float, float] = None,
     y_range: Tuple[float, float] = None,
     resolution: int = 100,
@@ -289,27 +289,29 @@ def plot_sample_trajectories(
     device: Optional[str] = None,
 ) -> plt.Figure:
     """
-    Plot sample trajectories, optionally on an energy landscape background.
+    Plots sample trajectories, optionally on an energy landscape background.
 
     Args:
-        trajectories: Tensor of trajectories with batch_shape [n_chains, k_steps, 2]
-        energy_fn: The energy function to visualize as background (optional)
-        x_range: Range for the x-axis (if None, determined from data)
-        y_range: Range for the y-axis (if None, determined from data)
-        resolution: Number of points in each dimension for energy grid
-        log_scale: Whether to use log scale for the energy values
-        cmap: Colormap to use for energy background
-        title: Title of the plot
-        show_colorbar: Whether to show a colorbar
-        save_path: Path to save the figure, if not None
-        fig_size: Size of the figure
-        trajectory_colors: List of colors for trajectories (if None, automatically chosen)
-        trajectory_alpha: Transparency of the trajectory lines
-        line_width: Width of the trajectory lines
-        device: Device to use for computation
+        trajectories (torch.Tensor): A tensor of trajectories of shape `(n_chains, n_steps, 2)`.
+        model (Optional[BaseModel]): The model to visualize as a background.
+        x_range (Optional[Tuple[float, float]]): The range for the x-axis. If `None`, it is
+            inferred from the data.
+        y_range (Optional[Tuple[float, float]]): The range for the y-axis. If `None`, it is
+            inferred from the data.
+        resolution (int): The number of points in each dimension for the energy grid.
+        log_scale (bool): Whether to use a log scale for the energy values.
+        cmap (str): The colormap to use for the energy background.
+        title (Optional[str]): The title of the plot.
+        show_colorbar (bool): Whether to show a colorbar.
+        save_path (Optional[str]): The path to save the figure.
+        fig_size (Tuple[int, int]): The size of the figure.
+        trajectory_colors (Optional[List[str]]): A list of colors for the trajectories.
+        trajectory_alpha (float): The transparency of the trajectory lines.
+        line_width (float): The width of the trajectory lines.
+        device (Optional[str]): The device to use for computation.
 
     Returns:
-        The matplotlib figure object
+        plt.Figure: The matplotlib figure object.
     """
     # Determine plotting ranges if not provided
     if x_range is None or y_range is None:
@@ -327,7 +329,7 @@ def plot_sample_trajectories(
     fig, ax = plt.subplots(figsize=fig_size)
 
     # Plot energy landscape if provided
-    if energy_fn is not None:
+    if model is not None:
         # Create the grid
         x = np.linspace(x_range[0], x_range[1], resolution)
         y = np.linspace(y_range[0], y_range[1], resolution)
@@ -339,11 +341,11 @@ def plot_sample_trajectories(
         )
         if device is not None:
             grid = grid.to(device)
-            energy_fn = energy_fn.to(device)
+            model = model.to(device)
 
         # Compute energy values
         with torch.no_grad():
-            Z = energy_fn(grid).cpu().numpy()
+            Z = model(grid).cpu().numpy()
         Z = Z.reshape(X.shape)
 
         # Apply log scale if requested
