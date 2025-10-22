@@ -30,6 +30,7 @@ jobs:
           restore-keys: |
             mkdocs-material-
       - run: |
+          python -m pip install --upgrade pip
           python -m pip install -e .[docs]
       - name: Generate API Documentation
         run: |
@@ -44,10 +45,47 @@ jobs:
           else
             echo "docs/ directory not found, skipping image optimization"
           fi
-      - name: Extract Version
+      - name: Determine Version (robust)
         run: |
-          # Get version from SCM (setuptools_scm)
-          echo "VERSION=$(python -m setuptools_scm)" >> $GITHUB_ENV
+          set -e
+          git fetch --tags --force || true
+          VERSION=""
+          # 1) Try setuptools_scm CLI
+          if python - <<'PY'
+import importlib.util
+import sys
+sys.exit(0 if importlib.util.find_spec('setuptools_scm') else 1)
+PY
+          then
+            VERSION=$(python -m setuptools_scm || true)
+          fi
+          # 2) Try importing installed package
+          if [ -z "$VERSION" ]; then
+            VERSION=$(python - <<'PY'
+try:
+    import torchebm
+    v = getattr(torchebm, '__version__', '')
+    print(v)
+except Exception:
+    pass
+PY
+)
+          fi
+          # 3) Try latest git tag
+          if [ -z "$VERSION" ]; then
+            VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+          fi
+          # 4) Try latest mike version
+          if [ -z "$VERSION" ] && command -v mike >/dev/null 2>&1; then
+            VERSION=$(mike list 2>/dev/null | awk '{print $1}' | sort -V | tail -n1)
+          fi
+          # 5) Fallback to date+sha (non-breaking label)
+          if [ -z "$VERSION" ]; then
+            echo "Warning: Could not determine version via SCM or tags. Falling back to date+sha."
+            VERSION=$(date -u +%Y.%m.%d)-$(git rev-parse --short HEAD)
+          fi
+          echo "Resolved VERSION=$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: Setup gh-pages branch
         run: |
           # Make sure we have clean working directory first
@@ -85,8 +123,7 @@ jobs:
           fi
       - name: Extract clean version
         run: |
-          # Extract clean version without build metadata for mike
-          CLEAN_VERSION=$(echo $VERSION | cut -d'+' -f1)
+          CLEAN_VERSION=$(echo "$VERSION" | cut -d'+' -f1)
           echo "CLEAN_VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
       - name: Build Documentation
         run: |
