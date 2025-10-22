@@ -5,7 +5,6 @@ TorchEBM: Energy-Based Modeling library for PyTorch, offering tools for sampling
 from . import core
 from . import samplers
 from . import losses
-from . import models
 from . import utils
 from . import cuda
 
@@ -16,7 +15,6 @@ __all__ = [
     "core",
     "samplers",
     "losses",
-    "models",
     "utils",
     "cuda",
     "__version__",
