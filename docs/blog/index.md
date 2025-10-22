@@ -12,37 +12,10 @@ Welcome to the TorchEBM blog! Here you'll find latest news, tutorials, research 
 
 <div class="grid cards" markdown>
 
--   :material-school:{ .lg .middle } __Tutorials__
-
-    ---
-
-    Step-by-step guides to help you learn how to use TorchEBM effectively.
-
-    [:octicons-arrow-right-24: View Tutorials](category/tutorials/)
-
--   :material-flask:{ .lg .middle } __Research__
-
-    ---
-
-    Cutting-edge research using energy-based models and insights from the field.
-
-    [:octicons-arrow-right-24: View Research](category/research/)
-
--   :material-bullhorn:{ .lg .middle } __Announcements__
-
-    ---
-
-    Updates about TorchEBM releases, features, and roadmap.
-
-    [:octicons-arrow-right-24: View Announcements](category/announcements/)
-
--   :material-file-code:{ .lg .middle } __Examples__
-
-    ---
-
-    Real-world examples and case studies using TorchEBM.
-
-    [:octicons-arrow-right-24: View Examples](category/examples/)
+-   [:material-school:{ .lg .middle } Tutorials](category/tutorials/)
+-   [:material-flask:{ .lg .middle } Research](category/research/)
+-   [:material-bullhorn:{ .lg .middle } Announcements](category/announcements/)
+-   [:fontawesome-regular-image:{ .lg .middle } Examples](category/examples/)
 
 </div>
 

@@ -2,6 +2,7 @@
 sidebar_position: 8
 title: Performance Optimization
 description: Techniques for optimizing performance in TorchEBM
+icon: material/speedometer
 ---
 
 # Performance Optimization

@@ -14,45 +14,12 @@ TorchEBM is organized into several modules:
 
 <div class="grid cards" markdown>
 
--   :material-cube-outline:{ .lg .middle } __Core__
-
-    ---
-
-    Base classes and core functionality for models, samplers, and trainers.
-
-    [:octicons-arrow-right-24: Core Module](./torchebm/core)
-
--   :material-dice-multiple-outline:{ .lg .middle } __Samplers__
-
-    ---
-
-    Sampling algorithms for energy-based models including Langevin Dynamics and MCMC.
-
-    [:octicons-arrow-right-24: Samplers](./torchebm/samplers)
-
--   :material-function-variant:{ .lg .middle } __Losses__
-
-    ---
-
-    BaseLoss functions for training energy-based models.
-
-    [:octicons-arrow-right-24: Losses](./torchebm/losses)
-
--   :material-tools:{ .lg .middle } __Utils__
-
-    ---
-
-    Utility functions for working with energy-based models.
-
-    [:octicons-arrow-right-24: Utils](./torchebm/utils)
-    
--   :material-gpu:{ .lg .middle } __CUDA__
-
-    ---
-
-    CUDA-accelerated implementations for faster computation.
-
-    [:octicons-arrow-right-24: CUDA](./torchebm/cuda)
+-   [:material-cube-outline:{ .lg .middle } Core](./torchebm/core)    
+-   [:material-database-search:{ .lg .middle } Datasets](./torchebm/datasets)    
+-   [:material-chart-scatter-plot:{ .lg .middle } Samplers](./torchebm/samplers)
+-   [:material-calculator-variant:{ .lg .middle } Losses](./torchebm/losses)
+-   [:octicons-arrow-right-24:{ .lg .middle } Utils](./torchebm/utils)
+-   [:material-rocket-launch:{ .lg .middle } CUDA](./torchebm/cuda)
 
 </div>
 

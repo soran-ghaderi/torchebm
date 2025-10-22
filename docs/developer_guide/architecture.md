@@ -1,159 +1,96 @@
 ---
-sidebar_position: 6
 title: Architecture
-description: Overview of TorchEBM's architecture and design
+description: A deep dive into the architecture and design of TorchEBM
+icon: material/folder-outline
 ---
 
-# Architecture
+# TorchEBM Architecture
 
-This document outlines the architecture and design principles of TorchEBM, providing insights into how the library is structured and how its components interact.
+This document provides a comprehensive overview of TorchEBM's architecture, from high-level design principles to the details of its core components.
+
+## Design Philosophy
+
+TorchEBM is built on a foundation of modularity, performance, and ease of use. Our core philosophy is to provide a set of powerful, composable tools for energy-based modeling that are both highly efficient and intuitive for researchers and developers.
+
+<div class="grid cards" markdown>
+
+-   :material-puzzle:{ .lg .middle } __Modularity & Composability__
+
+    ---
+
+    Components are designed to be mixed and matched, allowing for flexible construction of complex models and algorithms.
+
+-   :material-flash:{ .lg .middle } __Performance__
+
+    ---
+
+    The library is optimized for speed, leveraging PyTorch's vectorized operations and providing CUDA support for critical components.
+
+-   :material-book-open-variant:{ .lg .middle } __Intuitiveness__
+
+    ---
+
+    APIs are designed to be clean, consistent, and well-documented, following standard PyTorch conventions.
+
+</div>
+
+## Project Structure
+
+The repository is organized into the following key directories:
+
+```
+torchebm/
+├── torchebm/              # Main package source code
+│   ├── core/              # Core functionality and base classes
+│   ├── samplers/          # Sampling algorithms
+│   ├── losses/            # Loss functions for training
+│   ├── models/            # Pre-built model architectures
+│   └── utils/             # Utility functions
+├── tests/                 # Unit and integration tests
+├── docs/                  # Documentation source
+├── examples/              # Example usage scripts
+└── setup.py               # Package installation script
+```
 
 ## Core Components
 
-TorchEBM is designed around several key components that work together to provide a flexible and powerful framework for energy-based modeling:
+TorchEBM's functionality is centered around a few fundamental abstractions:
 
-<div class="grid" markdown>
-<div markdown>
+### 1. Models (`torchebm.core.BaseModel`)
 
-### Energy Functions
+A **Model** defines the energy function \( E(x) \), which assigns a scalar energy value to each input state \( x \). This is the central component of any EBM. In TorchEBM, models are PyTorch modules (`nn.Module`) that implement a `forward(x)` method to compute the energy.
 
-The `BaseEnergyFunction` base class defines the interface for all energy functions. It provides methods for:
+### 2. Samplers (`torchebm.core.BaseSampler`)
 
-- Computing energy values
-- Computing gradients
-- Handling batches of inputs
-- CUDA acceleration
+A **Sampler** is an algorithm that generates samples from the probability distribution defined by an energy model, \( p(x) = \frac{e^{-E(x)}}{Z} \). Samplers in TorchEBM are designed to work with any `BaseModel` instance. Examples include `LangevinDynamics` and `HamiltonianMonteCarlo`.
 
-Implemented energy functions include Gaussian, Double Well, Rastrigin, Rosenbrock, and more.
+### 3. Losses (`torchebm.core.BaseLoss`)
 
-</div>
-<div markdown>
+A **Loss** function is used to train the parameters of a model. These typically rely on a sampler to generate "negative" samples from the model's current distribution to contrast with "positive" samples from the data. `ContrastiveDivergence` is a key example.
 
-### Samplers
+### Component Interactions
 
-The `BaseSampler` class defines the interface for sampling algorithms. Key features include:
-
-- Generating samples from energy functions
-- Running sampling chains
-- Collecting diagnostics
-- Parallelized sampling
-
-Implemented samplers include Langevin Dynamics and Hamiltonian Monte Carlo.
-
-</div>
-</div>
-
-<div class="grid" markdown>
-<div markdown>
-
-### BaseLoss Functions
-
-BaseLoss functions are used to train energy-based models. They include:
-
-- Contrastive Divergence (CD)
-- Persistent Contrastive Divergence (PCD)
-- Parallel Tempering Contrastive Divergence
-- Score Matching (planned)
-
-</div>
-<div markdown>
-
-### Models
-
-Neural network models that can be used as energy functions:
-
-- Base model interfaces
-- Integration with PyTorch modules
-- Support for custom architectures
-- GPU acceleration
-
-</div>
-</div>
-
-## Architecture Diagram
+The components interact in a clear, defined workflow, particularly during training:
 
 ```mermaid
 graph TD
-    A[Energy Functions] --> C[Samplers]
-    B[Models] --> A
-    C --> D[BaseLoss Functions]
-    D --> B
-    E[CUDA Accelerators] --> A
-    E --> C
-    F[Utils] --> A
-    F --> B
-    F --> C
-    F --> D
+    subgraph "Training Loop"
+        Data[Data Samples] --> Loss
+        Model --> Sampler
+        Sampler --> Loss
+        Loss -- Gradient --> Optimizer
+        Optimizer -- Updates --> Model
+    end
+
+    subgraph "Inference/Sampling"
+        Trained_Model[Trained Model] --> Inference_Sampler[Sampler]
+        Inference_Sampler --> Generated_Samples[Generated Samples]
+    end
 ```
 
-## Design Principles
+1.  A **Loss** function takes the **Model** and a batch of real data.
+2.  It uses a **Sampler** to generate samples from the model's current distribution.
+3.  The loss is computed based on the energies of the real and generated samples.
+4.  The gradient of the loss is used to update the **Model**'s parameters.
 
-!!! abstract "Key Design Principles"
-
-    TorchEBM follows these core design principles:
-
-    1. **Modularity**: Components can be used independently and combined flexibly
-    2. **Extensibility**: Easy to add new energy functions, samplers, and loss functions
-    3. **Performance**: Optimized for both CPU and GPU execution
-    4. **Compatibility**: Seamless integration with PyTorch ecosystem
-    5. **Usability**: Clear, consistent API with comprehensive documentation
-
-## Component Interactions
-
-### Energy Function and Sampler Interaction
-
-The energy function provides the landscape that the sampler traverses:
-
-```python
-# Energy function computes energy and gradients
-energy = energy_fn(x)  # Forward pass
-gradient = energy_fn.gradient(x)  # Gradient computation
-
-# Sampler uses gradients for updates
-x_new = x - step_size * gradient + noise
-```
-
-### Sampler and BaseLoss Function Interaction
-
-Samplers are used by loss functions to generate negative samples during training:
-
-```python
-# BaseLoss function uses sampler to generate negative samples
-negative_samples = sampler.sample(x_init, n_steps=10)
-
-# BaseLoss computation uses both data samples and negative samples
-loss = loss_fn(data_samples, negative_samples)
-```
-
-## Module Organization
-
-TorchEBM's codebase is organized into the following modules:
-
-| Module | Description | Key Classes |
-|--------|-------------|------------|
-| `torchebm.core` | Core functionality and base classes | `BaseEnergyFunction`, `BaseSampler` |
-| `torchebm.samplers` | Sampling algorithms | `LangevinDynamics`, `HamiltonianMonteCarlo` |
-| `torchebm.losses` | BaseLoss functions | `ContrastiveDivergence`, `PersistentContrastiveDivergence` |
-| `torchebm.models` | Neural network models | `BaseModel` |
-| `torchebm.cuda` | CUDA-accelerated implementations | Various CUDA kernels |
-| `torchebm.utils` | Utility functions and helpers | Visualization tools, diagnostics |
-
-## Performance Considerations
-
-TorchEBM is designed with performance in mind:
-
-- **Vectorization**: Operations are vectorized for efficient batch processing
-- **GPU Acceleration**: Most operations can run on CUDA devices
-- **Memory Management**: Careful memory management to avoid unnecessary allocations
-- **Parallel Sampling**: Samples can be generated in parallel for better utilization of hardware
-
-## Extension Points
-
-TorchEBM is designed to be extended in several ways:
-
-1. **Custom Energy Functions**: Create your own energy functions by subclassing `BaseEnergyFunction`
-2. **Custom Samplers**: Implement new sampling algorithms by subclassing `BaseSampler`
-3. **Custom BaseLoss Functions**: Create new training objectives for energy-based models
-4. **Neural Network Energy Functions**: Use neural networks as energy functions
-
-For more details on implementing extensions, see our [API Design](api_design.md) documentation. 
+This modular design allows you to, for example, swap out different samplers to see their effect on the training of a given model, without changing the model or the loss function. 

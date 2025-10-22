@@ -1,178 +1,91 @@
 ---
-title: Visualizatio Examples
-description: Examples of visualization for energy functions and sampling
+title: Visualization
+description: Techniques for visualizing energy landscapes, sampling trajectories, and model performance in TorchEBM.
+icon: material/chart-bar
 ---
 
-# Visualizatio Examples
+# Visualization in TorchEBM
 
-This section demonstrates various Visualizatio Examples and techniques available for visualizing energy functions and sampling processes.
+Visualizing the behavior of energy-based models is essential for understanding and debugging them. This guide covers key visualization techniques for EBMs, focusing on energy landscapes and sampler trajectories.
 
-## Basic Visualizations
+## Visualizing 2D Energy Landscapes
 
-### Contour Plots
-
-The `contour_plots.py` example demonstrates basic contour plots for energy functions:
+For models that operate on 2D data, we can directly visualize the energy function as a surface or contour plot. This shows us where the model has learned to assign low energy (high probability).
 
 ```python
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 
-# Create the energy function
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
+model = DoubleWellModel(barrier_height=2.0)
 
-# Create a grid for visualization
-x = np.linspace(-3, 3, 100)
-y = np.linspace(-3, 3, 100)
+x = np.linspace(-2, 2, 100)
+y = np.linspace(-2, 2, 100)
 X, Y = np.meshgrid(x, y)
-Z = np.zeros_like(X)
+grid_points = torch.tensor(np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32)
 
-# Compute energy values
-for i in range(X.shape[0]):
-    for j in range(X.shape[1]):
-        point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = energy_fn(point).item()
+with torch.no_grad():
+    energy_values = model(grid_points).numpy().reshape(X.shape)
 
-# Create contour plot
-plt.figure(figsize=(10, 8))
-contour = plt.contourf(X, Y, Z, 50, cmap="viridis")
-plt.colorbar(label="Energy")
-plt.xlabel("x")
-plt.ylabel("y")
-plt.title("Double Well Energy Landscape")
+plt.figure(figsize=(8, 6))
+plt.contourf(X, Y, energy_values, levels=50, cmap='viridis')
+plt.colorbar(label='Energy')
+plt.title('Energy Landscape of a Double Well Model')
+plt.show()
 ```
 
-### Distribution Comparison
+<figure markdown>
+  ![Double Well Energy Function](../../assets/images/e_functions/double_well.png){ width="500" }
+  <figcaption>A 2D contour plot of the `DoubleWellModel` energy landscape.</figcaption>
+</figure>
 
-The `distribution_comparison.py` example compares sampled distributions to their ground truth:
+## Visualizing Sampling Trajectories
+
+To understand how samplers explore the state space, we can plot their trajectories on top of the energy landscape. This is particularly insightful for complex, multimodal distributions.
 
 ```python
-# Create figure with multiple plots
-fig = plt.figure(figsize=(15, 5))
+from torchebm.samplers import LangevinDynamics
+from torchebm.core import MultimodalModel # A custom model with 4 modes
 
-# Ground truth contour
-ax1 = fig.add_subplot(131)
-contour = ax1.contourf(X, Y, Z, 50, cmap="Blues")
-fig.colorbar(contour, ax=ax1, label="Density")
-ax1.set_title("Ground Truth Density")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = MultimodalModel().to(device)
+sampler = LangevinDynamics(model=model, step_size=0.1)
 
-# Sample density (using kernel density estimation)
-ax2 = fig.add_subplot(132)
-h = ax2.hist2d(samples_np[:, 0], samples_np[:, 1], bins=50, cmap="Reds", density=True)
-fig.colorbar(h[3], ax=ax2, label="Density")
-ax2.set_title("Sampled Distribution")
+initial_particles = torch.zeros(5, 2, device=device) # 5 chains starting at the origin
+trajectory = sampler.sample(x=initial_particles, n_steps=200, return_trajectory=True)
 
-# Scatter plot of samples
-ax3 = fig.add_subplot(133)
-ax3.scatter(samples_np[:, 0], samples_np[:, 1], alpha=0.5, s=3)
-ax3.set_title("Sample Points")
+# Plotting (on top of the energy landscape from the previous example)
+# (Contour plot code omitted for brevity)
+colors = plt.cm.viridis(np.linspace(0, 1, 5))
+for i in range(5):
+    traj_chain = trajectory[i].cpu().numpy()
+    plt.plot(traj_chain[:, 0], traj_chain[:, 1], color=colors[i], alpha=0.7)
+    plt.scatter(traj_chain[0, 0], traj_chain[0, 1], color='red', s=50, zorder=3) # Start
+    plt.scatter(traj_chain[-1, 0], traj_chain[-1, 1], color='blue', s=50, zorder=3) # End
+plt.show()
 ```
 
-## Advanced Visualizations
+<figure markdown>
+  ![Langevin Dynamics Sampling Trajectories](../../assets/images/examples/langevin_trajectory.png){ width="500" }
+  <figcaption>Trajectories of five Langevin Dynamics chains exploring a multimodal landscape.</figcaption>
+</figure>
 
-### Trajectory Animation
+## Comparing Ground Truth and Model Samples
 
-The `trajectory_animation.py` example visualizes sampling trajectories on energy landscapes:
+A critical evaluation is to compare the distribution of samples from the trained model against the real data distribution.
 
 ```python
-# Extract trajectory coordinates
-traj_x = trajectory[0, :, 0].numpy()
-traj_y = trajectory[0, :, 1].numpy()
+# Assume `model_samples` are generated from a trained model
+# Assume `real_samples` are from the dataset
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 
-# Plot trajectory with colormap based on step number
-plt.figure(figsize=(10, 8))
-contour = plt.contourf(X, Y, Z, 50, cmap="viridis", alpha=0.7)  # Energy landscape
-points = plt.scatter(
-    traj_x, traj_y, c=np.arange(len(traj_x)), cmap="plasma", s=5, alpha=0.7
-)
-plt.colorbar(points, label="Sampling Step")
+ax1.set_title("Real Data Distribution")
+ax1.scatter(real_samples[:, 0], real_samples[:, 1], s=10, alpha=0.5)
 
-# Plot arrows to show direction of trajectory
-step = 50  # Plot an arrow every 50 steps
-plt.quiver(
-    traj_x[:-1:step],
-    traj_y[:-1:step],
-    traj_x[1::step] - traj_x[:-1:step],
-    traj_y[1::step] - traj_y[:-1:step],
-    scale_units="xy",
-    angles="xy",
-    scale=1,
-    color="red",
-    alpha=0.7,
-)
+ax2.set_title("Model Sample Distribution")
+ax2.scatter(model_samples[:, 0], model_samples[:, 1], s=10, alpha=0.5, c='red')
+
+plt.show()
 ```
-
-### Parallel Chains
-
-The `parallel_chains.py` example visualizes multiple sampling chains:
-
-```python
-# Plot contour
-plt.figure(figsize=(12, 10))
-contour = plt.contourf(X, Y, Z, 50, cmap="viridis", alpha=0.7)
-plt.colorbar(label="Energy")
-
-# Plot each trajectory with a different color
-colors = ["red", "blue", "green", "orange", "purple"]
-for i in range(num_chains):
-    traj_x = trajectories[i, :, 0].numpy()
-    traj_y = trajectories[i, :, 1].numpy()
-
-    plt.plot(traj_x, traj_y, alpha=0.7, linewidth=1, c=colors[i], label=f"Chain {i+1}")
-
-    # Mark start and end points
-    plt.scatter(traj_x[0], traj_y[0], c="black", s=50, marker="o")
-    plt.scatter(traj_x[-1], traj_y[-1], c=colors[i], s=100, marker="*")
-```
-
-### Energy Over Time
-
-The `energy_over_time.py` example tracks energy values during sampling:
-
-```python
-# Track the trajectory and energy manually
-trajectory = torch.zeros((1, n_steps, dim))
-energy_values = torch.zeros(n_steps)
-current_sample = initial_point.clone()
-
-# Run the sampling steps and store each position and energy
-for i in range(n_steps):
-    current_sample = sampler.langevin_step(
-        current_sample, torch.randn_like(current_sample)
-    )
-    trajectory[:, i, :] = current_sample.clone().detach()
-    energy_values[i] = energy_fn(current_sample).item()
-
-# Plot energy evolution
-plt.figure(figsize=(10, 6))
-plt.plot(energy_values.numpy())
-plt.xlabel("Step")
-plt.ylabel("Energy")
-plt.title("Energy Evolution During Sampling")
-plt.grid(True, alpha=0.3)
-```
-
-## Running the Examples
-
-To run these examples:
-
-```bash
-# List available visualization examples
-python examples/main.py --list
-
-# Run basic visualization examples
-python examples/main.py visualization/basic/contour_plots
-python examples/main.py visualization/basic/distribution_comparison
-
-# Run advanced visualization examples
-python examples/main.py visualization/advanced/trajectory_animation
-python examples/main.py visualization/advanced/parallel_chains
-python examples/main.py visualization/advanced/energy_over_time
-```
-
-## Additional Resources
-
-For more information on visualization tools, see:
-
-- [Matplotlib Documentation](https://matplotlib.org/)
+This side-by-side comparison provides a quick qualitative assessment of how well the model has learned the target distribution. For more quantitative measures, you can use metrics like Maximum Mean Discrepancy (MMD) or analyze summary statistics.

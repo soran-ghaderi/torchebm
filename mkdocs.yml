@@ -50,9 +50,7 @@ theme:
         icon: material/brightness-7
         name: Switch to dark mode
 
-  font:
-    text: Roboto
-    code: Roboto Mono
+  font: false
   icon:
     repo: fontawesome/brands/github
     admonition:
@@ -73,17 +71,16 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting Started:
-    - Overview: guides/index.md
-    - Introduction: guides/introduction.md
-    - Installation: guides/getting_started.md
-    - Guides:
-      - Energy Functions: guides/energy_functions.md
-      - Samplers: guides/samplers.md
-      - Loss Functions: guides/loss_functions.md
-      - Custom Neural Networks: guides/custom_neural_networks.md
-      - Training EBMs: guides/training.md
-      - Visualization: guides/visualization.md
+  - Tutorials:
+    - tutorials/index.md
+    - Getting Started: tutorials/getting_started.md
+    - Samplers: tutorials/samplers.md
+    - Loss Functions: tutorials/loss_functions.md
+    - Training EBMs: tutorials/training.md
+    - Visualization: tutorials/visualization.md
+    - Advanced:
+      - Custom Neural Networks: tutorials/custom_neural_networks.md
+      - Parallel Sampling: tutorials/parallel_sampling.md
   - API Reference:
     - Overview: api/index.md
     - Core:
@@ -170,43 +167,25 @@ nav:
       - Visualization: api/torchebm/utils/visualization/index.md
   - Examples:
     - Overview: examples/index.md
-    - Energy Functions:
-      - Overview: examples/energy_functions/index.md
-    - Datasets:
-      - Overview: examples/datasets/index.md
-    - Samplers:
-      - Langevin Dynamics: examples/samplers/langevin_dynamics.md
-      - Langevin Dynamics Trajectory: examples/samplers/langevin_trajectory.md
-      - Hamiltonian Monte Carlo: examples/samplers/hmc.md
-    - Training EBMs:
-      - Learning Gaussian Mixture: examples/training/training_ebm_gaussian.md
-    - Visualization:
-      - Overview: examples/visualization/index.md
+    - Datasets: examples/datasets/index.md
+    - Samplers: examples/samplers/index.md
+    - Training EBMs: examples/training/index.md
+    - Visualization: examples/visualization/index.md
   - Developer Guide:
     - Overview: developer_guide/index.md
-    - Contributing: developer_guide/contributing.md
-    - Commit Conventions: developer_guide/commit_conventions.md
-    - Development Setup: developer_guide/development_setup.md
-    - Code Style: developer_guide/code_style.md
-    - Testing Guide: developer_guide/testing_guide.md
-    - Project Structure: developer_guide/project_structure.md
-    - Design Principles: developer_guide/design_principles.md
-    - Core Components: developer_guide/core_components.md
-    - Implementation Details:
-      - Energy Functions: developer_guide/implementation_energy.md
-      - Samplers: developer_guide/implementation_samplers.md
-#      - BaseLoss Functions: developer_guide/implementation_losses.md
-#      - Model Architecture: developer_guide/implementation_models.md
-#      - CUDA Optimizations: developer_guide/cuda_optimizations.md
+    - Getting Started: developer_guide/getting_started.md
+    - Code Guidelines: developer_guide/code_guidelines.md
     - Architecture: developer_guide/architecture.md
-    - API Design: developer_guide/api_design.md
-    - API Generation: developer_guide/api_generation.md
-    - Performance Optimization: developer_guide/performance.md
+    - Performance: developer_guide/performance.md
   - Blog: blog/index.md
   - FAQ: faq.md
 
 plugins:
   - search
+  - minify:
+      minify_html: true
+      minify_js: true
+      minify_css: true
   - autorefs
   - glightbox:
       touchNavigation: true
@@ -241,7 +220,7 @@ plugins:
         - Examples
       pagination: true
       pagination_per_page: 5
-      pagination_format: "{prev} · {page} · {next}"
+      pagination_format: "$link_first $link_previous $page/$page_count $link_next  $link_last"
       pagination_if_single_page: false
       pagination_keep_content: true
   - mkdocstrings:
@@ -333,4 +312,5 @@ extra_javascript:
   - javascripts/mathjax.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/cards-clickable.js
 

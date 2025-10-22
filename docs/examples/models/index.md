@@ -1,119 +1,105 @@
 ---
-title: Models
-description: Examples of various models and their visualization
+title: Models and Energy Functions
+description: Learn how to define and use energy-based models in TorchEBM.
+icon: material/function-variant
 ---
 
-# Model Examples
+# Models and Energy Functions
 
-This section demonstrates the various models available in TorchEBM and how to visualize them.
+At the core of any energy-based model (EBM) is the **energy function**, \( E_{\theta}(x) \), which assigns a scalar energy value to each data point \( x \). This function is used to define a probability distribution \( p_{\theta}(x) = \frac{e^{-E_{\theta}(x)}}{Z(\theta)} \), where regions of low energy correspond to high probability.
 
-## Basic Energy Landscapes
+In TorchEBM, all energy functions are implemented as `torch.nn.Module` subclasses that inherit from the `torchebm.core.BaseModel` class.
 
-The `landscape_2d.py` example shows how to create and visualize basic models:
+## Defining a Custom Model
+
+You can create a custom energy function by subclassing `BaseModel` and implementing the `forward()` method. Here is an example of a simple energy function based on a Multi-Layer Perceptron (MLP).
 
 ```python
 import torch
-import numpy as np
-import matplotlib.pyplot as plt
+import torch.nn as nn
+from torchebm.core import BaseModel
+
+class MLPModel(BaseModel):
+    def __init__(self, input_dim: int, hidden_dim: int = 128):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x).squeeze(-1)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = MLPModel(input_dim=2).to(device)
+print(model)
+```
+
+## Built-in Analytical Models
+
+TorchEBM also provides several pre-built analytical models for common distributions and testing scenarios. These are useful for research and for understanding the behavior of samplers and training algorithms.
+
+### GaussianModel
+
+This model implements the energy function for a multivariate Gaussian distribution.
+
+\[ E(x) = \frac{1}{2} (x - \mu)^{\top} \Sigma^{-1} (x - \mu) \]
+
+```python
+import torch
+from torchebm.core import GaussianModel
+
+mean = torch.tensor([0.0, 0.0])
+covariance = torch.eye(2)
+gaussian_model = GaussianModel(mean, covariance)
+```
+
+### DoubleWellModel
+
+This model creates a double-well potential, which is useful for testing a sampler's ability to cross energy barriers.
+
+\[ E(x) = h \sum_{i=1}^{n} (x_i^2 - b^2)^2 \]
+
+```python
+import torch
 from torchebm.core import DoubleWellModel
 
-# Create the model
+double_well_model = DoubleWellModel(barrier_height=2.0)
+```
+
+## Visualizing Energy Landscapes
+
+Understanding the shape of the energy landscape is crucial. Here's how you can visualize the 2D landscape of the `DoubleWellModel`.
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
 model = DoubleWellModel(barrier_height=2.0)
 
-# Create a grid for visualization
-x = np.linspace(-3, 3, 100)
-y = np.linspace(-3, 3, 100)
+x = np.linspace(-2, 2, 100)
+y = np.linspace(-2, 2, 100)
 X, Y = np.meshgrid(x, y)
-Z = np.zeros_like(X)
+grid_points = torch.tensor(np.stack([X.flatten(), Y.flatten()], axis=1), dtype=torch.float32)
 
-# Compute energy values
-for i in range(X.shape[0]):
-    for j in range(X.shape[1]):
-        point = torch.tensor([X[i, j], Y[i, j]], dtype=torch.float32).unsqueeze(0)
-        Z[i, j] = model(point).item()
+with torch.no_grad():
+    energy_values = model(grid_points).numpy().reshape(X.shape)
 
-# Create 3D surface plot
-fig = plt.figure(figsize=(10, 8))
-ax = fig.add_subplot(111, projection="3d")
-surf = ax.plot_surface(X, Y, Z, cmap="viridis", alpha=0.8)
+plt.figure(figsize=(8, 6))
+plt.contourf(X, Y, energy_values, levels=50, cmap='viridis')
+plt.colorbar(label='Energy')
+plt.title('Energy Landscape of DoubleWellModel')
+plt.xlabel('$x_1$')
+plt.ylabel('$x_2$')
+plt.show()
 ```
 
-## Multimodal Energy Functions
+<figure markdown>
+  ![Double Well Energy Function](../../assets/images/e_functions/double_well.png){ width="500" }
+  <figcaption>The `DoubleWellModel` has two low-energy regions (wells) separated by a high-energy barrier.</figcaption>
+</figure>
 
-The `multimodal.py` example demonstrates more complex models with multiple local minima:
-
-```python
-class MultimodalEnergy:
-    """
-    A 2D energy function with multiple local minima to demonstrate sampling behavior.
-    """
-    def __init__(self, device=None, dtype=torch.float32):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.dtype = dtype
-
-        # Define centers and weights for multiple Gaussian components
-        self.centers = torch.tensor(
-            [[-1.0, -1.0], [1.0, 1.0], [-0.5, 1.0], [1.0, -0.5]],
-            device=self.device,
-            dtype=self.dtype,
-        )
-
-        self.weights = torch.tensor(
-            [1.0, 0.8, 0.6, 0.7], device=self.device, dtype=self.dtype
-        )
-
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        # Calculate energy as negative log of mixture of Gaussians
-        dists = torch.cdist(x, self.centers)
-        energy = -torch.log(
-            torch.sum(self.weights * torch.exp(-0.5 * dists.pow(2)), dim=-1)
-        )
-        return energy
-```
-
-## Parametric Models
-
-The `parametric.py` example shows how to create models with adjustable parameters:
-
-```python
-# Create a figure with multiple subplots
-fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-axes = axes.flatten()
-
-# Calculate energy landscapes for different barrier heights
-barrier_heights = [0.5, 1.0, 2.0, 4.0]
-
-for i, barrier_height in enumerate(barrier_heights):
-    # Create model with the specified barrier height
-    model = DoubleWellModel(barrier_height=barrier_height)
-    
-    # Compute energy values
-    # ...
-    
-    # Create contour plot
-    contour = axes[i].contourf(X, Y, Z, 50, cmap="viridis")
-    fig.colorbar(contour, ax=axes[i], label="Energy")
-    axes[i].set_title(f"Double Well Energy (Barrier Height = {barrier_height})")
-```
-
-## Running the Examples
-
-To run these examples:
-
-```bash
-# List available model examples
-python examples/main.py --list
-
-# Run a specific example
-python examples/main.py models/landscape_2d
-python examples/main.py models/multimodal
-python examples/main.py models/parametric
-```
-
-## Additional Resources
-
-For more information on models, see:
-
-- [API Reference: Models](../../api/torchebm/core/base_model/index.md)
-- [Guide: Models](../../guides/models.md) 
-- [Visualization Guide](../visualization/energy_visualization.md)
+TorchEBM includes a variety of other analytical models such as `RosenbrockModel`, `AckleyModel`, and `RastriginModel` which are commonly used for benchmarking optimization and sampling algorithms. You can visualize them using the same technique.

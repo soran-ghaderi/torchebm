@@ -1,153 +1,113 @@
 ---
 sidebar_position: 6
 title: Frequently Asked Questions
-description: Answers to common questions about TorchEBM
+description: Answers to common questions about TorchEBM.
+icon: material/help-circle-outline
 ---
 
 # Frequently Asked Questions
 
-## General Questions
+This page provides answers to frequently asked questions about TorchEBM. If you have a question that is not answered here, please feel free to [open an issue](https://github.com/soran-ghaderi/torchebm/issues) on our GitHub repository.
 
-### What is TorchEBM?
+## General
 
-TorchEBM is a PyTorch-based library for Energy-Based Models (EBMs). It provides efficient implementations of sampling, inference, and learning algorithms for EBMs, with a focus on scalability and performance through CUDA acceleration.
+??? info "What is TorchEBM?"
+    TorchEBM is a PyTorch-based library for Energy-Based Models (EBMs). It provides efficient, scalable, and CUDA-accelerated implementations of sampling, inference, and learning algorithms for EBMs.
 
-### How does TorchEBM differ from other generative modeling libraries?
+??? abstract "How does TorchEBM differ from other generative modeling libraries?"
+    TorchEBM specializes in energy-based models, which offer flexibility in modeling complex data distributions without requiring a normalized probability function. Unlike libraries for GANs or VAEs, TorchEBM is built around the energy function formulation and leverages MCMC-based sampling techniques.
 
-TorchEBM specifically focuses on energy-based models, which can model complex distributions without assuming a specific functional form. Unlike libraries for GANs or VAEs, TorchEBM emphasizes the energy function formulation and MCMC sampling techniques.
-
-### What can I use TorchEBM for?
-
-TorchEBM can be used for:
-
-- Generative modeling
-- Density estimation
-- Unsupervised representation learning
-- Outlier detection
-- Exploration of complex energy landscapes
-- Scientific simulation and statistical physics applications
+??? question "What can I use TorchEBM for?"
+    TorchEBM is suitable for a wide range of tasks, including:
+    
+    * Generative modeling and density estimation
+    * Unsupervised representation learning
+    * Outlier and anomaly detection
+    * Exploring complex, high-dimensional energy landscapes
+    * Applications in scientific simulation and statistical physics
 
 ## Installation & Setup
 
-### What are the system requirements for TorchEBM?
+??? tip "What are the system requirements for TorchEBM?"
+    * Python 3.8 or newer
+    * PyTorch 1.10.0 or newer
+    * CUDA (optional, but highly recommended for performance)
 
-TorchEBM requires:
+??? info "Does TorchEBM work on CPU-only machines?"
+    Yes, TorchEBM is fully functional on CPU-only machines. However, for optimal performance, especially with large models and datasets, a GPU with CUDA support is recommended.
 
-- Python 3.8 or newer
-- PyTorch 1.10.0 or newer
-- CUDA (optional, but recommended for performance)
+??? note "How do I install TorchEBM with CUDA support?"
+    First, ensure you have installed CUDA drivers and a version of PyTorch installed that supports your CUDA toolkit. Then, you can install TorchEBM via pip:
 
-### Does TorchEBM work on CPU-only machines?
+    ```bash
+    pip install torchebm
+    ```
 
-Yes, TorchEBM works on CPU-only machines, though many operations will be significantly slower than on GPU.
+## Technical
 
-### How do I install TorchEBM with CUDA support?
+??? warning "How do I diagnose sampling problems?"
+    Common issues and potential solutions:
 
-Make sure you have PyTorch with CUDA support installed first:
+    * **Poor Mixing**: Try increasing the step size, using more sampling steps, or switching to a more advanced sampler.
+    * **Numerical Instability**: Decrease the step size or check for numerical issues in your energy function.
+    * **Mode Collapse**: Your energy function may be too simple, or you might need a sampler with better exploration capabilities.
 
-```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu118
-pip install torchebm
-```
+??? tip "How do I train an energy-based model?"
+    The basic training loop for an EBM involves these steps:
 
-## Technical Questions
+    1. **Define an Energy Function**: Typically a neural network that maps inputs to a scalar energy value.
+    2. **Choose a Loss Function**: Such as contrastive divergence or maximum likelihood estimation.
+    3. **Set Up a Sampler**: To generate negative samples from the model's distribution.
+    4. **Train**: Use gradient descent to minimize the loss function.
+    5. **Evaluate**: Assess the model's performance on a validation set.
 
-### How do I choose the right energy function for my task?
-
-The choice of energy function depends on:
-
-- The complexity of the distribution you want to model
-- Domain knowledge about the structure of your data
-- Computational constraints
-
-For complex data like images, neural network-based energy functions are typically used. For simpler problems, analytical energy functions may be sufficient.
-
-### What sampling algorithm should I use?
-
-Common considerations:
-
-- **Langevin Dynamics**: Good for general-purpose sampling, especially in high dimensions
-- **Hamiltonian Monte Carlo**: Better for complex energy landscapes, but more computationally expensive
-- **Metropolis-Hastings**: Simple to implement, but may mix slowly in high dimensions
-
-### How do I diagnose problems with sampling?
-
-Common issues and solutions:
-
-- **Poor mixing**: Increase step size or try a different sampler
-- **Numerical instability**: Decrease step size or check energy function implementation
-- **Slow convergence**: Use more iterations or try a more efficient sampler
-- **Mode collapse**: Check your energy function or use samplers with better exploration capabilities
-
-### How do I train an energy-based model on my own data?
-
-Basic steps:
-
-1. Define an energy function (e.g., a neural network)
-2. Choose a loss function (e.g., contrastive divergence)
-3. Set up a sampler for generating negative samples
-4. Train using gradient descent
-5. Evaluate the learned model
-
-See the [training examples](./examples/training_neural_ebm.md) for more details.
+    For a practical guide, see the [training examples](../examples/training/).
 
 ## Performance
 
-### How can I speed up sampling?
+??? tip "How can I speed up sampling?"
+    To improve sampling performance:
 
-To improve sampling performance:
+    * **Use a GPU**: This is the most effective way to accelerate sampling.
+    * **Parallelize**: Run multiple sampling chains in parallel.
+    * **Tune Hyperparameters**: Optimize sampler-specific parameters like step size.
+    * **Choose the Right Algorithm**: Some samplers are better suited for specific energy landscapes.
 
-- Use GPU acceleration
-- Reduce the dimensionality of your problem
-- Parallelize sampling across multiple chains
-- Optimize step sizes and other hyperparameters
-- Use more efficient sampling algorithms for your specific energy landscape
-
-### Does TorchEBM support distributed training?
-
-Currently, TorchEBM focuses on single-machine GPU acceleration. Distributed training across multiple GPUs or machines is on our roadmap.
-
-### How does TorchEBM's performance compare to other libraries?
-
-TorchEBM is optimized for performance on GPU hardware, particularly for sampling operations. Our benchmarks show significant speedups compared to non-specialized implementations, especially for large-scale sampling tasks.
+??? info "Does TorchEBM support distributed training?"
+    Currently, TorchEBM is optimized for single-machine, multi-GPU training. Full distributed training support across multiple machines is on our roadmap.
 
 ## Contributing
 
-### How can I contribute to TorchEBM?
+??? note "How can I contribute to TorchEBM?"
+    We welcome contributions! You can:
 
-We welcome contributions! Check out:
+    * **Report Bugs**: Open an issue on our [GitHub repository](https://github.com/soran-ghaderi/torchebm/issues).
+    * **Suggest Features**: Let us know what you'd like to see in future versions.
+    * **Contribute Code**: Check out our [contributing guidelines](../developer_guide/getting_started/) to get started.
 
-- [GitHub Issues](https://github.com/soran-ghaderi/torchebm/issues) for current tasks
-- [Contributing Guidelines](./developer_guide/contributing.md) for code style and contribution workflow
+??? bug "I found a bug, how do I report it?"
+    Please open an issue on our [GitHub repository](https://github.com/soran-ghaderi/torchebm/issues) and provide:
 
-### I found a bug, how do I report it?
+    * A clear description of the problem.
+    * Steps to reproduce the issue.
+    * The expected versus actual behavior.
+    * Your TorchEBM, PyTorch, Python, and CUDA versions.
 
-Please open an issue on our [GitHub repository](https://github.com/soran-ghaderi/torchebm/issues) with:
+??? tip "Can I add my own sampler or energy function?"
+    Absolutely! TorchEBM is designed to be extensible. See our guides on:
 
-- A clear description of the problem
-- Steps to reproduce the issue
-- Expected vs. actual behavior
-- Version information (TorchEBM, PyTorch, Python, CUDA)
-
-### Can I add my own sampler or energy function to TorchEBM?
-
-Absolutely! TorchEBM is designed to be extensible. See:
-
-- [Custom Energy Functions](./guides/energy_functions.md#creating-custom-energy-functions)
-- [Implementing Custom Samplers](./guides/samplers.md#implementing-custom-samplers)
+    * [Custom Energy Models](./api/torchebm/core/base_model/classes/BaseModel.md)
+    * [Implementing Custom Samplers](./tutorials/samplers.md#implementing-custom-samplers)
 
 ## Future Development
 
-### What features are planned for future releases?
+??? info "What features are planned for future releases?"
+    See our [Roadmap](./index.md#roadmap--features) for planned features. We're always working on adding:
 
-See our [Roadmap](./index.md#roadmap--features) for planned features, including:
+    * Additional samplers and energy functions
+    * More loss functions for training
+    * Improved visualization tools
+    * Advanced neural network architectures
 
-- Additional samplers and energy functions
-- More loss functions for training
-- Improved visualization tools
-- Advanced neural network architectures
-- Better integration with the PyTorch ecosystem
-
-### How stable is the TorchEBM API?
-
-TorchEBM is currently in early development, so the API may change between versions. We'll do our best to document breaking changes and provide migration guidance. 
+??? warning "How stable is the TorchEBM API?"
+    TorchEBM is in active development, so the API may evolve. We adhere to semantic versioning and will document any breaking changes in the release notes. 
