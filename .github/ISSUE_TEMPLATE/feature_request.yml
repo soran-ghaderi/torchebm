@@ -1,31 +1,18 @@
 name: 🚀 Feature Request
-description: Suggest a new feature or enhancement for TorchEBM
+description: Suggest a new feature or enhancement for TorchEBM.
 title: "[Feature]: "
-labels: ["enhancement", "needs triage", "help wanted", "good first issue", "test"]
-assignees: []
+labels: ["enhancement", "needs triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting a new feature! Please provide as much detail as possible to help us understand your request.
-
-  - type: checkboxes
-    id: prerequisites
-    attributes:
-      label: Prerequisites
-      description: Please confirm you have completed the following
-      options:
-        - label: I have searched existing issues and discussions to ensure this feature hasn't been requested before
-          required: true
-        - label: I have read the documentation and confirmed this feature doesn't already exist
-          required: true
+        Thanks for suggesting an idea to improve TorchEBM!
 
   - type: textarea
     id: problem-summary
     attributes:
-      label: Problem Summary
-      description: Is your feature request related to a problem? Please describe what you're trying to achieve.
-      placeholder: A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+      label: What is the problem you're trying to solve?
+      description: "A clear and concise description of the problem or limitation you're facing. Ex. I'm always frustrated when [...]"
     validations:
       required: true
 
@@ -33,124 +20,28 @@ body:
     id: proposed-solution
     attributes:
       label: Proposed Solution
-      description: Describe the solution you'd like to see implemented
-      placeholder: A clear and concise description of what you want to happen
+      description: "Describe the solution you'd like to see. How would it work?"
     validations:
       required: true
-
-  - type: dropdown
-    id: feature-category
-    attributes:
-      label: Feature Category
-      description: Which area of TorchEBM does this feature relate to?
-      options:
-        - "Models/Neural Networks"
-        - "Performance/Optimization"
-        - "Samplers (HMC, Langevin, etc.)"
-        - "Loss Functions"
-        - "Evaluation"
-        - "Training"
-        - "CUDA/Hardware Acceleration"
-        - "Data Handling"
-        - "Datasets"
-        - "Energy Functions"
-        - "API/Interface"
-        - "Documentation"
-        - "Visualization"
-        - "Other"
-    validations:
-      required: true
-  - type: input
-    id: feature-category-other
-    attributes:
-      label: Other Feature Category
-      description: Please specify if you selected "Other"
-      placeholder: e.g., integrations, deployment, etc.
-    validations:
-      required: false
-
-  - type: dropdown
-    id: priority
-    attributes:
-      label: Priority
-      description: How important is this feature to you?
-      options:
-        - "Low - Nice to have"
-        - "Medium - Would be helpful"
-        - "High - Important for my use case"
-        - "Critical - Blocking my work"
-    validations:
-      required: true
-
-  - type: textarea
-    id: detailed-description
-    attributes:
-      label: Detailed Description
-      description: Provide a detailed description of how this feature should work
-      placeholder: |
-        Please include:
-        - How the feature should behave
-        - What parameters/options it should have
-        - How it integrates with existing functionality
-        - Any constraints or requirements
 
   - type: textarea
     id: code-example
     attributes:
-      label: Example Usage
-      description: Show how you envision using this feature
+      label: Example Usage (optional)
+      description: "Show how you envision using this feature."
       render: python
       placeholder: |
-        # Example of how the new feature would be used
         import torchebm
-        
         # Your example here
-        model = torchebm.SomeNewFeature(...)
-        result = model.some_method()
 
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives Considered
-      description: Describe any alternative solutions or features you've considered
-      placeholder: What other approaches have you tried or considered?
-
-  - type: textarea
-    id: use-case
-    attributes:
-      label: Use Case
-      description: Describe your specific use case and how this feature would help
-      placeholder: |
-        - What problem are you trying to solve?
-        - How would this feature fit into your workflow?
-        - Are there similar features in other libraries?
-
-  - type: checkboxes
-    id: implementation
-    attributes:
-      label: Implementation
-      description: Are you willing to help implement this feature?
-      options:
-        - label: I would be willing to contribute to the implementation
-        - label: I can help with testing the feature
-        - label: I can help with documentation
-        - label: I can provide additional use cases/examples
+      label: Alternatives Considered (optional)
+      description: "Describe any alternative solutions or features you've considered."
 
   - type: textarea
     id: additional-context
     attributes:
-      label: Additional Context
-      description: Add any other context, screenshots, or references about the feature request here
-      placeholder: |
-        - Links to papers, documentation, or other implementations
-        - Screenshots or diagrams if applicable
-        - Any other relevant information
-
-  - type: checkboxes
-    id: code-of-conduct
-    attributes:
-      label: Code of Conduct
-      description: By submitting this issue, you agree to follow our Code of Conduct
-      options:
-        - label: I agree to follow this project's Code of Conduct
-          required: true
+      label: Additional Context (optional)
+      description: "Add any other context, links, or references about the feature request here."

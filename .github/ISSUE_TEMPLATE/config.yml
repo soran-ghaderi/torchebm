@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
-  - name: 📖 Check out Documentation/Website
-    url: https://soran-ghaderi.github.io/torchebm/
-    about: Check out our comprehensive documentation and guides
-  - name: 💬 Check out Discussions
+  - name: 💬 Ask a Question
     url: https://github.com/soran-ghaderi/torchebm/discussions
     about: Ask questions and discuss TorchEBM with the community
-  - name: 🔬 Check out TorchEBM Blog
+  - name: 📖 Documentation
+    url: https://soran-ghaderi.github.io/torchebm/
+    about: Check out our comprehensive documentation and guides
+  - name: 🔬 TorchEBM Blog
     url: https://soran-ghaderi.github.io/torchebm/latest/blog/
     about: Read the latest updates and articles about TorchEBM
