@@ -51,25 +51,12 @@ jobs:
           git fetch --tags --force || true
           VERSION=""
           # 1) Try setuptools_scm CLI
-          if python - <<'PY'
-import importlib.util
-import sys
-sys.exit(0 if importlib.util.find_spec('setuptools_scm') else 1)
-PY
-          then
+          if python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('setuptools_scm') else 1)"; then
             VERSION=$(python -m setuptools_scm || true)
           fi
           # 2) Try importing installed package
           if [ -z "$VERSION" ]; then
-            VERSION=$(python - <<'PY'
-try:
-    import torchebm
-    v = getattr(torchebm, '__version__', '')
-    print(v)
-except Exception:
-    pass
-PY
-)
+            VERSION=$(python -c "import importlib.util, sys; spec = importlib.util.find_spec('torchebm'); print(getattr(__import__('torchebm'),'__version__','') if spec else '')" || true)
           fi
           # 3) Try latest git tag
           if [ -z "$VERSION" ]; then
