@@ -301,6 +301,7 @@ def test_contrastive_divergence_dtype():
         step_size=0.1,
         noise_scale=0.01,
         device=device,
+        dtype=dtype,
     )
 
     cd = MockCD(

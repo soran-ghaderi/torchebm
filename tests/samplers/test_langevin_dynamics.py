@@ -31,27 +31,23 @@ def langevin_sampler(request, energy_function):
 
     energy_function = energy_function.to(device)
 
-    return LangevinDynamics(
-        model=energy_function, step_size=5e-3, device=device
-    ).to(device)
+    return LangevinDynamics(model=energy_function, step_size=5e-3, device=device).to(
+        device
+    )
 
 
 def test_langevin_dynamics_initialization(langevin_sampler):
     sampler = langevin_sampler
     assert isinstance(sampler, LangevinDynamics)
-    assert sampler.step_size == 5e-3
-    assert sampler.noise_scale == 1.0
+    assert sampler.get_scheduled_value("step_size") == 5e-3
+    assert sampler.get_scheduled_value("noise_scale") == 1.0
 
 
 def test_langevin_dynamics_initialization_invalid_params(energy_function):
     with pytest.raises(ValueError):
-        LangevinDynamics(
-            energy_function, step_size=-0.1, noise_scale=0.1
-        )
+        LangevinDynamics(energy_function, step_size=-0.1, noise_scale=0.1)
     with pytest.raises(ValueError):
-        LangevinDynamics(
-            energy_function, step_size=0.1, noise_scale=-0.1
-        )
+        LangevinDynamics(energy_function, step_size=0.1, noise_scale=-0.1)
 
 
 @requires_cuda

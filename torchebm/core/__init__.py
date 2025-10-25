@@ -19,7 +19,7 @@ from .base_model import (
     HarmonicEnergy,
     RastriginEnergy,
     AckleyEnergy,
-    RosenbrockEnergy
+    RosenbrockEnergy,
 )
 
 from .base_scheduler import (
@@ -35,6 +35,8 @@ from .base_sampler import BaseSampler
 
 from .base_loss import BaseLoss, BaseContrastiveDivergence
 
+from .base_integrator import Integrator
+
 # from .trainer import Trainer
 # from .base_optimizer import Optimizer
 
@@ -49,7 +51,6 @@ __all__ = [
     "RastriginModel",
     "AckleyModel",
     "RosenbrockModel",
-
     # deprecated
     "BaseEnergyFunction",
     "DoubleWellEnergy",
@@ -62,6 +63,7 @@ __all__ = [
     "BaseSampler",
     "BaseLoss",
     "BaseContrastiveDivergence",
+    "Integrator",
     # "Trainer",
     # "get_optimizer",
     # "score_matching_loss",
