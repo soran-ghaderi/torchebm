@@ -47,3 +47,25 @@ class EulerMaruyamaIntegrator(Integrator):
             x - step_size * grad + torch.sqrt(2.0 * step_size) * (noise_scale * noise)
         )
         return {"x": x_new}
+
+    def integrate(
+        self,
+        state: Dict[str, torch.Tensor],
+        model: BaseModel,
+        step_size: torch.Tensor,
+        n_steps: int,
+        noise_scale: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive")
+
+        x = state["x"]
+        for _ in range(n_steps):
+            state = self.step(
+                state={"x": x},
+                model=model,
+                step_size=step_size,
+                noise_scale=noise_scale,
+            )
+            x = state["x"]
+        return {"x": x}

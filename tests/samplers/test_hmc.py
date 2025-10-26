@@ -514,7 +514,7 @@ def test_leapfrog_nan_handling(hmc_sampler):
 
     # Run leapfrog integration
     state = {"x": position, "p": momentum}
-    result = hmc_sampler.integrator.step(
+    result = hmc_sampler.integrator.integrate(
         state,
         hmc_sampler.model,
         hmc_sampler.get_scheduled_value("step_size"),
@@ -726,7 +726,7 @@ def test_hmc_step_internals():
     # Test leapfrog step with normal values
     position = torch.zeros(shape, device=device, dtype=dtype)
     state = {"x": position, "p": momentum}
-    result = hmc.integrator.step(
+    result = hmc.integrator.integrate(
         state,
         hmc.model,
         hmc.get_scheduled_value("step_size"),
@@ -743,7 +743,7 @@ def test_hmc_step_internals():
     far_position = torch.ones(shape, device=device, dtype=dtype) * 100.0
     far_momentum = torch.randn(shape, device=device, dtype=dtype)
     state = {"x": far_position, "p": far_momentum}
-    result = hmc.integrator.step(
+    result = hmc.integrator.integrate(
         state,
         hmc.model,
         hmc.get_scheduled_value("step_size"),
@@ -754,16 +754,19 @@ def test_hmc_step_internals():
     assert torch.all(torch.isfinite(new_pos_far))
     assert torch.all(torch.isfinite(new_mom_far))
 
-    # Test HMC step (single iteration)
+    # Test single leapfrog step (integrator step)
     torch.manual_seed(123)
     position = torch.zeros(shape, device=device, dtype=dtype)
-    new_position, acceptance_prob, accepted = hmc.hmc_step(position)
+    momentum = hmc._initialize_momentum(shape)
+    state = {"x": position, "p": momentum}
+    result = hmc.integrator.step(
+        state, hmc.model, hmc.get_scheduled_value("step_size"), hmc.mass
+    )
+    new_position, new_momentum = result["x"], result["p"]
     assert new_position.shape == position.shape
-    assert acceptance_prob.shape == torch.Size([batch_size])
-    assert accepted.shape == torch.Size([batch_size])
+    assert new_momentum.shape == momentum.shape
     assert torch.all(torch.isfinite(new_position))
-    assert torch.all(torch.isfinite(acceptance_prob))
-    assert torch.all(acceptance_prob >= 0) and torch.all(acceptance_prob <= 1)
+    assert torch.all(torch.isfinite(new_momentum))
 
 
 @pytest.mark.parametrize(
@@ -863,7 +866,7 @@ def test_hmc_numerical_stability_extreme_values(start_val):
     # Test internal leapfrog step with extreme input
     momentum = hmc._initialize_momentum(extreme_position.shape)
     state = {"x": extreme_position, "p": momentum}
-    result = hmc.integrator.step(
+    result = hmc.integrator.integrate(
         state,
         hmc.model,
         hmc.get_scheduled_value("step_size"),
@@ -877,10 +880,6 @@ def test_hmc_numerical_stability_extreme_values(start_val):
     # Test full sampling for finiteness
     result = hmc.sample(x=extreme_position.clone(), n_steps=10)
     assert torch.all(torch.isfinite(result))
-
-    # Test hmc_step for finite acceptance probability
-    _, acc_prob, _ = hmc.hmc_step(extreme_position.clone())
-    assert torch.all(torch.isfinite(acc_prob))
 
 
 if __name__ == "__main__":

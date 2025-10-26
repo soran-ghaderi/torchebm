@@ -56,9 +56,7 @@ class HamiltonianMonteCarlo(BaseSampler):
             if (mass is not None and not isinstance(mass, float))
             else mass
         )
-        self.integrator = LeapfrogIntegrator(
-            n_steps=n_leapfrog_steps, device=self.device, dtype=self.dtype
-        )
+        self.integrator = LeapfrogIntegrator(device=self.device, dtype=self.dtype)
 
     def _initialize_momentum(self, shape: torch.Size) -> torch.Tensor:
         """
@@ -86,7 +84,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         return p
 
     def _compute_kinetic_energy(self, p: torch.Tensor) -> torch.Tensor:
-        """
+        r"""
         Computes the kinetic energy of the momentum.
 
         The kinetic energy is \(K(p) = \frac{1}{2} p^T M^{-1} p\).
@@ -106,66 +104,6 @@ class HamiltonianMonteCarlo(BaseSampler):
                 p**2 / self.mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
             )
 
-    def hmc_step(
-        self, current_position: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Perform single HMC step with momentum sampling and Metropolis-Hastings acceptance."""
-        batch_size = current_position.shape[0]
-
-        # Sample initial momentum
-        current_momentum = self._initialize_momentum(current_position.shape)
-
-        current_energy = torch.clamp(self.model(current_position), min=-1e10, max=1e10)
-        current_kinetic = torch.clamp(
-            self._compute_kinetic_energy(current_momentum), min=0, max=1e10
-        )
-
-        current_hamiltonian = current_energy + current_kinetic
-
-        # Perform leapfrog integration to get proposal
-        state = {"x": current_position, "p": current_momentum}
-        proposed = self.integrator.step(
-            state,
-            self.model,
-            self.get_scheduled_value("step_size"),
-            self.n_leapfrog_steps,
-            self.mass,
-        )
-        proposed_position, proposed_momentum = proposed["x"], proposed["p"]
-
-        # Compute proposed Hamiltonian with similar numerical stability
-        proposed_energy = torch.clamp(
-            self.model(proposed_position), min=-1e10, max=1e10
-        )
-        proposed_kinetic = torch.clamp(
-            self._compute_kinetic_energy(proposed_momentum), min=0, max=1e10
-        )
-
-        proposed_hamiltonian = proposed_energy + proposed_kinetic
-
-        # Metropolis-Hastings acceptance criterion
-        # Clamp hamiltonian_diff to avoid overflow in exp()
-        hamiltonian_diff = current_hamiltonian - proposed_hamiltonian
-        hamiltonian_diff = torch.clamp(hamiltonian_diff, max=50, min=-50)
-
-        acceptance_prob = torch.minimum(
-            torch.ones(batch_size, device=self.device), torch.exp(hamiltonian_diff)
-        )
-
-        # Accept/reject based on acceptance probability
-        random_uniform = torch.rand(batch_size, device=self.device)
-        accepted = random_uniform < acceptance_prob
-        accepted_mask = accepted.float().view(
-            -1, *([1] * (len(current_position.shape) - 1))
-        )
-
-        # Update position based on acceptance
-        new_position = (
-            accepted_mask * proposed_position + (1.0 - accepted_mask) * current_position
-        )
-
-        return new_position, acceptance_prob, accepted
-
     @torch.no_grad()
     def sample(
         self,
@@ -177,29 +115,10 @@ class HamiltonianMonteCarlo(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Generates samples using Hamiltonian Monte Carlo.
-
-        Args:
-            x (Optional[torch.Tensor]): The initial state to start sampling from.
-            dim (Optional[int]): The dimension of the state space (if `x` is `None`).
-            n_steps (int): The number of HMC steps to perform.
-            n_samples (int): The number of parallel chains to run.
-            return_trajectory (bool): Whether to return the full sample trajectory.
-            return_diagnostics (bool): Whether to return sampling diagnostics.
-
-        Returns:
-            Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-                - The final samples.
-                - If `return_trajectory` or `return_diagnostics` is `True`, a tuple
-                  containing the samples and/or diagnostics.
-        """
-        # Reset schedulers to their initial values at the start of sampling
         self.reset_schedulers()
 
         if x is None:
             if dim is None:
-                # Try to infer dimension from model
                 if hasattr(self.model, "mean") and isinstance(
                     self.model.mean, torch.Tensor
                 ):
@@ -212,69 +131,108 @@ class HamiltonianMonteCarlo(BaseSampler):
         else:
             x = x.to(device=self.device, dtype=self.dtype)
 
-        # Get dimension from x for later use
         dim = x.shape[1]
+        batch_size = x.shape[0]
 
         if return_trajectory:
             trajectory = torch.empty(
-                (n_samples, n_steps, dim), dtype=self.dtype, device=self.device
+                (batch_size, n_steps, dim),
+                dtype=self.dtype,
+                device=self.device,
+                requires_grad=False,
             )
 
         if return_diagnostics:
-            diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
+            diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=batch_size)
 
         with self.autocast_context():
             for i in range(n_steps):
                 self.step_schedulers()
 
-                # Perform single HMC step
-                x, acceptance_prob, accepted = self.hmc_step(x)
+                current_momentum = self._initialize_momentum(x.shape)
+
+                momentum_direction = (
+                    torch.randint(0, 2, (batch_size, 1), device=self.device) * 2 - 1
+                )  # -1/+1 -> for sign flipping
+                current_momentum = current_momentum * momentum_direction
+
+                current_energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
+                current_kinetic = torch.clamp(
+                    self._compute_kinetic_energy(current_momentum), min=0, max=1e10
+                )
+
+                current_hamiltonian = current_energy + current_kinetic
+
+                state = {"x": x, "p": current_momentum}
+                proposed = self.integrator.integrate(
+                    state,
+                    self.model,
+                    self.get_scheduled_value("step_size"),
+                    self.n_leapfrog_steps,
+                    self.mass,
+                )
+                proposed_position, proposed_momentum = proposed["x"], proposed["p"]
+
+                proposed_energy = torch.clamp(
+                    self.model(proposed_position), min=-1e10, max=1e10
+                )
+                proposed_kinetic = torch.clamp(
+                    self._compute_kinetic_energy(proposed_momentum), min=0, max=1e10
+                )
+
+                proposed_hamiltonian = proposed_energy + proposed_kinetic
+
+                hamiltonian_diff = current_hamiltonian - proposed_hamiltonian
+                hamiltonian_diff = torch.clamp(hamiltonian_diff, max=50, min=-50)
+
+                acceptance_prob = torch.minimum(
+                    torch.ones(batch_size, device=self.device),
+                    torch.exp(hamiltonian_diff),
+                )
+
+                random_uniform = torch.rand(batch_size, device=self.device)
+                accepted = random_uniform < acceptance_prob
+                accepted_mask = accepted.float().view(-1, *([1] * (len(x.shape) - 1)))
+
+                x = accepted_mask * proposed_position + (1.0 - accepted_mask) * x
 
                 if return_trajectory:
                     trajectory[:, i, :] = x
 
                 if return_diagnostics:
-                    if n_samples > 1:
-                        mean_x = x.mean(dim=0, keepdim=True)
-                        var_x = torch.clamp(
-                            x.var(dim=0, unbiased=False, keepdim=True),
-                            min=1e-10,
-                            max=1e10,
-                        )
-                    else:
-                        mean_x = x
-                        var_x = torch.zeros_like(x)
-
-                    energy = torch.clamp(self.model(x), min=-1e-10, max=1e10)
+                    mean_x = x.mean(dim=0, keepdim=True)
+                    var_x = torch.clamp(
+                        x.var(dim=0, unbiased=False, keepdim=True),
+                        min=1e-10,
+                        max=1e10,
+                    )
+                    energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
                     acceptance_rate = accepted.float().mean()
 
-                    diagnostics[i, 0, :, :] = (
-                        mean_x if n_samples > 1 else mean_x.unsqueeze(0)
+                    diagnostics[i, 0, :, :] = mean_x.expand(batch_size, dim)
+                    diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)
+                    diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
+                    diagnostics[i, 3, :, :] = torch.full(
+                        (batch_size, dim),
+                        acceptance_rate,
+                        dtype=self.dtype,
+                        device=self.device,
                     )
-                    diagnostics[i, 1, :, :] = (
-                        var_x if n_samples > 1 else var_x.unsqueeze(0)
-                    )
-                    diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(n_samples, dim)
-                    diagnostics[i, 3, :, :] = acceptance_rate.expand(n_samples, dim)
 
         if return_trajectory:
             if return_diagnostics:
-                return trajectory.to(dtype=self.dtype), diagnostics.to(
-                    dtype=self.dtype
-                )  # , acceptance_rates
+                return trajectory.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)
             return trajectory.to(dtype=self.dtype)
 
         if return_diagnostics:
-            return x.to(dtype=self.dtype), diagnostics.to(
-                dtype=self.dtype
-            )  # , acceptance_rates
+            return x.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)
 
         return x.to(dtype=self.dtype)
 
     def _setup_diagnostics(
         self, dim: int, n_steps: int, n_samples: int = None
     ) -> torch.Tensor:
-        """
+        r"""
         Initializes a tensor to store diagnostics during sampling.
 
         Args:

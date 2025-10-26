@@ -50,3 +50,29 @@ class Integrator(DeviceMixin, ABC):
             Updated state dict with the same keys as the input `state`.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def integrate(
+        self,
+        state: Dict[str, torch.Tensor],
+        model: BaseModel,
+        step_size: torch.Tensor,
+        n_steps: int,
+        *args,
+        **kwargs,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Advance the dynamical state by `n_steps` integrator applications.
+
+        Args:
+            state: Mapping containing required tensors (e.g., {'x': ..., 'p': ...}).
+            model: Energy-based model providing `forward` and `gradient`.
+            step_size: Step size for the integration.
+            n_steps: The number of integration steps to perform.
+            *args: Additional positional arguments specific to the integrator.
+            **kwargs: Additional keyword arguments specific to the integrator.
+
+        Returns:
+            Updated state dict with the same keys as the input `state`.
+        """
+        raise NotImplementedError

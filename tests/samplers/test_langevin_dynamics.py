@@ -178,3 +178,36 @@ def test_cuda_device_available():
     # Create a tensor on CUDA device
     x = torch.zeros(1, device="cuda")
     assert x.device.type == "cuda"
+
+
+@requires_cuda
+def test_langevin_gaussian_sampling_statistics():
+    """Test statistical properties of Langevin samples from a Gaussian."""
+    device = "cuda"
+    mean = torch.tensor([1.0, -1.0], device=device)
+    cov = torch.tensor([[1.0, 0.5], [0.5, 2.0]], device=device)
+    energy_fn = GaussianModel(mean=mean, cov=cov).to(device)
+
+    sampler = LangevinDynamics(
+        model=energy_fn,
+        step_size=0.05,
+        noise_scale=1.0,  # Increased noise_scale for better exploration
+        device=device,
+        dtype=torch.float32,
+    )
+
+    n_samples = 4000  # Increased n_samples for better statistics
+    n_steps = 500  # Increased n_steps for longer chains
+    burn_in = 200  # Increased burn_in to discard more initial samples
+
+    trajectory = sampler.sample(
+        n_samples=n_samples, n_steps=n_steps, dim=2, return_trajectory=True
+    )
+    samples = trajectory[:, burn_in:, :].reshape(-1, 2)
+
+    sample_mean = samples.mean(dim=0)
+    centered = samples - sample_mean
+    sample_cov = torch.matmul(centered.t(), centered) / (samples.shape[0] - 1)
+
+    assert torch.allclose(sample_mean, mean, rtol=0.2, atol=0.2)
+    assert torch.allclose(sample_cov, cov, rtol=0.4, atol=0.4)  # Increased tolerance
