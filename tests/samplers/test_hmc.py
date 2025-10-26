@@ -6,7 +6,7 @@ from functools import partial
 from torchebm.core import (
     BaseModel,
     GaussianModel,
-    DoubleWellEnergy,
+    DoubleWellModel,
     BaseScheduler,
     ConstantScheduler,
     LinearScheduler,
@@ -76,7 +76,7 @@ def energy_function(request):
     elif params.get("type") == "double_well":
         dim = params.get("dim", 2)  # DoubleWell usually tested in 2D
         barrier_height = params.get("barrier_height", 2.0)
-        return DoubleWellEnergy(barrier_height=barrier_height).to(device)
+        return DoubleWellModel(barrier_height=barrier_height).to(device)
     elif params.get("type") == "nan_inducing":
         dim = params.get("dim", 2)
         nan_threshold = params.get("nan_threshold", 5.0)
@@ -513,7 +513,15 @@ def test_leapfrog_nan_handling(hmc_sampler):
     )
 
     # Run leapfrog integration
-    new_pos, new_mom = hmc_sampler._leapfrog_integration(position, momentum)
+    state = {"x": position, "p": momentum}
+    result = hmc_sampler.integrator.integrate(
+        state,
+        hmc_sampler.model,
+        hmc_sampler.get_scheduled_value("step_size"),
+        hmc_sampler.n_leapfrog_steps,
+        hmc_sampler.mass,
+    )
+    new_pos, new_mom = result["x"], result["p"]
 
     # Check output shape and finiteness (due to nan_to_num replacement)
     assert new_pos.shape == shape
@@ -593,9 +601,7 @@ def test_hmc_custom_initial_state():
     samples = hmc.sample(x=initial_state, n_steps=200)
 
     final_dist_to_mean = torch.norm(samples - hmc.model.mean.to(hmc.device))
-    initial_dist_to_mean = torch.norm(
-        initial_state - hmc.model.mean.to(hmc.device)
-    )
+    initial_dist_to_mean = torch.norm(initial_state - hmc.model.mean.to(hmc.device))
     assert final_dist_to_mean < initial_dist_to_mean
 
 
@@ -719,7 +725,15 @@ def test_hmc_step_internals():
 
     # Test leapfrog step with normal values
     position = torch.zeros(shape, device=device, dtype=dtype)
-    new_position, new_momentum = hmc._leapfrog_integration(position, momentum)
+    state = {"x": position, "p": momentum}
+    result = hmc.integrator.integrate(
+        state,
+        hmc.model,
+        hmc.get_scheduled_value("step_size"),
+        hmc.n_leapfrog_steps,
+        hmc.mass,
+    )
+    new_position, new_momentum = result["x"], result["p"]
     assert new_position.shape == position.shape
     assert new_momentum.shape == momentum.shape
     assert torch.all(torch.isfinite(new_position))
@@ -728,20 +742,31 @@ def test_hmc_step_internals():
     # Test leapfrog step with potentially large gradients (testing clamping)
     far_position = torch.ones(shape, device=device, dtype=dtype) * 100.0
     far_momentum = torch.randn(shape, device=device, dtype=dtype)
-    new_pos_far, new_mom_far = hmc._leapfrog_integration(far_position, far_momentum)
+    state = {"x": far_position, "p": far_momentum}
+    result = hmc.integrator.integrate(
+        state,
+        hmc.model,
+        hmc.get_scheduled_value("step_size"),
+        hmc.n_leapfrog_steps,
+        hmc.mass,
+    )
+    new_pos_far, new_mom_far = result["x"], result["p"]
     assert torch.all(torch.isfinite(new_pos_far))
     assert torch.all(torch.isfinite(new_mom_far))
 
-    # Test HMC step (single iteration)
+    # Test single leapfrog step (integrator step)
     torch.manual_seed(123)
     position = torch.zeros(shape, device=device, dtype=dtype)
-    new_position, acceptance_prob, accepted = hmc.hmc_step(position)
+    momentum = hmc._initialize_momentum(shape)
+    state = {"x": position, "p": momentum}
+    result = hmc.integrator.step(
+        state, hmc.model, hmc.get_scheduled_value("step_size"), hmc.mass
+    )
+    new_position, new_momentum = result["x"], result["p"]
     assert new_position.shape == position.shape
-    assert acceptance_prob.shape == torch.Size([batch_size])
-    assert accepted.shape == torch.Size([batch_size])
+    assert new_momentum.shape == momentum.shape
     assert torch.all(torch.isfinite(new_position))
-    assert torch.all(torch.isfinite(acceptance_prob))
-    assert torch.all(acceptance_prob >= 0) and torch.all(acceptance_prob <= 1)
+    assert torch.all(torch.isfinite(new_momentum))
 
 
 @pytest.mark.parametrize(
@@ -840,17 +865,21 @@ def test_hmc_numerical_stability_extreme_values(start_val):
 
     # Test internal leapfrog step with extreme input
     momentum = hmc._initialize_momentum(extreme_position.shape)
-    new_pos_leap, new_mom_leap = hmc._leapfrog_integration(extreme_position, momentum)
+    state = {"x": extreme_position, "p": momentum}
+    result = hmc.integrator.integrate(
+        state,
+        hmc.model,
+        hmc.get_scheduled_value("step_size"),
+        hmc.n_leapfrog_steps,
+        hmc.mass,
+    )
+    new_pos_leap, new_mom_leap = result["x"], result["p"]
     assert torch.all(torch.isfinite(new_pos_leap))
     assert torch.all(torch.isfinite(new_mom_leap))
 
     # Test full sampling for finiteness
     result = hmc.sample(x=extreme_position.clone(), n_steps=10)
     assert torch.all(torch.isfinite(result))
-
-    # Test hmc_step for finite acceptance probability
-    _, acc_prob, _ = hmc.hmc_step(extreme_position.clone())
-    assert torch.all(torch.isfinite(acc_prob))
 
 
 if __name__ == "__main__":
