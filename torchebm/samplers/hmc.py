@@ -209,15 +209,11 @@ class HamiltonianMonteCarlo(BaseSampler):
                     energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
                     acceptance_rate = accepted.float().mean()
 
-                    diagnostics[i, 0, :, :] = mean_x.expand(batch_size, dim)
-                    diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)
-                    diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
-                    diagnostics[i, 3, :, :] = torch.full(
-                        (batch_size, dim),
-                        acceptance_rate,
-                        dtype=self.dtype,
-                        device=self.device,
-                    )
+                    # More efficient: use broadcasting instead of expand
+                    diagnostics[i, 0, :, :] = mean_x
+                    diagnostics[i, 1, :, :] = var_x
+                    diagnostics[i, 2, :, :] = energy.unsqueeze(-1)
+                    diagnostics[i, 3, :, :] = acceptance_rate
 
         if return_trajectory:
             if return_diagnostics:

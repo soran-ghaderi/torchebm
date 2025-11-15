@@ -43,9 +43,9 @@ class EulerMaruyamaIntegrator(Integrator):
         if not torch.is_tensor(noise_scale):
             noise_scale = torch.tensor(noise_scale, device=x.device, dtype=x.dtype)
 
-        x_new = (
-            x - step_size * grad + torch.sqrt(2.0 * step_size) * (noise_scale * noise)
-        )
+        # Compute sqrt once and reuse
+        sqrt_2step = torch.sqrt(2.0 * step_size)
+        x_new = x - step_size * grad + sqrt_2step * noise_scale * noise
         return {"x": x_new}
 
     def integrate(
