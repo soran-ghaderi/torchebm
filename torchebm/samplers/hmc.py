@@ -59,7 +59,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         self.integrator = LeapfrogIntegrator(device=self.device, dtype=self.dtype)
 
     def _initialize_momentum(self, shape: torch.Size) -> torch.Tensor:
-        """
+        r"""
         Initializes momentum variables from a Gaussian distribution.
 
         The momentum is sampled from \(\mathcal{N}(0, M)\), where `M` is the mass matrix.
@@ -75,12 +75,12 @@ class HamiltonianMonteCarlo(BaseSampler):
         if self.mass is not None:
             # Apply mass matrix (equivalent to sampling from N(0, M))
             if isinstance(self.mass, float):
-                p = p * torch.sqrt(
-                    torch.tensor(self.mass, dtype=self.dtype, device=self.device)
-                )
+                # Avoid creating tensor for scalar operations
+                p = p * (self.mass ** 0.5)
             else:
                 mass_sqrt = torch.sqrt(self.mass)
-                p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1).expand_as(p)
+                # Use broadcasting instead of expand_as
+                p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1)
         return p
 
     def _compute_kinetic_energy(self, p: torch.Tensor) -> torch.Tensor:
@@ -98,10 +98,12 @@ class HamiltonianMonteCarlo(BaseSampler):
         if self.mass is None:
             return 0.5 * torch.sum(p**2, dim=-1)
         elif isinstance(self.mass, float):
-            return 0.5 * torch.sum(p**2, dim=-1) / self.mass
+            inv_mass = 1.0 / self.mass
+            return 0.5 * torch.sum(p**2, dim=-1) * inv_mass
         else:
+            inv_mass = 1.0 / self.mass
             return 0.5 * torch.sum(
-                p**2 / self.mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
+                p**2 * inv_mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
             )
 
     @torch.no_grad()
