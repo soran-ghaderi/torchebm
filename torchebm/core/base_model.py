@@ -69,17 +69,14 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
             torch.Tensor: Gradient tensor of the same shape as `x`.
         """
 
-        original_dtype = x.dtype
         device = x.device
 
         if self.device and device != self.device:
             x = x.to(self.device)
             device = self.device
 
-        with torch.enable_grad():  # todo: consider removing conversion to fp32 and uncessary device change
-            x_for_grad = (
-                x.detach().to(dtype=torch.float32, device=device).requires_grad_(True)
-            )
+        with torch.enable_grad():
+            x_for_grad = x.detach().requires_grad_(True)
 
             with self.autocast_context():
                 energy = self.forward(x_for_grad)
@@ -91,10 +88,10 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
 
             if not energy.grad_fn:
                 raise RuntimeError(
-                    "Cannot compute gradient: `forward` method did not use the input `x` (as float32) in a differentiable way."
+                    "Cannot compute gradient: `forward` method did not use the input in a differentiable way."
                 )
 
-            gradient_float32 = torch.autograd.grad(
+            gradient = torch.autograd.grad(
                 outputs=energy,
                 inputs=x_for_grad,
                 grad_outputs=torch.ones_like(energy, device=energy.device),
@@ -102,12 +99,10 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
                 retain_graph=None,  # since create_graph=False, let PyTorch decide
             )[0]
 
-        if gradient_float32 is None:  # for triple checking!
+        if gradient is None:  # for triple checking!
             raise RuntimeError(
                 "Gradient computation failed unexpectedly. Check the forward pass implementation."
             )
-
-        gradient = gradient_float32.to(original_dtype)
 
         return gradient.detach()
 
@@ -181,24 +176,11 @@ class GaussianModel(BaseModel):
             )
 
         x = x.to(dtype=self.dtype, device=self.device)
-        # mean = self.mean.to(device=x.device)
         cov_inv = self.cov_inv.to(dtype=self.dtype, device=x.device)
 
-        delta = (
-            x - self.mean
-        )  # avoid detaching or converting x to maintain grad tracking
-        # energy = 0.5 * torch.einsum("bi,ij,bj->b", delta, cov_inv, delta)
-
-        if delta.shape[0] > 1:
-            delta_expanded = delta.unsqueeze(-1)  # (batch_size, dim, 1)
-            cov_inv_expanded = cov_inv.unsqueeze(0).expand(
-                delta.shape[0], -1, -1
-            )  # (batch_size, dim, dim)
-
-            temp = torch.bmm(cov_inv_expanded, delta_expanded)  # (batch_size, dim, 1)
-            energy = 0.5 * torch.bmm(delta.unsqueeze(1), temp).squeeze(-1).squeeze(-1)
-        else:
-            energy = 0.5 * torch.sum(delta * torch.matmul(delta, cov_inv), dim=-1)
+        delta = x - self.mean  # avoid detaching or converting x to maintain grad tracking
+        # Use einsum for efficient computation: delta^T @ cov_inv @ delta
+        energy = 0.5 * torch.einsum("bi,ij,bj->b", delta, cov_inv, delta)
 
         return energy
 

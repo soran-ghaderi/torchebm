@@ -292,7 +292,9 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
         score = self.compute_score(x_perturbed)
 
-        target_score = -noise / (self.noise_scale**2)
+        # Cache the squared noise scale to avoid repeated computation
+        inv_noise_scale_sq = 1.0 / (self.noise_scale**2)
+        target_score = -noise * inv_noise_scale_sq
 
         loss = (
             0.5
@@ -420,15 +422,9 @@ class SlicedScoreMatching(BaseScoreMatching):
             torch.Tensor: The scalar sliced score matching loss.
         """
 
-        dup_x = (
-            x.unsqueeze(0)
-            .expand(self.n_projections, *x.shape)
-            .contiguous()
-            .view(-1, *x.shape[1:])
-        ).requires_grad_(
-            True
-        )  # final shape: (n_particles * batch_size, d). tracing the shape: (batch_size, d) -> (1, batch_size, d)
-        # -> (n_particles, batch_size, d) -> (n_particles, batch_size, d) -> (n_particles * batch_size, d)
+        # More efficient: use repeat instead of expand().contiguous().view()
+        # Shape: (batch_size, d) -> (n_projections * batch_size, d)
+        dup_x = x.repeat(self.n_projections, *([1] * (len(x.shape) - 1))).requires_grad_(True)
 
         n_vectors = self._get_random_projections(dup_x)
 

@@ -59,7 +59,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         self.integrator = LeapfrogIntegrator(device=self.device, dtype=self.dtype)
 
     def _initialize_momentum(self, shape: torch.Size) -> torch.Tensor:
-        """
+        r"""
         Initializes momentum variables from a Gaussian distribution.
 
         The momentum is sampled from \(\mathcal{N}(0, M)\), where `M` is the mass matrix.
@@ -75,12 +75,12 @@ class HamiltonianMonteCarlo(BaseSampler):
         if self.mass is not None:
             # Apply mass matrix (equivalent to sampling from N(0, M))
             if isinstance(self.mass, float):
-                p = p * torch.sqrt(
-                    torch.tensor(self.mass, dtype=self.dtype, device=self.device)
-                )
+                # Avoid creating tensor for scalar operations
+                p = p * (self.mass ** 0.5)
             else:
                 mass_sqrt = torch.sqrt(self.mass)
-                p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1).expand_as(p)
+                # Use broadcasting instead of expand_as
+                p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1)
         return p
 
     def _compute_kinetic_energy(self, p: torch.Tensor) -> torch.Tensor:
@@ -98,10 +98,12 @@ class HamiltonianMonteCarlo(BaseSampler):
         if self.mass is None:
             return 0.5 * torch.sum(p**2, dim=-1)
         elif isinstance(self.mass, float):
-            return 0.5 * torch.sum(p**2, dim=-1) / self.mass
+            inv_mass = 1.0 / self.mass
+            return 0.5 * torch.sum(p**2, dim=-1) * inv_mass
         else:
+            inv_mass = 1.0 / self.mass
             return 0.5 * torch.sum(
-                p**2 / self.mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
+                p**2 * inv_mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
             )
 
     @torch.no_grad()
@@ -209,15 +211,11 @@ class HamiltonianMonteCarlo(BaseSampler):
                     energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
                     acceptance_rate = accepted.float().mean()
 
-                    diagnostics[i, 0, :, :] = mean_x.expand(batch_size, dim)
-                    diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)
-                    diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
-                    diagnostics[i, 3, :, :] = torch.full(
-                        (batch_size, dim),
-                        acceptance_rate,
-                        dtype=self.dtype,
-                        device=self.device,
-                    )
+                    # More efficient: use broadcasting instead of expand
+                    diagnostics[i, 0, :, :] = mean_x
+                    diagnostics[i, 1, :, :] = var_x
+                    diagnostics[i, 2, :, :] = energy.unsqueeze(-1)
+                    diagnostics[i, 3, :, :] = acceptance_rate
 
         if return_trajectory:
             if return_diagnostics:

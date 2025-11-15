@@ -56,25 +56,26 @@ class LeapfrogIntegrator(Integrator):
         grad = torch.clamp(grad, min=-1e6, max=1e6)
 
         # half-step momentum
-        p_half = p - 0.5 * step_size * grad
+        half_step = 0.5 * step_size
+        p_half = p - half_step * grad
 
         # full-step position update
         if mass is None:
             x_new = x + step_size * p_half
         else:
             if isinstance(mass, float):
-                safe_mass = max(mass, 1e-10)
-                x_new = x + step_size * p_half / safe_mass
+                inv_mass = 1.0 / max(mass, 1e-10)
+                x_new = x + step_size * p_half * inv_mass
             else:
-                safe_mass = torch.clamp(mass, min=1e-10)
-                x_new = x + step_size * p_half / safe_mass.view(
+                inv_mass = 1.0 / torch.clamp(mass, min=1e-10)
+                x_new = x + step_size * p_half * inv_mass.view(
                     *([1] * (len(x.shape) - 1)), -1
                 )
 
         # half-step momentum update at new position
         grad_new = model.gradient(x_new)
         grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
-        p_new = p_half - 0.5 * step_size * grad_new
+        p_new = p_half - half_step * grad_new
 
         # handling NaNs
         if torch.isnan(x_new).any() or torch.isnan(p_new).any():

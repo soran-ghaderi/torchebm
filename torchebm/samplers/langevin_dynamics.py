@@ -143,7 +143,8 @@ class LangevinDynamics(BaseSampler):
                     diagnostics[i, 1, :, :] = (
                         var_x if n_samples > 1 else var_x.unsqueeze(0)
                     )
-                    diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(n_samples, dim)
+                    # Use broadcasting instead of expand
+                    diagnostics[i, 2, :, :] = energy.unsqueeze(-1)
 
         if return_trajectory:
             if return_diagnostics:
