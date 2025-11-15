@@ -161,10 +161,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         Returns:
             torch.Tensor: The scalar loss value.
         """
-        # Ensure inputs are on the correct device and dtype
-        x = x.to(self.device, self.dtype)
-        pred_x = pred_x.to(self.device, self.dtype)
-
         # Compute energy of real and generated samples
         with torch.set_grad_enabled(True):
             # Add small noise to real data for stability (optional)
