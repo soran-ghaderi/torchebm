@@ -3,11 +3,12 @@ from typing import Optional, Union, Tuple, List, Dict
 import warnings
 
 import torch
+from torch import nn
 
 from torchebm.core import BaseModel, BaseScheduler, DeviceMixin
 
 
-class BaseSampler(DeviceMixin, ABC):
+class BaseSampler(DeviceMixin, nn.Module, ABC):
     """
     Abstract base class for MCMC samplers.
 

@@ -2,11 +2,12 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 
 import torch
+from torch import nn
 
 from torchebm.core import DeviceMixin, BaseModel
 
 
-class Integrator(DeviceMixin, ABC):
+class BaseIntegrator(DeviceMixin, nn.Module, ABC):
     """
     Abstract integrator that advances a sampler state according to dynamics.
 
