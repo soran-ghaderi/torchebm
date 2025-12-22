@@ -19,7 +19,7 @@ theme:
     - navigation.indexes
     - navigation.top
     - navigation.tracking
-#    - navigation.expand
+    - navigation.expand
     - navigation.path
     - toc.follow
     - search.suggest
@@ -83,8 +83,18 @@ nav:
       - Parallel Sampling: tutorials/parallel_sampling.md
   - API Reference:
     - Overview: api/index.md
+    - Bridges:
+      - api/torchebm/bridges/index.md
+      - Brownian: api/torchebm/bridges/brownian/index.md
+      - Schrodinger: api/torchebm/bridges/schrodinger/index.md
     - Core:
       - api/torchebm/core/index.md
+      - Base_integrator:
+        - api/torchebm/core/base_integrator/index.md
+        - BaseIntegrator: api/torchebm/core/base_integrator/classes/BaseIntegrator.md
+      - Base_interpolant:
+        - api/torchebm/core/base_interpolant/index.md
+        - BaseInterpolant: api/torchebm/core/base_interpolant/classes/BaseInterpolant.md
       - Base_loss:
         - api/torchebm/core/base_loss/index.md
         - BaseContrastiveDivergence: api/torchebm/core/base_loss/classes/BaseContrastiveDivergence.md
@@ -139,6 +149,35 @@ nav:
         - PinwheelDataset: api/torchebm/datasets/generators/classes/PinwheelDataset.md
         - SwissRollDataset: api/torchebm/datasets/generators/classes/SwissRollDataset.md
         - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
+    - Integrators:
+      - api/torchebm/integrators/index.md
+      - Deterministic: api/torchebm/integrators/deterministic/index.md
+      - Eqm_integrators:
+        - api/torchebm/integrators/eqm_integrators/index.md
+        - ode: api/torchebm/integrators/eqm_integrators/classes/ode.md
+        - sde: api/torchebm/integrators/eqm_integrators/classes/sde.md
+      - Euler_maruyama:
+        - api/torchebm/integrators/euler_maruyama/index.md
+        - EulerMaruyamaIntegrator: api/torchebm/integrators/euler_maruyama/classes/EulerMaruyamaIntegrator.md
+      - Heun:
+        - api/torchebm/integrators/heun/index.md
+        - HeunIntegrator: api/torchebm/integrators/heun/classes/HeunIntegrator.md
+      - Integrator_utils: api/torchebm/integrators/integrator_utils/index.md
+      - Leapfrog:
+        - api/torchebm/integrators/leapfrog/index.md
+        - LeapfrogIntegrator: api/torchebm/integrators/leapfrog/classes/LeapfrogIntegrator.md
+      - Stochastic: api/torchebm/integrators/stochastic/index.md
+    - Interpolants:
+      - api/torchebm/interpolants/index.md
+      - Cosine:
+        - api/torchebm/interpolants/cosine/index.md
+        - CosineInterpolant: api/torchebm/interpolants/cosine/classes/CosineInterpolant.md
+      - Linear:
+        - api/torchebm/interpolants/linear/index.md
+        - LinearInterpolant: api/torchebm/interpolants/linear/classes/LinearInterpolant.md
+      - Variance_preserving:
+        - api/torchebm/interpolants/variance_preserving/index.md
+        - VariancePreservingInterpolant: api/torchebm/interpolants/variance_preserving/classes/VariancePreservingInterpolant.md
     - Losses:
       - api/torchebm/losses/index.md
       - Contrastive_divergence:
@@ -146,13 +185,34 @@ nav:
         - ContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/ContrastiveDivergence.md
         - ParallelTemperingCD: api/torchebm/losses/contrastive_divergence/classes/ParallelTemperingCD.md
         - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
+      - Equilibrium_matching:
+        - api/torchebm/losses/equilibrium_matching/index.md
+        - EqMConfig: api/torchebm/losses/equilibrium_matching/classes/EqMConfig.md
+        - EquilibriumMatchingLoss: api/torchebm/losses/equilibrium_matching/classes/EquilibriumMatchingLoss.md
       - Score_matching:
         - api/torchebm/losses/score_matching/index.md
         - DenoisingScoreMatching: api/torchebm/losses/score_matching/classes/DenoisingScoreMatching.md
         - ScoreMatching: api/torchebm/losses/score_matching/classes/ScoreMatching.md
         - SlicedScoreMatching: api/torchebm/losses/score_matching/classes/SlicedScoreMatching.md
+    - Models:
+      - api/torchebm/models/index.md
+      - Eqm:
+        - api/torchebm/models/eqm/index.md
+        - EqM: api/torchebm/models/eqm/classes/EqM.md
+        - FinalLayer: api/torchebm/models/eqm/classes/FinalLayer.md
+        - LabelEmbedder: api/torchebm/models/eqm/classes/LabelEmbedder.md
+        - SiTBlock: api/torchebm/models/eqm/classes/SiTBlock.md
+        - TimestepEmbedder: api/torchebm/models/eqm/classes/TimestepEmbedder.md
     - Samplers:
       - api/torchebm/samplers/index.md
+      - Equilibrium_optimization:
+        - api/torchebm/samplers/equilibrium_optimization/index.md
+        - EquilibriumGradientDescent: api/torchebm/samplers/equilibrium_optimization/classes/EquilibriumGradientDescent.md
+        - EquilibriumNesterov: api/torchebm/samplers/equilibrium_optimization/classes/EquilibriumNesterov.md
+      - Flow:
+        - api/torchebm/samplers/flow/index.md
+        - FlowSampler: api/torchebm/samplers/flow/classes/FlowSampler.md
+        - PredictionType: api/torchebm/samplers/flow/classes/PredictionType.md
       - Hmc:
         - api/torchebm/samplers/hmc/index.md
         - HamiltonianMonteCarlo: api/torchebm/samplers/hmc/classes/HamiltonianMonteCarlo.md
@@ -161,9 +221,26 @@ nav:
         - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
       - Nestrov_accelerated_gradient:
         - api/torchebm/samplers/nestrov_accelerated_gradient/index.md
-        - NestrovAcceleratedGradient: api/torchebm/samplers/nestrov_accelerated_gradient/classes/NestrovAcceleratedGradient.md
+        - NestrovAcceleratedGradientDecent: api/torchebm/samplers/nestrov_accelerated_gradient/classes/NestrovAcceleratedGradientDecent.md
+    - Transports:
+      - api/torchebm/transports/index.md
+      - Path:
+        - api/torchebm/transports/path/index.md
+        - GVPPath: api/torchebm/transports/path/classes/GVPPath.md
+        - ICPath: api/torchebm/transports/path/classes/ICPath.md
+        - VPPath: api/torchebm/transports/path/classes/VPPath.md
+      - Transport:
+        - api/torchebm/transports/transport/index.md
+        - ModelType: api/torchebm/transports/transport/classes/ModelType.md
+        - PathType: api/torchebm/transports/transport/classes/PathType.md
+        - Sampler: api/torchebm/transports/transport/classes/Sampler.md
+        - Transport: api/torchebm/transports/transport/classes/Transport.md
+        - WeightType: api/torchebm/transports/transport/classes/WeightType.md
     - Utils:
       - api/torchebm/utils/index.md
+      - Eqm_utils:
+        - api/torchebm/utils/eqm_utils/index.md
+        - WandbLogger: api/torchebm/utils/eqm_utils/classes/WandbLogger.md
       - Visualization: api/torchebm/utils/visualization/index.md
   - Examples:
     - Overview: examples/index.md
@@ -313,4 +390,3 @@ extra_javascript:
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
   - javascripts/cards-clickable.js
-
