@@ -1,19 +1,20 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union, Tuple, List, Dict
-import warnings
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
 
-from torchebm.core import BaseModel, BaseScheduler, DeviceMixin
+from torchebm.core import BaseScheduler, DeviceMixin
 
 
 class BaseSampler(DeviceMixin, nn.Module, ABC):
     """
-    Abstract base class for MCMC samplers.
+    Abstract base class for samplers.
 
     Args:
-        model (BaseModel): The energy-based model to sample from.
+        model (nn.Module): The model to sample from. For MCMC samplers, this is
+            typically a `BaseModel` energy function; for learned samplers it may be
+            any `nn.Module`.
         dtype (torch.dtype): The data type for computations.
         device (Optional[Union[str, torch.device]]): The device for computations.
         use_mixed_precision (bool): Whether to use mixed-precision for sampling.
@@ -21,7 +22,7 @@ class BaseSampler(DeviceMixin, nn.Module, ABC):
 
     def __init__(
         self,
-        model: BaseModel,
+        model: nn.Module,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
