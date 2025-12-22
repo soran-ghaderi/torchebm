@@ -151,11 +151,6 @@ nav:
         - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
     - Integrators:
       - api/torchebm/integrators/index.md
-      - Deterministic: api/torchebm/integrators/deterministic/index.md
-      - Eqm_integrators:
-        - api/torchebm/integrators/eqm_integrators/index.md
-        - ode: api/torchebm/integrators/eqm_integrators/classes/ode.md
-        - sde: api/torchebm/integrators/eqm_integrators/classes/sde.md
       - Euler_maruyama:
         - api/torchebm/integrators/euler_maruyama/index.md
         - EulerMaruyamaIntegrator: api/torchebm/integrators/euler_maruyama/classes/EulerMaruyamaIntegrator.md
@@ -166,7 +161,6 @@ nav:
       - Leapfrog:
         - api/torchebm/integrators/leapfrog/index.md
         - LeapfrogIntegrator: api/torchebm/integrators/leapfrog/classes/LeapfrogIntegrator.md
-      - Stochastic: api/torchebm/integrators/stochastic/index.md
     - Interpolants:
       - api/torchebm/interpolants/index.md
       - Cosine:
@@ -187,8 +181,8 @@ nav:
         - PersistentContrastiveDivergence: api/torchebm/losses/contrastive_divergence/classes/PersistentContrastiveDivergence.md
       - Equilibrium_matching:
         - api/torchebm/losses/equilibrium_matching/index.md
-        - EqMConfig: api/torchebm/losses/equilibrium_matching/classes/EqMConfig.md
         - EquilibriumMatchingLoss: api/torchebm/losses/equilibrium_matching/classes/EquilibriumMatchingLoss.md
+      - Loss_utils: api/torchebm/losses/loss_utils/index.md
       - Score_matching:
         - api/torchebm/losses/score_matching/index.md
         - DenoisingScoreMatching: api/torchebm/losses/score_matching/classes/DenoisingScoreMatching.md
@@ -205,37 +199,20 @@ nav:
         - TimestepEmbedder: api/torchebm/models/eqm/classes/TimestepEmbedder.md
     - Samplers:
       - api/torchebm/samplers/index.md
-      - Equilibrium_optimization:
-        - api/torchebm/samplers/equilibrium_optimization/index.md
-        - EquilibriumGradientDescent: api/torchebm/samplers/equilibrium_optimization/classes/EquilibriumGradientDescent.md
-        - EquilibriumNesterov: api/torchebm/samplers/equilibrium_optimization/classes/EquilibriumNesterov.md
       - Flow:
         - api/torchebm/samplers/flow/index.md
         - FlowSampler: api/torchebm/samplers/flow/classes/FlowSampler.md
         - PredictionType: api/torchebm/samplers/flow/classes/PredictionType.md
+      - Gradient_descent:
+        - api/torchebm/samplers/gradient_descent/index.md
+        - GradientDescentSampler: api/torchebm/samplers/gradient_descent/classes/GradientDescentSampler.md
+        - NesterovSampler: api/torchebm/samplers/gradient_descent/classes/NesterovSampler.md
       - Hmc:
         - api/torchebm/samplers/hmc/index.md
         - HamiltonianMonteCarlo: api/torchebm/samplers/hmc/classes/HamiltonianMonteCarlo.md
       - Langevin_dynamics:
         - api/torchebm/samplers/langevin_dynamics/index.md
         - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
-      - Nestrov_accelerated_gradient:
-        - api/torchebm/samplers/nestrov_accelerated_gradient/index.md
-        - NestrovAcceleratedGradientDecent: api/torchebm/samplers/nestrov_accelerated_gradient/classes/NestrovAcceleratedGradientDecent.md
-    - Transports:
-      - api/torchebm/transports/index.md
-      - Path:
-        - api/torchebm/transports/path/index.md
-        - GVPPath: api/torchebm/transports/path/classes/GVPPath.md
-        - ICPath: api/torchebm/transports/path/classes/ICPath.md
-        - VPPath: api/torchebm/transports/path/classes/VPPath.md
-      - Transport:
-        - api/torchebm/transports/transport/index.md
-        - ModelType: api/torchebm/transports/transport/classes/ModelType.md
-        - PathType: api/torchebm/transports/transport/classes/PathType.md
-        - Sampler: api/torchebm/transports/transport/classes/Sampler.md
-        - Transport: api/torchebm/transports/transport/classes/Transport.md
-        - WeightType: api/torchebm/transports/transport/classes/WeightType.md
     - Utils:
       - api/torchebm/utils/index.md
       - Eqm_utils:
@@ -288,7 +265,7 @@ plugins:
       categories_name: Categories
       categories_url_format: "category/{slug}"
       categories_toc: true
-      categories_sort_by: title
+      # categories_sort_by: title
       categories_sort_reverse: false
       categories_allowed:
         - Tutorials
