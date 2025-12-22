@@ -9,8 +9,8 @@ from torchebm.core import (
     BaseScheduler,
     ConstantScheduler,
 )
-from torchebm.integrators import LeapfrogIntegrator
 from torchebm.core.base_model import BaseModel
+from torchebm.integrators import LeapfrogIntegrator
 
 
 class HamiltonianMonteCarlo(BaseSampler):

@@ -112,14 +112,12 @@ class LangevinDynamics(BaseSampler):
         with self.autocast_context():
             for i in range(n_steps):
                 self.step_schedulers()
-                noise = torch.randn_like(x, device=self.device)
                 state = {"x": x}
                 x = self.integrator.step(
-                    state,
-                    self.model,
-                    self.get_scheduled_value("step_size"),
-                    self.get_scheduled_value("noise_scale"),
-                    noise,
+                    state=state,
+                    model=self.model,
+                    step_size=self.get_scheduled_value("step_size"),
+                    noise_scale=self.get_scheduled_value("noise_scale"),
                 )["x"]
 
                 if return_trajectory:
