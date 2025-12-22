@@ -53,7 +53,7 @@ def compute_eqm_ct(t: torch.Tensor) -> torch.Tensor:
     The scaling function is defined as:
 
     \[
-    c(t) = 4 \cdot \min\left(1 - \frac{t}{0.8}, \frac{1 - t}{0.2}\right)
+    c(t) = 4 \cdot \min\left(1, \frac{1 - t}{0.2}\right)
     \]
 
     Args:

@@ -169,11 +169,18 @@ class EquilibriumMatchingLoss(BaseLoss):
         with self.autocast_context():
             model_output = self.model(xt, t, **model_kwargs)
 
-        disp_loss = 0.0
-        if self.apply_dispersion and model_kwargs.get("return_act", False):
+        if isinstance(model_output, tuple):
             model_output, act = model_output
-            if isinstance(act, list) and len(act) > 0:
+        else:
+            act = []
+
+        disp_loss = 0.0
+        if self.apply_dispersion and len(act) > 0:
+             if isinstance(act, list):
                 disp_loss = dispersive_loss(act[-1])
+             else:
+                 # Handle case where act might be a single tensor
+                 disp_loss = dispersive_loss(act)
 
         terms = {"pred": model_output}
 

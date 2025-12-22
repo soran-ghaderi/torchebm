@@ -321,7 +321,6 @@ class BaseEnergyFunction(BaseModel):
         )
         super().__init__(*args, **kwargs)
 
-
 class DoubleWellEnergy(DoubleWellModel):
     def __init__(self, *args, **kwargs):
         warnings.warn(
