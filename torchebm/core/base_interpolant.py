@@ -201,10 +201,11 @@ class BaseInterpolant(ABC):
         alpha, d_alpha = self.compute_alpha_t(t_expanded)
         sigma, d_sigma = self.compute_sigma_t(t_expanded)
 
-        alpha = torch.clamp(alpha, min=1e-8)
+        d_alpha = torch.where(d_alpha.abs() < 1e-8, torch.ones_like(d_alpha) * 1e-8, d_alpha)
         reverse_alpha_ratio = alpha / d_alpha
-        var = reverse_alpha_ratio * d_sigma - sigma
-        noise = (reverse_alpha_ratio * velocity - x) / torch.clamp(var, min=1e-12)
+        var = sigma - reverse_alpha_ratio * d_sigma
+        var = torch.where(var.abs() < 1e-12, torch.sign(var) * 1e-12 + (var == 0) * 1e-12, var)
+        noise = (x - reverse_alpha_ratio * velocity) / var
 
         return noise
 

@@ -63,17 +63,21 @@ class HeunIntegrator(BaseIntegrator):
                 noise_scale = torch.tensor(noise_scale, device=x.device, dtype=x.dtype)
             diffusion = noise_scale**2
 
-        x_hat = x
+        # Heun predictor-corrector for drift term
+        k1 = drift(x, t)
+        x_pred = x + step_size * k1
+        k2 = drift(x_pred, t + step_size)
+        x_new = x + 0.5 * step_size * (k1 + k2)
+
+        # Add stochastic term after deterministic update
         if diffusion is not None:
             if noise is None:
                 noise = torch.randn_like(x, device=self.device, dtype=self.dtype)
             dw = noise * torch.sqrt(step_size)
-            x_hat = x + torch.sqrt(2.0 * diffusion) * dw
+            x_new = x_new + torch.sqrt(2.0 * diffusion) * dw
 
-        k1 = drift(x_hat, t)
-        x_pred = x_hat + step_size * k1
-        k2 = drift(x_pred, t + step_size)
-        return {"x": x_hat + 0.5 * step_size * (k1 + k2)}
+        return {"x": x_new}
+
 
     def integrate(
         self,
