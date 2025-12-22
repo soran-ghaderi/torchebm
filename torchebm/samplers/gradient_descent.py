@@ -35,9 +35,12 @@ class GradientDescentSampler(BaseSampler):
         device: Device for computations.
         use_mixed_precision: Whether to use mixed precision.
 
-    !!!example
+    Example:
         ```python
+        from torchebm.samplers import GradientDescentSampler
         from torchebm.core import DoubleWellEnergy
+        import torch
+
         energy = DoubleWellEnergy()
         sampler = GradientDescentSampler(energy, step_size=0.1)
         samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
@@ -132,6 +135,7 @@ class NesterovSampler(BaseSampler):
     \[
     v_{k+1} = \mu v_k - \eta \nabla_x E(x_k + \mu v_k)
     \]
+
     \[
     x_{k+1} = x_k + v_{k+1}
     \]
@@ -146,9 +150,12 @@ class NesterovSampler(BaseSampler):
         device: Device for computations.
         use_mixed_precision: Whether to use mixed precision.
 
-    !!!example
+    Example:
         ```python
+        from torchebm.samplers import NesterovSampler
         from torchebm.core import DoubleWellEnergy
+        import torch
+
         energy = DoubleWellEnergy()
         sampler = NesterovSampler(energy, step_size=0.1, momentum=0.9)
         samples = sampler.sample(n_samples=100, dim=2, n_steps=500)

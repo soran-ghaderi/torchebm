@@ -17,7 +17,8 @@ class HamiltonianMonteCarlo(BaseSampler):
     r"""
     Hamiltonian Monte Carlo sampler.
 
-    Uses Hamiltonian dynamics with Metropolis-Hastings acceptance.
+    Uses Hamiltonian dynamics with Metropolis-Hastings acceptance to sample
+    from the target distribution defined by the energy model.
 
     Args:
         model: Energy-based model to sample from.
@@ -26,6 +27,19 @@ class HamiltonianMonteCarlo(BaseSampler):
         mass: Mass matrix (scalar or tensor).
         dtype: Data type for computations.
         device: Device for computations.
+
+    Example:
+        ```python
+        from torchebm.samplers import HamiltonianMonteCarlo
+        from torchebm.core import DoubleWellEnergy
+        import torch
+
+        energy = DoubleWellEnergy()
+        sampler = HamiltonianMonteCarlo(
+            energy, step_size=0.1, n_leapfrog_steps=10
+        )
+        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        ```
     """
 
     def __init__(

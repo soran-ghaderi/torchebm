@@ -11,7 +11,7 @@ class LinearInterpolant(BaseInterpolant):
     r"""
     Linear interpolant between noise and data distributions.
 
-    Also known as the optimal transport (OT) interpolant or rectified flow interpolant.
+    Also known as the optimal transport (OT) or rectified flow interpolant.
 
     The interpolation is defined as:
 
@@ -21,8 +21,17 @@ class LinearInterpolant(BaseInterpolant):
 
     with \(\alpha(t) = t\) and \(\sigma(t) = 1 - t\).
 
-    This is the simplest interpolant and corresponds to straight-line paths
-    in the sample space.
+    Example:
+        ```python
+        from torchebm.interpolants import LinearInterpolant
+        import torch
+
+        interpolant = LinearInterpolant()
+        x0 = torch.randn(32, 2)  # noise
+        x1 = torch.randn(32, 2)  # data
+        t = torch.rand(32)
+        xt, ut = interpolant.interpolate(x0, x1, t)
+        ```
     """
 
     def compute_alpha_t(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

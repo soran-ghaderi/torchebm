@@ -21,8 +21,19 @@ class CosineInterpolant(BaseInterpolant):
     x_t = \sin\left(\frac{\pi t}{2}\right) x_1 + \cos\left(\frac{\pi t}{2}\right) x_0
     \]
 
-    This satisfies \(\alpha(t)^2 + \sigma(t)^2 = 1\), which preserves
-    the norm of the interpolated samples when x₀ and x₁ are orthogonal.
+    This satisfies \(\alpha(t)^2 + \sigma(t)^2 = 1\).
+
+    Example:
+        ```python
+        from torchebm.interpolants import CosineInterpolant
+        import torch
+
+        interpolant = CosineInterpolant()
+        x0 = torch.randn(32, 2)  # noise
+        x1 = torch.randn(32, 2)  # data
+        t = torch.rand(32)
+        xt, ut = interpolant.interpolate(x0, x1, t)
+        ```
     """
 
     def compute_alpha_t(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

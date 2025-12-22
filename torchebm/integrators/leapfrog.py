@@ -9,8 +9,6 @@ class LeapfrogIntegrator(BaseIntegrator):
     r"""
     Symplectic leapfrog (Störmer–Verlet) integrator for Hamiltonian dynamics.
 
-    Performs `n_steps` leapfrog steps per call.
-
     Update rule:
 
     \[
@@ -28,6 +26,18 @@ class LeapfrogIntegrator(BaseIntegrator):
     Args:
         device: Device for computations.
         dtype: Data type for computations.
+
+    Example:
+        ```python
+        from torchebm.integrators import LeapfrogIntegrator
+        from torchebm.core import DoubleWellEnergy
+        import torch
+
+        energy = DoubleWellEnergy()
+        integrator = LeapfrogIntegrator()
+        state = {"x": torch.randn(100, 2), "p": torch.randn(100, 2)}
+        result = integrator.integrate(state, energy, step_size=0.01, n_steps=10)
+        ```
     """
 
     def __init__(

@@ -58,9 +58,13 @@ class FlowSampler(BaseSampler):
         device: Device for computations.
         use_mixed_precision: Whether to use mixed precision.
 
-    !!!example
+    Example:
         ```python
-        model = VelocityNet(dim=2)  # trained model
+        from torchebm.samplers import FlowSampler
+        import torch.nn as nn
+        import torch
+
+        model = nn.Sequential(nn.Linear(3, 64), nn.ReLU(), nn.Linear(64, 2))
         sampler = FlowSampler(
             model=model,
             interpolant="linear",

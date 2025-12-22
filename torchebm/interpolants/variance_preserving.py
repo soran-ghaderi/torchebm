@@ -11,9 +11,7 @@ class VariancePreservingInterpolant(BaseInterpolant):
     r"""
     Variance preserving (VP) interpolant with linear beta schedule.
 
-    This corresponds to the noise schedule used in DDPM and score-based
-    diffusion models. The schedule is parameterized by minimum and maximum
-    noise levels.
+    Corresponds to the noise schedule used in DDPM and score-based diffusion models.
 
     The forward process is defined via:
 
@@ -28,6 +26,18 @@ class VariancePreservingInterpolant(BaseInterpolant):
     Args:
         sigma_min: Minimum noise level (default: 0.1).
         sigma_max: Maximum noise level (default: 20.0).
+
+    Example:
+        ```python
+        from torchebm.interpolants import VariancePreservingInterpolant
+        import torch
+
+        interpolant = VariancePreservingInterpolant(sigma_min=0.1, sigma_max=20.0)
+        x0 = torch.randn(32, 2)  # noise
+        x1 = torch.randn(32, 2)  # data
+        t = torch.rand(32)
+        xt, ut = interpolant.interpolate(x0, x1, t)
+        ```
     """
 
     def __init__(self, sigma_min: float = 0.1, sigma_max: float = 20.0):
