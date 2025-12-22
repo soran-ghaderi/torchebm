@@ -1,5 +1,3 @@
-r"""Euler-Maruyama integrator."""
-
 from typing import Callable, Dict, Optional
 
 import torch
@@ -7,43 +5,16 @@ import torch
 from torchebm.core import BaseIntegrator, BaseModel
 from torchebm.integrators import _integrate_time_grid
 
-# def _integrate_time_grid(
-#     x: torch.Tensor,
-#     t: torch.Tensor,
-#     step_fn: Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor],
-# ) -> torch.Tensor:
-#     if t.ndim != 1:
-#         raise ValueError("t must be a 1D tensor")
-#     if t.numel() < 2:
-#         raise ValueError("t must have length >= 2")
-#     for i in range(t.numel() - 1):
-#         dt = t[i + 1] - t[i]
-#         t_batch = t[i].expand(x.size(0))
-#         x = step_fn(x, t_batch, dt)
-#     return x
 
-
-class EulerMaruyamaIntegrator(BaseIntegrator):
+class HeunIntegrator(BaseIntegrator):
     r"""
-    Euler(-Maruyama) integrator for Itô SDEs (and ODEs as a special case).
+    Heun integrator (predictor-corrector) for Itô SDEs (and ODEs as a special case).
 
-    The SDE form is
+    Solves
 
     \[
     \mathrm{d}x = f(x,t)\,\mathrm{d}t + \sqrt{2D(x,t)}\,\mathrm{d}W_t.
     \]
-
-    When `diffusion` is omitted (or identically zero), this reduces to the Euler
-    method for ODEs \( \mathrm{d}x = f(x,t)\,\mathrm{d}t \).
-
-    Update rule:
-
-    \[
-    x_{n+1} = x_n + f(x_n, t_n)\Delta t + \sqrt{2D(x_n,t_n)}\,\Delta W_n.
-    \]
-
-    Args:
-        step_size: Step size \(\Delta t\).
     """
 
     def step(
@@ -54,16 +25,13 @@ class EulerMaruyamaIntegrator(BaseIntegrator):
         *,
         drift: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
         diffusion: Optional[torch.Tensor] = None,
+        t: torch.Tensor,
         noise: Optional[torch.Tensor] = None,
         noise_scale: Optional[torch.Tensor] = None,
-        t: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         x = state["x"]
         if not torch.is_tensor(step_size):
             step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
-
-        if t is None:
-            t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
 
         if drift is None:
             if model is None:
@@ -77,16 +45,17 @@ class EulerMaruyamaIntegrator(BaseIntegrator):
                 noise_scale = torch.tensor(noise_scale, device=x.device, dtype=x.dtype)
             diffusion = noise_scale**2
 
-        drift_term = drift(x, t) * step_size
+        x_hat = x
+        if diffusion is not None:
+            if noise is None:
+                noise = torch.randn_like(x, device=self.device, dtype=self.dtype)
+            dw = noise * torch.sqrt(step_size)
+            x_hat = x + torch.sqrt(2.0 * diffusion) * dw
 
-        if diffusion is None:
-            return {"x": x + drift_term}
-
-        if noise is None:
-            noise = torch.randn_like(x, device=self.device, dtype=self.dtype)
-
-        dw = noise * torch.sqrt(step_size)
-        return {"x": x + drift_term + torch.sqrt(2.0 * diffusion) * dw}
+        k1 = drift(x_hat, t)
+        x_pred = x_hat + step_size * k1
+        k2 = drift(x_pred, t + step_size)
+        return {"x": x_hat + 0.5 * step_size * (k1 + k2)}
 
     def integrate(
         self,
@@ -100,19 +69,10 @@ class EulerMaruyamaIntegrator(BaseIntegrator):
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
         noise_scale: Optional[torch.Tensor] = None,
-        t: Optional[torch.Tensor] = None,
+        t: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         if n_steps <= 0:
             raise ValueError("n_steps must be positive")
-        if t is None:
-            if not torch.is_tensor(step_size):
-                step_size = torch.tensor(
-                    step_size, device=state["x"].device, dtype=state["x"].dtype
-                )
-            t = (
-                torch.arange(n_steps, device=state["x"].device, dtype=state["x"].dtype)
-                * step_size
-            )
         if t.ndim != 1 or t.numel() != n_steps:
             raise ValueError("t must be a 1D tensor with length n_steps")
 
@@ -126,16 +86,8 @@ class EulerMaruyamaIntegrator(BaseIntegrator):
                 step_size=dt,
                 drift=drift,
                 diffusion=diffusion_t,
-                noise_scale=noise_scale,
                 t=t_batch,
+                noise_scale=noise_scale,
             )["x"]
 
         return {"x": _integrate_time_grid(x0, t, _step_fn)}
-
-
-
-
-# __all__ = [
-#     "EulerMaruyamaIntegrator",
-#     "HeunIntegrator",
-# ]

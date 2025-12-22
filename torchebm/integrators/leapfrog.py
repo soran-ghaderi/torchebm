@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union
 
 import torch
 
@@ -40,9 +40,11 @@ class LeapfrogIntegrator(BaseIntegrator):
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         mass: Optional[Union[float, torch.Tensor]] = None,
+        *,
+        potential_grad: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         x = state["x"]
         p = state["p"]
@@ -50,7 +52,14 @@ class LeapfrogIntegrator(BaseIntegrator):
         if not torch.is_tensor(step_size):
             step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
 
-        grad = model.gradient(x)
+        if potential_grad is None:
+            if model is None:
+                raise ValueError(
+                    "Either `model` must be provided or `potential_grad` must be set."
+                )
+            potential_grad = model.gradient
+
+        grad = potential_grad(x)
         grad = torch.clamp(grad, min=-1e6, max=1e6)
 
         # half-step momentum
@@ -70,7 +79,7 @@ class LeapfrogIntegrator(BaseIntegrator):
                 )
 
         # half-step momentum update at new position
-        grad_new = model.gradient(x_new)
+        grad_new = potential_grad(x_new)
         grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
         p_new = p_half - 0.5 * step_size * grad_new
 
@@ -83,10 +92,12 @@ class LeapfrogIntegrator(BaseIntegrator):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         n_steps: int,
         mass: Optional[Union[float, torch.Tensor]] = None,
+        *,
+        potential_grad: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         if n_steps <= 0:
             raise ValueError("n_steps must be positive")
@@ -100,6 +111,7 @@ class LeapfrogIntegrator(BaseIntegrator):
                 model=model,
                 step_size=step_size,
                 mass=mass,
+                potential_grad=potential_grad,
             )
             x, p = state["x"], state["p"]
 

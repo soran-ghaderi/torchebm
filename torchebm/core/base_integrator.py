@@ -32,7 +32,7 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         *args,
         **kwargs,
@@ -56,7 +56,7 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         n_steps: int,
         *args,
