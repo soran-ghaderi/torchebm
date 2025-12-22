@@ -1,19 +1,26 @@
-"""
+r"""
 Sampling algorithms for energy-based models and generative models.
 
-Includes MCMC samplers (Langevin, HMC) and flow-based samplers.
+Includes:
+- MCMC samplers (Langevin dynamics, HMC) for energy-based models
+- Gradient-based optimization samplers for energy minimization
+- Flow/diffusion samplers for trained generative models
 """
 
-from . import hmc, langevin_dynamics, equilibrium_optimization, flow
+from . import hmc, langevin_dynamics, gradient_descent, flow
 from .langevin_dynamics import LangevinDynamics
 from .hmc import HamiltonianMonteCarlo
-from .equilibrium_optimization import EquilibriumGradientDescent, EquilibriumNesterov
-from .flow import FlowSampler
+from .gradient_descent import GradientDescentSampler, NesterovSampler
+from .flow import FlowSampler, PredictionType
 
 __all__ = [
+    # MCMC samplers
     "LangevinDynamics",
     "HamiltonianMonteCarlo",
-    "EquilibriumGradientDescent",
-    "EquilibriumNesterov",
+    # Optimization-based samplers
+    "GradientDescentSampler",
+    "NesterovSampler",
+    # Flow/diffusion samplers
     "FlowSampler",
+    "PredictionType",
 ]
