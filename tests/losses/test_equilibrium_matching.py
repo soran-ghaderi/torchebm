@@ -127,25 +127,14 @@ def test_dispersive_loss_integration():
     
     assert torch.isfinite(loss)
     
-    # Check if dispersion adds to loss (should be different from pure velocity loss)
+    # Also ensure the pure velocity loss (without dispersion) runs and returns a finite value.
     loss_fn_pure = EquilibriumMatchingLoss(
         model=model,
         prediction="velocity",
         apply_dispersion=False,   
     )
-    
-    # Run both with same seed to ensure data consistency
-    torch.manual_seed(123)
-    # We can't guarantee internal randomness is identical due to object state, 
-    # but we can try to rely on statistical difference or just mocked behavior if needed.
-    # However since we tested mechanism above, let's just check they differ.
-    
-    # Actually, EqM has internal randomness (x0, t).
-    # To strictly compare, we'd need to mock again.
-    # Simpler: check if loss > pure velocity MSE for same inputs?
-    # No, randomness makes it hard.
-    # Let's trust the logic check above that it runs without error.
-    pass
+    loss_pure = loss_fn_pure(x, return_act=True)
+    assert torch.isfinite(loss_pure)
 
 def test_loss_weighting_types():
     model = DummyModel()
