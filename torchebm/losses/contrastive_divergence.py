@@ -15,24 +15,37 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
     r"""
     Standard Contrastive Divergence (CD-k) loss.
 
-    CD approximates the log-likelihood gradient by running an MCMC sampler for `k_steps`
-    to generate negative samples.
+    CD approximates the log-likelihood gradient by running an MCMC sampler
+    for `k_steps` to generate negative samples.
 
     Args:
-        model (BaseModel): The energy-based model to train.
-        sampler (BaseSampler): The MCMC sampler for generating negative samples.
-        k_steps (int): The number of MCMC steps (k in CD-k).
-        persistent (bool): If `True`, uses Persistent CD with a replay buffer.
-        buffer_size (int): The size of the replay buffer for PCD.
-        init_steps (int): Number of MCMC steps to warm up the buffer for PCD.
-        new_sample_ratio (float): Fraction of new random samples for PCD chains.
-        energy_reg_weight (float): Weight for energy regularization term.
-        use_temperature_annealing (bool): Whether to use temperature annealing.
-        min_temp (float): Minimum temperature for annealing.
-        max_temp (float): Maximum temperature for annealing.
-        temp_decay (float): Decay rate for temperature annealing.
-        dtype (torch.dtype): Data type for computations.
-        device (torch.device): Device for computations.
+        model: The energy-based model to train.
+        sampler: The MCMC sampler for generating negative samples.
+        k_steps: The number of MCMC steps (k in CD-k).
+        persistent: If True, uses Persistent CD with a replay buffer.
+        buffer_size: Size of the replay buffer for PCD.
+        init_steps: Number of MCMC steps to warm up the buffer.
+        new_sample_ratio: Fraction of new random samples for PCD chains.
+        energy_reg_weight: Weight for energy regularization term.
+        use_temperature_annealing: Whether to use temperature annealing.
+        min_temp: Minimum temperature for annealing.
+        max_temp: Maximum temperature for annealing.
+        temp_decay: Decay rate for temperature annealing.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        from torchebm.losses import ContrastiveDivergence
+        from torchebm.samplers import LangevinDynamics
+        from torchebm.core import DoubleWellEnergy
+
+        energy = DoubleWellEnergy()
+        sampler = LangevinDynamics(energy, step_size=0.01)
+        cd_loss = ContrastiveDivergence(model=energy, sampler=sampler, k_steps=10)
+        x = torch.randn(32, 2)
+        loss, neg_samples = cd_loss(x)
+        ```
     """
 
     def __init__(

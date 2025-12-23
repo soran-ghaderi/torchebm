@@ -1,4 +1,4 @@
-# #!/usr/bin/env python3
+# !/usr/bin/env python3
 """
 Script to automatically generate API documentation files for TorchEBM.
 This creates a structured set of markdown files for each module and submodule.
@@ -188,7 +188,6 @@ def create_module_page(module_name, output_dir):
     content += "      show_docstring_attributes: false\n"
     content += "      show_docstring_classes: true\n"
     content += "      show_docstring_functions: true\n"
-    content += "      trim_doctest_flags: true\n"
     content += "      show_category_heading: false\n"
     content += "      show_if_no_docstring: true\n"
     content += "      members_order: source\n"
@@ -296,7 +295,6 @@ def create_class_page(module_name, class_name, cls, output_dir):
     content += "      show_symbol_type_heading: true\n"
     content += "      show_symbol_type_toc: true\n"
     content += "      docstring_section_style: table\n"
-    content += "      trim_doctest_flags: true\n"
     content += "      inherited_members: false\n"
     content += "      filters:\n"
     # content += '        - "!^_[^_]"\n'  # Exclude single underscore methods

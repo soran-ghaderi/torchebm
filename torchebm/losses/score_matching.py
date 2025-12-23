@@ -12,20 +12,30 @@ class ScoreMatching(BaseScoreMatching):
     r"""
     Original Score Matching loss from Hyvärinen (2005).
 
-    This method trains an energy-based model by matching the model's score function
-    (\(\nabla_x \log p_\theta(x)\)) to the data's score function. It avoids MCMC
-    sampling but requires computing the trace of the Hessian.
+    Trains an energy-based model by matching the model's score function
+    \(\nabla_x \log p_\theta(x)\) to the data's score. Avoids MCMC sampling
+    but requires computing the trace of the Hessian.
 
     Args:
-        model (BaseModel): The energy-based model to train.
-        hessian_method (str): Method for computing the Hessian trace. One of
-            `{"exact", "approx"}`. `"hutchinson"` is deprecated in favor of
-            `SlicedScoreMatching`.
-        regularization_strength (float): Coefficient for regularization.
-        custom_regularization (Optional[Callable]): A custom regularization function.
-        use_mixed_precision (bool): Whether to use mixed-precision training.
-        dtype (torch.dtype): Data type for computations.
-        device (Optional[Union[str, torch.device]]): Device for computations.
+        model: The energy-based model to train.
+        hessian_method: Method for Hessian trace ('exact' or 'approx').
+        regularization_strength: Coefficient for regularization.
+        custom_regularization: A custom regularization function.
+        use_mixed_precision: Whether to use mixed-precision training.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        from torchebm.losses import ScoreMatching
+        from torchebm.core import DoubleWellEnergy
+        import torch
+
+        energy = DoubleWellEnergy()
+        loss_fn = ScoreMatching(model=energy, hessian_method="exact")
+        x = torch.randn(32, 2)
+        loss = loss_fn(x)
+        ```
     """
 
     def __init__(
@@ -214,18 +224,30 @@ class DenoisingScoreMatching(BaseScoreMatching):
     r"""
     Denoising Score Matching (DSM) from Vincent (2011).
 
-    DSM avoids computing the Hessian trace by matching the score of noise-perturbed
-    data. It is more computationally efficient and often more stable than
-    standard Score Matching.
+    Avoids computing the Hessian trace by matching the score of noise-perturbed
+    data. More computationally efficient and often more stable than standard
+    Score Matching.
 
     Args:
-        model (BaseModel): The energy-based model to train.
-        noise_scale (float): The standard deviation of the Gaussian noise to add to the data.
-        regularization_strength (float): Coefficient for regularization.
-        custom_regularization (Optional[Callable]): A custom regularization function.
-        use_mixed_precision (bool): Whether to use mixed-precision training.
-        dtype (torch.dtype): Data type for computations.
-        device (Optional[Union[str, torch.device]]): Device for computations.
+        model: The energy-based model to train.
+        noise_scale: Standard deviation of Gaussian noise to add.
+        regularization_strength: Coefficient for regularization.
+        custom_regularization: A custom regularization function.
+        use_mixed_precision: Whether to use mixed-precision training.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        from torchebm.losses import DenoisingScoreMatching
+        from torchebm.core import DoubleWellEnergy
+        import torch
+
+        energy = DoubleWellEnergy()
+        loss_fn = DenoisingScoreMatching(model=energy, noise_scale=0.1)
+        x = torch.randn(32, 2)
+        loss = loss_fn(x)
+        ```
     """
 
     def __init__(
@@ -308,20 +330,30 @@ class SlicedScoreMatching(BaseScoreMatching):
     r"""
     Sliced Score Matching (SSM) from Song et al. (2019).
 
-    SSM is a scalable variant of Score Matching that uses random projections to
-    efficiently approximate the score matching objective, avoiding the expensive
-    computation of the Hessian trace.
+    A scalable variant that uses random projections to efficiently approximate
+    the score matching objective, avoiding expensive Hessian trace computation.
 
     Args:
-        model (BaseModel): The energy-based model to train.
-        n_projections (int): The number of random projections to use.
-        projection_type (str): The type of random projections. One of
-            `{"rademacher", "sphere", "gaussian"}`.
-        regularization_strength (float): Coefficient for regularization.
-        custom_regularization (Optional[Callable]): A custom regularization function.
-        use_mixed_precision (bool): Whether to use mixed-precision training.
-        dtype (torch.dtype): Data type for computations.
-        device (Optional[Union[str, torch.device]]): Device for computations.
+        model: The energy-based model to train.
+        n_projections: Number of random projections to use.
+        projection_type: Type of projections ('rademacher', 'sphere', 'gaussian').
+        regularization_strength: Coefficient for regularization.
+        custom_regularization: A custom regularization function.
+        use_mixed_precision: Whether to use mixed-precision training.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        from torchebm.losses import SlicedScoreMatching
+        from torchebm.core import DoubleWellEnergy
+        import torch
+
+        energy = DoubleWellEnergy()
+        loss_fn = SlicedScoreMatching(model=energy, n_projections=5)
+        x = torch.randn(32, 2)
+        loss = loss_fn(x)
+        ```
     """
 
     def __init__(

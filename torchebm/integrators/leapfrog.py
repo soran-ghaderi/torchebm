@@ -1,17 +1,13 @@
-"""Deterministic ordinary differential equation integrators."""
-
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union
 
 import torch
 
-from torchebm.core import BaseModel, Integrator
+from torchebm.core import BaseModel, BaseIntegrator
 
 
-class LeapfrogIntegrator(Integrator):
+class LeapfrogIntegrator(BaseIntegrator):
     r"""
     Symplectic leapfrog (Störmer–Verlet) integrator for Hamiltonian dynamics.
-
-    Performs `n_steps` leapfrog steps per call.
 
     Update rule:
 
@@ -30,6 +26,18 @@ class LeapfrogIntegrator(Integrator):
     Args:
         device: Device for computations.
         dtype: Data type for computations.
+
+    Example:
+        ```python
+        from torchebm.integrators import LeapfrogIntegrator
+        from torchebm.core import DoubleWellEnergy
+        import torch
+
+        energy = DoubleWellEnergy()
+        integrator = LeapfrogIntegrator()
+        state = {"x": torch.randn(100, 2), "p": torch.randn(100, 2)}
+        result = integrator.integrate(state, energy, step_size=0.01, n_steps=10)
+        ```
     """
 
     def __init__(
@@ -42,9 +50,11 @@ class LeapfrogIntegrator(Integrator):
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         mass: Optional[Union[float, torch.Tensor]] = None,
+        *,
+        potential_grad: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         x = state["x"]
         p = state["p"]
@@ -52,7 +62,14 @@ class LeapfrogIntegrator(Integrator):
         if not torch.is_tensor(step_size):
             step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
 
-        grad = model.gradient(x)
+        if potential_grad is None:
+            if model is None:
+                raise ValueError(
+                    "Either `model` must be provided or `potential_grad` must be set."
+                )
+            potential_grad = model.gradient
+
+        grad = potential_grad(x)
         grad = torch.clamp(grad, min=-1e6, max=1e6)
 
         # half-step momentum
@@ -72,7 +89,7 @@ class LeapfrogIntegrator(Integrator):
                 )
 
         # half-step momentum update at new position
-        grad_new = model.gradient(x_new)
+        grad_new = potential_grad(x_new)
         grad_new = torch.clamp(grad_new, min=-1e6, max=1e6)
         p_new = p_half - 0.5 * step_size * grad_new
 
@@ -85,10 +102,12 @@ class LeapfrogIntegrator(Integrator):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         n_steps: int,
         mass: Optional[Union[float, torch.Tensor]] = None,
+        *,
+        potential_grad: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         if n_steps <= 0:
             raise ValueError("n_steps must be positive")
@@ -102,6 +121,7 @@ class LeapfrogIntegrator(Integrator):
                 model=model,
                 step_size=step_size,
                 mass=mass,
+                potential_grad=potential_grad,
             )
             x, p = state["x"], state["p"]
 
