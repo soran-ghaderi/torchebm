@@ -18,7 +18,11 @@ class LangevinDynamics(BaseSampler):
     r"""
     Langevin Dynamics sampler.
 
-    Update: \(x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t\)
+    Update rule:
+
+    \[
+    x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t
+    \]
 
     Args:
         model: Energy-based model to sample from.
@@ -27,6 +31,17 @@ class LangevinDynamics(BaseSampler):
         decay: Damping coefficient (not supported).
         dtype: Data type for computations.
         device: Device for computations.
+
+    Example:
+        ```python
+        from torchebm.samplers import LangevinDynamics
+        from torchebm.core import DoubleWellEnergy
+        import torch
+
+        energy = DoubleWellEnergy()
+        sampler = LangevinDynamics(energy, step_size=0.01, noise_scale=1.0)
+        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        ```
     """
 
     def __init__(
@@ -112,14 +127,12 @@ class LangevinDynamics(BaseSampler):
         with self.autocast_context():
             for i in range(n_steps):
                 self.step_schedulers()
-                noise = torch.randn_like(x, device=self.device)
                 state = {"x": x}
                 x = self.integrator.step(
-                    state,
-                    self.model,
-                    self.get_scheduled_value("step_size"),
-                    self.get_scheduled_value("noise_scale"),
-                    noise,
+                    state=state,
+                    model=self.model,
+                    step_size=self.get_scheduled_value("step_size"),
+                    noise_scale=self.get_scheduled_value("noise_scale"),
                 )["x"]
 
                 if return_trajectory:

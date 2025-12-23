@@ -2,11 +2,12 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 
 import torch
+from torch import nn
 
 from torchebm.core import DeviceMixin, BaseModel
 
 
-class Integrator(DeviceMixin, ABC):
+class BaseIntegrator(DeviceMixin, nn.Module, ABC):
     """
     Abstract integrator that advances a sampler state according to dynamics.
 
@@ -31,7 +32,7 @@ class Integrator(DeviceMixin, ABC):
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         *args,
         **kwargs,
@@ -55,7 +56,7 @@ class Integrator(DeviceMixin, ABC):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: BaseModel,
+        model: Optional[BaseModel],
         step_size: torch.Tensor,
         n_steps: int,
         *args,
