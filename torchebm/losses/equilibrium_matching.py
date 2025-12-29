@@ -54,7 +54,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         prediction: Network prediction type ('velocity', 'score', or 'noise').
         energy_type: Energy formulation type:
             - 'none': Implicit EqM, model predicts gradient directly
-            - 'dot': $g(x) = x \cdot f(x)$, best explicit variant
+            - 'dot': $g(x) = x \cdot f(x)$, dot product energy formulation
             - 'l2': $g(x) = -\frac{1}{2}\|f(x)\|^2$ (experimental)
             - 'mean': Same as dot (alias)
         interpolant: Interpolant type ('linear', 'cosine', or 'vp').
