@@ -47,7 +47,7 @@ class EquilibriumMatchingLoss(BaseLoss):
     The target gradient is $(\epsilon - x) \cdot c(\gamma)$ where:
     - $\epsilon$ is noise (x0)
     - $x$ is data (x1)  
-    - $c(\gamma)$ is truncated decay with gradient multiplier
+    - $c(\gamma) = \lambda \cdot \min(1, (1-\gamma)/(1-a))$ is truncated decay
 
     Args:
         model: Neural network predicting velocity/score/noise.
@@ -60,6 +60,8 @@ class EquilibriumMatchingLoss(BaseLoss):
         interpolant: Interpolant type ('linear', 'cosine', or 'vp').
         loss_weight: Loss weighting scheme ('velocity', 'likelihood', or None).
         train_eps: Epsilon for training time interval stability.
+        ct_threshold: Decay threshold $a$ for $c(t)$. Decay starts after $t > a$. Default: 0.8.
+        ct_multiplier: Gradient multiplier $\lambda$ for $c(t)$. Default: 4.0.
         apply_dispersion: Whether to apply dispersive regularization.
         dispersion_weight: Weight for dispersive loss term.
         time_invariant: If True, pass zeros for time to model (EqM default).
@@ -102,6 +104,8 @@ class EquilibriumMatchingLoss(BaseLoss):
         interpolant: Literal["linear", "cosine", "vp"] = "linear",
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
         train_eps: float = 0.0,
+        ct_threshold: float = 0.8,
+        ct_multiplier: float = 4.0,
         apply_dispersion: bool = False,
         dispersion_weight: float = 0.5,
         time_invariant: bool = True,
@@ -125,6 +129,8 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.energy_type = energy_type
         self.loss_weight = loss_weight
         self.train_eps = train_eps
+        self.ct_threshold = ct_threshold
+        self.ct_multiplier = ct_multiplier
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
         self.time_invariant = time_invariant
@@ -241,7 +247,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         xt, ut = self.interpolant.interpolate(x0, x1, t)
 
         # EqM target: (noise - data) * c(t), opposite of Flow Matching
-        ct = compute_eqm_ct(t)
+        ct = compute_eqm_ct(t, threshold=self.ct_threshold, multiplier=self.ct_multiplier)
         ct = ct.view(batch, *([1] * (xt.ndim - 1)))
         target = (x0 - x1) * ct  # Gradient direction: noise - data
 

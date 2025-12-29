@@ -263,6 +263,43 @@ def test_ct_truncated_decay():
         f"c(t) mismatch: {ct} != {expected}"
 
 
+def test_ct_custom_parameters():
+    """Test c(t) with custom threshold and multiplier."""
+    t = torch.tensor([0.0, 0.5, 0.9, 1.0])
+    
+    # Test with threshold=0.5, multiplier=2.0
+    ct = compute_eqm_ct(t, threshold=0.5, multiplier=2.0)
+    
+    # Expected: t <= 0.5 -> c(t) = 2, t > 0.5 -> linear decay
+    # c(0.0) = 2.0
+    # c(0.5) = 2.0 * min(1, 0.5/0.5) = 2.0
+    # c(0.9) = 2.0 * (1-0.9)/(1-0.5) = 2.0 * 0.2 = 0.4
+    # c(1.0) = 0.0
+    expected = torch.tensor([2.0, 2.0, 0.4, 0.0])
+    
+    assert torch.allclose(ct, expected, atol=1e-5), \
+        f"c(t) with custom params mismatch: {ct} != {expected}"
+
+
+def test_eqm_loss_with_custom_ct():
+    """Test EqM loss uses custom ct parameters."""
+    model = LearnableModel(dim=4)
+    
+    # Test with different ct parameters
+    loss_fn = EquilibriumMatchingLoss(
+        model=model,
+        ct_threshold=0.5,
+        ct_multiplier=2.0,
+    )
+    
+    x = torch.randn(8, 4)
+    loss = loss_fn(x)
+    
+    assert torch.isfinite(loss)
+    assert loss_fn.ct_threshold == 0.5
+    assert loss_fn.ct_multiplier == 2.0
+
+
 def test_device_movement(device):
     """Test that loss works with different devices."""
     if not torch.cuda.is_available() and device.type == "cuda":
