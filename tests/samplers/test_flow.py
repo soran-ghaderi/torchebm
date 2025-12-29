@@ -191,3 +191,39 @@ class TestFlowSampler:
         assert t0 == 0.0
         assert t1 == 0.99
 
+    @pytest.mark.parametrize("diffusion_form", [
+        "constant", "SBDM", "sigma", "linear", "decreasing", "increasing-decreasing"
+    ])
+    def test_diffusion_forms(self, device, dtype, diffusion_form):
+        """Test all supported diffusion forms run without errors."""
+        model = MockModel(mode="constant", val=0.0).to(device)
+        sampler = FlowSampler(
+            model, 
+            interpolant="linear", 
+            prediction="velocity", 
+            device=device, 
+            dtype=dtype
+        )
+        
+        z = torch.randn(4, 2, device=device, dtype=dtype)
+        # Run with small number of steps, diffusion_norm=0 to keep results stable
+        samples = sampler.sample_sde(
+            z, 
+            num_steps=5, 
+            method="euler", 
+            diffusion_form=diffusion_form,
+            diffusion_norm=0.0,
+        )
+        
+        assert samples.shape == z.shape
+        assert torch.isfinite(samples).all()
+
+    def test_invalid_diffusion_form(self, device, dtype):
+        """Test that invalid diffusion form raises error."""
+        model = MockModel(mode="constant", val=0.0).to(device)
+        sampler = FlowSampler(model, interpolant="linear", device=device, dtype=dtype)
+        
+        z = torch.randn(4, 2, device=device, dtype=dtype)
+        with pytest.raises(ValueError, match="Unknown diffusion form"):
+            sampler.sample_sde(z, num_steps=5, diffusion_form="invalid_form")
+
