@@ -138,7 +138,13 @@ class BaseInterpolant(ABC):
         Args:
             x: Current state of shape (batch_size, ...).
             t: Time values of shape (batch_size,).
-            form: Diffusion form ('constant', 'SBDM', 'sigma', 'linear').
+            form: Diffusion form. Choices:
+                - 'constant': Constant diffusion
+                - 'SBDM': Score-based diffusion matching
+                - 'sigma': Proportional to noise schedule
+                - 'linear': Linear decay
+                - 'decreasing': Faster decay towards t=1
+                - 'increasing-decreasing': Peak at midpoint
             norm: Scaling factor for diffusion.
 
         Returns:
@@ -148,15 +154,25 @@ class BaseInterpolant(ABC):
         sigma, _ = self.compute_sigma_t(t_expanded)
         _, drift_var = self.compute_drift(x, t)
 
-        forms = {
-            "constant": norm * torch.ones_like(drift_var),
-            "SBDM": norm * drift_var / (sigma + 1e-8),
-            "sigma": norm * sigma,
-            "linear": norm * (1 - t_expanded),
-        }
-        if form not in forms:
-            raise NotImplementedError(f"Diffusion form '{form}' not implemented")
-        return forms[form]
+        if form == "constant":
+            return norm * torch.ones_like(drift_var)
+        elif form == "SBDM":
+            return norm * drift_var / (sigma + 1e-8)
+        elif form == "sigma":
+            return norm * sigma
+        elif form == "linear":
+            return norm * (1 - t_expanded)
+        elif form == "decreasing":
+            # Faster decay: (1-t)^2
+            return norm * (1 - t_expanded) ** 2
+        elif form == "increasing-decreasing":
+            # Peak at t=0.5: 4*t*(1-t)
+            return norm * 4 * t_expanded * (1 - t_expanded)
+        else:
+            raise ValueError(
+                f"Unknown diffusion form '{form}'. "
+                f"Choose from: constant, SBDM, sigma, linear, decreasing, increasing-decreasing"
+            )
 
     def velocity_to_score(
         self, velocity: torch.Tensor, x: torch.Tensor, t: torch.Tensor

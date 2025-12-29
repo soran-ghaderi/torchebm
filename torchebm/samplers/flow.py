@@ -357,7 +357,13 @@ class FlowSampler(BaseSampler):
             z: Initial noise tensor of shape (batch_size, ...).
             num_steps: Number of discretization steps.
             method: SDE solver ('euler', 'heun').
-            diffusion_form: Form of diffusion coefficient ('SBDM', 'constant', 'sigma').
+            diffusion_form: Form of diffusion coefficient. Choices:
+                - 'constant': Constant diffusion
+                - 'SBDM': Score-based diffusion matching (default)
+                - 'sigma': Proportional to noise schedule
+                - 'linear': Linear decay
+                - 'decreasing': Faster decay towards t=1
+                - 'increasing-decreasing': Peak at midpoint
             diffusion_norm: Scaling factor for diffusion.
             last_step: Type of last step ('Mean', 'Tweedie', 'Euler', or None).
             last_step_size: Size of the last step.

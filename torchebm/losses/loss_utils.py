@@ -47,29 +47,36 @@ def get_interpolant(interpolant_type: str) -> BaseInterpolant:
     return interpolants[interpolant_type]()
 
 
-def compute_eqm_ct(t: torch.Tensor) -> torch.Tensor:
+def compute_eqm_ct(
+    t: torch.Tensor,
+    threshold: float = 0.8,
+    multiplier: float = 4.0,
+) -> torch.Tensor:
     r"""Energy-compatible target scaling c(t) used in EqM.
 
-    The scaling function is defined as:
+    The scaling function (truncated decay with gradient multiplier) is:
 
     \[
-    c(t) = 4 \cdot \min\left(1, \frac{1 - t}{0.2}\right)
+    c(t) = \lambda \cdot \min\left(1, \frac{1 - t}{1 - a}\right)
     \]
+
+    where \(a\) is the threshold and \(\lambda\) is the multiplier.
 
     Args:
         t: Time tensor of shape (batch_size,).
+        threshold: Decay threshold \(a\), decay starts after \(t > a\). Default: 0.8.
+        multiplier: Gradient multiplier \(\lambda\). Default: 4.0.
 
     Returns:
         Scaling factor c(t) of same shape as t.
     """
-    interp = 0.8
     start = 1.0
     ct = (
         torch.minimum(
-            start - (start - 1) / interp * t,
-            1 / (1 - interp) - 1 / (1 - interp) * t,
+            start - (start - 1) / threshold * t,
+            1 / (1 - threshold) - 1 / (1 - threshold) * t,
         )
-        * 4
+        * multiplier
     )
     return ct
 

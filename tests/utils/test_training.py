@@ -81,24 +81,24 @@ def test_save_load_checkpoint():
         model = SimpleModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
         step = 100
-        
+
         # Save
         path = save_checkpoint(model, optimizer, step, tmpdir, args={"foo": "bar"})
         assert os.path.exists(path)
-        
+
         # Load
         new_model = SimpleModel()
         new_opt = torch.optim.SGD(new_model.parameters(), lr=0.1)
-        
+
         # Modify new model weights so we can be sure they are loaded
         nn.init.constant_(new_model.linear.weight, 99.0)
-        
+
         ckpt = load_checkpoint(path, new_model, optimizer=new_opt)
-        
+
         # Check step
         assert ckpt["step"] == 100
         assert ckpt["args"]["foo"] == "bar"
-        
+
         # Check weights matched
         assert torch.allclose(new_model.linear.weight, model.linear.weight)
 
