@@ -83,7 +83,7 @@ def test_save_load_checkpoint():
         step = 100
         
         # Save
-        path = save_checkpoint(model, None, optimizer, step, tmpdir, args={"foo": "bar"})
+        path = save_checkpoint(model, optimizer, step, tmpdir, args={"foo": "bar"})
         assert os.path.exists(path)
         
         # Load
