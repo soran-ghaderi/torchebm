@@ -292,7 +292,7 @@ def test_compute_diffusion_invalid_form():
     x = torch.randn(4, 2)
     t = torch.rand(4)
     
-    with pytest.raises(NotImplementedError, match="not implemented"):
+    with pytest.raises(ValueError, match="Unknown diffusion form"):
         interpolant.compute_diffusion(x, t, form="invalid")
 
 
