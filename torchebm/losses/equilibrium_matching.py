@@ -6,13 +6,13 @@ landscapes, following the EqM paper:
 - **Implicit EqM** ($L_{EqM}$): Learns gradient field directly
   
   \[
-  L_{EqM} = \|f(x_\gamma) - (\epsilon - x)c(\gamma)\|^2
+  L_{EqM} = \|f(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
   \]
 
 - **Explicit EqM-E** ($L_{EqM-E}$): Learns scalar energy via gradient matching
 
   \[
-  L_{EqM-E} = \|\nabla g(x_\gamma) - (\epsilon - x)c(\gamma)\|^2
+  L_{EqM-E} = \|\nabla g(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
   \]
 
 Key differences from Flow Matching:
