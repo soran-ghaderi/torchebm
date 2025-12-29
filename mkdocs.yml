@@ -190,13 +190,30 @@ nav:
         - SlicedScoreMatching: api/torchebm/losses/score_matching/classes/SlicedScoreMatching.md
     - Models:
       - api/torchebm/models/index.md
-      - Eqm:
-        - api/torchebm/models/eqm/index.md
-        - EqM: api/torchebm/models/eqm/classes/EqM.md
-        - FinalLayer: api/torchebm/models/eqm/classes/FinalLayer.md
-        - LabelEmbedder: api/torchebm/models/eqm/classes/LabelEmbedder.md
-        - SiTBlock: api/torchebm/models/eqm/classes/SiTBlock.md
-        - TimestepEmbedder: api/torchebm/models/eqm/classes/TimestepEmbedder.md
+      - Components:
+        - api/torchebm/models/components/index.md
+        - Embeddings:
+          - api/torchebm/models/components/embeddings/index.md
+          - LabelEmbedder: api/torchebm/models/components/embeddings/classes/LabelEmbedder.md
+          - MLPTimestepEmbedder: api/torchebm/models/components/embeddings/classes/MLPTimestepEmbedder.md
+        - Heads:
+          - api/torchebm/models/components/heads/index.md
+          - AdaLNZeroPatchHead: api/torchebm/models/components/heads/classes/AdaLNZeroPatchHead.md
+        - Patch:
+          - api/torchebm/models/components/patch/index.md
+          - ConvPatchEmbed2d: api/torchebm/models/components/patch/classes/ConvPatchEmbed2d.md
+        - Positional: api/torchebm/models/components/positional/index.md
+        - Transformer:
+          - api/torchebm/models/components/transformer/index.md
+          - AdaLNZeroBlock: api/torchebm/models/components/transformer/classes/AdaLNZeroBlock.md
+          - FeedForward: api/torchebm/models/components/transformer/classes/FeedForward.md
+          - MultiheadSelfAttention: api/torchebm/models/components/transformer/classes/MultiheadSelfAttention.md
+      - Conditional_transformer_2d:
+        - api/torchebm/models/conditional_transformer_2d/index.md
+        - ConditionalTransformer2D: api/torchebm/models/conditional_transformer_2d/classes/ConditionalTransformer2D.md
+      - Wrappers:
+        - api/torchebm/models/wrappers/index.md
+        - LabelClassifierFreeGuidance: api/torchebm/models/wrappers/classes/LabelClassifierFreeGuidance.md
     - Samplers:
       - api/torchebm/samplers/index.md
       - Flow:
@@ -215,10 +232,12 @@ nav:
         - LangevinDynamics: api/torchebm/samplers/langevin_dynamics/classes/LangevinDynamics.md
     - Utils:
       - api/torchebm/utils/index.md
-      - Eqm_utils:
-        - api/torchebm/utils/eqm_utils/index.md
-        - WandbLogger: api/torchebm/utils/eqm_utils/classes/WandbLogger.md
+      - Image: api/torchebm/utils/image/index.md
+      - Training: api/torchebm/utils/training/index.md
       - Visualization: api/torchebm/utils/visualization/index.md
+  - LLM API Reference:
+    - Overview: llm/index.md
+    - All Symbols: llm/all.md
   - Examples:
     - Overview: examples/index.md
     - Datasets: examples/datasets/index.md
@@ -234,8 +253,42 @@ nav:
   - Blog: blog/index.md
   - FAQ: faq.md
 
+hooks:
+  - docs/hooks/socialmedia.py
+  - docs/hooks/llm_export.py
+
 plugins:
   - search
+  - llmstxt:
+      markdown_description: |
+        TorchEBM is an Energy-Based Modeling library for PyTorch that provides tools for 
+        sampling, inference, and learning in complex distributions. It supports classical 
+        EBMs via MCMC sampling and modern flow/diffusion-based generative models.
+        
+        Key components:
+        - Samplers: LangevinDynamics, HamiltonianMonteCarlo, FlowSampler, GradientDescentSampler
+        - Losses: ContrastiveDivergence, ScoreMatching, EquilibriumMatchingLoss
+        - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
+        - Integrators: EulerMaruyama, Heun, Leapfrog
+        - Models: ConditionalTransformer2D, neural network components
+        - Datasets: TwoMoons, EightGaussians, SwissRoll, and more synthetic datasets
+      full_output: llms-full.txt
+      sections:
+        Getting Started:
+          - index.md: Main documentation page for TorchEBM
+          - tutorials/getting_started.md: Quick start tutorial
+        Core Concepts:
+          - tutorials/samplers.md: Guide to MCMC samplers
+          - tutorials/loss_functions.md: Loss functions for EBM training
+          - tutorials/training.md: Training energy-based models
+        API Reference:
+          - api/torchebm/core/index.md: Core base classes
+          - api/torchebm/samplers/index.md: Sampling algorithms
+          - api/torchebm/losses/index.md: Training objectives
+          - api/torchebm/interpolants/index.md: Interpolation schemes
+          - api/torchebm/integrators/index.md: Numerical integrators
+          - api/torchebm/models/index.md: Neural network architectures
+          - api/torchebm/datasets/index.md: Data generators
   - minify:
       minify_html: true
       minify_js: true
