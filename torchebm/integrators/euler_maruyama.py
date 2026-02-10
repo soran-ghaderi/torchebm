@@ -126,8 +126,8 @@ class EulerMaruyamaIntegrator(BaseIntegrator):
                 torch.arange(n_steps, device=state["x"].device, dtype=state["x"].dtype)
                 * step_size
             )
-        if t.ndim != 1 or t.numel() != n_steps:
-            raise ValueError("t must be a 1D tensor with length n_steps")
+        if t.ndim != 1 or t.numel() < 2:
+            raise ValueError("t must be a 1D tensor with length >= 2")
 
         x0 = state["x"]
 

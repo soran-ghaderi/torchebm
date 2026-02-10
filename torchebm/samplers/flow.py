@@ -54,6 +54,8 @@ class FlowSampler(BaseSampler):
         prediction: Model prediction type ('velocity', 'score', or 'noise').
         train_eps: Epsilon used during training for time interval stability.
         sample_eps: Epsilon for sampling time interval.
+        negate_velocity: Negate the velocity during sampling. Set True for
+            EqM models which learn (ε - x) direction; velocity is v = -f(x).
         dtype: Data type for computations.
         device: Device for computations.
         use_mixed_precision: Whether to use mixed precision.
@@ -82,6 +84,7 @@ class FlowSampler(BaseSampler):
         prediction: Literal["velocity", "score", "noise"] = "velocity",
         train_eps: float = 0.0,
         sample_eps: float = 0.0,
+        negate_velocity: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         use_mixed_precision: bool = False,
@@ -96,6 +99,7 @@ class FlowSampler(BaseSampler):
         )
         self.train_eps = train_eps
         self.sample_eps = sample_eps
+        self.negate_velocity = negate_velocity
 
         if isinstance(interpolant, str):
             self.interpolant = get_interpolant(interpolant)
@@ -183,7 +187,8 @@ class FlowSampler(BaseSampler):
         r"""Get drift function for probability flow ODE."""
 
         def velocity_drift(x, t, **model_kwargs):
-            return self.model(x, t, **model_kwargs)
+            v = self.model(x, t, **model_kwargs)
+            return -v if self.negate_velocity else v
 
         def score_drift(x, t, **model_kwargs):
             drift_mean, drift_var = self.interpolant.compute_drift(x, t)
@@ -292,7 +297,8 @@ class FlowSampler(BaseSampler):
         drift_fn = self._get_drift()
 
         t0, t1 = self._check_interval(sde=False, reverse=reverse)
-        t = torch.linspace(t0, t1, num_steps, device=self.device, dtype=self.dtype)
+        # num_steps is the number of integration steps, so we need num_steps+1 time points
+        t = torch.linspace(t0, t1, num_steps + 1, device=self.device, dtype=self.dtype)
 
         if reverse:
 
