@@ -15,9 +15,13 @@ landscapes, following the EqM paper:
   L_{EqM-E} = \|\nabla g(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
   \]
 
+where $\epsilon$ is noise (x0), $x$ is data (x1), and the target $(\epsilon - x)$
+points from data toward noise (opposite of FM velocity).
+
 Key differences from Flow Matching:
 - Time-invariant: Model zeros out time conditioning internally
-- Gradient direction: EqM learns (noise - data), FM learns (data - noise)
+- Gradient direction: EqM learns $(\epsilon - x)$, FM learns $(x - \epsilon)$
+- Sampling: Use ``negate_velocity=True`` with FlowSampler for ODE sampling
 """
 
 from __future__ import annotations
@@ -44,10 +48,13 @@ class EquilibriumMatchingLoss(BaseLoss):
     Supports both implicit (vector field) and explicit (energy-based) formulations,
     with multiple prediction types and loss weighting schemes.
 
-    The target gradient is $(\epsilon - x) \cdot c(\gamma)$ where:
-    - $\epsilon$ is noise (x0)
-    - $x$ is data (x1)  
+    The target is $(\epsilon - x) \cdot c(\gamma)$ where:
+    - $\epsilon$ is noise (x0), $x$ is data (x1)
+    - For linear interpolant: target is $(x_0 - x_1) \cdot c(t)$ (noise - data)
     - $c(\gamma) = \lambda \cdot \min(1, (1-\gamma)/(1-a))$ is truncated decay
+
+    For ODE sampling, use ``negate_velocity=True`` in FlowSampler since
+    velocity $v = -f(x) = x - \epsilon$.
 
     Args:
         model: Neural network predicting velocity/score/noise.
@@ -221,8 +228,8 @@ class EquilibriumMatchingLoss(BaseLoss):
     ) -> Dict[str, torch.Tensor]:
         r"""Compute training losses with detailed outputs.
 
-        Implements gradient matching with EqM target direction:
-        - Target: $(\epsilon - x) \cdot c(\gamma)$ (noise toward data)
+        Implements gradient matching with EqM target:
+        - Target: $(\epsilon - x) \cdot c(t) = (x_0 - x_1) \cdot c(t)$
         - Time-invariant: zeros out time if time_invariant=True
 
         Args:
@@ -246,10 +253,11 @@ class EquilibriumMatchingLoss(BaseLoss):
         # Interpolate: xt between x0 (noise) and x1 (data)
         xt, ut = self.interpolant.interpolate(x0, x1, t)
 
-        # EqM target: (noise - data) * c(t), opposite of Flow Matching
+        # EqM target: (ε - x) * c(t) = (x0 - x1) * c(t), pointing noise -> data
+        # This is the negative of FM velocity; sampling negates to get velocity
         ct = compute_eqm_ct(t, threshold=self.ct_threshold, multiplier=self.ct_multiplier)
         ct = ct.view(batch, *([1] * (xt.ndim - 1)))
-        target = (x0 - x1) * ct  # Gradient direction: noise - data
+        target = (x0 - x1) * ct
 
         # For explicit energy, we need gradients w.r.t. xt
         if self.energy_type != "none":
