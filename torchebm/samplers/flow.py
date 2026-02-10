@@ -386,7 +386,8 @@ class FlowSampler(BaseSampler):
         t0, t1 = self._check_interval(
             sde=True, last_step_size=last_step_size, diffusion_form=diffusion_form
         )
-        t = torch.linspace(t0, t1, num_steps, device=self.device, dtype=self.dtype)
+        # t needs num_steps+1 points to perform num_steps integration steps
+        t = torch.linspace(t0, t1, num_steps + 1, device=self.device, dtype=self.dtype)
 
         drift_fn = self._get_drift()
         score_fn = self._get_score()

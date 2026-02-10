@@ -581,6 +581,38 @@ icon: octicons/home-fill-16
 
 **TorchEBM** is a PyTorch library for Energy-Based Models (EBMs), a powerful class of generative models. It provides a flexible framework to define, train, and generate samples using energy-based models.
 
+---
+
+## Equilibrium Matching in Action
+
+<div style="text-align: center; margin: 30px 0;">
+<figure>
+  <img src="assets/animations/flow_comparison.gif" alt="Equilibrium Matching Animation" width="700" loading="lazy" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+  <figcaption style="margin-top: 12px; font-size: 0.9em; color: var(--md-default-fg-color--light);">
+    <strong>Equilibrium Matching:</strong> Comparing Linear, VP, and Cosine interpolants transforming noise into structured data distributions.
+  </figcaption>
+</figure>
+</div>
+
+<div class="grid cards" markdown>
+
+-   :material-vector-curve:{ .lg .middle } __Equilibrium Matching__
+
+    ---
+
+    Train generative models by learning velocity fields that transform noise into data.
+
+    [:octicons-arrow-right-24: Flow Sampler](api/torchebm/samplers/flow.md)
+
+-   :material-sine-wave:{ .lg .middle } __Multiple Interpolants__
+
+    ---
+
+    Choose from Linear, Variance-Preserving, and Cosine interpolation schemes.
+
+    [:octicons-arrow-right-24: Interpolants](api/torchebm/interpolants/index.md)
+
+</div>
 
 ---
 

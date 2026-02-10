@@ -122,8 +122,9 @@ class EulerMaruyamaIntegrator(BaseIntegrator):
                 step_size = torch.tensor(
                     step_size, device=state["x"].device, dtype=state["x"].dtype
                 )
+            # t needs n_steps+1 points to perform n_steps integration steps
             t = (
-                torch.arange(n_steps, device=state["x"].device, dtype=state["x"].dtype)
+                torch.arange(n_steps + 1, device=state["x"].device, dtype=state["x"].dtype)
                 * step_size
             )
         if t.ndim != 1 or t.numel() < 2:
