@@ -256,11 +256,13 @@ class EquilibriumMatchingLoss(BaseLoss):
         # Interpolate: xt between x0 (noise) and x1 (data)
         xt, ut = self.interpolant.interpolate(x0, x1, t)
 
-        # EqM target: (ε - x) * c(t) = (x0 - x1) * c(t), pointing noise -> data
-        # This is the negative of FM velocity; sampling negates to get velocity
+        # EqM target: -ut * c(t) where ut = d_alpha*x1 + d_sigma*x0
+        # For linear interpolant, -ut = x0 - x1 (equivalent to original formulation).
+        # For VP/cosine, ut encodes the schedule-specific velocity coefficients.
+        # Sampling with negate_velocity=True recovers the positive velocity ut*c(t).
         ct = compute_eqm_ct(t, threshold=self.ct_threshold, multiplier=self.ct_multiplier)
         ct = ct.view(batch, *([1] * (xt.ndim - 1)))
-        target = (x0 - x1) * ct
+        target = -ut * ct
 
         # For explicit energy, we need gradients w.r.t. xt
         if self.energy_type != "none":
