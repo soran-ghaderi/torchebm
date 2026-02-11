@@ -32,7 +32,7 @@ import torch
 from torch import nn
 
 from torchebm.core.base_loss import BaseLoss
-from torchebm.interpolants import expand_t_like_x
+from torchebm.interpolants import BaseInterpolant, expand_t_like_x
 from torchebm.losses.loss_utils import (
     mean_flat,
     get_interpolant,
@@ -64,7 +64,7 @@ class EquilibriumMatchingLoss(BaseLoss):
             - 'dot': $g(x) = x \cdot f(x)$, dot product energy formulation
             - 'l2': $g(x) = -\frac{1}{2}\|f(x)\|^2$ (experimental)
             - 'mean': Same as dot (alias)
-        interpolant: Interpolant type ('linear', 'cosine', or 'vp').
+        interpolant: Interpolant name (e.g. 'linear', 'cosine', 'vp') or BaseInterpolant instance.
         loss_weight: Loss weighting scheme ('velocity', 'likelihood', or None).
         train_eps: Epsilon for training time interval stability.
         ct_threshold: Decay threshold $a$ for $c(t)$. Decay starts after $t > a$. Default: 0.8.
@@ -108,7 +108,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         model: nn.Module,
         prediction: Literal["velocity", "score", "noise"] = "velocity",
         energy_type: Literal["none", "dot", "l2", "mean"] = "none",
-        interpolant: Literal["linear", "cosine", "vp"] = "linear",
+        interpolant: Union[str, BaseInterpolant] = "linear",
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
         train_eps: float = 0.0,
         ct_threshold: float = 0.8,
@@ -141,7 +141,10 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
         self.time_invariant = time_invariant
-        self.interpolant = get_interpolant(interpolant)
+        if isinstance(interpolant, str):
+            self.interpolant = get_interpolant(interpolant)
+        else:
+            self.interpolant = interpolant
 
     def _check_interval(self) -> tuple[float, float]:
         r"""Get training time interval respecting epsilon."""
