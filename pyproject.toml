@@ -73,6 +73,7 @@ docs = [
     "pymdown-extensions>=9.0",
     "mkdocs-autorefs",
     "mkdocs-minify-plugin>=0.3.0",
+    "mkdocs-llmstxt>=0.5.0",
     "Pillow>=9.0.0"
 ]
 

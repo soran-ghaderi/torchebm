@@ -188,3 +188,8 @@ __pycache__/
 # docs/assets/images/loss_functions/*.png
 # docs/assets/images/training/*.png
 # docs/assets/images/visualization/*.png
+*.tar.gz
+.github/copilot-instructions.md
+data/
+docs/api/torchebm/
+papers_to_add/
