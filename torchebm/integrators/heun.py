@@ -95,8 +95,8 @@ class HeunIntegrator(BaseIntegrator):
     ) -> Dict[str, torch.Tensor]:
         if n_steps <= 0:
             raise ValueError("n_steps must be positive")
-        if t.ndim != 1 or t.numel() != n_steps:
-            raise ValueError("t must be a 1D tensor with length n_steps")
+        if t.ndim != 1 or t.numel() < 2:
+            raise ValueError("t must be a 1D tensor with length >= 2")
 
         x0 = state["x"]
 

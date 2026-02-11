@@ -370,12 +370,30 @@ def test_integrate_time_grid_validation(integrator):
             state, model=None, step_size=0.02, n_steps=n_steps, drift=drift, t=t_wrong_shape
         )
 
-    # Wrong length
-    t_wrong_len = torch.linspace(0, 1, n_steps + 10, device=device)
-    with pytest.raises(ValueError, match="t must be a 1D tensor with length n_steps"):
+    # Too short (must have at least 2 points)
+    t_too_short = torch.tensor([0.0], device=device)
+    with pytest.raises(ValueError, match="t must be a 1D tensor with length >= 2"):
         integrator.integrate(
-            state, model=None, step_size=0.02, n_steps=n_steps, drift=drift, t=t_wrong_len
+            state, model=None, step_size=0.02, n_steps=1, drift=drift, t=t_too_short
         )
+
+
+def test_single_step_integration(integrator):
+    """Test that 1-step integration works (important for time-invariant models)."""
+    device = integrator.device
+    x = torch.randn(10, 2, device=device)
+    state = {"x": x}
+    drift = lambda x_, t_: -x_  # Simple decay
+
+    # Single step with t having exactly 2 points
+    t = torch.tensor([0.0, 1.0], device=device)
+    result = integrator.integrate(
+        state, model=None, step_size=1.0, n_steps=1, drift=drift, t=t
+    )
+
+    # Expected: x_new = x + drift(x, 0) * dt = x - x * 1.0 = 0
+    assert result["x"].shape == x.shape
+    assert torch.allclose(result["x"], torch.zeros_like(x), atol=1e-6)
 
 
 ################################ Manual Verification Tests - Compare Against Known Solutions ################################

@@ -15,9 +15,13 @@ landscapes, following the EqM paper:
   L_{EqM-E} = \|\nabla g(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
   \]
 
+where $\epsilon$ is noise (x0), $x$ is data (x1), and the target $(\epsilon - x)$
+points from data toward noise (opposite of FM velocity).
+
 Key differences from Flow Matching:
 - Time-invariant: Model zeros out time conditioning internally
-- Gradient direction: EqM learns (noise - data), FM learns (data - noise)
+- Gradient direction: EqM learns $(\epsilon - x)$, FM learns $(x - \epsilon)$
+- Sampling: Use ``negate_velocity=True`` with FlowSampler for ODE sampling
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ import torch
 from torch import nn
 
 from torchebm.core.base_loss import BaseLoss
-from torchebm.interpolants import expand_t_like_x
+from torchebm.interpolants import BaseInterpolant, expand_t_like_x
 from torchebm.losses.loss_utils import (
     mean_flat,
     get_interpolant,
@@ -44,10 +48,13 @@ class EquilibriumMatchingLoss(BaseLoss):
     Supports both implicit (vector field) and explicit (energy-based) formulations,
     with multiple prediction types and loss weighting schemes.
 
-    The target gradient is $(\epsilon - x) \cdot c(\gamma)$ where:
-    - $\epsilon$ is noise (x0)
-    - $x$ is data (x1)  
+    The target is $(\epsilon - x) \cdot c(\gamma)$ where:
+    - $\epsilon$ is noise (x0), $x$ is data (x1)
+    - For linear interpolant: target is $(x_0 - x_1) \cdot c(t)$ (noise - data)
     - $c(\gamma) = \lambda \cdot \min(1, (1-\gamma)/(1-a))$ is truncated decay
+
+    For ODE sampling, use ``negate_velocity=True`` in FlowSampler since
+    velocity $v = -f(x) = x - \epsilon$.
 
     Args:
         model: Neural network predicting velocity/score/noise.
@@ -57,7 +64,7 @@ class EquilibriumMatchingLoss(BaseLoss):
             - 'dot': $g(x) = x \cdot f(x)$, dot product energy formulation
             - 'l2': $g(x) = -\frac{1}{2}\|f(x)\|^2$ (experimental)
             - 'mean': Same as dot (alias)
-        interpolant: Interpolant type ('linear', 'cosine', or 'vp').
+        interpolant: Interpolant name (e.g. 'linear', 'cosine', 'vp') or BaseInterpolant instance.
         loss_weight: Loss weighting scheme ('velocity', 'likelihood', or None).
         train_eps: Epsilon for training time interval stability.
         ct_threshold: Decay threshold $a$ for $c(t)$. Decay starts after $t > a$. Default: 0.8.
@@ -101,7 +108,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         model: nn.Module,
         prediction: Literal["velocity", "score", "noise"] = "velocity",
         energy_type: Literal["none", "dot", "l2", "mean"] = "none",
-        interpolant: Literal["linear", "cosine", "vp"] = "linear",
+        interpolant: Union[str, BaseInterpolant] = "linear",
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
         train_eps: float = 0.0,
         ct_threshold: float = 0.8,
@@ -134,7 +141,10 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
         self.time_invariant = time_invariant
-        self.interpolant = get_interpolant(interpolant)
+        if isinstance(interpolant, str):
+            self.interpolant = get_interpolant(interpolant)
+        else:
+            self.interpolant = interpolant
 
     def _check_interval(self) -> tuple[float, float]:
         r"""Get training time interval respecting epsilon."""
@@ -221,8 +231,8 @@ class EquilibriumMatchingLoss(BaseLoss):
     ) -> Dict[str, torch.Tensor]:
         r"""Compute training losses with detailed outputs.
 
-        Implements gradient matching with EqM target direction:
-        - Target: $(\epsilon - x) \cdot c(\gamma)$ (noise toward data)
+        Implements gradient matching with EqM target:
+        - Target: $(\epsilon - x) \cdot c(t) = (x_0 - x_1) \cdot c(t)$
         - Time-invariant: zeros out time if time_invariant=True
 
         Args:
@@ -246,10 +256,13 @@ class EquilibriumMatchingLoss(BaseLoss):
         # Interpolate: xt between x0 (noise) and x1 (data)
         xt, ut = self.interpolant.interpolate(x0, x1, t)
 
-        # EqM target: (noise - data) * c(t), opposite of Flow Matching
+        # EqM target: -ut * c(t) where ut = d_alpha*x1 + d_sigma*x0
+        # For linear interpolant, -ut = x0 - x1 (equivalent to original formulation).
+        # For VP/cosine, ut encodes the schedule-specific velocity coefficients.
+        # Sampling with negate_velocity=True recovers the positive velocity ut*c(t).
         ct = compute_eqm_ct(t, threshold=self.ct_threshold, multiplier=self.ct_multiplier)
         ct = ct.view(batch, *([1] * (xt.ndim - 1)))
-        target = (x0 - x1) * ct  # Gradient direction: noise - data
+        target = -ut * ct
 
         # For explicit energy, we need gradients w.r.t. xt
         if self.energy_type != "none":
