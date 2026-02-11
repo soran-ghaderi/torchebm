@@ -19,7 +19,6 @@ theme:
     - navigation.indexes
     - navigation.top
     - navigation.tracking
-    - navigation.expand
     - navigation.path
     - toc.follow
     - search.suggest
@@ -33,17 +32,15 @@ theme:
     - announce.dismiss
     - navigation.footer
   palette:
-    # Palette toggle for dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
+    # Palette toggle for dark mode (default)
+    - scheme: slate
       primary: black
       accent: lime
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
     # Palette toggle for light mode
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
+    - scheme: default
       primary: black
       accent: lime
       toggle:
@@ -235,9 +232,6 @@ nav:
       - Image: api/torchebm/utils/image/index.md
       - Training: api/torchebm/utils/training/index.md
       - Visualization: api/torchebm/utils/visualization/index.md
-  - LLM API Reference:
-    - Overview: llm/index.md
-    - All Symbols: llm/all.md
   - Examples:
     - Overview: examples/index.md
     - Datasets: examples/datasets/index.md
@@ -255,7 +249,6 @@ nav:
 
 hooks:
   - docs/hooks/socialmedia.py
-  - docs/hooks/llm_export.py
 
 plugins:
   - search

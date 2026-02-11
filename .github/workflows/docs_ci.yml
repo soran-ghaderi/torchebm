@@ -42,9 +42,6 @@ jobs:
       - name: Generate API Documentation
         run: |
           python generate_api_docs.py
-      - name: Generate LLM Documentation
-        run: |
-          python generate_llm_docs.py
       - name: Optimize images (PNG/JPG)
         run: |
           echo "Optimizing PNGs in docs/ with pngquant"
