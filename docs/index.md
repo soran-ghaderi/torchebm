@@ -34,7 +34,7 @@ icon: octicons/home-fill-16
   <!-- Content -->
   <div style="position: relative; z-index: 1;">
     <img src="assets/images/logo_with_text.svg" alt="TorchEBM Logo" width="300" style="display: block; margin: 0 auto 20px auto; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">
-    <h1 style="font-size: 2.5em; text-align: center; margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);"><strong>PyTorch Toolkit for Generative Modeling</strong></h1>
+    <h1 style="font-size: 2.5em; text-align: center; margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);"><strong>PyTorch Library for Generative Modeling</strong></h1>
     <p style="font-size: 1.3em; text-align: center; max-width: 800px; margin: 0 auto 20px auto; line-height: 1.6;">
       A high-performance PyTorch library that makes Energy-Based Models <strong>accessible</strong> and <strong>efficient</strong> for researchers and practitioners alike.
     </p>
@@ -563,7 +563,7 @@ icon: octicons/home-fill-16
 </p>
 
 <p class="lead" style="text-align: center; font-size: 1.3em; margin-bottom: 30px;" markdown>
-**TorchEBM** provides components for 🔬 sampling, 🧠 inference, and 📊 model training.
+A PyTorch library for energy-based modeling, with support for flow and diffusion methods.
 </p>
 
 <div style="text-align: center; margin-bottom: 40px;" markdown>
@@ -574,116 +574,188 @@ icon: octicons/home-fill-16
 </div>
 
 <!-- Star CTA moved into the hero banner above; removed separate card -->
-
----
-
-## What is 🍓 TorchEBM?
-
-**TorchEBM** is a PyTorch library for Energy-Based Models (EBMs), a powerful class of generative models. It provides a flexible framework to define, train, and generate samples using energy-based models.
-
----
-
-## Equilibrium Matching in Action
-
 <div style="text-align: center; margin: 30px 0;">
 <figure>
-  <img src="assets/animations/flow_comparison.gif" alt="Equilibrium Matching Animation" width="700" loading="lazy" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+  <img src="assets/animations/ebm_training_animation.gif" alt="EBM training" width="700" loading="lazy" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
   <figcaption style="margin-top: 12px; font-size: 0.9em; color: var(--md-default-fg-color--light);">
-    <strong>Equilibrium Matching:</strong> Comparing Linear, VP, and Cosine interpolants transforming noise into structured data distributions.
+    Training an energy-based model to capture a target distribution.
   </figcaption>
 </figure>
 </div>
+---
 
-<div class="grid cards" markdown>
+## What is TorchEBM 🍓?
 
--   :material-vector-curve:{ .lg .middle } __Equilibrium Matching__
+Energy-based models assign a scalar energy to each input, implicitly defining a probability distribution where lower energy means higher probability. This formulation is remarkably general. MCMC sampling, score matching, contrastive divergence, and even flow/diffusion-based generation all operate within or connect naturally to the energy-based framework.
 
-    ---
+**TorchEBM** gives you composable PyTorch building blocks that span this entire landscape. You can define energy functions, train models with different learning objectives, and generate samples via MCMC, energy minimization, or learned continuous-time dynamics.
 
-    Train generative models by learning velocity fields that transform noise into data.
+---
 
-    [:octicons-arrow-right-24: Flow Sampler](api/torchebm/samplers/flow.md)
+## In Action
 
--   :material-sine-wave:{ .lg .middle } __Multiple Interpolants__
 
-    ---
-
-    Choose from Linear, Variance-Preserving, and Cosine interpolation schemes.
-
-    [:octicons-arrow-right-24: Interpolants](api/torchebm/interpolants/index.md)
-
+<div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin: 30px 0;">
+<figure style="text-align: center; margin: 0; flex: 1; min-width: 300px; max-width: 50%;">
+  <img src="assets/animations/8gaussians_flow.gif" alt="Equilibrium matching on eight gaussians" width="100%" loading="lazy" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+  <figcaption style="margin-top: 12px; font-size: 0.9em; color: var(--md-default-fg-color--light);">
+    Eight-gaussians distribution.
+  </figcaption>
+</figure>
+<figure style="text-align: center; margin: 0; flex: 1; min-width: 300px; max-width: 50%;">
+  <img src="assets/animations/circles_flow.gif" alt="Equilibrium matching on circles" width="100%" loading="lazy" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+  <figcaption style="margin-top: 12px; font-size: 0.9em; color: var(--md-default-fg-color--light);">
+    Circles distribution.
+  </figcaption>
+</figure>
 </div>
+<p style="text-align: center; font-size: 0.9em; color: var(--md-default-fg-color--light); margin-top: -10px;">
+  Equilibrium matching with different interpolants transforming noise into structured distributions.
+</p>
 
 ---
 
 ## Core Components
 
-TorchEBM is structured around several key components:
-
 <div class="grid cards" markdown>
 
--   :material-function-variant:{ .lg .middle } __Models__
+-   :material-function-variant:{ .lg .middle } __Core__
 
     ---
 
-    Define energy functions using `BaseModel`, from analytical forms to custom neural networks.
+    Base classes, energy models (analytical potentials and custom neural networks), schedulers, and the device/dtype management layer shared across all components.
 
-    [:octicons-arrow-right-24: Details](examples/training/index.md)
+    [:octicons-arrow-right-24: API Reference](api/torchebm/core/index.md)
 
 -   :material-chart-scatter-plot:{ .lg .middle } __Samplers__
 
     ---
 
-    Generate samples with MCMC samplers like Langevin Dynamics and Hamiltonian Monte Carlo.
+    Draw samples from energy landscapes via MCMC methods, gradient-based optimization, or learned flow/diffusion dynamics (ODE/SDE).
 
-    [:octicons-arrow-right-24: Details](examples/samplers/index.md)
+    [:octicons-arrow-right-24: API Reference](api/torchebm/samplers/index.md)
 
--   :material-calculator-variant:{ .lg .middle } __Loss Functions__
+-   :material-scale-balance:{ .lg .middle } __Loss Functions__
 
     ---
 
-    Train models with loss functions like Contrastive Divergence and Score Matching.
+    Training objectives for energy-based and flow-based models, including contrastive divergence variants, score matching variants, and equilibrium matching.
 
-    [:octicons-arrow-right-24: Details](api/torchebm/losses/index.md)
+    [:octicons-arrow-right-24: API Reference](api/torchebm/losses/index.md)
+
+-   :material-sine-wave:{ .lg .middle } __Interpolants__
+
+    ---
+
+    Define how noise and data are mixed along a continuous time path. Used in flow matching, diffusion, and related generative schemes.
+
+    [:octicons-arrow-right-24: API Reference](api/torchebm/interpolants/index.md)
+
+-   :material-math-integral:{ .lg .middle } __Integrators__
+
+    ---
+
+    Numerical solvers for SDEs, ODEs, and Hamiltonian systems. Pluggable into samplers and flow-based generation pipelines.
+
+    [:octicons-arrow-right-24: API Reference](api/torchebm/integrators/index.md)
+
+-   :material-brain:{ .lg .middle } __Models__
+
+    ---
+
+    Neural network architectures for parameterizing energy functions and velocity fields, including vision transformers and guidance wrappers.
+
+    [:octicons-arrow-right-24: API Reference](api/torchebm/models/index.md)
 
 -   :material-database-search:{ .lg .middle } __Datasets__
 
     ---
 
-    Use synthetic dataset generators for testing and visualization.
+    Synthetic 2D distributions for rapid prototyping and visual evaluation. All are PyTorch `Dataset` objects.
 
-    [:octicons-arrow-right-24: Details](examples/datasets/index.md)
+    [:octicons-arrow-right-24: API Reference](api/torchebm/datasets/index.md)
 
--   :material-chart-bar:{ .lg .middle } __Visualization__
-
-    ---
-
-    Visualize energy landscapes, sampling, and training dynamics.
-
-    [:octicons-arrow-right-24: Details](examples/visualization/index.md)
-
--   :material-rocket-launch:{ .lg .middle } __Accelerated Computing__
+-   :material-rocket-launch:{ .lg .middle } __CUDA__
 
     ---
 
-    Accelerate sampling and training with CUDA implementations.
+    CUDA-accelerated kernels and mixed precision support for performance-critical sampling and training.
 
-    [:octicons-arrow-right-24: Details](api/torchebm/cuda/index.md)
+    [:octicons-arrow-right-24: API Reference](api/torchebm/cuda/index.md)
 
+</div>
+
+---
+
+## Energy Landscapes
+
+<div style="display: flex; justify-content: center;">
+<table align="center">
+  <tr>
+    <td><img src="assets/images/e_functions/gaussian.png" alt="Gaussian" width="250"/></td>
+    <td><img src="assets/images/e_functions/double_well.png" alt="Double Well" width="250"/></td>
+    <td><img src="assets/images/e_functions/rastrigin.png" alt="Rastrigin" width="250"/></td>
+  </tr>
+  <tr>
+    <td align="center">Gaussian</td>
+    <td align="center">Double Well</td>
+    <td align="center">Rastrigin</td>
+  </tr>
+  <tr>
+    <td><img src="assets/images/e_functions/rosenbrock.png" alt="Rosenbrock" width="250"/></td>
+    <td><img src="assets/images/e_functions/ackley.png" alt="Ackley" width="250"/></td>
+    <td><img src="assets/images/e_functions/harmonic.png" alt="Harmonic" width="250"/></td>
+  </tr>
+  <tr>
+    <td align="center">Rosenbrock</td>
+    <td align="center">Ackley</td>
+    <td align="center">Harmonic</td>
+  </tr>
+</table>
+</div>
+
+---
+
+## Synthetic Datasets
+
+<div style="display: flex; justify-content: center;">
+<table align="center">
+  <tr>
+    <td><img src="assets/images/datasets/gaussian_mixture.png" alt="Gaussian Mixture" width="200"/></td>
+    <td><img src="assets/images/datasets/eight_gaussians.png" alt="Eight Gaussians" width="200"/></td>
+    <td><img src="assets/images/datasets/two_moons.png" alt="Two Moons" width="200"/></td>
+    <td><img src="assets/images/datasets/swiss_roll.png" alt="Swiss Roll" width="200"/></td>
+  </tr>
+  <tr>
+    <td align="center">Gaussian Mixture</td>
+    <td align="center">Eight Gaussians</td>
+    <td align="center">Two Moons</td>
+    <td align="center">Swiss Roll</td>
+  </tr>
+  <tr>
+    <td><img src="assets/images/datasets/checkerboard.png" alt="Checkerboard" width="200"/></td>
+    <td><img src="assets/images/datasets/pinwheel.png" alt="Pinwheel" width="200"/></td>
+    <td><img src="assets/images/datasets/circle.png" alt="Circle" width="200"/></td>
+    <td><img src="assets/images/datasets/grid.png" alt="Grid" width="200"/></td>
+  </tr>
+  <tr>
+    <td align="center">Checkerboard</td>
+    <td align="center">Pinwheel</td>
+    <td align="center">Circle</td>
+    <td align="center">Grid</td>
+  </tr>
+</table>
 </div>
 
 ---
 
 ## Quick Start
 
-Install the library using pip:
-
 ```bash
 pip install torchebm
 ```
 
-Here's a minimal example of defining an energy function and a sampler:
-
+Define an energy model, create a sampler, and draw samples in a few lines:
 
 ```python
 import torch
@@ -694,32 +766,24 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2), device=device)
 
 sampler = LangevinDynamics(model=model, step_size=0.01, device=device)
-
-initial_points = torch.randn(500, 2, device=device)
-samples = sampler.sample(x=initial_points, n_steps=100)
-
-print(f"Output batch_shape: {samples.shape}") # (B, len) -> torch.Size([500, 2]) 
+samples = sampler.sample(x=torch.randn(500, 2, device=device), n_steps=100)
 ```
 
----
-
-!!! info "Latest Release"
-
-    TorchEBM is currently in early development. Check our [GitHub repository](https://github.com/soran-ghaderi/torchebm) for the latest updates and features.
+See the [tutorials](tutorials/index.md) and [examples](examples/index.md) for training loops, flow-based generation, and more.
 
 ## Community & Contribution
 
-TorchEBM is an open-source project developed with the research community in mind.
+TorchEBM is open-source and developed with the research community in mind.
 
-*   **Bug Reports & Feature Requests:** Please use the [GitHub Issues](https://github.com/soran-ghaderi/torchebm/issues).
-*   **Contributing Code:** We welcome contributions! Please see the [Contributing Guidelines](developer_guide/index.md). Consider following the [Commit Conventions](developer_guide/code_guidelines.md).
-*   **Show Support:** If you find TorchEBM helpful for your work, please consider starring the repository on [GitHub](https://github.com/soran-ghaderi/torchebm)! :star:
+*   **Issues & feature requests** on [GitHub Issues](https://github.com/soran-ghaderi/torchebm/issues)
+*   **Contributing** via [developer guide](developer_guide/index.md) and [code guidelines](developer_guide/code_guidelines.md)
+*   **Star the repo** on [GitHub](https://github.com/soran-ghaderi/torchebm) if you find it useful :star:
 
 ---
 
 ## Citation
 
-Please consider citing the TorchEBM repository if it contributes to your research:
+If TorchEBM is useful in your research, please cite it:
 
 ```bibtex
 @misc{torchebm_library_2025,
@@ -734,5 +798,5 @@ Please consider citing the TorchEBM repository if it contributes to your researc
 
 ## License
 
-TorchEBM is available under the **MIT License**. See the [LICENSE file](https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE) for details.
+MIT License. See the [LICENSE file](https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE) for details.
 
