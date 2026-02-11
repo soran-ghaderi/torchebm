@@ -35,7 +35,7 @@ from .base_sampler import BaseSampler
 
 from .base_loss import BaseLoss, BaseContrastiveDivergence
 
-from .base_integrator import BaseIntegrator
+from .base_integrator import BaseIntegrator, BaseRungeKuttaIntegrator
 from .base_interpolant import BaseInterpolant, expand_t_like_x
 # from .trainer import Trainer
 # from .base_optimizer import Optimizer
@@ -64,6 +64,7 @@ __all__ = [
     "BaseLoss",
     "BaseContrastiveDivergence",
     "BaseIntegrator",
+    "BaseRungeKuttaIntegrator",
     "BaseInterpolant",
     "expand_t_like_x",
     # "Trainer",
