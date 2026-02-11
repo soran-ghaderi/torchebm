@@ -1,5 +1,51 @@
 /* Custom styling for TorchEBM documentation */
 
+/* Very dark background for dark mode */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #111111;
+  --md-default-bg-color--light: #161616;
+  --md-default-bg-color--lighter: #1e1e1e;
+  --md-default-bg-color--lightest: #2a2a2a;
+  --md-code-bg-color: #161616;
+}
+
+/* Dark header & tabs in dark mode */
+[data-md-color-scheme="slate"] .md-header,
+[data-md-color-scheme="slate"] .md-tabs {
+  background-color: #0a0a0a;
+}
+
+/* Dark header & tabs in light mode */
+[data-md-color-scheme="default"] .md-header,
+[data-md-color-scheme="default"] .md-tabs {
+  background-color: #0a0a0a;
+}
+[data-md-color-scheme="default"] .md-header .md-header__title,
+[data-md-color-scheme="default"] .md-header .md-header__topic,
+[data-md-color-scheme="default"] .md-header .md-logo,
+[data-md-color-scheme="default"] .md-header nav.md-header__inner,
+[data-md-color-scheme="default"] .md-tabs .md-tabs__link,
+[data-md-color-scheme="default"] .md-header .md-search__input,
+[data-md-color-scheme="default"] .md-header .md-icon {
+  color: #ffffff;
+}
+
+/* Light mode — visible borders on interactive/visual elements */
+[data-md-color-scheme="default"] .md-typeset .grid.cards > :is(ul, ol) > li {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+[data-md-color-scheme="default"] .spotlight {
+  border: 2px solid rgba(0, 0, 0, 0.12);
+}
+[data-md-color-scheme="default"] figure img {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+}
+[data-md-color-scheme="default"] .energy-others img {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
 /* Animated elements */
 .animate__animated {
   animation-duration: 1s;
@@ -91,26 +137,92 @@ figcaption {
 
 /* Code blocks */
 .md-typeset pre > code {
-  border-radius: 0.5rem;
+  border-radius: 0;
 }
 
-/* Code block header (macOS window style) */
-.md-typeset .highlight { position: relative; border-radius: 10px; overflow: hidden; }
-.md-typeset .highlight > pre { margin: 0; padding-top: 2.75rem; }
+/* Unified code block with integrated title bar */
+.md-typeset .highlight {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 1em 0;
+}
+.md-typeset .highlight > pre {
+  margin: 0;
+  padding-top: 2.2rem;
+  border-radius: 0;
+}
 
+/* Dark mode code block */
+[data-md-color-scheme="slate"] .md-typeset .highlight {
+  background: #111115;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+[data-md-color-scheme="slate"] .md-typeset .highlight > pre,
+[data-md-color-scheme="slate"] .md-typeset .highlight > pre > code {
+  background: transparent;
+}
 [data-md-color-scheme="slate"] .md-typeset .highlight::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 36px;
-  background: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+
+/* Light mode code block */
+[data-md-color-scheme="default"] .md-typeset .highlight {
+  background: #f8f8fa;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+[data-md-color-scheme="default"] .md-typeset .highlight > pre,
+[data-md-color-scheme="default"] .md-typeset .highlight > pre > code {
+  background: transparent;
 }
 [data-md-color-scheme="default"] .md-typeset .highlight::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 36px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.05), rgba(0,0,0,0.02));
-  border-bottom: 1px solid rgba(0,0,0,0.08);
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  pointer-events: none;
 }
+
+/* Traffic light dots */
 .md-typeset .highlight::after {
-  content: ""; position: absolute; top: 11px; left: 12px; width: 10px; height: 10px; border-radius: 50%; background: #ff5f56;
+  content: "";
+  position: absolute;
+  top: 10px; left: 14px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #ff5f56;
   box-shadow: 16px 0 0 #ffbd2e, 32px 0 0 #27c93f;
+  z-index: 1;
+}
+
+/* Unified code blocks inside admonitions & details */
+[data-md-color-scheme="slate"] .md-typeset .admonition .highlight,
+[data-md-color-scheme="slate"] .md-typeset details .highlight {
+  background: #111115;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+[data-md-color-scheme="slate"] .md-typeset .admonition .highlight > pre,
+[data-md-color-scheme="slate"] .md-typeset .admonition .highlight > pre > code,
+[data-md-color-scheme="slate"] .md-typeset details .highlight > pre,
+[data-md-color-scheme="slate"] .md-typeset details .highlight > pre > code {
+  background: transparent;
+}
+[data-md-color-scheme="default"] .md-typeset .admonition .highlight,
+[data-md-color-scheme="default"] .md-typeset details .highlight {
+  background: #f8f8fa;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 /* Buttons */
