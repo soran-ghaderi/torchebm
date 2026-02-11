@@ -100,7 +100,7 @@ jobs:
         pip install build twine wheel
 
     - name: Install package for testing
-      run: pip install -e .
+      run: pip install -e ".[dev]"
 
     - name: Run tests
       run: pytest tests/
