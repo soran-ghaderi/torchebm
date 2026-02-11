@@ -1,0 +1,38 @@
+# TorchEBM
+
+> Energy-Based Modeling library for PyTorch
+
+TorchEBM is an Energy-Based Modeling library for PyTorch that provides tools for 
+sampling, inference, and learning in complex distributions. It supports classical 
+EBMs via MCMC sampling and modern flow/diffusion-based generative models.
+
+Key components:
+- Samplers: LangevinDynamics, HamiltonianMonteCarlo, FlowSampler, GradientDescentSampler
+- Losses: ContrastiveDivergence, ScoreMatching, EquilibriumMatchingLoss
+- Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
+- Integrators: EulerMaruyama, Heun, Leapfrog
+- Models: ConditionalTransformer2D, neural network components
+- Datasets: TwoMoons, EightGaussians, SwissRoll, and more synthetic datasets
+
+
+## Getting Started
+
+- [Home](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/index.md): Main documentation page for TorchEBM
+- [Getting Started](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/tutorials/getting_started/index.md): Quick start tutorial
+
+## Core Concepts
+
+- [Samplers](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/tutorials/samplers/index.md): Guide to MCMC samplers
+- [Loss Functions](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/tutorials/loss_functions/index.md): Loss functions for EBM training
+- [Training EBMs](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/tutorials/training/index.md): Training energy-based models
+
+## API Reference
+
+- [Torchebm &gt; Core](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/api/torchebm/core/index.md): Core base classes
+- [Torchebm &gt; Samplers](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/api/torchebm/samplers/index.md): Sampling algorithms
+- [Torchebm &gt; Losses](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/api/torchebm/losses/index.md): Training objectives
+- [Torchebm &gt; Interpolants](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/api/torchebm/interpolants/index.md): Interpolation schemes
+- [Torchebm &gt; Integrators](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/api/torchebm/integrators/index.md): Numerical integrators
+- [Torchebm &gt; Models](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/api/torchebm/models/index.md): Neural network architectures
+- [Torchebm &gt; Datasets](https://soran-ghaderi.github.io/torchebm/0.5.5.dev4/api/torchebm/datasets/index.md): Data generators
+
