@@ -1,9 +1,9 @@
 r"""Heun (improved Euler) integrator."""
 
-from torchebm.core import BaseRungeKuttaIntegrator
+from torchebm.core import BaseSDERungeKuttaIntegrator
 
 
-class HeunIntegrator(BaseRungeKuttaIntegrator):
+class HeunIntegrator(BaseSDERungeKuttaIntegrator):
     r"""
     Heun integrator (predictor-corrector) for Itô SDEs and ODEs.
 

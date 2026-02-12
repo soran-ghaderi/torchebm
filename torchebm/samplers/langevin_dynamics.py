@@ -124,15 +124,17 @@ class LangevinDynamics(BaseSampler):
         if return_diagnostics:
             diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
 
+        drift = lambda x_, t_: -self.model.gradient(x_)
         with self.autocast_context():
             for i in range(n_steps):
                 self.step_schedulers()
                 state = {"x": x}
                 x = self.integrator.step(
                     state=state,
-                    model=self.model,
+                    model=None,
                     step_size=self.get_scheduled_value("step_size"),
                     noise_scale=self.get_scheduled_value("noise_scale"),
+                    drift=drift,
                 )["x"]
 
                 if return_trajectory:
