@@ -119,8 +119,9 @@ def test_step_with_model(integrator, gaussian_model):
     state = {"x": x}
     t = torch.zeros(10, device=device)
     step_size = 0.01
+    drift = lambda x_, t_: -gaussian_model.gradient(x_)
 
-    result = integrator.step(state, model=gaussian_model, step_size=step_size, t=t)
+    result = integrator.step(state, model=None, step_size=step_size, drift=drift, t=t)
 
     assert "x" in result
     assert result["x"].shape == x.shape
@@ -134,7 +135,7 @@ def test_step_requires_drift_or_model(integrator):
     state = {"x": x}
     t = torch.zeros(10, device=device)
 
-    with pytest.raises(ValueError, match="Either `model` must be provided"):
+    with pytest.raises(ValueError, match="drift must be provided explicitly"):
         integrator.step(state, model=None, step_size=0.01, t=t)
 
 
@@ -221,9 +222,10 @@ def test_integrate_with_model(integrator, gaussian_model):
     state = {"x": x}
     n_steps = 100
     t = torch.linspace(0, 1, n_steps, device=device)
+    drift = lambda x_, t_: -gaussian_model.gradient(x_)
 
     result = integrator.integrate(
-        state, model=gaussian_model, step_size=0.01, n_steps=n_steps, t=t
+        state, model=None, step_size=0.01, n_steps=n_steps, drift=drift, t=t
     )
 
     assert "x" in result

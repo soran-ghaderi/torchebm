@@ -80,13 +80,13 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
 
 
 class BaseRungeKuttaIntegrator(BaseIntegrator):
-    r"""Abstract base class for explicit Runge-Kutta integrators for ODEs/SDEs.
+    r"""Abstract base class for explicit Runge-Kutta ODE integrators.
 
     Subclasses define a Butcher tableau via the abstract properties
-    :attr:`tableau_a`, :attr:`tableau_b`, and :attr:`tableau_c` and
-    automatically inherit generic stepping and integration logic.
+    ``tableau_a``, ``tableau_b``, and ``tableau_c`` and automatically
+    inherit generic stepping and integration logic.
 
-    For an \(s\)-stage explicit RK method the deterministic update reads
+    For an \(s\)-stage explicit RK method the update reads
 
     \[
     k_i = f\!\bigl(x + h \sum_{j=0}^{i-1} a_{ij}\,k_j,\;
@@ -98,14 +98,10 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
     x_{n+1} = x_n + h \sum_{i=0}^{s-1} b_i\,k_i
     \]
 
-    When a diffusion coefficient \(D\) is provided the SDE extension
-    \(\sqrt{2D}\,\Delta W\) is added after the deterministic update.
-
     **Adaptive step-size control** is available automatically for subclasses
-    that define :attr:`error_weights` and :attr:`order`.  When
-    ``adaptive=True`` is passed to :meth:`integrate` (or left as ``None``
-    for auto-detection), the integrator uses an embedded error pair to
-    control the step size.
+    that define ``error_weights`` and ``order``.  When ``adaptive=True`` is
+    passed to ``integrate`` (or left as ``None`` for auto-detection), the
+    integrator uses an embedded error pair to control the step size.
 
     Args:
         device: Device for computations.
@@ -212,7 +208,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
 
     @property
     def fsal(self) -> bool:
-        """Whether the method has the First Same As Last property.
+        r"""Whether the method has the First Same As Last property.
 
         When ``True`` the integrator evaluates one extra stage at the
         accepted solution and reuses it as the first stage of the next
@@ -224,33 +220,19 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
 
     @staticmethod
     def _resolve_drift(
-        model: Optional[BaseModel],
         drift: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]],
     ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
-        """Return a concrete drift callable, falling back to the model gradient."""
+        r"""Return the drift callable after validation.
+
+        Raises:
+            ValueError: If ``drift`` is ``None``.
+        """
         if drift is not None:
             return drift
-        if model is None:
-            raise ValueError(
-                "Either `model` must be provided or `drift` must be set."
-            )
-        return lambda x_, t_: -model.gradient(x_)
-
-    @staticmethod
-    def _resolve_diffusion(
-        diffusion: Optional[torch.Tensor],
-        noise_scale: Optional[torch.Tensor],
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> Optional[torch.Tensor]:
-        """Return a diffusion tensor from explicit value or ``noise_scale``."""
-        if diffusion is not None:
-            return diffusion
-        if noise_scale is not None:
-            if not torch.is_tensor(noise_scale):
-                noise_scale = torch.tensor(noise_scale, device=device, dtype=dtype)
-            return noise_scale ** 2
-        return None
+        raise ValueError(
+            "drift must be provided explicitly. For EBM sampling, pass "
+            "drift=lambda x, t: -model.gradient(x) from the caller."
+        )
 
     def _evaluate_stages(
         self,
@@ -304,6 +286,39 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                 dx = dx + b[i] * k[i]
         return x + step_size * dx
 
+    def _deterministic_step(
+        self,
+        x: torch.Tensor,
+        step_size: torch.Tensor,
+        drift_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+        t: torch.Tensor,
+    ) -> torch.Tensor:
+        r"""Compute the deterministic RK update \(x + h \sum b_i k_i\)."""
+        k = self._evaluate_stages(x, t, step_size, drift_fn)
+        return self._combine_stages(x, step_size, k)
+
+    @staticmethod
+    def _build_time_grid(
+        x: torch.Tensor,
+        step_size: torch.Tensor,
+        n_steps: int,
+        t: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        r"""Build or validate the 1-D time grid for fixed-step integration."""
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive")
+        if t is None:
+            if not torch.is_tensor(step_size):
+                step_size = torch.tensor(
+                    step_size, device=x.device, dtype=x.dtype
+                )
+            t = (
+                torch.arange(n_steps + 1, device=x.device, dtype=x.dtype)
+                * step_size
+            )
+        if t.ndim != 1 or t.numel() < 2:
+            raise ValueError("t must be a 1D tensor with length >= 2")
+        return t
 
     def _adaptive_integrate(
         self,
@@ -390,30 +405,19 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         drift: Optional[
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
-        diffusion: Optional[torch.Tensor] = None,
-        noise: Optional[torch.Tensor] = None,
-        noise_scale: Optional[torch.Tensor] = None,
         t: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
-        """Advance the state by one step according to the RK update rule.
-        
+        r"""Advance the state by one deterministic RK step.
+
         Args:
-            state: Mapping containing required tensors (e.g., {'x': ...}).
-            model: Energy-based model providing `forward` and `gradient`.
+            state: Mapping containing ``"x"`` position tensor.
+            model: Unused (kept for ``BaseIntegrator`` interface compatibility).
             step_size: Step size for the integration.
-            drift: Explicit drift callable `f(x, t)`.  Falls back to
-                `-model.gradient(x)` when `None`.
-            diffusion: Time-dependent diffusion tensor `D(x, t)` for the SDE noise term.
-            noise: Pre-sampled noise tensor for the SDE term.  When `None`,
-                standard normal noise is generated internally.
-            noise_scale: Scalar whose square is used as `D` when `diffusion` is not given.
-            t: Current time tensor (batch,).  Required if `drift` or `diffusion` is time-dependent.
+            drift: Explicit drift callable ``f(x, t)``.
+            t: Current time tensor (batch,).
 
         Returns:
-            Updated state dict with the same keys as the input `state`.
-
-        !!!note:
-            The `step` method implements a single RK update and is used by the `integrate` method to perform multiple steps.  The `integrate` method also handles adaptive step-size control when `adaptive=True` and the integrator supports it.
+            Updated state dict ``{"x": x_new}``.
         """
         x = state["x"]
         if not torch.is_tensor(step_size):
@@ -421,13 +425,181 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         if t is None:
             t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
 
-        drift_fn = self._resolve_drift(model, drift)
+        drift_fn = self._resolve_drift(drift)
+        x_new = self._deterministic_step(x, step_size, drift_fn, t)
+        return {"x": x_new}
+
+    def integrate(
+        self,
+        state: Dict[str, torch.Tensor],
+        model: Optional[BaseModel],
+        step_size: torch.Tensor,
+        n_steps: int,
+        *,
+        drift: Optional[
+            Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        ] = None,
+        t: Optional[torch.Tensor] = None,
+        adaptive: Optional[bool] = None,
+    ) -> Dict[str, torch.Tensor]:
+        r"""Integrate the state over a time interval (ODE).
+
+        Args:
+            state: Mapping with key ``"x"`` holding the position tensor.
+            model: Unused (kept for ``BaseIntegrator`` interface compatibility).
+            step_size: Uniform step size (fixed mode) or initial step size
+                (adaptive mode).
+            n_steps: Number of integration steps (fixed mode) or, together
+                with ``step_size``, defines the integration interval when
+                ``t`` is ``None``.
+            drift: Explicit drift callable ``f(x, t)``.
+            t: 1-D time grid.  Built from ``step_size`` when ``None``.
+                In adaptive mode only ``t[0]`` and ``t[-1]`` are used.
+            adaptive: ``True`` for adaptive step-size control, ``False``
+                for fixed-step.  When ``None`` (default) adaptive mode
+                is used automatically if ``error_weights`` is defined.
+
+        Returns:
+            Updated state dict ``{"x": x_final}``.
+        """
+        if adaptive is None:
+            adaptive = self.error_weights is not None
+
+        # fixed-step path
+        if not adaptive:
+            t = self._build_time_grid(state["x"], step_size, n_steps, t)
+            x = state["x"]
+            for i in range(t.numel() - 1):
+                dt = t[i + 1] - t[i]
+                t_batch = t[i].expand(x.size(0))
+                x = self.step(
+                    state={"x": x},
+                    model=model,
+                    step_size=dt,
+                    drift=drift,
+                    t=t_batch,
+                )["x"]
+            return {"x": x}
+
+        # adaptive path
+        if self.error_weights is None or self.order is None:
+            raise ValueError(
+                f"{type(self).__name__} does not define error_weights/order "
+                f"and cannot be used with adaptive=True."
+            )
+
+        x = state["x"]
+        drift_fn = self._resolve_drift(drift)
+
+        if not torch.is_tensor(step_size):
+            step_size = torch.tensor(
+                step_size, device=x.device, dtype=x.dtype
+            )
+
+        if t is not None:
+            if t.ndim != 1 or t.numel() < 2:
+                raise ValueError("t must be a 1D tensor with length >= 2")
+            t_start = t[0].item()
+            t_end = t[-1].item()
+        else:
+            t_start = 0.0
+            t_end = float(n_steps) * step_size.item()
+
+        h = min(step_size.item(), t_end - t_start)
+        x = self._adaptive_integrate(x, drift_fn, t_start, t_end, h)
+        return {"x": x}
+
+
+class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
+    r"""Runge-Kutta integrator with additive SDE noise.
+
+    Extends ``BaseRungeKuttaIntegrator`` to solve Ito SDEs of the form
+
+    \[
+    \mathrm{d}x = f(x,t)\,\mathrm{d}t + \sqrt{2D(x,t)}\,\mathrm{d}W_t
+    \]
+
+    The stochastic term is applied as an Euler-order additive correction
+    after the deterministic RK update:
+
+    \[
+    x_{n+1} = \underbrace{x_n + h \sum_{i} b_i\,k_i}_{\text{RK update}}
+              + \sqrt{2\,D(x_n, t_n)}\,\Delta W_n
+    \]
+
+    Because the noise is added independently of the RK stages, the strong
+    convergence order is \(0.5\) (Euler--Maruyama level) regardless of the
+    underlying RK scheme order.  The higher-order RK tableau improves only
+    the deterministic component.
+
+    When ``diffusion`` is omitted the integrator reduces to its parent
+    ODE behaviour.
+    """
+
+    @staticmethod
+    def _resolve_diffusion(
+        diffusion: Optional[torch.Tensor],
+        noise_scale: Optional[torch.Tensor],
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> Optional[torch.Tensor]:
+        r"""Return a diffusion tensor from explicit value or ``noise_scale``."""
+        if diffusion is not None:
+            return diffusion
+        if noise_scale is not None:
+            if not torch.is_tensor(noise_scale):
+                noise_scale = torch.tensor(noise_scale, device=device, dtype=dtype)
+            return noise_scale ** 2
+        return None
+
+    def step(
+        self,
+        state: Dict[str, torch.Tensor],
+        model: Optional[BaseModel],
+        step_size: torch.Tensor,
+        *,
+        drift: Optional[
+            Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        ] = None,
+        diffusion: Optional[torch.Tensor] = None,
+        noise: Optional[torch.Tensor] = None,
+        noise_scale: Optional[torch.Tensor] = None,
+        t: Optional[torch.Tensor] = None,
+    ) -> Dict[str, torch.Tensor]:
+        r"""Advance the state by one RK step with optional SDE noise.
+
+        The deterministic update uses the Butcher tableau defined by the
+        subclass.  When a diffusion coefficient is provided, additive
+        Wiener noise is appended at Euler--Maruyama order (strong order
+        \(0.5\)).
+
+        Args:
+            state: Mapping containing ``"x"`` position tensor.
+            model: Unused (kept for ``BaseIntegrator`` interface compatibility).
+            step_size: Step size for the integration.
+            drift: Explicit drift callable ``f(x, t)``.
+            diffusion: Diffusion coefficient \(D(x, t)\) tensor.
+            noise: Pre-sampled noise tensor.  When ``None``, standard
+                normal noise is generated internally.
+            noise_scale: Scalar whose square is used as \(D\) when
+                ``diffusion`` is not given.
+            t: Current time tensor (batch,).
+
+        Returns:
+            Updated state dict ``{"x": x_new}``.
+        """
+        x = state["x"]
+        if not torch.is_tensor(step_size):
+            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
+        if t is None:
+            t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+
+        drift_fn = self._resolve_drift(drift)
         diffusion_val = self._resolve_diffusion(
             diffusion, noise_scale, x.device, x.dtype
         )
 
-        k = self._evaluate_stages(x, t, step_size, drift_fn)
-        x_new = self._combine_stages(x, step_size, k)
+        x_new = self._deterministic_step(x, step_size, drift_fn, t)
 
         if diffusion_val is not None:
             if noise is None:
@@ -454,28 +626,23 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         t: Optional[torch.Tensor] = None,
         adaptive: Optional[bool] = None,
     ) -> Dict[str, torch.Tensor]:
-        r"""Integrate the state over a time interval.
+        r"""Integrate the state over a time interval (ODE or SDE).
+
+        When ``diffusion`` or ``noise_scale`` is provided the integration
+        uses fixed-step SDE mode.  Adaptive step-size control is available
+        only for the ODE case (no diffusion).
 
         Args:
-            state: Mapping with key ``"x"`` holding the position tensor.
-            model: Energy-based model whose negative gradient defines the
-                drift.  Ignored when ``drift`` is provided.
-            step_size: Uniform step size (fixed mode) or initial step size
-                (adaptive mode).
-            n_steps: Number of integration steps (fixed mode) or, together
-                with ``step_size``, defines the integration interval when
-                ``t`` is ``None``.
-            drift: Explicit drift callable ``f(x, t)``.  Falls back to
-                ``-model.gradient(x)`` when ``None``.
-            diffusion: Time-dependent diffusion callable ``D(x, t)`` for
-                the SDE noise term.
+            state: Mapping with key ``"x"``.
+            model: Unused (kept for ``BaseIntegrator`` interface).
+            step_size: Step size (fixed) or initial step size (adaptive).
+            n_steps: Number of integration steps.
+            drift: Explicit drift callable ``f(x, t)``.
+            diffusion: Time-dependent diffusion callable ``D(x, t)``.
             noise_scale: Scalar whose square is used as \(D\) when
                 ``diffusion`` is not given.
-            t: 1-D time grid.  Built from ``step_size`` when ``None``.
-                In adaptive mode only ``t[0]`` and ``t[-1]`` are used.
-            adaptive: ``True`` for adaptive step-size control, ``False``
-                for fixed-step.  When ``None`` (default) adaptive mode
-                is used automatically if :attr:`error_weights` is defined.
+            t: 1-D time grid.
+            adaptive: ``True`` for adaptive (ODE only), ``False`` for fixed.
 
         Returns:
             Updated state dict ``{"x": x_final}``.
@@ -483,75 +650,33 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         if adaptive is None:
             adaptive = self.error_weights is not None
 
-        # fixed-step path
-        if not adaptive:
-            if n_steps <= 0:
-                raise ValueError("n_steps must be positive")
-            if t is None:
-                if not torch.is_tensor(step_size):
-                    step_size = torch.tensor(
-                        step_size,
-                        device=state["x"].device,
-                        dtype=state["x"].dtype,
-                    )
-                t = (
-                    torch.arange(
-                        n_steps + 1,
-                        device=state["x"].device,
-                        dtype=state["x"].dtype,
-                    )
-                    * step_size
+        if adaptive:
+            if diffusion is not None or noise_scale is not None:
+                raise ValueError(
+                    "Adaptive stepping is only supported for ODEs. "
+                    "Pass adaptive=False for SDE integration."
                 )
-            if t.ndim != 1 or t.numel() < 2:
-                raise ValueError("t must be a 1D tensor with length >= 2")
-
-            x = state["x"]
-            for i in range(t.numel() - 1):
-                dt = t[i + 1] - t[i]
-                t_batch = t[i].expand(x.size(0))
-                diffusion_t = (
-                    diffusion(x, t_batch) if diffusion is not None else None
-                )
-                x = self.step(
-                    state={"x": x},
-                    model=model,
-                    step_size=dt,
-                    drift=drift,
-                    diffusion=diffusion_t,
-                    noise_scale=noise_scale,
-                    t=t_batch,
-                )["x"]
-            return {"x": x}
-
-        # adaptive path
-        if self.error_weights is None or self.order is None:
-            raise ValueError(
-                f"{type(self).__name__} does not define error_weights/order "
-                f"and cannot be used with adaptive=True."
-            )
-        if diffusion is not None or noise_scale is not None:
-            raise ValueError(
-                "Adaptive stepping is only supported for ODEs. "
-                "Pass adaptive=False for SDE integration."
+            return super().integrate(
+                state, model, step_size, n_steps,
+                drift=drift, t=t, adaptive=True,
             )
 
+        # fixed-step SDE/ODE path
+        t = self._build_time_grid(state["x"], step_size, n_steps, t)
         x = state["x"]
-        drift_fn = self._resolve_drift(model, drift)
-
-        if not torch.is_tensor(step_size):
-            step_size = torch.tensor(
-                step_size, device=x.device, dtype=x.dtype
+        for i in range(t.numel() - 1):
+            dt = t[i + 1] - t[i]
+            t_batch = t[i].expand(x.size(0))
+            diffusion_t = (
+                diffusion(x, t_batch) if diffusion is not None else None
             )
-
-        if t is not None:
-            if t.ndim != 1 or t.numel() < 2:
-                raise ValueError("t must be a 1D tensor with length >= 2")
-            t_start = t[0].item()
-            t_end = t[-1].item()
-        else:
-            t_start = 0.0
-            t_end = float(n_steps) * step_size.item()
-
-        h = min(step_size.item(), t_end - t_start)
-        x = self._adaptive_integrate(x, drift_fn, t_start, t_end, h)
+            x = self.step(
+                state={"x": x},
+                model=model,
+                step_size=dt,
+                drift=drift,
+                diffusion=diffusion_t,
+                noise_scale=noise_scale,
+                t=t_batch,
+            )["x"]
         return {"x": x}

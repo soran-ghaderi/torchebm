@@ -1,9 +1,9 @@
 r"""Euler-Maruyama integrator."""
 
-from torchebm.core import BaseRungeKuttaIntegrator
+from torchebm.core import BaseSDERungeKuttaIntegrator
 
 
-class EulerMaruyamaIntegrator(BaseRungeKuttaIntegrator):
+class EulerMaruyamaIntegrator(BaseSDERungeKuttaIntegrator):
     r"""
     Euler-Maruyama integrator for Itô SDEs and ODEs.
 
