@@ -125,6 +125,11 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         safety: Safety factor for step-size adjustment (< 1).
         min_factor: Minimum step-size shrink factor.
         max_factor: Maximum step-size growth factor.
+        max_step_size: Maximum absolute step size allowed during adaptive
+            integration.  Defaults to ``inf`` (no limit).
+        norm: Callable ``norm(tensor) -> scalar`` used to measure the
+            local error.  Defaults to the RMS norm
+            \(\sqrt{\mathrm{mean}(x^2)}\).
 
     Example:
         ```python
@@ -162,6 +167,8 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         safety: float = 0.9,
         min_factor: float = 0.2,
         max_factor: float = 10.0,
+        max_step_size: float = float("inf"),
+        norm: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ):
         super().__init__(device=device, dtype=dtype)
         self.atol = atol
@@ -170,6 +177,8 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         self.safety = safety
         self.min_factor = min_factor
         self.max_factor = max_factor
+        self.max_step_size = max_step_size
+        self._norm = norm
 
     # butcher tableau, must be defined by subclasses
 
@@ -229,6 +238,11 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         return False
 
     # helpers
+
+    @staticmethod
+    def _rms_norm(x: torch.Tensor) -> torch.Tensor:
+        r"""Root-mean-square norm: \(\sqrt{\mathrm{mean}(x^2)}\)."""
+        return torch.sqrt(torch.mean(x ** 2))
 
     def _evaluate_stages(
         self,
@@ -324,11 +338,12 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         t_end: float,
         h: float,
     ) -> torch.Tensor:
-        """Core adaptive integration loop from *t_start* to *t_end*."""
+        r"""Core adaptive integration loop from *t_start* to *t_end*."""
         t_current = t_start
         e = self.error_weights
         p = self.order
         is_fsal = self.fsal
+        norm_fn = self._norm if self._norm is not None else self._rms_norm
 
         k1_cached: Optional[torch.Tensor] = None
         if is_fsal:
@@ -341,7 +356,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             if t_current >= t_end - 1e-12 * max(abs(t_end), 1.0):
                 break
 
-            h = min(h, t_end - t_current)
+            h = min(h, t_end - t_current, self.max_step_size)
             h_t = torch.tensor(h, device=x.device, dtype=x.dtype)
             t_batch = torch.full(
                 (x.size(0),), t_current, device=x.device, dtype=x.dtype
@@ -364,9 +379,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             err_vec = h_t * err_vec
 
             scale = self.atol + self.rtol * torch.max(x.abs(), y_new.abs())
-            err_ratio = torch.sqrt(
-                torch.mean((err_vec / scale) ** 2)
-            ).item()
+            err_ratio = norm_fn(err_vec / scale).item()
 
             if err_ratio <= 1.0:
                 x = y_new
@@ -383,7 +396,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                         self.safety * err_ratio ** (-1.0 / p),
                     ),
                 )
-            h = h * factor
+            h = min(h * factor, self.max_step_size)
         else:
             raise RuntimeError(
                 f"{type(self).__name__}: maximum number of steps "
@@ -496,7 +509,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             t_start = 0.0
             t_end = float(n_steps) * step_size.item()
 
-        h = min(step_size.item(), t_end - t_start)
+        h = min(step_size.item(), t_end - t_start, self.max_step_size)
         x = self._adaptive_integrate(x, drift_fn, t_start, t_end, h)
         return {"x": x}
 

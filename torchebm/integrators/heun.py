@@ -21,6 +21,14 @@ class HeunIntegrator(BaseSDERungeKuttaIntegrator):
     Args:
         device: Device for computations.
         dtype: Data type for computations.
+        atol: Absolute tolerance for adaptive stepping.
+        rtol: Relative tolerance for adaptive stepping.
+        max_steps: Maximum number of steps before raising ``RuntimeError``.
+        safety: Safety factor for step-size adjustment (< 1).
+        min_factor: Minimum step-size shrink factor.
+        max_factor: Maximum step-size growth factor.
+        max_step_size: Maximum absolute step size during adaptive integration.
+        norm: Callable ``norm(tensor) -> scalar`` for local error measurement.
 
     Example:
         ```python
