@@ -4,7 +4,7 @@ from typing import Tuple
 
 import torch
 
-from torchebm.core.base_interpolant import BaseInterpolant, expand_t_like_x
+from torchebm.core import BaseInterpolant, expand_t_like_x
 
 
 class VariancePreservingInterpolant(BaseInterpolant):

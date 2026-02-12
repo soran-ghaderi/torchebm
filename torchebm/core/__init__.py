@@ -33,7 +33,7 @@ from .base_scheduler import (
 )
 from .base_sampler import BaseSampler
 
-from .base_loss import BaseLoss, BaseContrastiveDivergence
+from .base_loss import BaseLoss, BaseContrastiveDivergence, BaseScoreMatching
 
 from .base_integrator import BaseIntegrator, BaseRungeKuttaIntegrator, BaseSDERungeKuttaIntegrator
 from .base_interpolant import BaseInterpolant, expand_t_like_x
@@ -62,6 +62,7 @@ __all__ = [
     # Base classes and utilities
     "BaseSampler",
     "BaseLoss",
+    "BaseScoreMatching",
     "BaseContrastiveDivergence",
     "BaseIntegrator",
     "BaseRungeKuttaIntegrator",
