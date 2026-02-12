@@ -88,7 +88,7 @@ class LeapfrogIntegrator(BaseIntegrator):
 
         if not torch.is_tensor(step_size):
             step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
-
+        # if model is not None:
         drift = self._resolve_deprecated_to_drift(model, potential_grad, drift)
         drift_fn = self._resolve_drift(drift)
 
