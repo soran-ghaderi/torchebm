@@ -5,20 +5,21 @@ landscapes, following the EqM paper:
 
 - **Implicit EqM** ($L_{EqM}$): Learns gradient field directly
   
-  \[
-  L_{EqM} = \|f(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
-  \]
+    \[
+    L_{EqM} = \|f(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
+    \]
 
 - **Explicit EqM-E** ($L_{EqM-E}$): Learns scalar energy via gradient matching
 
-  \[
-  L_{EqM-E} = \|\nabla g(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
-  \]
+    \[
+    L_{EqM-E} = \|\nabla g(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
+    \]
 
 where $\epsilon$ is noise (x0), $x$ is data (x1), and the target $(\epsilon - x)$
 points from data toward noise (opposite of FM velocity).
 
 Key differences from Flow Matching:
+
 - Time-invariant: Model zeros out time conditioning internally
 - Gradient direction: EqM learns $(\epsilon - x)$, FM learns $(x - \epsilon)$
 - Sampling: Use ``negate_velocity=True`` with FlowSampler for ODE sampling
