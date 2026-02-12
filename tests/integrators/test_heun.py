@@ -66,7 +66,7 @@ def test_step_ode_only(integrator):
     drift = lambda x_, t_: -x_  # Simple mean-reverting drift
     step_size = 0.01
 
-    result = integrator.step(state, model=None, step_size=step_size, drift=drift, t=t)
+    result = integrator.step(state, step_size=step_size, drift=drift, t=t)
 
     assert "x" in result
     assert result["x"].shape == x.shape
@@ -85,7 +85,7 @@ def test_step_with_diffusion(integrator):
     step_size = 0.01
 
     result = integrator.step(
-        state, model=None, step_size=step_size, drift=drift, t=t, diffusion=diffusion
+        state, step_size=step_size, drift=drift, t=t, diffusion=diffusion
     )
 
     assert "x" in result
@@ -104,7 +104,7 @@ def test_step_with_noise_scale(integrator):
     step_size = 0.01
 
     result = integrator.step(
-        state, model=None, step_size=step_size, drift=drift, t=t, noise_scale=1.0
+        state, step_size=step_size, drift=drift, t=t, noise_scale=1.0
     )
 
     assert "x" in result
@@ -119,8 +119,9 @@ def test_step_with_model(integrator, gaussian_model):
     state = {"x": x}
     t = torch.zeros(10, device=device)
     step_size = 0.01
+    drift = lambda x_, t_: -gaussian_model.gradient(x_)
 
-    result = integrator.step(state, model=gaussian_model, step_size=step_size, t=t)
+    result = integrator.step(state, step_size=step_size, drift=drift, t=t)
 
     assert "x" in result
     assert result["x"].shape == x.shape
@@ -134,8 +135,8 @@ def test_step_requires_drift_or_model(integrator):
     state = {"x": x}
     t = torch.zeros(10, device=device)
 
-    with pytest.raises(ValueError, match="Either `model` must be provided"):
-        integrator.step(state, model=None, step_size=0.01, t=t)
+    with pytest.raises(ValueError, match="drift must be provided explicitly"):
+        integrator.step(state, step_size=0.01, t=t)
 
 
 def test_step_with_custom_noise(integrator):
@@ -150,7 +151,6 @@ def test_step_with_custom_noise(integrator):
 
     result = integrator.step(
         state,
-        model=None,
         step_size=step_size,
         drift=drift,
         t=t,
@@ -176,7 +176,7 @@ def test_integrate_ode(integrator):
     t = torch.linspace(0, 1, n_steps, device=device)
 
     result = integrator.integrate(
-        state, model=None, step_size=step_size, n_steps=n_steps, drift=drift, t=t
+        state, step_size=step_size, n_steps=n_steps, drift=drift, t=t
     )
 
     assert "x" in result
@@ -201,7 +201,6 @@ def test_integrate_sde(integrator):
 
     result = integrator.integrate(
         state,
-        model=None,
         step_size=0.01,
         n_steps=n_steps,
         drift=drift,
@@ -221,9 +220,10 @@ def test_integrate_with_model(integrator, gaussian_model):
     state = {"x": x}
     n_steps = 100
     t = torch.linspace(0, 1, n_steps, device=device)
+    drift = lambda x_, t_: -gaussian_model.gradient(x_)
 
     result = integrator.integrate(
-        state, model=gaussian_model, step_size=0.01, n_steps=n_steps, t=t
+        state, step_size=0.01, n_steps=n_steps, drift=drift, t=t
     )
 
     assert "x" in result
@@ -246,7 +246,7 @@ def test_integrate_invalid_n_steps(integrator):
 
     with pytest.raises(ValueError, match="n_steps must be positive"):
         integrator.integrate(
-            state, model=None, step_size=0.01, n_steps=0, drift=drift, t=t
+            state, step_size=0.01, n_steps=0, drift=drift, t=t
         )
 
 
@@ -262,14 +262,14 @@ def test_integrate_time_grid_validation(integrator):
     t_wrong_shape = torch.linspace(0, 1, n_steps, device=device).reshape(5, 10)
     with pytest.raises(ValueError, match="t must be a 1D tensor"):
         integrator.integrate(
-            state, model=None, step_size=0.02, n_steps=n_steps, drift=drift, t=t_wrong_shape
+            state, step_size=0.02, n_steps=n_steps, drift=drift, t=t_wrong_shape
         )
 
     # Too short (must have at least 2 points)
     t_too_short = torch.tensor([0.0], device=device)
     with pytest.raises(ValueError, match="t must be a 1D tensor with length >= 2"):
         integrator.integrate(
-            state, model=None, step_size=0.02, n_steps=1, drift=drift, t=t_too_short
+            state, step_size=0.02, n_steps=1, drift=drift, t=t_too_short
         )
 
 
@@ -283,7 +283,7 @@ def test_single_step_integration(integrator):
     # Single step with t having exactly 2 points
     t = torch.tensor([0.0, 1.0], device=device)
     result = integrator.integrate(
-        state, model=None, step_size=1.0, n_steps=1, drift=drift, t=t
+        state, step_size=1.0, n_steps=1, drift=drift, t=t
     )
 
     # Heun method for f(x) = -x, dt = 1:
@@ -325,7 +325,7 @@ def test_manual_heun_step():
     drift = lambda x_, t_: -x_
     step_size = 0.1
 
-    result = integrator.step(state, model=None, step_size=step_size, drift=drift, t=t)
+    result = integrator.step(state, step_size=step_size, drift=drift, t=t)
 
     # Expected: x_new = x * (1 - dt + 0.5*dt²)
     expected = x * (1 - step_size + 0.5 * step_size**2)
@@ -348,7 +348,7 @@ def test_heun_second_order_convergence():
         n_steps = int(1.0 / step_size)
         t = torch.linspace(0, 1.0 - step_size, n_steps, device=device, dtype=torch.float64)
         result = integrator.integrate(
-            {"x": x0.clone()}, model=None, step_size=step_size, n_steps=n_steps, drift=drift, t=t
+            {"x": x0.clone()}, step_size=step_size, n_steps=n_steps, drift=drift, t=t
         )
         expected = x0 * math.exp(-1.0)
         # Adjust for incomplete integration
@@ -379,10 +379,10 @@ def test_heun_vs_euler_accuracy():
     t = torch.linspace(0, 1, n_steps, device=device, dtype=dtype)
 
     heun_result = heun.integrate(
-        {"x": x0.clone()}, model=None, step_size=step_size, n_steps=n_steps, drift=drift, t=t
+        {"x": x0.clone()}, step_size=step_size, n_steps=n_steps, drift=drift, t=t
     )
     euler_result = euler.integrate(
-        {"x": x0.clone()}, model=None, step_size=step_size, n_steps=n_steps, drift=drift
+        {"x": x0.clone()}, step_size=step_size, n_steps=n_steps, drift=drift
     )
 
     expected = x0 * math.exp(-1.0)
@@ -406,7 +406,7 @@ def test_quadratic_drift():
     t = torch.linspace(0, 0.5, n_steps, device=device)
 
     result = integrator.integrate(
-        state, model=None, step_size=0.01, n_steps=n_steps, drift=drift, t=t
+        state, step_size=0.01, n_steps=n_steps, drift=drift, t=t
     )
 
     assert result["x"].shape == x.shape
@@ -427,7 +427,7 @@ def test_reproducibility(integrator):
     state1 = {"x": x1}
     t1 = torch.zeros(10, device=device)
     result1 = integrator.step(
-        state1, model=None, step_size=0.01, drift=lambda x_, t_: -x_, noise_scale=1.0, t=t1
+        state1, step_size=0.01, drift=lambda x_, t_: -x_, noise_scale=1.0, t=t1
     )
 
     torch.manual_seed(42)
@@ -435,7 +435,7 @@ def test_reproducibility(integrator):
     state2 = {"x": x2}
     t2 = torch.zeros(10, device=device)
     result2 = integrator.step(
-        state2, model=None, step_size=0.01, drift=lambda x_, t_: -x_, noise_scale=1.0, t=t2
+        state2, step_size=0.01, drift=lambda x_, t_: -x_, noise_scale=1.0, t=t2
     )
 
     assert torch.allclose(result1["x"], result2["x"])
@@ -452,7 +452,7 @@ def test_large_batch_size(integrator):
     t = torch.zeros(1000, device=device)
     drift = lambda x_, t_: -x_
 
-    result = integrator.step(state, model=None, step_size=0.01, drift=drift, t=t)
+    result = integrator.step(state, step_size=0.01, drift=drift, t=t)
 
     assert result["x"].shape == x.shape
     assert torch.all(torch.isfinite(result["x"]))
@@ -466,7 +466,7 @@ def test_high_dimension(integrator):
     t = torch.zeros(10, device=device)
     drift = lambda x_, t_: -x_
 
-    result = integrator.step(state, model=None, step_size=0.01, drift=drift, t=t)
+    result = integrator.step(state, step_size=0.01, drift=drift, t=t)
 
     assert result["x"].shape == x.shape
     assert torch.all(torch.isfinite(result["x"]))
@@ -481,7 +481,7 @@ def test_time_dependent_drift(integrator):
     # Drift depends on time: f(x, t) = -x * (1 + t)
     drift = lambda x_, t_: -x_ * (1 + t_[:, None])
 
-    result = integrator.step(state, model=None, step_size=0.01, drift=drift, t=t)
+    result = integrator.step(state, step_size=0.01, drift=drift, t=t)
 
     assert result["x"].shape == x.shape
     assert torch.all(torch.isfinite(result["x"]))
