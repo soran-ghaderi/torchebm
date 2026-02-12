@@ -11,17 +11,17 @@ import torch
 from torch import nn
 import numpy as np
 
-from torchebm.core import BaseSampler
+from torchebm.core import BaseSampler, BaseInterpolant, expand_t_like_x
 from torchebm.integrators import (
     EulerMaruyamaIntegrator,
     HeunIntegrator,
 )
 from torchebm.interpolants import (
-    BaseInterpolant,
+    # BaseInterpolant,
     LinearInterpolant,
     CosineInterpolant,
     VariancePreservingInterpolant,
-    expand_t_like_x,
+    # expand_t_like_x,
 )
 from torchebm.losses.loss_utils import get_interpolant
 

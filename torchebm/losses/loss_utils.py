@@ -2,8 +2,8 @@ r"""Utility functions for loss computations."""
 
 import torch
 
+from torchebm.core import BaseInterpolant
 from torchebm.interpolants import (
-    BaseInterpolant,
     LinearInterpolant,
     CosineInterpolant,
     VariancePreservingInterpolant,

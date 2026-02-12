@@ -4,7 +4,7 @@ from typing import Tuple
 
 import torch
 
-from torchebm.core.base_interpolant import BaseInterpolant
+from torchebm.core import BaseInterpolant
 
 
 class LinearInterpolant(BaseInterpolant):

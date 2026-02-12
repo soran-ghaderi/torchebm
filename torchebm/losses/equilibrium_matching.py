@@ -31,9 +31,8 @@ from typing import Dict, Literal, Optional, Any, Union
 import torch
 from torch import nn
 
-from torchebm.core.base_loss import BaseLoss
-from torchebm.interpolants import BaseInterpolant, expand_t_like_x
-from torchebm.losses.loss_utils import (
+from torchebm.core import BaseLoss, BaseInterpolant, expand_t_like_x
+from torchebm.losses import (
     mean_flat,
     get_interpolant,
     compute_eqm_ct,

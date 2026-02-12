@@ -5,9 +5,9 @@ from typing import Optional, Union, Tuple, List
 
 import torch
 
-from torchebm.core.base_model import BaseModel
-from torchebm.core.base_sampler import BaseSampler
 from torchebm.core import (
+    BaseModel,
+    BaseSampler,
     BaseScheduler,
     ConstantScheduler,
 )
