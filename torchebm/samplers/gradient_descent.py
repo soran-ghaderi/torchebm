@@ -10,9 +10,7 @@ from typing import Optional, Union, Tuple, List
 
 import torch
 
-from torchebm.core import BaseModel
-from torchebm.core.base_sampler import BaseSampler
-from torchebm.core import BaseScheduler, ConstantScheduler
+from torchebm.core import BaseModel, BaseSampler, BaseScheduler, ConstantScheduler
 
 
 class GradientDescentSampler(BaseSampler):

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import torch
-from torchebm.core.base_model import BaseModel
+from torchebm.core import BaseModel
 from typing import Optional, Tuple, List, Union
 import os
 

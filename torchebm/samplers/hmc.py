@@ -5,11 +5,11 @@ from typing import Optional, Union, Tuple
 import torch
 
 from torchebm.core import (
+    BaseModel,
     BaseSampler,
     BaseScheduler,
     ConstantScheduler,
 )
-from torchebm.core.base_model import BaseModel
 from torchebm.integrators import LeapfrogIntegrator
 
 
