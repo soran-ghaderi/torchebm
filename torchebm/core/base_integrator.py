@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import torch
 from torch import nn
 
-from torchebm.core import DeviceMixin, BaseModel
+from torchebm.core import DeviceMixin
 
 
 class BaseIntegrator(DeviceMixin, nn.Module, ABC):
@@ -28,11 +28,26 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
     ):
         super().__init__(device=device, dtype=dtype, *args, **kwargs)
 
+    @staticmethod
+    def _resolve_drift(
+        drift: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]],
+    ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+        r"""Return the drift callable after validation.
+
+        Raises:
+            ValueError: If ``drift`` is ``None``.
+        """
+        if drift is not None:
+            return drift
+        raise ValueError(
+            "drift must be provided explicitly. For EBM sampling, pass "
+            "drift=lambda x, t: -model.gradient(x) from the caller."
+        )
+
     @abstractmethod
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
         step_size: torch.Tensor,
         *args,
         **kwargs,
@@ -42,7 +57,6 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
 
         Args:
             state: Mapping containing required tensors (e.g., {'x': ..., 'p': ...}).
-            model: Energy-based model providing `forward` and `gradient`.
             step_size: Step size for the integration.
             *args: Additional positional arguments specific to the integrator.
             **kwargs: Additional keyword arguments specific to the integrator.
@@ -56,7 +70,6 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
         step_size: torch.Tensor,
         n_steps: int,
         *args,
@@ -67,7 +80,6 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
 
         Args:
             state: Mapping containing required tensors (e.g., {'x': ..., 'p': ...}).
-            model: Energy-based model providing `forward` and `gradient`.
             step_size: Step size for the integration.
             n_steps: The number of integration steps to perform.
             *args: Additional positional arguments specific to the integrator.
@@ -135,7 +147,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         integrator = MidpointIntegrator()
         state = {"x": torch.randn(100, 2)}
         drift = lambda x, t: -x
-        result = integrator.step(state, model=None, step_size=0.01, drift=drift)
+        result = integrator.step(state, step_size=0.01, drift=drift)
         ```
     """
 
@@ -217,22 +229,6 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         return False
 
     # helpers
-
-    @staticmethod
-    def _resolve_drift(
-        drift: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]],
-    ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
-        r"""Return the drift callable after validation.
-
-        Raises:
-            ValueError: If ``drift`` is ``None``.
-        """
-        if drift is not None:
-            return drift
-        raise ValueError(
-            "drift must be provided explicitly. For EBM sampling, pass "
-            "drift=lambda x, t: -model.gradient(x) from the caller."
-        )
 
     def _evaluate_stages(
         self,
@@ -399,7 +395,6 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
         step_size: torch.Tensor,
         *,
         drift: Optional[
@@ -411,7 +406,6 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
 
         Args:
             state: Mapping containing ``"x"`` position tensor.
-            model: Unused (kept for ``BaseIntegrator`` interface compatibility).
             step_size: Step size for the integration.
             drift: Explicit drift callable ``f(x, t)``.
             t: Current time tensor (batch,).
@@ -432,7 +426,6 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
         step_size: torch.Tensor,
         n_steps: int,
         *,
@@ -446,7 +439,6 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
 
         Args:
             state: Mapping with key ``"x"`` holding the position tensor.
-            model: Unused (kept for ``BaseIntegrator`` interface compatibility).
             step_size: Uniform step size (fixed mode) or initial step size
                 (adaptive mode).
             n_steps: Number of integration steps (fixed mode) or, together
@@ -474,7 +466,6 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                 t_batch = t[i].expand(x.size(0))
                 x = self.step(
                     state={"x": x},
-                    model=model,
                     step_size=dt,
                     drift=drift,
                     t=t_batch,
@@ -555,7 +546,6 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
         step_size: torch.Tensor,
         *,
         drift: Optional[
@@ -575,7 +565,6 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
 
         Args:
             state: Mapping containing ``"x"`` position tensor.
-            model: Unused (kept for ``BaseIntegrator`` interface compatibility).
             step_size: Step size for the integration.
             drift: Explicit drift callable ``f(x, t)``.
             diffusion: Diffusion coefficient \(D(x, t)\) tensor.
@@ -612,7 +601,6 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
         step_size: torch.Tensor,
         n_steps: int,
         *,
@@ -634,7 +622,6 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
 
         Args:
             state: Mapping with key ``"x"``.
-            model: Unused (kept for ``BaseIntegrator`` interface).
             step_size: Step size (fixed) or initial step size (adaptive).
             n_steps: Number of integration steps.
             drift: Explicit drift callable ``f(x, t)``.
@@ -657,7 +644,7 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
                     "Pass adaptive=False for SDE integration."
                 )
             return super().integrate(
-                state, model, step_size, n_steps,
+                state, step_size, n_steps,
                 drift=drift, t=t, adaptive=True,
             )
 
@@ -672,7 +659,6 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             )
             x = self.step(
                 state={"x": x},
-                model=model,
                 step_size=dt,
                 drift=drift,
                 diffusion=diffusion_t,

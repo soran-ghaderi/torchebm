@@ -115,7 +115,7 @@ def test_step_requires_potential(integrator):
     p = torch.randn(10, 2, device=device)
     state = {"x": x, "p": p}
 
-    with pytest.raises(ValueError, match="Either `model` must be provided"):
+    with pytest.raises(ValueError, match="drift must be provided explicitly"):
         integrator.step(state, model=None, step_size=0.01)
 
 

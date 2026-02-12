@@ -131,7 +131,6 @@ class LangevinDynamics(BaseSampler):
                 state = {"x": x}
                 x = self.integrator.step(
                     state=state,
-                    model=None,
                     step_size=self.get_scheduled_value("step_size"),
                     noise_scale=self.get_scheduled_value("noise_scale"),
                     drift=drift,
