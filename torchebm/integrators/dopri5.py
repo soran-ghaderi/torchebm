@@ -2,7 +2,7 @@ r"""Dormand-Prince 5(4) integrator with optional adaptive step-size control."""
 
 from typing import Tuple
 
-from torchebm.core.base_integrator import BaseRungeKuttaIntegrator
+from torchebm.core import BaseRungeKuttaIntegrator
 
 
 class Dopri5Integrator(BaseRungeKuttaIntegrator):
