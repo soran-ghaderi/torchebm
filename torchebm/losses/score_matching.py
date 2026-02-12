@@ -4,8 +4,8 @@ import torch
 import warnings
 from typing import Optional, Union, Dict, Tuple, Any, Callable
 
-from torchebm.core import BaseModel
-from torchebm.core.base_loss import BaseScoreMatching
+from torchebm.core import BaseModel, BaseScoreMatching
+# from torchebm.core.base_loss import BaseScoreMatching
 
 
 class ScoreMatching(BaseScoreMatching):
