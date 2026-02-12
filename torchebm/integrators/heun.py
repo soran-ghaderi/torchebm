@@ -1,12 +1,14 @@
+r"""Heun (improved Euler) integrator."""
+
+import warnings
 from typing import Callable, Dict, Optional
 
 import torch
 
-from torchebm.core import BaseIntegrator, BaseModel
-from torchebm.integrators import _integrate_time_grid
+from torchebm.core import BaseSDERungeKuttaIntegrator
 
 
-class HeunIntegrator(BaseIntegrator):
+class HeunIntegrator(BaseSDERungeKuttaIntegrator):
     r"""
     Heun integrator (predictor-corrector) for Itô SDEs and ODEs.
 
@@ -19,6 +21,14 @@ class HeunIntegrator(BaseIntegrator):
     Args:
         device: Device for computations.
         dtype: Data type for computations.
+        atol: Absolute tolerance for adaptive stepping.
+        rtol: Relative tolerance for adaptive stepping.
+        max_steps: Maximum number of steps before raising ``RuntimeError``.
+        safety: Safety factor for step-size adjustment (< 1).
+        min_factor: Minimum step-size shrink factor.
+        max_factor: Maximum step-size growth factor.
+        max_step_size: Maximum absolute step size during adaptive integration.
+        norm: Callable ``norm(tensor) -> scalar`` for local error measurement.
 
     Example:
         ```python
@@ -30,86 +40,64 @@ class HeunIntegrator(BaseIntegrator):
         t = torch.linspace(0, 1, 50)
         drift = lambda x, t: -x
         result = integrator.integrate(
-            state, model=None, step_size=0.02, n_steps=50, drift=drift, t=t
+            state, step_size=0.02, n_steps=50, drift=drift, t=t
         )
         ```
     """
 
+    @property
+    def tableau_a(self):
+        return ((), (1.0,))
+
+    @property
+    def tableau_b(self):
+        return (0.5, 0.5)
+
+    @property
+    def tableau_c(self):
+        return (0.0, 1.0)
+
+    # -- backward-compat shims for deprecated ``model`` kwarg ----------------
+
+    @staticmethod
+    def _resolve_model_to_drift(model, drift):
+        """Convert deprecated ``model`` to a ``drift`` callable."""
+        if model is not None:
+            warnings.warn(
+                "Passing 'model' to HeunIntegrator is deprecated. "
+                "Use drift=lambda x, t: -model.gradient(x) instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            if drift is None:
+                drift = lambda x_, t_: -model.gradient(x_)
+        return drift
+
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
-        step_size: torch.Tensor,
+        step_size: torch.Tensor = None,
         *,
-        drift: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
-        diffusion: Optional[torch.Tensor] = None,
-        t: torch.Tensor,
-        noise: Optional[torch.Tensor] = None,
-        noise_scale: Optional[torch.Tensor] = None,
+        model=None,
+        drift: Optional[
+            Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        ] = None,
+        **kwargs,
     ) -> Dict[str, torch.Tensor]:
-        x = state["x"]
-        if not torch.is_tensor(step_size):
-            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
-
-        if drift is None:
-            if model is None:
-                raise ValueError(
-                    "Either `model` must be provided or `drift` must be set."
-                )
-            drift = lambda x_, t_: -model.gradient(x_)
-
-        if diffusion is None and noise_scale is not None:
-            if not torch.is_tensor(noise_scale):
-                noise_scale = torch.tensor(noise_scale, device=x.device, dtype=x.dtype)
-            diffusion = noise_scale**2
-
-        # Heun predictor-corrector for drift term
-        k1 = drift(x, t)
-        x_pred = x + step_size * k1
-        k2 = drift(x_pred, t + step_size)
-        x_new = x + 0.5 * step_size * (k1 + k2)
-
-        # Add stochastic term after deterministic update
-        if diffusion is not None:
-            if noise is None:
-                noise = torch.randn_like(x, device=self.device, dtype=self.dtype)
-            dw = noise * torch.sqrt(step_size)
-            x_new = x_new + torch.sqrt(2.0 * diffusion) * dw
-
-        return {"x": x_new}
-
+        drift = self._resolve_model_to_drift(model, drift)
+        return super().step(state, step_size, drift=drift, **kwargs)
 
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel],
-        step_size: torch.Tensor,
-        n_steps: int,
+        step_size: torch.Tensor = None,
+        n_steps: int = None,
         *,
-        drift: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
-        diffusion: Optional[
+        model=None,
+        drift: Optional[
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
-        noise_scale: Optional[torch.Tensor] = None,
-        t: torch.Tensor,
+        **kwargs,
     ) -> Dict[str, torch.Tensor]:
-        if n_steps <= 0:
-            raise ValueError("n_steps must be positive")
-        if t.ndim != 1 or t.numel() < 2:
-            raise ValueError("t must be a 1D tensor with length >= 2")
-
-        x0 = state["x"]
-
-        def _step_fn(x, t_batch, dt):
-            diffusion_t = diffusion(x, t_batch) if diffusion is not None else None
-            return self.step(
-                state={"x": x},
-                model=model,
-                step_size=dt,
-                drift=drift,
-                diffusion=diffusion_t,
-                t=t_batch,
-                noise_scale=noise_scale,
-            )["x"]
-
-        return {"x": _integrate_time_grid(x0, t, _step_fn)}
+        drift = self._resolve_model_to_drift(model, drift)
+        return super().integrate(state, step_size, n_steps, drift=drift, **kwargs)

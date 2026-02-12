@@ -326,7 +326,6 @@ class FlowSampler(BaseSampler):
             integrator = EulerMaruyamaIntegrator(device=self.device, dtype=self.dtype)
             return integrator.integrate(
                 state={"x": z},
-                model=None,
                 step_size=t[1] - t[0],
                 n_steps=num_steps,
                 drift=fixed_step_drift,
@@ -336,7 +335,6 @@ class FlowSampler(BaseSampler):
             integrator = HeunIntegrator(device=self.device, dtype=self.dtype)
             return integrator.integrate(
                 state={"x": z},
-                model=None,
                 step_size=t[1] - t[0],
                 n_steps=num_steps,
                 drift=fixed_step_drift,
@@ -410,7 +408,6 @@ class FlowSampler(BaseSampler):
             integrator = EulerMaruyamaIntegrator(device=self.device, dtype=self.dtype)
             x = integrator.integrate(
                 state={"x": z},
-                model=None,
                 step_size=t[1] - t[0],
                 n_steps=num_steps,
                 drift=fixed_sde_drift,
@@ -421,7 +418,6 @@ class FlowSampler(BaseSampler):
             integrator = HeunIntegrator(device=self.device, dtype=self.dtype)
             x = integrator.integrate(
                 state={"x": z},
-                model=None,
                 step_size=t[1] - t[0],
                 n_steps=num_steps,
                 drift=fixed_sde_drift,

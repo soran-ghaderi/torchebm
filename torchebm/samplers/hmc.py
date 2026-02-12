@@ -178,12 +178,13 @@ class HamiltonianMonteCarlo(BaseSampler):
                 current_hamiltonian = current_energy + current_kinetic
 
                 state = {"x": x, "p": current_momentum}
+                drift = lambda x_, t_: -self.model.gradient(x_)
                 proposed = self.integrator.integrate(
                     state,
-                    self.model,
-                    self.get_scheduled_value("step_size"),
-                    self.n_leapfrog_steps,
-                    self.mass,
+                    step_size=self.get_scheduled_value("step_size"),
+                    n_steps=self.n_leapfrog_steps,
+                    mass=self.mass,
+                    drift=drift,
                 )
                 proposed_position, proposed_momentum = proposed["x"], proposed["p"]
 
