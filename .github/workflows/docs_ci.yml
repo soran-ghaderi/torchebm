@@ -77,27 +77,6 @@ jobs:
           fi
           echo "Resolved VERSION=$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-      - name: Setup gh-pages branch
-        if: github.event_name != 'pull_request'
-        run: |
-          # Initialize gh-pages branch if it doesn't exist
-          git fetch origin gh-pages || git checkout --orphan gh-pages
-          if ! git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
-            # If gh-pages doesn't exist on remote, create it
-            git checkout --orphan gh-pages
-            git rm -rf .
-            touch .nojekyll
-            git add .nojekyll
-            git commit -m "Initialize gh-pages branch"
-            git push -u origin gh-pages
-            git checkout -
-          else
-            # If it exists, ensure we have it locally
-            git checkout gh-pages || git checkout -b gh-pages origin/gh-pages
-            # Make sure it's up to date
-            git pull origin gh-pages
-            git checkout -
-          fi
       - name: Extract clean version
         run: |
           CLEAN_VERSION=$(echo "$VERSION" | cut -d'+' -f1)
