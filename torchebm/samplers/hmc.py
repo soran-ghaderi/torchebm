@@ -185,6 +185,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                     n_steps=self.n_leapfrog_steps,
                     mass=self.mass,
                     drift=drift,
+                    safe=True,
                 )
                 proposed_position, proposed_momentum = proposed["x"], proposed["p"]
 

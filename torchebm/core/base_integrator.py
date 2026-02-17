@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from contextlib import nullcontext
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -179,6 +180,25 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         self.max_factor = max_factor
         self.max_step_size = max_step_size
         self._norm = norm
+        self._register_tableau_buffers()
+
+    def _register_tableau_buffers(self):
+        r"""Pre-compute Butcher tableau as registered buffers for efficient GPU computation."""
+        s = len(self.tableau_c)
+        _device = self.device
+        _dtype = self.dtype
+        a = torch.zeros(s, s, device=_device, dtype=_dtype)
+        for i, row in enumerate(self.tableau_a):
+            for j, val in enumerate(row):
+                a[i, j] = val
+        self.register_buffer("_buf_a", a)
+        self.register_buffer("_buf_b", torch.tensor(self.tableau_b, device=_device, dtype=_dtype))
+        self.register_buffer("_buf_c", torch.tensor(self.tableau_c, device=_device, dtype=_dtype))
+        e = self.error_weights
+        self.register_buffer(
+            "_buf_e",
+            torch.tensor(e, device=_device, dtype=_dtype) if e is not None else None,
+        )
 
     # butcher tableau, must be defined by subclasses
 
@@ -263,21 +283,20 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                 drift evaluation is skipped (used by FSAL methods to reuse
                 the last stage of the previous step).
         """
-        a = self.tableau_a
-        c = self.tableau_c
+        a = self._buf_a.to(device=x.device, dtype=x.dtype)
+        c = self._buf_c.to(device=x.device, dtype=x.dtype)
+        s = a.size(0)
         k: List[torch.Tensor] = []
-        for i in range(self.n_stages):
+        for i in range(s):
             if i == 0 and k0 is not None:
                 k.append(k0)
                 continue
             if i == 0:
                 x_stage = x
             else:
-                dx = torch.zeros_like(x)
-                for j in range(i):
-                    if a[i][j] != 0:
-                        dx = dx + a[i][j] * k[j]
-                x_stage = x + step_size * dx
+                k_stack = torch.stack(k)
+                a_row = a[i, :i].reshape(-1, *([1] * x.ndim))
+                x_stage = x + step_size * (a_row * k_stack).sum(0)
             t_stage = t + c[i] * step_size
             k.append(drift_fn(x_stage, t_stage))
         return k
@@ -289,12 +308,10 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         k: List[torch.Tensor],
     ) -> torch.Tensor:
         r"""Combine RK stages into the deterministic update \(x + h \sum b_i k_i\)."""
-        b = self.tableau_b
-        dx = torch.zeros_like(x)
-        for i in range(len(b)):
-            if b[i] != 0:
-                dx = dx + b[i] * k[i]
-        return x + step_size * dx
+        b = self._buf_b.to(device=x.device, dtype=x.dtype)
+        k_stack = torch.stack(k)
+        b_view = b[:len(k)].reshape(-1, *([1] * x.ndim))
+        return x + step_size * (b_view * k_stack).sum(0)
 
     def _deterministic_step(
         self,
@@ -340,7 +357,6 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
     ) -> torch.Tensor:
         r"""Core adaptive integration loop from *t_start* to *t_end*."""
         t_current = t_start
-        e = self.error_weights
         p = self.order
         is_fsal = self.fsal
         norm_fn = self._norm if self._norm is not None else self._rms_norm
@@ -372,11 +388,10 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             else:
                 k_err = k
 
-            err_vec = torch.zeros_like(x)
-            for i in range(len(e)):
-                if e[i] != 0:
-                    err_vec = err_vec + e[i] * k_err[i]
-            err_vec = h_t * err_vec
+            k_err_stack = torch.stack(k_err)
+            e_buf = self._buf_e.to(device=x.device, dtype=x.dtype)
+            e_view = e_buf[:len(k_err)].reshape(-1, *([1] * x.ndim))
+            err_vec = h_t * (e_view * k_err_stack).sum(0)
 
             scale = self.atol + self.rtol * torch.max(x.abs(), y_new.abs())
             err_ratio = norm_fn(err_vec / scale).item()
@@ -447,6 +462,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         ] = None,
         t: Optional[torch.Tensor] = None,
         adaptive: Optional[bool] = None,
+        inference_mode: bool = False,
     ) -> Dict[str, torch.Tensor]:
         r"""Integrate the state over a time interval (ODE).
 
@@ -463,26 +479,34 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             adaptive: ``True`` for adaptive step-size control, ``False``
                 for fixed-step.  When ``None`` (default) adaptive mode
                 is used automatically if ``error_weights`` is defined.
+            inference_mode: When ``True``, wraps computation in
+                ``torch.inference_mode()`` for faster execution without
+                gradient tracking.
 
         Returns:
             Updated state dict ``{"x": x_final}``.
         """
+        if inference_mode:
+            with torch.inference_mode():
+                return self.integrate(
+                    state, step_size, n_steps,
+                    drift=drift, t=t, adaptive=adaptive,
+                )
+
         if adaptive is None:
             adaptive = self.error_weights is not None
 
         # fixed-step path
         if not adaptive:
-            t = self._build_time_grid(state["x"], step_size, n_steps, t)
+            t_grid = self._build_time_grid(state["x"], step_size, n_steps, t)
             x = state["x"]
-            for i in range(t.numel() - 1):
-                dt = t[i + 1] - t[i]
-                t_batch = t[i].expand(x.size(0))
-                x = self.step(
-                    state={"x": x},
-                    step_size=dt,
-                    drift=drift,
-                    t=t_batch,
-                )["x"]
+            drift_fn = self._resolve_drift(drift)
+            n = t_grid.numel() - 1
+            batch_size = x.size(0)
+            for i in range(n):
+                dt = t_grid[i + 1] - t_grid[i]
+                t_batch = t_grid[i].expand(batch_size)
+                x = self._deterministic_step(x, dt, drift_fn, t_batch)
             return {"x": x}
 
         # adaptive path
@@ -626,6 +650,7 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
         noise_scale: Optional[torch.Tensor] = None,
         t: Optional[torch.Tensor] = None,
         adaptive: Optional[bool] = None,
+        inference_mode: bool = False,
     ) -> Dict[str, torch.Tensor]:
         r"""Integrate the state over a time interval (ODE or SDE).
 
@@ -643,10 +668,21 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
                 ``diffusion`` is not given.
             t: 1-D time grid.
             adaptive: ``True`` for adaptive (ODE only), ``False`` for fixed.
+            inference_mode: When ``True``, wraps computation in
+                ``torch.inference_mode()`` for faster execution without
+                gradient tracking.
 
         Returns:
             Updated state dict ``{"x": x_final}``.
         """
+        if inference_mode:
+            with torch.inference_mode():
+                return self.integrate(
+                    state, step_size, n_steps,
+                    drift=drift, diffusion=diffusion,
+                    noise_scale=noise_scale, t=t, adaptive=adaptive,
+                )
+
         if adaptive is None:
             adaptive = self.error_weights is not None
 
@@ -662,20 +698,20 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             )
 
         # fixed-step SDE/ODE path
-        t = self._build_time_grid(state["x"], step_size, n_steps, t)
+        t_grid = self._build_time_grid(state["x"], step_size, n_steps, t)
         x = state["x"]
-        for i in range(t.numel() - 1):
-            dt = t[i + 1] - t[i]
-            t_batch = t[i].expand(x.size(0))
-            diffusion_t = (
-                diffusion(x, t_batch) if diffusion is not None else None
-            )
-            x = self.step(
-                state={"x": x},
-                step_size=dt,
-                drift=drift,
-                diffusion=diffusion_t,
-                noise_scale=noise_scale,
-                t=t_batch,
-            )["x"]
+        drift_fn = self._resolve_drift(drift)
+        has_diffusion_fn = diffusion is not None
+        ns_const = self._resolve_diffusion(
+            None, noise_scale, x.device, x.dtype
+        ) if not has_diffusion_fn else None
+        n = t_grid.numel() - 1
+        batch_size = x.size(0)
+        for i in range(n):
+            dt = t_grid[i + 1] - t_grid[i]
+            t_batch = t_grid[i].expand(batch_size)
+            diff_val = diffusion(x, t_batch) if has_diffusion_fn else ns_const
+            x = self._deterministic_step(x, dt, drift_fn, t_batch)
+            if diff_val is not None:
+                x = x + torch.sqrt(2.0 * diff_val) * torch.randn_like(x) * torch.sqrt(dt)
         return {"x": x}
