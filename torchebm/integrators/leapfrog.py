@@ -1,3 +1,5 @@
+r"""Symplectic leapfrog (Störmer-Verlet) integrator for Hamiltonian dynamics."""
+
 import warnings
 from typing import Callable, Dict, Optional, Union
 
@@ -50,7 +52,7 @@ class LeapfrogIntegrator(BaseIntegrator):
 
     @staticmethod
     def _resolve_deprecated_to_drift(model, potential_grad, drift):
-        """Convert deprecated ``model`` or ``potential_grad`` to a ``drift`` callable."""
+        r"""Convert deprecated `model` or `potential_grad` to a `drift` callable."""
         if model is not None:
             warnings.warn(
                 "Passing 'model' to LeapfrogIntegrator is deprecated. "
@@ -82,26 +84,40 @@ class LeapfrogIntegrator(BaseIntegrator):
         drift: Optional[
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
+        safe: bool = False,
     ) -> Dict[str, torch.Tensor]:
+        r"""Advance one leapfrog step.
+
+        Args:
+            state: Current Hamiltonian state with keys `"x"` and `"p"`.
+            model: Deprecated energy model. If provided and `drift` is `None`,
+                uses `drift(x, t) = -model.gradient(x)`.
+            step_size: Integration step size.
+            mass: Optional mass term. Can be a scalar float or tensor.
+            potential_grad: Deprecated callable for `\nabla_x U(x)`. If provided
+                and `drift` is `None`, uses `drift(x, t) = -potential_grad(x)`.
+            drift: Drift/force callable with signature `(x, t) -> force`.
+            safe: If `True`, clamps force magnitudes and replaces NaNs by zeros.
+
+        Returns:
+            Updated state dictionary with keys `"x"` and `"p"`.
+        """
         x = state["x"]
         p = state["p"]
 
         if not torch.is_tensor(step_size):
             step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
-        # if model is not None:
         drift = self._resolve_deprecated_to_drift(model, potential_grad, drift)
         drift_fn = self._resolve_drift(drift)
 
         t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
 
-        # drift returns -∇U(x), so force = drift_fn(x, t) = -∇U(x)
         force = drift_fn(x, t)
-        force = torch.clamp(force, min=-1e6, max=1e6)
+        if safe:
+            force = torch.clamp(force, min=-1e6, max=1e6)
 
-        # half-step momentum: p += (ε/2) * force = p - (ε/2) * ∇U(x)
         p_half = p + 0.5 * step_size * force
 
-        # full-step position update
         if mass is None:
             x_new = x + step_size * p_half
         else:
@@ -114,13 +130,12 @@ class LeapfrogIntegrator(BaseIntegrator):
                     *([1] * (len(x.shape) - 1)), -1
                 )
 
-        # half-step momentum update at new position
         force_new = drift_fn(x_new, t)
-        force_new = torch.clamp(force_new, min=-1e6, max=1e6)
+        if safe:
+            force_new = torch.clamp(force_new, min=-1e6, max=1e6)
         p_new = p_half + 0.5 * step_size * force_new
 
-        # handling NaNs
-        if torch.isnan(x_new).any() or torch.isnan(p_new).any():
+        if safe and (torch.isnan(x_new).any() or torch.isnan(p_new).any()):
             x_new = torch.nan_to_num(x_new, nan=0.0)
             p_new = torch.nan_to_num(p_new, nan=0.0)
         return {"x": x_new, "p": p_new}
@@ -137,22 +152,79 @@ class LeapfrogIntegrator(BaseIntegrator):
         drift: Optional[
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
+        safe: bool = False,
+        inference_mode: bool = False,
     ) -> Dict[str, torch.Tensor]:
+        r"""Integrate Hamiltonian dynamics for multiple leapfrog steps.
+
+        Args:
+            state: Initial Hamiltonian state with keys `"x"` and `"p"`.
+            model: Deprecated energy model. If provided and `drift` is `None`,
+                uses `drift(x, t) = -model.gradient(x)`.
+            step_size: Integration step size.
+            n_steps: Number of leapfrog steps to apply. Must be positive.
+            mass: Optional mass term. Can be a scalar float or tensor.
+            potential_grad: Deprecated callable for `\nabla_x U(x)`. If provided
+                and `drift` is `None`, uses `drift(x, t) = -potential_grad(x)`.
+            drift: Drift/force callable with signature `(x, t) -> force`.
+            safe: If `True`, clamps force magnitudes and replaces NaNs by zeros.
+            inference_mode: If `True`, runs integration under
+                `torch.inference_mode()`.
+
+        Returns:
+            Final state dictionary with keys `"x"` and `"p"`.
+
+        Raises:
+            ValueError: If `n_steps <= 0`.
+        """
         if n_steps <= 0:
             raise ValueError("n_steps must be positive")
 
+        if inference_mode:
+            with torch.inference_mode():
+                return self.integrate(
+                    state, model=model, step_size=step_size,
+                    n_steps=n_steps, mass=mass,
+                    potential_grad=potential_grad, drift=drift, safe=safe,
+                )
+
         drift = self._resolve_deprecated_to_drift(model, potential_grad, drift)
+        drift_fn = self._resolve_drift(drift)
 
         x = state["x"]
         p = state["p"]
 
+        if not torch.is_tensor(step_size):
+            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
+
+        t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+
         for _ in range(n_steps):
-            state = self.step(
-                state={"x": x, "p": p},
-                step_size=step_size,
-                mass=mass,
-                drift=drift,
-            )
-            x, p = state["x"], state["p"]
+            force = drift_fn(x, t)
+            if safe:
+                force = torch.clamp(force, min=-1e6, max=1e6)
+
+            p_half = p + 0.5 * step_size * force
+
+            if mass is None:
+                x = x + step_size * p_half
+            else:
+                if isinstance(mass, float):
+                    safe_mass = max(mass, 1e-10)
+                    x = x + step_size * p_half / safe_mass
+                else:
+                    safe_mass = torch.clamp(mass, min=1e-10)
+                    x = x + step_size * p_half / safe_mass.view(
+                        *([1] * (len(x.shape) - 1)), -1
+                    )
+
+            force_new = drift_fn(x, t)
+            if safe:
+                force_new = torch.clamp(force_new, min=-1e6, max=1e6)
+            p = p_half + 0.5 * step_size * force_new
+
+            if safe and (torch.isnan(x).any() or torch.isnan(p).any()):
+                x = torch.nan_to_num(x, nan=0.0)
+                p = torch.nan_to_num(p, nan=0.0)
 
         return {"x": x, "p": p}
