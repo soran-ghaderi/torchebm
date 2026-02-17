@@ -135,94 +135,49 @@ figcaption {
   margin-top: 0.5rem;
 }
 
-/* Code blocks */
+/* ── Code blocks ─────────────────────────────────────────────────────────── */
+
+/* Base shape — applied in every context */
+.md-typeset .highlight,
+.md-typeset .highlight > pre,
 .md-typeset pre > code {
-  border-radius: 0;
+  border-radius: 8px;
 }
 
-/* Unified code block with integrated title bar */
 .md-typeset .highlight {
-  position: relative;
-  border-radius: 12px;
-  overflow: hidden;
   margin: 1em 0;
+  border-radius: 8px;
+  overflow: hidden;
 }
+
 .md-typeset .highlight > pre {
   margin: 0;
-  padding-top: 2.2rem;
-  border-radius: 0;
+  border-radius: 0;   /* inner pre square — outer wrapper carries the radius */
 }
 
-/* Dark mode code block */
+/* Dark mode */
 [data-md-color-scheme="slate"] .md-typeset .highlight {
-  background: #111115;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight > pre,
-[data-md-color-scheme="slate"] .md-typeset .highlight > pre > code {
-  background: transparent;
-}
-[data-md-color-scheme="slate"] .md-typeset .highlight::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.025);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
 }
 
-/* Light mode code block */
+/* Light mode */
 [data-md-color-scheme="default"] .md-typeset .highlight {
-  background: #f8f8fa;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-[data-md-color-scheme="default"] .md-typeset .highlight > pre,
-[data-md-color-scheme="default"] .md-typeset .highlight > pre > code {
-  background: transparent;
-}
-[data-md-color-scheme="default"] .md-typeset .highlight::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 32px;
-  background: rgba(0, 0, 0, 0.02);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  pointer-events: none;
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.07);
 }
 
-/* Traffic light dots */
-.md-typeset .highlight::after {
-  content: "";
-  position: absolute;
-  top: 10px; left: 14px;
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: #ff5f56;
-  box-shadow: 16px 0 0 #ffbd2e, 32px 0 0 #27c93f;
-  z-index: 1;
+/* Left accent stripe — subtle visual anchor, no window chrome */
+.md-typeset .highlight {
+  border-left: 3px solid var(--md-accent-fg-color);
 }
 
-/* Unified code blocks inside admonitions & details */
-[data-md-color-scheme="slate"] .md-typeset .admonition .highlight,
-[data-md-color-scheme="slate"] .md-typeset details .highlight {
-  background: #111115;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-[data-md-color-scheme="slate"] .md-typeset .admonition .highlight > pre,
-[data-md-color-scheme="slate"] .md-typeset .admonition .highlight > pre > code,
-[data-md-color-scheme="slate"] .md-typeset details .highlight > pre,
-[data-md-color-scheme="slate"] .md-typeset details .highlight > pre > code {
-  background: transparent;
-}
-[data-md-color-scheme="default"] .md-typeset .admonition .highlight,
-[data-md-color-scheme="default"] .md-typeset details .highlight {
-  background: #f8f8fa;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+/* Inside admonitions & details — inherit the same treatment */
+.md-typeset .admonition .highlight,
+.md-typeset details .highlight {
+  border-left: 3px solid var(--md-accent-fg-color);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 /* Buttons */

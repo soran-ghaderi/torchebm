@@ -528,7 +528,7 @@ def test_nan_handling():
     p = torch.randn(5, 2, device=device)
     state = {"x": x, "p": p}
 
-    result = integrator.step(state, model=model, step_size=0.1)
+    result = integrator.step(state, model=model, step_size=0.1, safe=True)
 
     # Result should not contain NaN due to nan_to_num handling
     assert torch.all(torch.isfinite(result["x"]))

@@ -520,6 +520,7 @@ def test_leapfrog_nan_handling(hmc_sampler):
         hmc_sampler.get_scheduled_value("step_size"),
         hmc_sampler.n_leapfrog_steps,
         hmc_sampler.mass,
+        safe=True,
     )
     new_pos, new_mom = result["x"], result["p"]
 
@@ -872,6 +873,7 @@ def test_hmc_numerical_stability_extreme_values(start_val):
         hmc.get_scheduled_value("step_size"),
         hmc.n_leapfrog_steps,
         hmc.mass,
+        safe=True,
     )
     new_pos_leap, new_mom_leap = result["x"], result["p"]
     assert torch.all(torch.isfinite(new_pos_leap))
