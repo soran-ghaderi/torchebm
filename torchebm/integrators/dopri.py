@@ -9,14 +9,26 @@ class Dopri5Integrator(BaseRungeKuttaIntegrator):
     r"""Dormand-Prince 5(4) explicit Runge-Kutta integrator.
 
     A 6-stage, 5th-order method with an embedded 4th-order solution for
-    local error estimation.  When ``adaptive=True`` (the default for
-    `integrate`), the step size is adjusted automatically to satisfy
-    the tolerance ``atol + rtol * max(|x|, |x_new|)``.
+    local error estimation and FSAL (First Same As Last) property. When
+    `adaptive=True` (the default for `integrate()` since `error_weights`
+    is defined), the step size is adjusted automatically to satisfy
+    the tolerance `atol + rtol * max(|x|, |x_new|)`.
 
-    Fixed-step usage is available through :meth:`step` (always fixed) or by
-    passing ``adaptive=False`` to :meth:`integrate`.
+    Fixed-step usage is available through `step()` (always fixed) or by
+    passing `adaptive=False` to `integrate()`.
 
-    The Butcher tableau is the standard Dormand-Prince pair:
+    For an \(s\)-stage explicit Runge-Kutta method, the general update is:
+
+    \[
+    k_i = f\!\bigl(x_n + h \sum_{j=1}^{i-1} a_{ij}\,k_j,\;
+    t_n + c_i\,h\bigr), \quad i = 1, \ldots, s
+    \]
+
+    \[
+    x_{n+1} = x_n + h \sum_{i=1}^{s} b_i\,k_i
+    \]
+
+    The Butcher tableau is the standard Dormand-Prince 5(4) pair:
 
     \[
     \begin{array}{c|cccccc}
@@ -34,6 +46,11 @@ class Dopri5Integrator(BaseRungeKuttaIntegrator):
     \end{array}
     \]
 
+    Reference:
+        Dormand, J. R. and Prince, P. J. (1980). A family of embedded
+        Runge-Kutta formulae. Journal of Computational and Applied
+        Mathematics, 6(1), 19--26.
+
     Args:
         atol: Absolute tolerance for adaptive stepping.
         rtol: Relative tolerance for adaptive stepping.
@@ -42,7 +59,7 @@ class Dopri5Integrator(BaseRungeKuttaIntegrator):
         min_factor: Minimum step-size shrink factor.
         max_factor: Maximum step-size growth factor.
         max_step_size: Maximum absolute step size during adaptive integration.
-        norm: Callable ``norm(tensor) -> scalar`` for local error measurement.
+        norm: Callable `norm(tensor) -> scalar` for local error measurement.
         device: Device for computations.
         dtype: Data type for computations.
 
@@ -55,7 +72,7 @@ class Dopri5Integrator(BaseRungeKuttaIntegrator):
         state = {"x": torch.randn(100, 2)}
         drift = lambda x, t: -x
         result = integrator.integrate(
-            state, model=None, step_size=0.1, n_steps=10, drift=drift,
+            state, step_size=0.1, n_steps=10, drift=drift,
         )
         ```
     """
@@ -105,20 +122,29 @@ class Dopri8Integrator(BaseRungeKuttaIntegrator):
     r"""Dormand-Prince 8(7) explicit Runge-Kutta integrator.
 
     A 13-stage, 8th-order method with an embedded 7th-order solution for
-    local error estimation (FSAL).  When ``adaptive=True`` (the default for
-    `integrate`), the step size is adjusted automatically to satisfy
-    the tolerance ``atol + rtol * max(|x|, |x_new|)``.
+    local error estimation and FSAL (First Same As Last) property. When
+    `adaptive=True` (the default for `integrate()` since `error_weights`
+    is defined), the step size is adjusted automatically to satisfy
+    the tolerance `atol + rtol * max(|x|, |x_new|)`.
 
-    Fixed-step usage is available through :meth:`step` (always fixed) or by
-    passing ``adaptive=False`` to :meth:`integrate`.
+    Fixed-step usage is available through `step()` (always fixed) or by
+    passing `adaptive=False` to `integrate()`.
 
-    Coefficients from:
+    For an \(s\)-stage explicit Runge-Kutta method, the general update is:
 
     \[
-    \text{Prince, P. J. and Dormand, J. R. (1981).
-    High order embedded Runge--Kutta formulae.
-    J. Comp. Appl. Math, 7(1), 67--75.}
+    k_i = f\!\bigl(x_n + h \sum_{j=1}^{i-1} a_{ij}\,k_j,\;
+    t_n + c_i\,h\bigr), \quad i = 1, \ldots, s
     \]
+
+    \[
+    x_{n+1} = x_n + h \sum_{i=1}^{s} b_i\,k_i
+    \]
+
+    Reference:
+        Prince, P. J. and Dormand, J. R. (1981). High order embedded
+        Runge-Kutta formulae. Journal of Computational and Applied
+        Mathematics, 7(1), 67--75.
 
     Args:
         atol: Absolute tolerance for adaptive stepping.
@@ -128,7 +154,7 @@ class Dopri8Integrator(BaseRungeKuttaIntegrator):
         min_factor: Minimum step-size shrink factor.
         max_factor: Maximum step-size growth factor.
         max_step_size: Maximum absolute step size during adaptive integration.
-        norm: Callable ``norm(tensor) -> scalar`` for local error measurement.
+        norm: Callable `norm(tensor) -> scalar` for local error measurement.
         device: Device for computations.
         dtype: Data type for computations.
 
@@ -141,7 +167,7 @@ class Dopri8Integrator(BaseRungeKuttaIntegrator):
         state = {"x": torch.randn(100, 2)}
         drift = lambda x, t: -x
         result = integrator.integrate(
-            state, model=None, step_size=0.1, n_steps=10, drift=drift,
+            state, step_size=0.1, n_steps=10, drift=drift,
         )
         ```
     """

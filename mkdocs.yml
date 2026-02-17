@@ -89,6 +89,8 @@ nav:
       - Base_integrator:
         - api/torchebm/core/base_integrator/index.md
         - BaseIntegrator: api/torchebm/core/base_integrator/classes/BaseIntegrator.md
+        - BaseRungeKuttaIntegrator: api/torchebm/core/base_integrator/classes/BaseRungeKuttaIntegrator.md
+        - BaseSDERungeKuttaIntegrator: api/torchebm/core/base_integrator/classes/BaseSDERungeKuttaIntegrator.md
       - Base_interpolant:
         - api/torchebm/core/base_interpolant/index.md
         - BaseInterpolant: api/torchebm/core/base_interpolant/classes/BaseInterpolant.md
@@ -148,6 +150,10 @@ nav:
         - TwoMoonsDataset: api/torchebm/datasets/generators/classes/TwoMoonsDataset.md
     - Integrators:
       - api/torchebm/integrators/index.md
+      - Dopri:
+        - api/torchebm/integrators/dopri/index.md
+        - Dopri5Integrator: api/torchebm/integrators/dopri/classes/Dopri5Integrator.md
+        - Dopri8Integrator: api/torchebm/integrators/dopri/classes/Dopri8Integrator.md
       - Euler_maruyama:
         - api/torchebm/integrators/euler_maruyama/index.md
         - EulerMaruyamaIntegrator: api/torchebm/integrators/euler_maruyama/classes/EulerMaruyamaIntegrator.md
