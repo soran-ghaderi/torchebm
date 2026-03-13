@@ -1,8 +1,11 @@
 r"""Score Matching Loss Module"""
 
-import torch
 import warnings
 from typing import Optional, Union, Dict, Tuple, Any, Callable
+
+import torch
+from torch.func import grad as func_grad, vmap, jacrev
+
 
 from torchebm.core import BaseModel, BaseScoreMatching
 # from torchebm.core.base_loss import BaseScoreMatching
@@ -135,38 +138,54 @@ class ScoreMatching(BaseScoreMatching):
             torch.Tensor: The score matching loss.
         """
         batch_size = x.shape[0]
-        feature_dim = x.numel() // batch_size
+        x_flat = x.view(batch_size, -1).detach().requires_grad_(True)
 
-        x_leaf = x.detach().clone()
-        x_leaf.requires_grad_(True)
+        def score_fn(x_single):
+            return func_grad(
+                lambda x_i: -self.model(x_i.unsqueeze(0)).squeeze()
+            )(x_single)
+        
+        def laplacian_fn(x_single):
+            J = jacrev(score_fn)(x_single)
+            return J.diagonal().sum()
 
-        energy = self.model(x_leaf)
-        logp_sum = (-energy).sum()
-        grad1 = torch.autograd.grad(
-            logp_sum, x_leaf, create_graph=True, retain_graph=True
-        )[0]
+        score = vmap(score_fn)(x_flat)
+        laplacian = vmap(laplacian_fn)(x_flat)
 
-        grad1_flat = grad1.view(batch_size, -1)
-        term1 = 0.5 * grad1_flat.pow(2).sum(dim=1)
+        term1 = 0.5 * score.pow(2).sum(dim=-1)
+        return (term1 + laplacian).mean()
+        # feature_dim = x.numel() // batch_size
 
-        laplacian = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
-        for i in range(feature_dim):
-            comp_sum = grad1_flat[:, i].sum()
-            grad2_full = torch.autograd.grad(
-                comp_sum,
-                x_leaf,
-                create_graph=True,
-                retain_graph=True,
-                allow_unused=True,
-            )[0]
-            if grad2_full is None:
-                grad2_comp = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
-            else:
-                grad2_comp = grad2_full.view(batch_size, -1)[:, i]
-            laplacian += grad2_comp
+        # x_leaf = x.detach().clone()
+        # x_leaf.requires_grad_(True)
 
-        loss_per_sample = term1 + laplacian
-        return loss_per_sample.mean()
+        # energy = self.model(x_leaf)
+        # logp_sum = (-energy).sum()
+        # grad1 = torch.autograd.grad(
+        #     logp_sum, x_leaf, create_graph=True, retain_graph=True
+        # )[0]
+
+        # grad1_flat = grad1.view(batch_size, -1)
+        # term1 = 0.5 * grad1_flat.pow(2).sum(dim=1)
+
+        # laplacian = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
+        # for i in range(feature_dim):
+        #     comp_sum = grad1_flat[:, i].sum()
+        #     grad2_full = torch.autograd.grad(
+        #         comp_sum,
+        #         x_leaf,
+        #         create_graph=True,
+        #         retain_graph=True,
+        #         allow_unused=True,
+        #     )[0]
+        #     if grad2_full is None:
+        #         grad2_comp = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
+        #     else:
+        #         grad2_comp = grad2_full.view(batch_size, -1)[:, i]
+        #     laplacian += grad2_comp
+
+        # loss_per_sample = term1 + laplacian
+        # return loss_per_sample.mean()
 
     def _approx_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         r"""
