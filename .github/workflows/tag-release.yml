@@ -76,6 +76,32 @@ jobs:
         git tag $new_tag
         git push origin $new_tag
 
+  update-changelog:
+    needs: update-tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update CHANGELOG.md
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ needs.update-tag.outputs.new_tag }}
+          excludeTypes: ""
+          includeInvalidCommits: true
+          useGitmojis: false
+
+      - name: Commit CHANGELOG.md
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          branch: master
+          commit_message: "chore: update CHANGELOG.md for ${{ needs.update-tag.outputs.new_tag }} [skip ci]"
+          file_pattern: CHANGELOG.md
+
   release:
     needs: update-tag
     if: contains(github.event.head_commit.message, '#release')
