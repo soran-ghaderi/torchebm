@@ -92,11 +92,15 @@ nav:
     - Code Guidelines: developer_guide/code_guidelines.md
     - Architecture: developer_guide/architecture.md
     - Performance: developer_guide/performance.md
+  - Benchmarks:
+    - benchmarks/index.md
+    - Results: benchmarks/results.md
   - Blog: blog/index.md
   - FAQ: faq.md
 
 hooks:
   - docs/hooks/socialmedia.py
+  - docs/hooks/benchmarks.py
 
 plugins:
   - search
@@ -255,6 +259,7 @@ extra:
       link: https://soran-ghaderi.github.io/
   version:
     provider: mike
+    alias: true
   analytics:
     provider: google
     property: !ENV GOOGLE_ANALYTICS_KEY
