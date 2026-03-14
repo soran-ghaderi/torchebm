@@ -76,36 +76,36 @@ jobs:
         git tag $new_tag
         git push origin $new_tag
 
-  update-changelog:
-    needs: update-tag
-    runs-on: ubuntu-latest
-    outputs:
-      changes: ${{ steps.changelog.outputs.changes }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+  # update-changelog:
+  #   needs: update-tag
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     changes: ${{ steps.changelog.outputs.changes }}
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
 
-      - name: Update CHANGELOG.md
-        id: changelog
-        uses: requarks/changelog-action@v1
-        with:
-          token: ${{ github.token }}
-          tag: ${{ needs.update-tag.outputs.new_tag }}
-          excludeTypes: ""
-          includeInvalidCommits: true
-          useGitmojis: false
+  #     - name: Update CHANGELOG.md
+  #       id: changelog
+  #       uses: requarks/changelog-action@v1
+  #       with:
+  #         token: ${{ github.token }}
+  #         tag: ${{ needs.update-tag.outputs.new_tag }}
+  #         excludeTypes: ""
+  #         includeInvalidCommits: true
+  #         useGitmojis: false
 
-      - name: Commit CHANGELOG.md
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          branch: master
-          commit_message: "chore: update CHANGELOG.md for ${{ needs.update-tag.outputs.new_tag }} [skip ci]"
-          file_pattern: CHANGELOG.md
+  #     - name: Commit CHANGELOG.md
+  #       uses: stefanzweifel/git-auto-commit-action@v5
+  #       with:
+  #         branch: master
+  #         commit_message: "chore: update CHANGELOG.md for ${{ needs.update-tag.outputs.new_tag }} [skip ci]"
+  #         file_pattern: CHANGELOG.md
 
   release:
-    needs: [update-tag, update-changelog]
+    needs: [update-tag]
     if: contains(github.event.head_commit.message, '#release')
     runs-on: ubuntu-latest
 
@@ -146,12 +146,18 @@ jobs:
         verbose: true
 
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ needs.update-tag.outputs.new_tag }}
-        name: Release ${{ needs.update-tag.outputs.new_tag }}
-        body: ${{ needs.update-changelog.outputs.changes }}
-        draft: false
-        prerelease: false
+      uses: actions/github-script@v7
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RELEASE_TAG: ${{ needs.update-tag.outputs.new_tag }}
+      with:
+        script: |
+          const response = await github.rest.repos.createRelease({
+            draft: false,
+            generate_release_notes: true,
+            name: process.env.RELEASE_TAG,
+            owner: context.repo.owner,
+            prerelease: false,
+            repo: context.repo.repo,
+            tag_name: process.env.RELEASE_TAG,
+          });
+          core.setOutput('upload_url', response.data.upload_url);
