@@ -79,6 +79,8 @@ jobs:
   update-changelog:
     needs: update-tag
     runs-on: ubuntu-latest
+    outputs:
+      changes: ${{ steps.changelog.outputs.changes }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -103,7 +105,7 @@ jobs:
           file_pattern: CHANGELOG.md
 
   release:
-    needs: update-tag
+    needs: [update-tag, update-changelog]
     if: contains(github.event.head_commit.message, '#release')
     runs-on: ubuntu-latest
 
@@ -148,8 +150,8 @@ jobs:
       with:
         tag_name: ${{ needs.update-tag.outputs.new_tag }}
         name: Release ${{ needs.update-tag.outputs.new_tag }}
+        body: ${{ needs.update-changelog.outputs.changes }}
         draft: false
         prerelease: false
-        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
