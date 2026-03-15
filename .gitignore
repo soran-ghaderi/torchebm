@@ -193,3 +193,6 @@ __pycache__/
 data/
 docs/api/torchebm/
 papers_to_add/
+# Benchmark results (generated)
+benchmarks/results/
+benchmarks/torchebm_benchmarking.md
