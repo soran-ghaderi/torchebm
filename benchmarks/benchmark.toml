@@ -1,0 +1,22 @@
+# TorchEBM Benchmark Configuration
+# ==================================
+# Controls which modules and benchmarks are included in benchmark runs.
+# Set a module to false to skip it entirely (e.g., if still in development).
+# Add benchmark names to [exclude] to skip individual benchmarks.
+#
+# CLI flags (--module, --filter) override these settings.
+
+[modules]
+losses = true
+samplers = true
+integrators = true
+models = false
+interpolants = true
+
+[exclude]
+# Benchmark names to skip even if their module is enabled.
+# Use the base name (without scale suffix), e.g. "dopri5" not "dopri5_small".
+benchmarks = [
+    # "dopri5",
+    # "transformer_fwd_bwd",
+]
