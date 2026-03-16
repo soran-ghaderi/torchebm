@@ -61,6 +61,31 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "LeapfrogIntegrator": {"needs_momentum": True},
     "EulerMaruyamaIntegrator": {"needs_diffusion": True},
     "HeunIntegrator": {"needs_diffusion": True},
+    "RK4Integrator": {},
+    "AdaptiveHeunIntegrator": {
+        "variants": {
+            "adaptive_heun_adaptive": {"bench_kwargs": {"adaptive": True}},
+            "adaptive_heun_fixed": {"bench_kwargs": {"adaptive": False}},
+        }
+    },
+    "Bosh3Integrator": {
+        "variants": {
+            "bosh3_adaptive": {"bench_kwargs": {"adaptive": True}},
+            "bosh3_fixed": {"bench_kwargs": {"adaptive": False}},
+        }
+    },
+    "Dopri5Integrator": {
+        "variants": {
+            "dopri5_adaptive": {"bench_kwargs": {"adaptive": True}},
+            "dopri5_fixed": {"bench_kwargs": {"adaptive": False}},
+        }
+    },
+    "Dopri8Integrator": {
+        "variants": {
+            "dopri8_adaptive": {"bench_kwargs": {"adaptive": True}},
+            "dopri8_fixed": {"bench_kwargs": {"adaptive": False}},
+        }
+    },
 
     # ── Losses ──
     "ScoreMatching": {
@@ -243,6 +268,26 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
 # Template factories — build (callable, extra_info) for each category
 # ---------------------------------------------------------------------------
 
+def _ess_from_chain(chain):
+    """Compute effective sample size from a 1D chain via FFT autocorrelation."""
+    n = len(chain)
+    if n < 2:
+        return float(n)
+    x = chain - chain.mean()
+    fft_x = torch.fft.rfft(x, n=2 * n)
+    acf = torch.fft.irfft(fft_x * fft_x.conj(), n=2 * n)[:n]
+    if acf[0].item() == 0:
+        return float(n)
+    acf = acf / acf[0]
+    total = 0.0
+    for i in range(1, n):
+        if acf[i].item() < 0:
+            break
+        total += acf[i].item()
+    tau = 1.0 + 2.0 * total
+    return n / max(tau, 1.0)
+
+
 _STEP_SIZE = 1e-3
 _DIFFUSION_COEFF = 0.1
 _BARRIER_HEIGHT = 2.0
@@ -300,6 +345,29 @@ def _wrap_ebm(net, device, dtype):
     return _W(net, device, dtype)
 
 
+class _CountingDrift:
+    """Wrap a drift callable to count total invocations."""
+    __slots__ = ("_fn", "count")
+    def __init__(self, fn):
+        self._fn = fn
+        self.count = 0
+    def __call__(self, x, t):
+        self.count += 1
+        return self._fn(x, t)
+
+
+_STAGES_PER_STEP = {
+    "LeapfrogIntegrator": 2,
+    "EulerMaruyamaIntegrator": 1,
+    "HeunIntegrator": 2,
+    "RK4Integrator": 4,
+    "AdaptiveHeunIntegrator": 2,
+    "Bosh3Integrator": 3,
+    "Dopri5Integrator": 6,
+    "Dopri8Integrator": 13,
+}
+
+
 def _make_drift(net, device, dtype):
     def drift(x, t):
         x_req = x.detach().requires_grad_(True)
@@ -320,9 +388,20 @@ def build_integrator_bench(
 ) -> Tuple[Callable, Dict]:
     net = _MLPEnergy(dim).to(device, dtype)
     integrator = spec.cls(device=device, dtype=dtype)
-    drift = _make_drift(net, device, dtype)
+    raw_drift = _make_drift(net, device, dtype)
     x0 = _make_data(bs, dim, device, dtype)
     step_size = torch.tensor(_STEP_SIZE, device=device, dtype=dtype)
+
+    _adaptive = spec.bench_kwargs.get("adaptive", False)
+    cls_name = spec.cls.__name__
+
+    # Use counting drift for adaptive integrators
+    if _adaptive:
+        counting_drift = _CountingDrift(raw_drift)
+        drift = counting_drift
+    else:
+        counting_drift = None
+        drift = raw_drift
 
     if spec.needs_momentum:
         p0 = torch.randn_like(x0)
@@ -344,10 +423,19 @@ def build_integrator_bench(
         def fn():
             integrator.integrate(
                 state={"x": x0.clone()}, step_size=step_size, n_steps=n_steps,
-                drift=drift, adaptive=False,
+                drift=drift, adaptive=_adaptive,
             )
 
     info = {"module": spec.module, "batch_size": bs, "dim": dim, "n_steps": n_steps}
+    if "adaptive" in spec.bench_kwargs:
+        info["adaptive"] = spec.bench_kwargs["adaptive"]
+
+    # Drift evaluation metrics
+    if counting_drift is not None:
+        info["_counting_drift"] = counting_drift
+    elif cls_name in _STAGES_PER_STEP:
+        info["drift_evals_per_step"] = _STAGES_PER_STEP[cls_name]
+
     return fn, info
 
 
@@ -409,7 +497,32 @@ def build_loss_bench(
             loss.backward()
             net.zero_grad()
 
-    info = {"module": spec.module, "batch_size": eff_bs, "dim": eff_dim}
+    info = {
+        "module": spec.module, "batch_size": eff_bs, "dim": eff_dim,
+        "n_params": sum(p.numel() for p in net.parameters()),
+        "includes_backward": True,
+    }
+
+    # Loss sanity check (run once, not timed)
+    _loss_fn_q = loss_fn
+    _x_q = _make_data(eff_bs, eff_dim, device, dtype)
+    if spec.needs_grad:
+        _x_q = _x_q.requires_grad_(True)
+    _returns_tuple = spec.returns_tuple
+
+    def _quality_fn():
+        metrics = {}
+        try:
+            result = _loss_fn_q(_x_q)
+            loss_val = result[0] if _returns_tuple else result
+            val = loss_val.detach().item()
+            metrics["loss_value"] = round(val, 6)
+            metrics["loss_is_finite"] = bool(torch.isfinite(loss_val).item())
+        except Exception:
+            metrics["loss_is_finite"] = False
+        return metrics
+
+    info["_quality_fn"] = _quality_fn
     return fn, info
 
 
@@ -444,6 +557,51 @@ def build_sampler_bench(
             sampler.sample(x=x0, n_steps=n_steps, n_samples=bs, dim=dim)
 
     info = {"module": spec.module, "batch_size": bs, "dim": dim, "n_steps": n_steps}
+
+    # Gradient evaluation counts
+    cls_name = spec.cls.__name__
+    if cls_name == "LangevinDynamics":
+        info["gradient_evals"] = n_steps
+    elif cls_name == "HamiltonianMonteCarlo":
+        n_lf = spec.init_kwargs.get("n_leapfrog_steps", 10)
+        info["gradient_evals"] = n_steps * (n_lf + 1)
+    elif cls_name in ("GradientDescentSampler", "NesterovSampler"):
+        info["gradient_evals"] = n_steps
+
+    # Quality metrics for MCMC samplers (not timed)
+    if spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics") and not spec.bench_fn:
+        _sampler_q = sampler
+        _x0_q = x0
+        _n_steps_q = min(n_steps, 100)
+        _bs_q = bs
+        _dim_q = dim
+        _cls_name = spec.cls.__name__
+
+        def _quality_fn():
+            metrics = {}
+            try:
+                result = _sampler_q.sample(
+                    x=_x0_q.clone(), n_steps=_n_steps_q,
+                    n_samples=_bs_q, dim=_dim_q, return_diagnostics=True,
+                )
+                if isinstance(result, tuple) and len(result) == 2:
+                    samples, diagnostics = result
+                    if diagnostics is not None and diagnostics.dim() >= 2:
+                        # HMC acceptance rate
+                        if _cls_name == "HamiltonianMonteCarlo" and diagnostics.shape[1] >= 4:
+                            acc = diagnostics[:, 3, 0, 0].mean().item()
+                            metrics["acceptance_rate"] = round(acc, 4)
+                        # ESS from energy chain
+                        if diagnostics.shape[1] >= 3:
+                            energy_chain = diagnostics[:, 2, 0, 0].detach().cpu().float()
+                            ess = _ess_from_chain(energy_chain)
+                            metrics["ess"] = round(ess, 2)
+            except Exception:
+                pass
+            return metrics
+
+        info["_quality_fn"] = _quality_fn
+
     return fn, info
 
 
@@ -475,7 +633,11 @@ def build_model_bench(
         def fn():
             model(x, cond)
 
-    info = {"module": spec.module, "batch_size": bs_model}
+    info = {
+        "module": spec.module, "batch_size": bs_model,
+        "n_params": sum(p.numel() for p in model.parameters()),
+        "n_params_m": round(sum(p.numel() for p in model.parameters()) / 1e6, 2),
+    }
     return fn, info
 
 

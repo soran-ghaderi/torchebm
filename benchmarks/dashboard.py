@@ -112,8 +112,29 @@ def extract_all_data(runs):
                 "q3_ms": round(stats.get("q3", 0) * 1000, 4),
                 "iqr_ms": round(stats.get("iqr", 0) * 1000, 4),
                 "ops": round(stats.get("ops", 0), 2),
+                "peak_memory_mb": extra.get("peak_memory_mb", None),
+                "memory_fragmentation": extra.get("memory_fragmentation", None),
+                "samples_per_sec": extra.get("samples_per_sec", None),
+                "total_flops": extra.get("total_flops", None),
+                "gflops_per_sec": extra.get("gflops_per_sec", None),
+                "acceptance_rate": extra.get("acceptance_rate", None),
+                "ess": extra.get("ess", None),
+                "ess_per_sec": extra.get("ess_per_sec", None),
+                "loss_value": extra.get("loss_value", None),
+                "loss_is_finite": extra.get("loss_is_finite", None),
+                "bench_mode": extra.get("mode", "eager"),
                 "rounds": stats.get("rounds", 0),
                 "outliers": stats.get("outliers", ""),
+                "gradient_evals_per_sec": extra.get("gradient_evals_per_sec", None),
+                "drift_evals_per_step": extra.get("drift_evals_per_step", None),
+                "drift_evals_total": extra.get("drift_evals_total", None),
+                "memory_per_sample_kb": extra.get("memory_per_sample_kb", None),
+                "n_params": extra.get("n_params", None),
+                "n_params_m": extra.get("n_params_m", None),
+                "gradient_evals": extra.get("gradient_evals", None),
+                "n_steps": extra.get("n_steps", None),
+                "adaptive": extra.get("adaptive", None),
+                "includes_backward": extra.get("includes_backward", None),
             })
     return benchmarks, run_meta
 
@@ -311,6 +332,14 @@ tr:hover td {{ background: var(--bg-card-alt); }}
 @media (max-width: 1000px) {{ .grid-2 {{ grid-template-columns: 1fr; }} }}
 .tag {{ display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.75em;
        background: rgba(88,166,255,0.12); color: var(--accent); margin-right: 4px; }}
+
+.metric-cards {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }}
+.metric-card {{ background: var(--bg-card-alt); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 14px; font-size: 0.8em; display: inline-flex; align-items: center; gap: 8px; }}
+.metric-card .mc-label {{ color: var(--text-secondary); font-size: 0.85em; }}
+.metric-card .mc-value {{ color: var(--accent); font-weight: 600; }}
+.metric-card .mc-value.ok {{ color: var(--green); }}
+.metric-card .mc-value.warn {{ color: var(--yellow); }}
 
 .module-section {{ margin-bottom: 24px; }}
 .module-section-header {{ font-size: 1.1em; font-weight: 600; color: var(--accent);
@@ -597,48 +626,189 @@ function ensureDiv(parentId, childId) {{
 }}
 
 // ================================================================
-//  OVERVIEW — one section per module, each with its own chart+table
+//  OVERVIEW — one section per module, each with its own charts+table
 // ================================================================
+function fmtNum(v, d) {{ return v != null ? v.toFixed(d) : '\u2014'; }}
+function fmtInt(v) {{ return v != null ? v.toLocaleString() : '\u2014'; }}
+function fmtParams(v) {{ return v != null ? v.toFixed(2) + 'M' : '\u2014'; }}
+function fmtMem(v) {{ return v != null ? v.toFixed(1) : '\u2014'; }}
+
+function buildModuleSummaryCards(mod, modData) {{
+    let cards = '';
+    const hasMemory = modData.some(b => b.peak_memory_mb != null);
+    if (hasMemory) {{
+        const mems = modData.filter(b => b.peak_memory_mb != null).map(b => b.peak_memory_mb);
+        cards += `<div class="metric-card"><span class="mc-label">Peak Memory</span><span class="mc-value">${{Math.min(...mems).toFixed(1)}} - ${{Math.max(...mems).toFixed(1)}} MB</span></div>`;
+    }}
+    if (mod === 'samplers') {{
+        const essVals = modData.filter(b => b.ess_per_sec != null);
+        if (essVals.length) {{
+            const avg = essVals.reduce((s, b) => s + b.ess_per_sec, 0) / essVals.length;
+            cards += `<div class="metric-card"><span class="mc-label">Avg ESS/sec</span><span class="mc-value">${{avg.toFixed(1)}}</span></div>`;
+        }}
+        const accVals = modData.filter(b => b.acceptance_rate != null);
+        if (accVals.length) {{
+            const best = Math.max(...accVals.map(b => b.acceptance_rate));
+            cards += `<div class="metric-card"><span class="mc-label">Best Acc. Rate</span><span class="mc-value ok">${{(best * 100).toFixed(1)}}%</span></div>`;
+        }}
+        const gradVals = modData.filter(b => b.gradient_evals_per_sec != null);
+        if (gradVals.length) {{
+            const maxG = Math.max(...gradVals.map(b => b.gradient_evals_per_sec));
+            cards += `<div class="metric-card"><span class="mc-label">Peak Grad/sec</span><span class="mc-value">${{maxG.toFixed(0)}}</span></div>`;
+        }}
+    }}
+    if (mod === 'losses') {{
+        const finiteVals = modData.filter(b => b.loss_is_finite != null);
+        if (finiteVals.length) {{
+            const allFinite = finiteVals.every(b => b.loss_is_finite);
+            cards += `<div class="metric-card"><span class="mc-label">Losses Finite</span><span class="mc-value ${{allFinite ? 'ok' : 'warn'}}">${{allFinite ? 'All OK' : 'Some NaN/Inf'}}</span></div>`;
+        }}
+        const paramVals = modData.filter(b => b.n_params != null);
+        if (paramVals.length) {{
+            cards += `<div class="metric-card"><span class="mc-label">Net Params</span><span class="mc-value">${{(paramVals[0].n_params / 1e3).toFixed(1)}}K</span></div>`;
+        }}
+    }}
+    if (mod === 'integrators') {{
+        const driftVals = modData.filter(b => b.drift_evals_per_step != null);
+        if (driftVals.length) {{
+            const vals = driftVals.map(b => b.drift_evals_per_step);
+            const range = vals.length > 1 ? `${{Math.min(...vals)}} - ${{Math.max(...vals)}}` : vals[0];
+            cards += `<div class="metric-card"><span class="mc-label">Drift Evals/Step</span><span class="mc-value">${{range}}</span></div>`;
+        }}
+    }}
+    if (mod === 'models') {{
+        const paramVals = modData.filter(b => b.n_params_m != null);
+        if (paramVals.length) {{
+            const range = paramVals.map(b => b.n_params_m);
+            cards += `<div class="metric-card"><span class="mc-label">Parameters</span><span class="mc-value">${{Math.min(...range).toFixed(1)}} - ${{Math.max(...range).toFixed(1)}}M</span></div>`;
+        }}
+        const flopsVals = modData.filter(b => b.gflops_per_sec != null);
+        if (flopsVals.length) {{
+            const peak = Math.max(...flopsVals.map(b => b.gflops_per_sec));
+            cards += `<div class="metric-card"><span class="mc-label">Peak GFLOPS/s</span><span class="mc-value">${{peak.toFixed(1)}}</span></div>`;
+        }}
+    }}
+    return cards ? `<div class="metric-cards">${{cards}}</div>` : '';
+}}
+
 function renderOverview() {{
     const runIdx = parseInt(document.getElementById('ov-run').value);
     const data = getRunBenches(runIdx);
     const container = document.getElementById('overview-container');
     container.innerHTML = '';
 
+    // Check if run has multiple modes (for mode comparison section)
+    const modes = [...new Set(data.map(b => b.bench_mode))];
+    const hasMultiMode = modes.length > 1;
+
     for (const mod of MODULES) {{
         const modData = data.filter(b => b.module === mod);
         if (!modData.length) continue;
 
+        // Only eager-mode data for the main charts
+        const eagerData = modData.filter(b => b.bench_mode === 'eager');
+        const chartData = eagerData.length ? eagerData : modData;
+
         const section = document.createElement('div');
         section.className = 'module-section';
 
-        const bases = [...new Set(modData.map(b => benchBase(b.short_name)))];
+        const bases = [...new Set(chartData.map(b => benchBase(b.short_name)))];
 
-        // Create chart + table
         const chartId = 'ov-chart-' + mod;
         const opsId = 'ov-ops-' + mod;
-        section.innerHTML = `
-            <div class="module-section-header">${{mod}} <span style="font-size:0.7em;color:var(--text-muted);font-weight:400">(${{modData.length}} benchmarks)</span></div>
+        const memId = 'ov-mem-' + mod;
+        const gpuId = 'ov-gpu-' + mod;
+        const flopsId = 'ov-flops-' + mod;
+
+        const hasMemory = chartData.some(b => b.peak_memory_mb != null);
+        const hasGpuMetric = chartData.some(b =>
+            b.gradient_evals_per_sec != null || b.samples_per_sec != null || b.ess_per_sec != null);
+        const hasFlops = chartData.some(b => b.gflops_per_sec != null);
+
+        // Choose appropriate GPU throughput metric label
+        let gpuMetricLabel = 'Throughput';
+        if (mod === 'samplers') gpuMetricLabel = 'Gradient Throughput (evals/sec)';
+        else if (mod === 'losses') gpuMetricLabel = 'Training Throughput (samples/sec)';
+        else if (mod === 'integrators') gpuMetricLabel = 'Samples/sec';
+        else if (mod === 'models') gpuMetricLabel = 'Samples/sec';
+
+        // Summary cards
+        const summaryCards = buildModuleSummaryCards(mod, modData);
+
+        // Build table columns dynamically based on module
+        const extraCols = [];
+        extraCols.push({{h: 'Ops/s', fn: b => b.ops.toFixed(1)}});
+        extraCols.push({{h: 'Samp/s', fn: b => fmtNum(b.samples_per_sec, 1)}});
+        if (mod === 'samplers') {{
+            extraCols.push({{h: 'Grad/s', fn: b => fmtInt(b.gradient_evals_per_sec)}});
+            extraCols.push({{h: 'ESS', fn: b => fmtNum(b.ess, 1)}});
+            extraCols.push({{h: 'ESS/s', fn: b => fmtNum(b.ess_per_sec, 1)}});
+            extraCols.push({{h: 'Acc. Rate', fn: b => b.acceptance_rate != null ? (b.acceptance_rate * 100).toFixed(1) + '%' : '\u2014'}});
+        }}
+        if (mod === 'integrators') {{
+            extraCols.push({{h: 'Evals/Step', fn: b => fmtNum(b.drift_evals_per_step, 1)}});
+        }}
+        if (mod === 'losses') {{
+            extraCols.push({{h: 'Loss', fn: b => b.loss_value != null ? (b.loss_is_finite ? b.loss_value.toFixed(4) : '<span style="color:var(--red)">NaN</span>') : '\u2014'}});
+        }}
+        extraCols.push({{h: 'GFLOPS/s', fn: b => fmtNum(b.gflops_per_sec, 1)}});
+        extraCols.push({{h: 'Mem (MB)', fn: b => fmtMem(b.peak_memory_mb)}});
+        extraCols.push({{h: 'KB/Samp', fn: b => fmtNum(b.memory_per_sample_kb, 1)}});
+        if (mod === 'models' || mod === 'losses') {{
+            extraCols.push({{h: 'Params', fn: b => fmtParams(b.n_params_m)}});
+        }}
+        extraCols.push({{h: 'Rounds', fn: b => b.rounds}});
+
+        const thHtml = '<th>Benchmark</th><th>Mode</th><th>Scale</th><th>Median</th><th>Mean</th><th>Std Dev</th>' +
+            extraCols.map(c => `<th>${{c.h}}</th>`).join('');
+
+        const sortedData = [...modData].sort((a,b) =>
+            benchBase(a.short_name).localeCompare(benchBase(b.short_name)) ||
+            (SCALE_ORDER[a.scale]||0)-(SCALE_ORDER[b.scale]||0));
+
+        const tbodyHtml = sortedData.map(b => `<tr>
+            <td>${{benchBase(b.short_name)}}</td>
+            <td>${{b.bench_mode !== 'eager' ? '<span class="tag">' + b.bench_mode + '</span>' : ''}}</td>
+            <td><span class="tag">${{b.scale}}</span></td>
+            <td><b>${{autoUnit(b.median_ms)}}</b></td><td>${{autoUnit(b.mean_ms)}}</td>
+            <td>${{autoUnit(b.stddev_ms)}}</td>` +
+            extraCols.map(c => `<td>${{c.fn(b)}}</td>`).join('') +
+            '</tr>').join('');
+
+        let chartsHtml = `
             <div class="grid-2">
                 <div class="card"><h2>Median Time by Scale</h2><div id="${{chartId}}" class="chart-container"></div></div>
                 <div class="card"><h2>Throughput (ops/sec)</h2><div id="${{opsId}}" class="chart-container"></div></div>
-            </div>
+            </div>`;
+
+        // Second row of charts: Memory + GPU metric
+        const row2Charts = [];
+        if (hasMemory) row2Charts.push(`<div class="card"><h2>Peak Memory (MB)</h2><div id="${{memId}}" class="chart-container"></div></div>`);
+        if (hasGpuMetric) row2Charts.push(`<div class="card"><h2>${{gpuMetricLabel}}</h2><div id="${{gpuId}}" class="chart-container"></div></div>`);
+        if (row2Charts.length === 1) row2Charts.push(''); // keep grid-2 layout
+        if (row2Charts.length) chartsHtml += `<div class="grid-2">${{row2Charts.join('')}}</div>`;
+
+        // Third row: FLOPS chart if available
+        if (hasFlops) {{
+            chartsHtml += `<div class="grid-2"><div class="card"><h2>GFLOPS/sec</h2><div id="${{flopsId}}" class="chart-container"></div></div><div></div></div>`;
+        }}
+
+        section.innerHTML = `
+            <div class="module-section-header">${{mod}} <span style="font-size:0.7em;color:var(--text-muted);font-weight:400">(${{modData.length}} benchmarks)</span></div>
+            ${{summaryCards}}
+            ${{chartsHtml}}
             <div class="card"><h2>Stats</h2>
             <div class="table-scroll"><table class="ov-table">
-                <thead><tr><th>Benchmark</th><th>Scale</th><th>Median</th><th>Mean</th><th>Std Dev</th><th>Min</th><th>Max</th><th>Ops/s</th><th>Rounds</th></tr></thead>
-                <tbody>${{modData.sort((a,b) => benchBase(a.short_name).localeCompare(benchBase(b.short_name)) || (SCALE_ORDER[a.scale]||0)-(SCALE_ORDER[b.scale]||0))
-                    .map(b => `<tr><td>${{benchBase(b.short_name)}}</td><td><span class="tag">${{b.scale}}</span></td>
-                    <td><b>${{autoUnit(b.median_ms)}}</b></td><td>${{autoUnit(b.mean_ms)}}</td>
-                    <td>${{autoUnit(b.stddev_ms)}}</td><td>${{autoUnit(b.min_ms)}}</td><td>${{autoUnit(b.max_ms)}}</td>
-                    <td>${{b.ops.toFixed(1)}}</td><td>${{b.rounds}}</td></tr>`).join('')}}</tbody>
+                <thead><tr>${{thHtml}}</tr></thead>
+                <tbody>${{tbodyHtml}}</tbody>
             </table></div></div>
         `;
         container.appendChild(section);
 
-        // Grouped bar chart (time)
+        // === Chart 1: Time bars ===
         const barTraces = [];
         for (const scale of SCALES) {{
-            const sd = modData.filter(b => b.scale === scale);
+            const sd = chartData.filter(b => b.scale === scale);
             if (!sd.length) continue;
             barTraces.push({{
                 x: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? base : null; }}).filter(Boolean),
@@ -656,10 +826,10 @@ function renderOverview() {{
             legend: {{ ...LAYOUT.legend, orientation: 'h', y: 1.12 }},
         }}, {{ responsive: true }});
 
-        // Ops chart
+        // === Chart 2: Ops/sec bars ===
         const opsTraces = [];
         for (const scale of SCALES) {{
-            const sd = modData.filter(b => b.scale === scale);
+            const sd = chartData.filter(b => b.scale === scale);
             if (!sd.length) continue;
             opsTraces.push({{
                 x: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? base : null; }}).filter(Boolean),
@@ -675,6 +845,168 @@ function renderOverview() {{
             yaxis: {{ ...LAYOUT.yaxis, title: 'Operations / sec' }},
             legend: {{ ...LAYOUT.legend, orientation: 'h', y: 1.12 }},
         }}, {{ responsive: true }});
+
+        // === Chart 3: Memory ===
+        if (hasMemory) {{
+            const memTraces = [];
+            for (const scale of SCALES) {{
+                const sd = chartData.filter(b => b.scale === scale && b.peak_memory_mb != null);
+                if (!sd.length) continue;
+                memTraces.push({{
+                    x: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? base : null; }}).filter(Boolean),
+                    y: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? m.peak_memory_mb : null; }}).filter(x => x !== null),
+                    name: scale, type: 'bar',
+                    marker: {{ color: SCALE_COLORS[scale] }},
+                    hovertemplate: '%{{x}}<br>%{{y:.2f}} MB<br>Scale: ' + scale + '<extra></extra>',
+                }});
+            }}
+            Plotly.newPlot(memId, memTraces, {{
+                ...LAYOUT, barmode: 'group', height: 380,
+                xaxis: {{ ...LAYOUT.xaxis, tickangle: -20 }},
+                yaxis: {{ ...LAYOUT.yaxis, title: 'Peak Memory (MB)' }},
+                legend: {{ ...LAYOUT.legend, orientation: 'h', y: 1.12 }},
+            }}, {{ responsive: true }});
+        }}
+
+        // === Chart 4: GPU Throughput ===
+        if (hasGpuMetric) {{
+            const gpuTraces = [];
+            // Pick the best metric for this module
+            const metricFn = (b) => {{
+                if (mod === 'samplers' && b.gradient_evals_per_sec != null) return b.gradient_evals_per_sec;
+                if (b.samples_per_sec != null) return b.samples_per_sec;
+                if (b.ess_per_sec != null) return b.ess_per_sec;
+                return null;
+            }};
+            for (const scale of SCALES) {{
+                const sd = chartData.filter(b => b.scale === scale && metricFn(b) != null);
+                if (!sd.length) continue;
+                gpuTraces.push({{
+                    x: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? base : null; }}).filter(Boolean),
+                    y: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? metricFn(m) : null; }}).filter(x => x !== null),
+                    name: scale, type: 'bar',
+                    marker: {{ color: SCALE_COLORS[scale] }},
+                    hovertemplate: '%{{x}}<br>%{{y:.1f}}<br>Scale: ' + scale + '<extra></extra>',
+                }});
+            }}
+            Plotly.newPlot(gpuId, gpuTraces, {{
+                ...LAYOUT, barmode: 'group', height: 380,
+                xaxis: {{ ...LAYOUT.xaxis, tickangle: -20 }},
+                yaxis: {{ ...LAYOUT.yaxis, title: gpuMetricLabel }},
+                legend: {{ ...LAYOUT.legend, orientation: 'h', y: 1.12 }},
+            }}, {{ responsive: true }});
+        }}
+
+        // === Chart 5: FLOPS ===
+        if (hasFlops) {{
+            const flopsTraces = [];
+            for (const scale of SCALES) {{
+                const sd = chartData.filter(b => b.scale === scale && b.gflops_per_sec != null);
+                if (!sd.length) continue;
+                flopsTraces.push({{
+                    x: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? base : null; }}).filter(Boolean),
+                    y: bases.map(base => {{ const m = sd.find(b => benchBase(b.short_name) === base); return m ? m.gflops_per_sec : null; }}).filter(x => x !== null),
+                    name: scale, type: 'bar',
+                    marker: {{ color: SCALE_COLORS[scale] }},
+                    hovertemplate: '%{{x}}<br>%{{y:.1f}} GFLOPS/s<extra></extra>',
+                }});
+            }}
+            Plotly.newPlot(flopsId, flopsTraces, {{
+                ...LAYOUT, barmode: 'group', height: 380,
+                xaxis: {{ ...LAYOUT.xaxis, tickangle: -20 }},
+                yaxis: {{ ...LAYOUT.yaxis, title: 'GFLOPS / sec' }},
+                legend: {{ ...LAYOUT.legend, orientation: 'h', y: 1.12 }},
+            }}, {{ responsive: true }});
+        }}
+    }}
+
+    // === Mode comparison section (compile/AMP vs eager) ===
+    if (hasMultiMode) {{
+        const modeSection = document.createElement('div');
+        modeSection.className = 'module-section';
+        const modeChartId = 'ov-mode-cmp';
+        let modeTableRows = '';
+        const modeComps = [];
+
+        for (const mod of MODULES) {{
+            const modBenches = data.filter(b => b.module === mod);
+            const byKey = {{}};
+            modBenches.forEach(b => {{
+                const key = benchBase(b.short_name) + '|' + b.scale;
+                if (!byKey[key]) byKey[key] = {{}};
+                byKey[key][b.bench_mode] = b;
+            }});
+            for (const [key, modeMap] of Object.entries(byKey)) {{
+                if (!modeMap.eager) continue;
+                const eager = modeMap.eager;
+                const compiled = modeMap.compiled;
+                const amp = modeMap.amp_fp16;
+                const compSpeedup = compiled ? eager.median_ms / compiled.median_ms : null;
+                const ampSpeedup = amp ? eager.median_ms / amp.median_ms : null;
+                modeComps.push({{ name: key.replace('|', ' [') + ']', mod, compSpeedup, ampSpeedup }});
+                modeTableRows += `<tr>
+                    <td>${{key.split('|')[0]}}</td><td><span class="tag">${{mod}}</span></td>
+                    <td><span class="tag">${{key.split('|')[1]}}</span></td>
+                    <td>${{autoUnit(eager.median_ms)}}</td>
+                    <td>${{compiled ? autoUnit(compiled.median_ms) : '\u2014'}}</td>
+                    <td>${{compSpeedup != null ? pillHtml(compSpeedup) : '\u2014'}}</td>
+                    <td>${{amp ? autoUnit(amp.median_ms) : '\u2014'}}</td>
+                    <td>${{ampSpeedup != null ? pillHtml(ampSpeedup) : '\u2014'}}</td>
+                </tr>`;
+            }}
+        }}
+
+        if (modeComps.length) {{
+            modeSection.innerHTML = `
+                <div class="module-section-header">Mode Comparison (Compile / AMP)</div>
+                <div class="grid-2">
+                    <div class="card"><h2>torch.compile Speedup</h2><div id="${{modeChartId}}-compile" class="chart-container"></div></div>
+                    <div class="card"><h2>AMP (float16) Speedup</h2><div id="${{modeChartId}}-amp" class="chart-container"></div></div>
+                </div>
+                <div class="card"><h2>Mode Comparison Table</h2>
+                <div class="table-scroll"><table>
+                    <thead><tr><th>Benchmark</th><th>Module</th><th>Scale</th><th>Eager</th><th>Compiled</th><th>Compile Speedup</th><th>AMP fp16</th><th>AMP Speedup</th></tr></thead>
+                    <tbody>${{modeTableRows}}</tbody>
+                </table></div></div>
+            `;
+            container.appendChild(modeSection);
+
+            // Compile speedup chart
+            const compComps = modeComps.filter(c => c.compSpeedup != null);
+            if (compComps.length) {{
+                compComps.sort((a, b) => a.compSpeedup - b.compSpeedup);
+                Plotly.newPlot(modeChartId + '-compile', [{{
+                    y: compComps.map(c => c.name), x: compComps.map(c => c.compSpeedup),
+                    type: 'bar', orientation: 'h',
+                    marker: {{ color: compComps.map(c => c.compSpeedup >= 1 ? '#3fb950' : '#f85149') }},
+                    hovertemplate: '%{{y}}<br>Speedup: %{{x:.3f}}x<extra></extra>',
+                }}], {{
+                    ...LAYOUT, showlegend: false,
+                    height: Math.max(250, compComps.length * 28 + 60),
+                    xaxis: {{ ...LAYOUT.xaxis, title: 'Speedup (>1 = faster)', zeroline: true, zerolinecolor: '#484f58' }},
+                    yaxis: {{ ...LAYOUT.yaxis, automargin: true }},
+                    shapes: [{{ type: 'line', x0: 1, x1: 1, y0: -0.5, y1: compComps.length - 0.5, line: {{ color: '#484f58', width: 2, dash: 'dot' }} }}],
+                }}, {{ responsive: true }});
+            }}
+
+            // AMP speedup chart
+            const ampComps = modeComps.filter(c => c.ampSpeedup != null);
+            if (ampComps.length) {{
+                ampComps.sort((a, b) => a.ampSpeedup - b.ampSpeedup);
+                Plotly.newPlot(modeChartId + '-amp', [{{
+                    y: ampComps.map(c => c.name), x: ampComps.map(c => c.ampSpeedup),
+                    type: 'bar', orientation: 'h',
+                    marker: {{ color: ampComps.map(c => c.ampSpeedup >= 1 ? '#3fb950' : '#f85149') }},
+                    hovertemplate: '%{{y}}<br>Speedup: %{{x:.3f}}x<extra></extra>',
+                }}], {{
+                    ...LAYOUT, showlegend: false,
+                    height: Math.max(250, ampComps.length * 28 + 60),
+                    xaxis: {{ ...LAYOUT.xaxis, title: 'Speedup (>1 = faster)', zeroline: true, zerolinecolor: '#484f58' }},
+                    yaxis: {{ ...LAYOUT.yaxis, automargin: true }},
+                    shapes: [{{ type: 'line', x0: 1, x1: 1, y0: -0.5, y1: ampComps.length - 0.5, line: {{ color: '#484f58', width: 2, dash: 'dot' }} }}],
+                }}, {{ responsive: true }});
+            }}
+        }}
     }}
 }}
 
@@ -901,16 +1233,30 @@ function renderDetails() {{
                 <div class="module-section-header">${{mod}} <span style="font-size:0.7em;color:var(--text-muted);font-weight:400">(${{modData.length}} benchmarks)</span></div>
                 <div class="card"><div class="table-scroll"><table>
                     <thead><tr>
-                        <th>Benchmark</th><th>Scale</th><th>Median</th><th>Mean</th>
+                        <th>Benchmark</th><th>Mode</th><th>Scale</th><th>Median</th><th>Mean</th>
                         <th>Std Dev</th><th>Min</th><th>Max</th><th>IQR</th>
-                        <th>Ops/sec</th><th>Rounds</th><th>Outliers</th>
+                        <th>Ops/sec</th><th>Samp/s</th><th>Grad/s</th><th>GFLOPS/s</th>
+                        <th>Mem (MB)</th><th>KB/Samp</th><th>Evals/Step</th><th>Params</th>
+                        <th>ESS</th><th>ESS/s</th><th>Acc. Rate</th><th>Loss</th><th>Rounds</th><th>Outliers</th>
                     </tr></thead>
                     <tbody>${{modData.map(b => `<tr>
-                        <td>${{benchBase(b.short_name)}}</td><td><span class="tag">${{b.scale}}</span></td>
+                        <td>${{benchBase(b.short_name)}}</td><td>${{b.bench_mode !== 'eager' ? '<span class="tag">' + b.bench_mode + '</span>' : ''}}</td><td><span class="tag">${{b.scale}}</span></td>
                         <td><b>${{autoUnit(b.median_ms)}}</b></td><td>${{autoUnit(b.mean_ms)}}</td>
                         <td>${{autoUnit(b.stddev_ms)}}</td><td>${{autoUnit(b.min_ms)}}</td>
                         <td>${{autoUnit(b.max_ms)}}</td><td>${{autoUnit(b.iqr_ms)}}</td>
-                        <td>${{b.ops.toFixed(1)}}</td><td>${{b.rounds}}</td><td>${{b.outliers}}</td>
+                        <td>${{b.ops.toFixed(1)}}</td>
+                        <td>${{b.samples_per_sec != null ? b.samples_per_sec.toFixed(1) : '\u2014'}}</td>
+                        <td>${{b.gradient_evals_per_sec != null ? b.gradient_evals_per_sec.toFixed(0) : '\u2014'}}</td>
+                        <td>${{b.gflops_per_sec != null ? b.gflops_per_sec.toFixed(1) : '\u2014'}}</td>
+                        <td>${{b.peak_memory_mb != null ? b.peak_memory_mb.toFixed(1) : '\u2014'}}</td>
+                        <td>${{b.memory_per_sample_kb != null ? b.memory_per_sample_kb.toFixed(1) : '\u2014'}}</td>
+                        <td>${{b.drift_evals_per_step != null ? b.drift_evals_per_step : '\u2014'}}</td>
+                        <td>${{b.n_params_m != null ? b.n_params_m + 'M' : '\u2014'}}</td>
+                        <td>${{b.ess != null ? b.ess.toFixed(1) : '\u2014'}}</td>
+                        <td>${{b.ess_per_sec != null ? b.ess_per_sec.toFixed(1) : '\u2014'}}</td>
+                        <td>${{b.acceptance_rate != null ? (b.acceptance_rate * 100).toFixed(1) + '%' : '\u2014'}}</td>
+                        <td>${{b.loss_value != null ? (b.loss_is_finite ? b.loss_value.toFixed(4) : '<span style="color:var(--red)">NaN/Inf</span>') : '\u2014'}}</td>
+                        <td>${{b.rounds}}</td><td>${{b.outliers}}</td>
                     </tr>`).join('')}}</tbody>
                 </table></div></div>
             </div>
