@@ -35,6 +35,9 @@ CI_MODE=false
 QUICK=false
 COMPARE=false
 DASHBOARD=false
+COMPILE=false
+AMP=false
+SCALING=false
 
 # ── Parse args ──
 while [[ $# -gt 0 ]]; do
@@ -44,6 +47,9 @@ while [[ $# -gt 0 ]]; do
         --ci)           CI_MODE=true; shift ;;
         --compare)      COMPARE=true; shift ;;
         --dashboard)    DASHBOARD=true; shift ;;
+        --compile)      COMPILE=true; shift ;;
+        --amp)          AMP=true; shift ;;
+        --scaling)      SCALING=true; shift ;;
         --module)       MODULE="$2"; shift 2 ;;
         --filter)       FILTER="$2"; shift 2 ;;
         --device)       DEVICE="$2"; shift 2 ;;
@@ -59,6 +65,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --ci              CI mode (non-interactive, exits non-zero on regression)"
             echo "  --module MODULE   Only benchmark: losses|samplers|integrators|models|interpolants"
             echo "  --filter STRING   Only benchmarks whose name contains STRING (pytest -k)"
+            echo "  --compile         Include torch.compile benchmarks"
+            echo "  --amp             Include mixed precision (float16) benchmarks"
+            echo "  --scaling         Run batch-size scaling sweep"
             echo "  --device DEVICE   Force device: cpu|cuda"
             echo "  --scales SCALES   Space-separated scales: 'small medium large'"
             echo "  -h, --help        Show this help"
@@ -143,6 +152,16 @@ fi
 if [[ -n "$FILTER" ]]; then
     PYTEST_ARGS="$PYTEST_ARGS -k $FILTER"
     echo "  Filter  : $FILTER"
+fi
+
+if $COMPILE; then
+    PYTEST_ARGS="$PYTEST_ARGS --bench-compile"
+    echo "  Compile : enabled"
+fi
+
+if $AMP; then
+    PYTEST_ARGS="$PYTEST_ARGS --bench-amp"
+    echo "  AMP     : enabled"
 fi
 
 echo "================================================================"

@@ -71,6 +71,18 @@ def pytest_addoption(parser):
         default=None,
         choices=["losses", "samplers", "integrators", "models", "interpolants"],
     )
+    parser.addoption(
+        "--bench-compile",
+        action="store_true",
+        default=False,
+        help="Also benchmark torch.compile variants",
+    )
+    parser.addoption(
+        "--bench-amp",
+        action="store_true",
+        default=False,
+        help="Also benchmark mixed precision (float16) variants",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -133,7 +145,15 @@ def _cuda_sync_benchmark(benchmark, bench_device, _gpu_info):
             torch.cuda.synchronize(_dev)
             return result
 
-        return _orig_pedantic(_synced_target, args=args, kwargs=kwargs, **pedantic_kwargs)
+        result = _orig_pedantic(_synced_target, args=args, kwargs=kwargs, **pedantic_kwargs)
+        torch.cuda.synchronize(_dev)
+        peak = torch.cuda.max_memory_allocated(_dev) / (1024 ** 2)
+        reserved = torch.cuda.memory_reserved(_dev) / (1024 ** 2)
+        benchmark.extra_info["peak_memory_mb"] = round(peak, 2)
+        benchmark.extra_info["memory_reserved_mb"] = round(reserved, 2)
+        if peak > 0:
+            benchmark.extra_info["memory_fragmentation"] = round(reserved / peak, 2)
+        return result
 
     benchmark.pedantic = _synced_pedantic
     yield
