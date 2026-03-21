@@ -38,6 +38,23 @@ jobs:
           path: benchmarks/results/
           merge-multiple: true
         continue-on-error: true
+      - name: Restore benchmark results from cache
+        if: github.event_name != 'workflow_run'
+        uses: actions/cache/restore@v4
+        with:
+          path: benchmarks/results/
+          key: benchmark-results-cuda-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            benchmark-results-cuda-${{ runner.os }}-
+      - name: Show benchmark data status
+        run: |
+          if [ -d benchmarks/results ]; then
+            COUNT=$(find benchmarks/results/ -name '*.json' -type f 2>/dev/null | wc -l)
+            echo "Found $COUNT benchmark JSON files"
+            find benchmarks/results/ -name '*.json' -type f | head -10
+          else
+            echo "No benchmark results directory — benchmarks tab will show placeholder"
+          fi
       - name: Configure Git Credentials
         run: |
           git config user.name github-actions[bot]
