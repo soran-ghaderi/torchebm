@@ -1,0 +1,388 @@
+name: Performance Benchmarks
+
+# ─────────────────────────────────────────────────────────────
+# SECURITY:
+#   - PR jobs only run for internal contributors by default
+#   - GPU job has minimal permissions (read-only checkout)
+#   - PR comment uses separate job with pull-requests: write
+# ─────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      scales:
+        description: 'Benchmark scales (space-separated)'
+        required: false
+        default: 'small medium'
+      module:
+        description: 'Module to benchmark (empty = all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # GPU benchmarks (self-hosted)
+  # ═══════════════════════════════════════════════════════════
+  benchmark-gpu:
+    runs-on: [self-hosted, gpu]
+    timeout-minutes: 45
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'release' ||
+      contains(github.event.head_commit.message, '#bench') ||
+      contains(github.event.pull_request.title, '#bench') ||
+      contains(github.event.pull_request.body, '#bench')
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden self-hosted runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - name: Create isolated venv
+        run: |
+          python3 -m venv .bench-venv
+          echo "${{ github.workspace }}/.bench-venv/bin" >> $GITHUB_PATH
+
+      - name: Detect GPU and install compatible PyTorch
+        run: |
+          pip install --upgrade pip
+          # Detect GPU compute capability before installing torch
+          CUDA_ARCH=$(python3 -c "
+          import subprocess, re
+          out = subprocess.check_output(['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'], text=True)
+          cap = out.strip().split('\n')[0]  # e.g. '6.1'
+          major, minor = cap.split('.')
+          print(f'{major}.{minor}')
+          ")
+          echo "GPU compute capability: $CUDA_ARCH"
+
+          MAJOR=${CUDA_ARCH%%.*}
+          MINOR=${CUDA_ARCH##*.}
+          SM="sm_${MAJOR}${MINOR}"
+          echo "Target arch: $SM"
+
+          # Determine correct CUDA toolkit version for the GPU
+          # sm_61 (Pascal): needs cu118 builds (last to support sm_61)
+          # sm_70+ (Volta+): can use latest cu124/cu128
+          if [ "$MAJOR" -lt 7 ]; then
+            echo "Legacy GPU detected ($SM). Installing torch with cu118 (last to support Pascal)."
+            pip install torch --index-url https://download.pytorch.org/whl/cu118
+          else
+            pip install torch
+          fi
+
+          # Verify CUDA works on this GPU
+          python3 -c "
+          import torch, sys
+          assert torch.cuda.is_available(), 'CUDA not available'
+          torch.randn(1, device='cuda')
+          cap = torch.cuda.get_device_capability(0)
+          print(f'Verified: {torch.cuda.get_device_name(0)} (sm_{cap[0]}{cap[1]}) works with torch {torch.__version__}')
+          "
+
+      - name: Install project dependencies
+        run: |
+          pip install -e .[dev]
+          pip install pytest-benchmark
+
+      - name: Restore benchmark history
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/results/
+          key: benchmark-results-cuda-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            benchmark-results-cuda-${{ runner.os }}-
+
+      - name: Run GPU benchmarks
+        run: |
+          SCALES="${{ github.event.inputs.scales || 'small medium large' }}"
+          MODULE="${{ github.event.inputs.module || '' }}"
+
+          PYTEST_ARGS="benchmarks/ --benchmark-only --benchmark-enable"
+          PYTEST_ARGS="$PYTEST_ARGS --benchmark-autosave"
+          PYTEST_ARGS="$PYTEST_ARGS --benchmark-storage=benchmarks/results"
+          PYTEST_ARGS="$PYTEST_ARGS --benchmark-name=short"
+          PYTEST_ARGS="$PYTEST_ARGS --benchmark-sort=fullname"
+          PYTEST_ARGS="$PYTEST_ARGS --benchmark-columns=min,max,mean,stddev,median,iqr,rounds"
+          PYTEST_ARGS="$PYTEST_ARGS --bench-device=cuda"
+          PYTEST_ARGS="$PYTEST_ARGS --bench-scales $SCALES"
+
+          if [ -n "$MODULE" ]; then
+            PYTEST_ARGS="benchmarks/test_bench_${MODULE}.py ${PYTEST_ARGS#benchmarks/ }"
+          fi
+
+          pytest $PYTEST_ARGS -v
+
+      - name: Deduplicate results for current version
+        run: |
+          python3 -c "
+          import json, glob, os
+          from collections import defaultdict
+
+          results_dir = 'benchmarks/results'
+          # Group pytest-benchmark JSON files by version
+          version_files = defaultdict(list)
+          for f in glob.glob(os.path.join(results_dir, '*.json')):
+              try:
+                  data = json.load(open(f))
+                  if 'benchmarks' not in data or 'machine_info' not in data:
+                      continue
+                  # Extract version from commit_info or filename
+                  ver = data.get('commit_info', {}).get('id', '')[:12] or os.path.basename(f)
+                  ts = data.get('datetime', '')
+                  version_files[(ver,)].append((ts, f))
+              except Exception:
+                  continue
+
+          # For each group, keep only the latest file
+          removed = 0
+          for key, entries in version_files.items():
+              if len(entries) <= 1:
+                  continue
+              entries.sort(reverse=True)  # newest first by timestamp
+              for _, old_file in entries[1:]:
+                  # Don't remove baselines
+                  if 'baseline' in os.path.basename(old_file):
+                      continue
+                  os.remove(old_file)
+                  removed += 1
+                  print(f'  Removed duplicate: {os.path.basename(old_file)}')
+          print(f'Deduplication: removed {removed} old result files')
+          "
+
+      - name: Generate dashboard & report
+        run: |
+          python benchmarks/dashboard.py \
+            -d benchmarks/results \
+            -o benchmarks/results/dashboard.html \
+            --latest-compare
+
+          # Also generate markdown summary for PR
+          python -c "
+          import json, glob, os
+
+          results_dir = 'benchmarks/results'
+          files = sorted(glob.glob(os.path.join(results_dir, '**', '*.json'), recursive=True))
+          runs = []
+          for f in files:
+              try:
+                  data = json.load(open(f))
+                  if 'benchmarks' in data and 'machine_info' in data:
+                      runs.append(data)
+              except Exception:
+                  pass
+          runs.sort(key=lambda r: r.get('datetime', ''))
+          if len(runs) < 2:
+              print('Only one run found, no comparison available.')
+              exit(0)
+
+          baseline, latest = runs[-2], runs[-1]
+          base_map = {b['fullname']: b['stats'] for b in baseline['benchmarks']}
+          lines = ['# TorchEBM Performance Report\n']
+          lines.append('| Benchmark | Before (ms) | After (ms) | Speedup |')
+          lines.append('|---|---:|---:|---:|')
+
+          geomean = 1.0
+          n = 0
+          for b in sorted(latest['benchmarks'], key=lambda x: x['fullname']):
+              name = b['fullname']
+              if name in base_map:
+                  before = base_map[name]['median'] * 1000
+                  after = b['stats']['median'] * 1000
+                  sp = before / after if after > 0 else 999
+                  geomean *= sp
+                  n += 1
+                  lines.append(f'| {name} | {before:.3f} | {after:.3f} | **{sp:.2f}x** |')
+
+          if n > 0:
+              geomean = geomean ** (1/n)
+          lines.append(f'\n**Geometric mean speedup: {geomean:.2f}x**')
+          report = '\n'.join(lines)
+          with open('benchmarks/results/speedup_report.md', 'w') as f:
+              f.write(report)
+          print(report)
+          " >> \$GITHUB_STEP_SUMMARY || true
+
+      - name: Check for regressions
+        run: |
+          GEOMEAN=$(python3 -c "
+          import json, glob, os
+
+          results_dir = 'benchmarks/results'
+          files = sorted(glob.glob(os.path.join(results_dir, '**', '*.json'), recursive=True))
+          runs = []
+          for f in files:
+              try:
+                  data = json.load(open(f))
+                  if 'benchmarks' in data and 'machine_info' in data:
+                      runs.append(data)
+              except Exception:
+                  pass
+          runs.sort(key=lambda r: r.get('datetime', ''))
+          if len(runs) < 2:
+              print('1.0')
+          else:
+              baseline, latest = runs[-2], runs[-1]
+              base_map = {b['fullname']: b['stats']['median'] for b in baseline['benchmarks']}
+              g = 1.0
+              n = 0
+              for b in latest['benchmarks']:
+                  name = b['fullname']
+                  if name in base_map and base_map[name] > 0:
+                      g *= base_map[name] / max(b['stats']['median'], 1e-15)
+                      n += 1
+              print(f'{g ** (1/max(n,1)):.4f}')
+          ")
+
+          echo "Geometric mean speedup: ${GEOMEAN}x"
+
+          python3 -c "
+          import sys
+          g = float('$GEOMEAN')
+          if g < 0.90:
+              print('::error::Significant GPU regression: {:.2f}x (threshold: 0.90x)'.format(g))
+              sys.exit(1)
+          elif g < 0.95:
+              print('::warning::Minor GPU regression: {:.2f}x'.format(g))
+          else:
+              print('GPU performance check passed: {:.2f}x'.format(g))
+          "
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-gpu-${{ github.sha }}
+          path: |
+            benchmarks/results/
+          retention-days: 90
+
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          rm -rf "${{ github.workspace }}/.bench-venv"
+          cd "${{ github.workspace }}" && git clean -ffdx || true
+
+  # ═══════════════════════════════════════════════════════════
+  # Deploy dashboard to GitHub Pages (on merge to main)
+  # ═══════════════════════════════════════════════════════════
+  deploy-dashboard:
+    runs-on: ubuntu-latest
+    needs: benchmark-gpu
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')) ||
+      github.event_name == 'release'
+    permissions:
+      contents: write
+      pages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-gpu-${{ github.sha }}
+          path: benchmarks/results/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate dashboard
+        run: |
+          python benchmarks/dashboard.py \
+            -d benchmarks/results \
+            -o benchmarks/results/dashboard.html \
+            --latest-compare \
+            --title "TorchEBM Performance Dashboard"
+
+      - name: Commit benchmark results to repo
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add benchmarks/results/*.json
+          git diff --cached --quiet || git commit -m "chore: update benchmark results [skip ci]"
+          git push
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: benchmarks/results
+          destination_dir: benchmarks
+          keep_files: true
+
+  # ═══════════════════════════════════════════════════════════
+  # Comment on PR
+  # ═══════════════════════════════════════════════════════════
+  comment-pr:
+    runs-on: ubuntu-latest
+    needs: benchmark-gpu
+    if: github.event_name == 'pull_request' && needs.benchmark-gpu.result == 'success'
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Download report
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-gpu-${{ github.sha }}
+          path: results/
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = '';
+            try {
+              report = fs.readFileSync('results/speedup_report.md', 'utf8');
+            } catch {
+              report = 'Benchmark results available as artifacts.';
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const marker = '<!-- torchebm-bench -->';
+            const body = `${marker}\n${report}`;
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

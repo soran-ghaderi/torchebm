@@ -95,6 +95,7 @@ nav:
   - Benchmarks:
     - benchmarks/index.md
     - Results: benchmarks/results.md
+    - Interactive Dashboard: benchmarks/dashboard.md
   - Blog: blog/index.md
   - FAQ: faq.md
 
@@ -273,3 +274,4 @@ extra_javascript:
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
   - javascripts/cards-clickable.js
+  - javascripts/benchmarks.js
