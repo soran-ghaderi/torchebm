@@ -64,6 +64,10 @@ def _sort_versions(versions: list[str]) -> list[str]:
 def _scan_results() -> dict[str, dict[str, dict]]:
     r"""Scan all JSON result files grouped by device and version.
 
+    Supports both:
+    - pytest-benchmark format: ``{benchmarks, machine_info, commit_info}``
+    - legacy custom format: ``{results, environment}``
+
     Returns:
         ``{device: {version: data}}`` with versions sorted newest-first.
     """
@@ -72,9 +76,38 @@ def _scan_results() -> dict[str, dict[str, dict]]:
 
     entries: dict[tuple[str, str], list[tuple[dict, str]]] = {}
 
-    for path in _RESULTS_DIR.glob("*.json"):
+    for path in _RESULTS_DIR.glob("**/*.json"):
         data = _load_json(path)
-        if not data or "results" not in data or "environment" not in data:
+        if not data:
+            continue
+
+        # ── pytest-benchmark format ──
+        if "benchmarks" in data and "machine_info" in data:
+            env, results = _convert_pytest_benchmark(data)
+            if not results:
+                continue
+            version_raw = env.get("torchebm_version", "")
+            if not version_raw:
+                version_raw = data.get("commit_info", {}).get("id", "")[:12]
+            if not version_raw:
+                continue
+            version = _clean_version(version_raw)
+            timestamp = env.get("timestamp", data.get("datetime", ""))
+
+            devices: dict[str, list[dict]] = {}
+            for r in results:
+                if "error" not in r:
+                    devices.setdefault(r.get("device", "cpu"), []).append(r)
+
+            for device, device_results in devices.items():
+                device_data = {"environment": env, "results": device_results}
+                entries.setdefault((version, device), []).append(
+                    (device_data, timestamp)
+                )
+            continue
+
+        # ── legacy custom format ──
+        if "results" not in data or "environment" not in data:
             continue
 
         env = data["environment"]
@@ -86,12 +119,12 @@ def _scan_results() -> dict[str, dict[str, dict]]:
         version = _clean_version(version_raw)
         timestamp = env.get("timestamp", "")
 
-        devices: dict[str, list[dict]] = {}
+        devices_legacy: dict[str, list[dict]] = {}
         for r in results:
             if "error" not in r:
-                devices.setdefault(r.get("device", "cpu"), []).append(r)
+                devices_legacy.setdefault(r.get("device", "cpu"), []).append(r)
 
-        for device, device_results in devices.items():
+        for device, device_results in devices_legacy.items():
             device_errors = [r for r in results if "error" in r]
             device_data = {
                 "environment": env,
@@ -112,6 +145,76 @@ def _scan_results() -> dict[str, dict[str, dict]]:
         result[device] = {v: ver_map[v] for v in sorted_vers}
 
     return result
+
+
+def _convert_pytest_benchmark(data: dict) -> tuple[dict, list[dict]]:
+    """Convert pytest-benchmark JSON to the hook's internal format.
+
+    Returns:
+        (environment_dict, results_list) where each result has the keys
+        expected by the rendering functions (name, module, batch_size,
+        median_ms, device, etc.).
+    """
+    machine = data.get("machine_info", {})
+    commit = data.get("commit_info", {})
+
+    # Try to extract torchebm version from extra_info of any benchmark
+    torchebm_version = ""
+    gpu_name = ""
+    cuda_version = ""
+    gpu_memory_gb = 0
+    for b in data.get("benchmarks", []):
+        extra = b.get("extra_info", {})
+        if extra.get("gpu_name"):
+            gpu_name = extra["gpu_name"]
+            cuda_version = extra.get("cuda_version", "")
+            gpu_memory_gb = extra.get("gpu_vram_gb", 0)
+        # Version from commit
+        if not torchebm_version:
+            torchebm_version = commit.get("id", "")[:12]
+
+    env = {
+        "torchebm_version": torchebm_version,
+        "torch_version": "",
+        "platform": f'{machine.get("system", "")} {machine.get("release", "")}',
+        "timestamp": data.get("datetime", ""),
+    }
+    if gpu_name:
+        env["gpu_name"] = gpu_name
+        env["cuda_version"] = cuda_version
+        if gpu_memory_gb:
+            env["gpu_memory_gb"] = gpu_memory_gb
+
+    results = []
+    for b in data.get("benchmarks", []):
+        stats = b.get("stats", {})
+        extra = b.get("extra_info", {})
+        fullname = b.get("fullname", b.get("name", "unknown"))
+
+        # Derive module from fullname: test_bench_losses.py::test_xxx -> losses
+        module = extra.get("module", "unknown")
+        if module == "unknown":
+            parts = fullname.split("::")
+            if parts:
+                fname = parts[0].split("/")[-1]
+                if fname.startswith("test_bench_"):
+                    module = fname.replace("test_bench_", "").replace(".py", "")
+
+        results.append({
+            "name": extra.get("short_name", fullname.split("::")[-1] if "::" in fullname else fullname),
+            "module": module,
+            "batch_size": extra.get("batch_size", 0),
+            "device": extra.get("device", "cpu"),
+            "median_ms": round(stats.get("median", 0) * 1000, 4),
+            "mean_ms": round(stats.get("mean", 0) * 1000, 4),
+            "min_ms": round(stats.get("min", 0) * 1000, 4),
+            "max_ms": round(stats.get("max", 0) * 1000, 4),
+            "stddev_ms": round(stats.get("stddev", 0) * 1000, 4),
+            "peak_memory_mb": extra.get("peak_memory_mb", 0),
+            "samples_per_sec": extra.get("samples_per_sec", 0),
+        })
+
+    return env, results
 
 
 # ═══════════════════════════════════════════════════════════════════════════

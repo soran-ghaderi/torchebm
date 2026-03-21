@@ -193,6 +193,8 @@ __pycache__/
 data/
 docs/api/torchebm/
 papers_to_add/
-# Benchmark results (generated)
-benchmarks/results/
+# Benchmark scratch files (dashboard HTML, backups)
+benchmarks/results/dashboard.html
+benchmarks/results/*.bak.json
+benchmarks/results/speedup_report.md
 benchmarks/torchebm_benchmarking.md

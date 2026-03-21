@@ -140,7 +140,7 @@ jobs:
           results_dir = 'benchmarks/results'
           # Group pytest-benchmark JSON files by version
           version_files = defaultdict(list)
-          for f in glob.glob(os.path.join(results_dir, '*.json')):
+          for f in glob.glob(os.path.join(results_dir, '**', '*.json'), recursive=True):
               try:
                   data = json.load(open(f))
                   if 'benchmarks' not in data or 'machine_info' not in data:
@@ -320,7 +320,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add benchmarks/results/*.json
+          git add benchmarks/results/
           git diff --cached --quiet || git commit -m "chore: update benchmark results [skip ci]"
           git push
 
