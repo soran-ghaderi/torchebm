@@ -279,7 +279,8 @@ jobs:
         if: always()
         run: |
           rm -rf "${{ github.workspace }}/.bench-venv"
-          cd "${{ github.workspace }}" && git clean -ffdx || true
+          # Clean everything EXCEPT benchmarks/results/ — cache post-step needs it
+          cd "${{ github.workspace }}" && git clean -ffdx -e benchmarks/results/ || true
 
   # ═══════════════════════════════════════════════════════════
   # Deploy dashboard to GitHub Pages (on merge to main)
@@ -333,7 +334,8 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════
   # Persist benchmark results to main branch
-  # Runs AFTER dashboard deploy succeeds
+  # Runs AFTER dashboard deploy succeeds — merges new results
+  # with any previously committed results for accumulation.
   # ═══════════════════════════════════════════════════════════
   commit-results:
     runs-on: ubuntu-latest
@@ -349,7 +351,14 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
-      - name: Download benchmark results
+      - name: Restore previously committed results
+        run: |
+          # git checkout includes force-committed results from prior runs.
+          # List what we already have so the artifact download merges on top.
+          echo "Previously committed results:"
+          find benchmarks/results/ -name '*.json' -type f 2>/dev/null | wc -l || echo "0"
+
+      - name: Download new benchmark results
         uses: actions/download-artifact@v4
         with:
           name: benchmark-gpu-${{ github.sha }}
@@ -357,6 +366,8 @@ jobs:
 
       - name: Commit benchmark results
         run: |
+          echo "Total results after merge:"
+          find benchmarks/results/ -name '*.json' -type f | wc -l
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -f benchmarks/results/

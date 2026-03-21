@@ -50,15 +50,30 @@ def _clean_version(version: str) -> str:
     return v.lstrip("v") if v.startswith("v") else v
 
 
-def _sort_versions(versions: list[str]) -> list[str]:
+def _sort_versions(
+    versions: list[str],
+    ts_map: dict[str, str] | None = None,
+) -> list[str]:
+    """Sort version strings newest-first.
+
+    Semantic versions are sorted by ``packaging.version``.  Non-semver strings
+    (e.g. commit SHAs) are sorted by their timestamp from *ts_map* so that the
+    most recent run comes first even when the identifier is opaque.
+    """
     if Version is not None:
         def _key(v: str):
             try:
                 return (0, Version(v))
             except InvalidVersion:
-                return (1, v)
+                # Use timestamp for non-semver, falling back to the string
+                ts = (ts_map or {}).get(v, "")
+                return (1, ts)
         return sorted(versions, key=_key, reverse=True)
-    return sorted(versions, reverse=True)
+    # No packaging — fall back to timestamp then string
+    def _key_plain(v: str):
+        ts = (ts_map or {}).get(v, "")
+        return ts
+    return sorted(versions, key=_key_plain, reverse=True)
 
 
 def _scan_results() -> dict[str, dict[str, dict]]:
@@ -134,15 +149,16 @@ def _scan_results() -> dict[str, dict[str, dict]]:
                 (device_data, timestamp)
             )
 
-    deduped: dict[str, dict[str, dict]] = {}
+    deduped: dict[str, dict[str, tuple[dict, str]]] = {}
     for (version, device), items in entries.items():
-        best = max(items, key=lambda x: x[1])
-        deduped.setdefault(device, {})[version] = best[0]
+        best_data, best_ts = max(items, key=lambda x: x[1])
+        deduped.setdefault(device, {})[version] = (best_data, best_ts)
 
     result = {}
     for device, ver_map in deduped.items():
-        sorted_vers = _sort_versions(list(ver_map.keys()))
-        result[device] = {v: ver_map[v] for v in sorted_vers}
+        ts_map = {v: ts for v, (_, ts) in ver_map.items()}
+        sorted_vers = _sort_versions(list(ver_map.keys()), ts_map)
+        result[device] = {v: ver_map[v][0] for v in sorted_vers}
 
     return result
 
@@ -158,24 +174,30 @@ def _convert_pytest_benchmark(data: dict) -> tuple[dict, list[dict]]:
     machine = data.get("machine_info", {})
     commit = data.get("commit_info", {})
 
-    # Try to extract torchebm version from extra_info of any benchmark
+    # Try to extract torchebm version and env info from extra_info
     torchebm_version = ""
+    torch_version = ""
     gpu_name = ""
     cuda_version = ""
     gpu_memory_gb = 0
     for b in data.get("benchmarks", []):
         extra = b.get("extra_info", {})
+        if not torchebm_version and extra.get("torchebm_version"):
+            torchebm_version = extra["torchebm_version"]
+        if not torch_version and extra.get("torch_version"):
+            torch_version = extra["torch_version"]
         if extra.get("gpu_name"):
             gpu_name = extra["gpu_name"]
             cuda_version = extra.get("cuda_version", "")
             gpu_memory_gb = extra.get("gpu_vram_gb", 0)
-        # Version from commit
-        if not torchebm_version:
-            torchebm_version = commit.get("id", "")[:12]
+
+    # Fallback: use commit SHA as version identifier
+    if not torchebm_version:
+        torchebm_version = commit.get("id", "")[:12]
 
     env = {
         "torchebm_version": torchebm_version,
-        "torch_version": "",
+        "torch_version": torch_version,
         "platform": f'{machine.get("system", "")} {machine.get("release", "")}',
         "timestamp": data.get("datetime", ""),
     }
