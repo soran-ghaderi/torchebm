@@ -8,14 +8,21 @@ on:
     branches:
       - master
       - main
+  workflow_run:
+    workflows: ["Performance Benchmarks"]
+    types: [completed]
+    branches: [master, main]
 permissions:
   contents: write
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref || github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
         with:

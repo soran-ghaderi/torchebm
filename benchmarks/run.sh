@@ -170,9 +170,13 @@ echo ""
 # ── Run benchmarks ──
 pytest $PYTEST_ARGS -v
 
-# ── Save versioned copy ──
+# ── Save versioned copy (replace previous for same version+device) ──
 LATEST_FILE=$(ls -t "$RESULTS_DIR"/*.json 2>/dev/null | head -1)
 if [[ -n "$LATEST_FILE" ]]; then
+    # Remove old versioned copies for this version+device
+    for old in "$RESULTS_DIR"/v${TORCHEBM_VERSION}_${EFFECTIVE_DEVICE}_*.json; do
+        [[ -f "$old" ]] && rm -f "$old" && echo "  Replaced old result: $(basename "$old")"
+    done
     cp "$LATEST_FILE" "$RESULTS_DIR/v${TORCHEBM_VERSION}_${EFFECTIVE_DEVICE}_${TIMESTAMP}.json"
 fi
 
