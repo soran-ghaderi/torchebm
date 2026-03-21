@@ -132,6 +132,13 @@ def _cuda_sync_benchmark(benchmark, bench_device, _gpu_info):
     benchmark.extra_info["device"] = bench_device.type
     benchmark.extra_info.update(_gpu_info)
 
+    try:
+        import torchebm
+        benchmark.extra_info["torchebm_version"] = getattr(torchebm, "__version__", "")
+    except Exception:
+        pass
+    benchmark.extra_info["torch_version"] = torch.__version__
+
     if bench_device.type != "cuda":
         yield
         return
