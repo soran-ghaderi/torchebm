@@ -131,6 +131,43 @@ jobs:
 
           pytest $PYTEST_ARGS -v
 
+      - name: Deduplicate results for current version
+        run: |
+          python3 -c "
+          import json, glob, os
+          from collections import defaultdict
+
+          results_dir = 'benchmarks/results'
+          # Group pytest-benchmark JSON files by version
+          version_files = defaultdict(list)
+          for f in glob.glob(os.path.join(results_dir, '*.json')):
+              try:
+                  data = json.load(open(f))
+                  if 'benchmarks' not in data or 'machine_info' not in data:
+                      continue
+                  # Extract version from commit_info or filename
+                  ver = data.get('commit_info', {}).get('id', '')[:12] or os.path.basename(f)
+                  ts = data.get('datetime', '')
+                  version_files[(ver,)].append((ts, f))
+              except Exception:
+                  continue
+
+          # For each group, keep only the latest file
+          removed = 0
+          for key, entries in version_files.items():
+              if len(entries) <= 1:
+                  continue
+              entries.sort(reverse=True)  # newest first by timestamp
+              for _, old_file in entries[1:]:
+                  # Don't remove baselines
+                  if 'baseline' in os.path.basename(old_file):
+                      continue
+                  os.remove(old_file)
+                  removed += 1
+                  print(f'  Removed duplicate: {os.path.basename(old_file)}')
+          print(f'Deduplication: removed {removed} old result files')
+          "
+
       - name: Generate dashboard & report
         run: |
           python benchmarks/dashboard.py \
