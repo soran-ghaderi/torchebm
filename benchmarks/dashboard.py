@@ -8,7 +8,6 @@ Usage:
 """
 
 import argparse
-import glob
 import json
 import math
 import os
@@ -17,151 +16,18 @@ from collections import defaultdict
 from datetime import datetime
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_BENCH_DIR = os.path.dirname(os.path.abspath(__file__))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+if _BENCH_DIR not in sys.path:
+    sys.path.insert(0, _BENCH_DIR)
 
-
-def load_benchmark_files(directory):
-    pattern = os.path.join(directory, "**", "*.json")
-    files = glob.glob(pattern, recursive=True)
-    runs = []
-    for fpath in files:
-        try:
-            with open(fpath) as f:
-                data = json.load(f)
-            if "benchmarks" not in data or "machine_info" not in data:
-                continue
-            data["_source_file"] = os.path.basename(fpath)
-            runs.append(data)
-        except (json.JSONDecodeError, KeyError):
-            continue
-    runs.sort(key=lambda r: r.get("datetime", ""))
-    return runs
-
-
-def _run_label(run):
-    dt = run.get("datetime", "")[:19].replace("T", " ")
-    commit = run.get("commit_info", {}).get("id", "")[:8]
-    branch = run.get("commit_info", {}).get("branch", "")
-    parts = []
-    if commit:
-        parts.append(commit)
-    if branch:
-        parts.append(branch)
-    if dt:
-        parts.append(dt)
-    return " | ".join(parts) if parts else "unknown"
-
-
-def _short_bench_name(fullname):
-    parts = fullname.split("::")
-    name = parts[-1] if parts else fullname
-    if "[" in name:
-        base, params = name.split("[", 1)
-        return f"{base}[{params}"
-    return name
-
-
-def extract_all_data(runs):
-    benchmarks = []
-    run_meta = []
-    for ri, run in enumerate(runs):
-        label = _run_label(run)
-        dt = run.get("datetime", "")
-        commit = run.get("commit_info", {}).get("id", "")[:8]
-        branch = run.get("commit_info", {}).get("branch", "")
-        machine = run.get("machine_info", {})
-        run_meta.append({
-            "index": ri,
-            "label": label,
-            "datetime": dt,
-            "commit": commit,
-            "branch": branch,
-            "machine_node": machine.get("node", ""),
-            "cpu": machine.get("cpu", {}).get("brand_raw", ""),
-            "system": machine.get("system", ""),
-            "python": machine.get("python_version", ""),
-            "source_file": run.get("_source_file", ""),
-            "device": "",
-            "gpu_name": "",
-            "gpu_vram_gb": "",
-            "cuda_version": "",
-            "cudnn_version": "",
-        })
-        for bench in run.get("benchmarks", []):
-            stats = bench.get("stats", {})
-            extra = bench.get("extra_info", {})
-            fullname = bench.get("fullname", bench.get("name", "unknown"))
-            benchmarks.append({
-                "run_index": ri,
-                "run_label": label,
-                "run_datetime": dt,
-                "fullname": fullname,
-                "short_name": _short_bench_name(fullname),
-                "module": extra.get("module", "unknown"),
-                "scale": extra.get("scale", "unknown"),
-                "batch_size": extra.get("batch_size", 0),
-                "dim": extra.get("dim", 0),
-                "extra_type": extra.get("type", ""),
-                "device": extra.get("device", "cpu"),
-                "median_ms": round(stats.get("median", 0) * 1000, 4),                "_extra_raw": extra,                "mean_ms": round(stats.get("mean", 0) * 1000, 4),
-                "min_ms": round(stats.get("min", 0) * 1000, 4),
-                "max_ms": round(stats.get("max", 0) * 1000, 4),
-                "stddev_ms": round(stats.get("stddev", 0) * 1000, 4),
-                "q1_ms": round(stats.get("q1", 0) * 1000, 4),
-                "q3_ms": round(stats.get("q3", 0) * 1000, 4),
-                "iqr_ms": round(stats.get("iqr", 0) * 1000, 4),
-                "ops": round(stats.get("ops", 0), 2),
-                "peak_memory_mb": extra.get("peak_memory_mb", None),
-                "memory_fragmentation": extra.get("memory_fragmentation", None),
-                "samples_per_sec": extra.get("samples_per_sec", None),
-                "total_flops": extra.get("total_flops", None),
-                "gflops_per_sec": extra.get("gflops_per_sec", None),
-                "acceptance_rate": extra.get("acceptance_rate", None),
-                "ess": extra.get("ess", None),
-                "ess_per_sec": extra.get("ess_per_sec", None),
-                "loss_value": extra.get("loss_value", None),
-                "loss_is_finite": extra.get("loss_is_finite", None),
-                "bench_mode": extra.get("mode", "eager"),
-                "rounds": stats.get("rounds", 0),
-                "outliers": stats.get("outliers", ""),
-                "gradient_evals_per_sec": extra.get("gradient_evals_per_sec", None),
-                "drift_evals_per_step": extra.get("drift_evals_per_step", None),
-                "drift_evals_total": extra.get("drift_evals_total", None),
-                "memory_per_sample_kb": extra.get("memory_per_sample_kb", None),
-                "n_params": extra.get("n_params", None),
-                "n_params_m": extra.get("n_params_m", None),
-                "gradient_evals": extra.get("gradient_evals", None),
-                "n_steps": extra.get("n_steps", None),
-                "adaptive": extra.get("adaptive", None),
-                "includes_backward": extra.get("includes_backward", None),
-            })
-    return benchmarks, run_meta
-
-
-def _backfill_gpu_info(benchmarks, run_meta):
-    """Extract GPU info from benchmark extra_info and backfill into run_meta."""
-    for rm in run_meta:
-        run_benches = [b for b in benchmarks if b["run_index"] == rm["index"]]
-        for b in run_benches:
-            bi = b.get("_extra_raw", {})
-            if bi.get("gpu_name"):
-                rm["device"] = bi.get("device", "cuda")
-                rm["gpu_name"] = bi.get("gpu_name", "")
-                rm["gpu_vram_gb"] = bi.get("gpu_vram_gb", "")
-                rm["cuda_version"] = bi.get("cuda_version", "")
-                rm["cudnn_version"] = bi.get("cudnn_version", "")
-                break
-            elif bi.get("device"):
-                rm["device"] = bi.get("device", "cpu")
-                break
-
-
-def _geomean(values):
-    if not values:
-        return 1.0
-    log_sum = sum(math.log(v) for v in values if v > 0)
-    return math.exp(log_sum / len(values))
+from data import (
+    load_benchmark_files,
+    extract_all_data,
+    backfill_gpu_info as _backfill_gpu_info,
+    geomean as _geomean,
+)
 
 
 def generate_html(benchmarks, run_meta, title="TorchEBM Performance Dashboard",
