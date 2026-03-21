@@ -14,6 +14,7 @@ on:
     branches: [master, main]
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.event.workflow_run.head_branch }}
   cancel-in-progress: true
@@ -27,6 +28,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Download benchmark results (from triggering workflow)
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: benchmark-gpu-*
+          path: benchmarks/results/
+          merge-multiple: true
+        continue-on-error: true
       - name: Configure Git Credentials
         run: |
           git config user.name github-actions[bot]
