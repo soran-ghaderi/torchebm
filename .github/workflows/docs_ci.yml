@@ -148,19 +148,6 @@ jobs:
               fi
             done
           fi
-      - name: Fix canonical URLs and sitemap for SEO
-        run: |
-          # Rewrite canonical URLs from versioned path to /latest/ so Google
-          # indexes /latest/ as the canonical, not /0.x.y/
-          echo "Rewriting canonical URLs in site/ from /${CLEAN_VERSION}/ to /latest/"
-          find site/ -name '*.html' -exec sed -i \
-            "s|href=\"https://soran-ghaderi.github.io/torchebm/${CLEAN_VERSION}/|href=\"https://soran-ghaderi.github.io/torchebm/latest/|g" {} +
-
-          # Also fix sitemap.xml to reference /latest/ paths
-          if [ -f site/sitemap.xml ]; then
-            sed -i "s|/torchebm/${CLEAN_VERSION}/|/torchebm/latest/|g" site/sitemap.xml
-            echo "Sitemap rewritten to use /latest/ paths"
-          fi
       - name: Deploy with Mike
         if: github.event_name != 'pull_request'
         run: |
@@ -182,40 +169,38 @@ jobs:
           fi
 
           # Delete ALL old versions to prevent duplicate content in Google index.
-          # Each old version directory is a separate set of URLs that Google crawls,
-          # diluting SEO and causing stale versions to outrank the current one.
           OLD_VERSIONS=$(mike list 2>/dev/null | awk '{print $1}' || true)
           if [ -n "$OLD_VERSIONS" ]; then
             echo "Deleting old versions: $OLD_VERSIONS"
             mike delete --all --push || true
           fi
 
-          # Deploy the new version with title "latest" so the version selector
-          # shows just "latest" instead of "0.x.y latest"
-          mike deploy --push --update-aliases --title latest ${CLEAN_VERSION} latest
+          # Deploy as "latest" directly (not as an alias).
+          # This makes mike set site_url to /latest/, so canonical URLs
+          # and sitemap all point to /latest/ paths — no post-processing needed.
+          mike deploy --push latest
 
-          # Set default version to latest
+          # Set default version to latest (root redirects to /latest/)
           mike set-default --push latest
 
           echo "Deployment completed successfully!"
       - name: Add robots.txt to gh-pages
         if: github.event_name != 'pull_request'
         run: |
-          # Add robots.txt to gh-pages to block indexing of versioned paths.
-          # Only /latest/ should be crawled by search engines.
           git stash --include-untracked || true
+          git fetch origin gh-pages
           git checkout gh-pages
 
-          cat > robots.txt << 'EOF'
+          cat > robots.txt << 'ROBOTS'
           User-agent: *
           Allow: /torchebm/latest/
           Disallow: /torchebm/0.
           Sitemap: https://soran-ghaderi.github.io/torchebm/latest/sitemap.xml
-          EOF
+          ROBOTS
           sed -i 's/^          //' robots.txt
 
           git add robots.txt
-          git diff --cached --quiet || git commit -m "Add robots.txt for SEO — block versioned paths"
+          git diff --cached --quiet || git commit -m "Add robots.txt for SEO"
           git push origin gh-pages
 
           git checkout -
