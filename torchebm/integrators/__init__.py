@@ -21,6 +21,7 @@ __all__ = [
 _LAZY_IMPORTS = {
     "_integrate_time_grid": ".integrator_utils",
     "EulerMaruyamaIntegrator": ".euler_maruyama",
+    "BackwardEulerIntegrator": ".backward_euler",
     "HeunIntegrator": ".heun",
     "LeapfrogIntegrator": ".leapfrog",
     "Dopri5Integrator": ".dopri",

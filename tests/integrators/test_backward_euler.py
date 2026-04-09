@@ -430,8 +430,11 @@ def test_manual_backward_euler_step():
 def test_manual_backward_euler_sde_step():
     """Manual verification of SDE step with known noise.
 
-    Drift-implicit / diffusion-explicit BE for f=-x:
-        x_new = (x + sqrt(2*D) * dW) / (1 + h)
+    Drift-implicit, diffusion-explicit (matches the SDE-RK family in
+    this package — noise is added after the deterministic update).  For
+    f = -x:
+        x_det = x / (1 + h)               # implicit solve
+        x_new = x_det + sqrt(2*D) * dW    # explicit noise increment
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     integrator = BackwardEulerIntegrator(
@@ -455,7 +458,7 @@ def test_manual_backward_euler_sde_step():
 
     dw = noise * math.sqrt(step_size)
     stochastic_term = math.sqrt(2.0 * 0.5) * dw
-    expected = (x + stochastic_term) / (1.0 + step_size)
+    expected = x / (1.0 + step_size) + stochastic_term
     assert torch.allclose(result["x"], expected, atol=1e-10)
 
 
@@ -519,8 +522,10 @@ def test_exponential_decay_convergence():
 def test_ornstein_uhlenbeck_statistics():
     """Test OU process under BE converges to its stationary distribution.
 
-    BE for OU dx = -theta*x dt + sigma dW gives the stationary variance
-        Var = sigma^2 / (2*theta + theta^2 * h)
+    Drift-implicit BE update for OU dx = -theta*x dt + sigma dW:
+        x_new = x / (1 + theta*h) + sigma * sqrt(h) * z
+    Stationary-variance recursion V = V/(1+theta*h)^2 + sigma^2 * h gives
+        V = sigma^2 * (1 + theta*h)^2 / (2*theta + theta^2 * h)
     which approaches sigma^2 / (2*theta) as h -> 0.
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -548,8 +553,11 @@ def test_ornstein_uhlenbeck_statistics():
 
     sample_mean = result["x"].mean().item()
     sample_var = result["x"].var().item()
-    # BE-discrete stationary variance
-    expected_var = sigma ** 2 / (2.0 * theta + theta ** 2 * step_size)
+    # BE-discrete stationary variance for outside-solve (drift implicit, noise explicit)
+    expected_var = (
+        sigma ** 2 * (1.0 + theta * step_size) ** 2
+        / (2.0 * theta + theta ** 2 * step_size)
+    )
 
     assert abs(sample_mean) < 0.15, f"Mean {sample_mean} should be close to 0"
     assert abs(sample_var - expected_var) < 0.25, (
@@ -686,7 +694,7 @@ def test_adaptive_true_rejected(integrator):
     x = torch.randn(8, 3, device=device)
     drift = lambda x_, t_: -x_
 
-    with pytest.raises(ValueError, match="does not support adaptive stepping"):
+    with pytest.raises(ValueError, match="does not define error_weights"):
         integrator.integrate(
             {"x": x}, step_size=0.05, n_steps=10, drift=drift, adaptive=True
         )
