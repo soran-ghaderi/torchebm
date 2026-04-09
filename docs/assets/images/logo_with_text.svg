@@ -29,18 +29,14 @@
     </filter>
   </defs>
 
-  <!-- Nabla symbol with gradient -->
-  <g transform="translate(10, 50)">
-    <!-- Enhanced glow effect for the circle -->
-    <circle cx="30" cy="0" r="30" fill="url(#nablaGradient)" opacity="0.2" filter="url(#outerGlow)" />
-    
-    <!-- Nabla symbol with enhanced glow -->
-    <text x="10" y="20" 
-          font-family="Montserrat, sans-serif" 
-          font-size="60" 
-          font-weight="700" 
-          fill="url(#nablaGradient)" 
-          filter="url(#textGlow)">∇</text>
+  <!-- Penrose impossible nabla symbol -->
+  <g transform="translate(5, 18) scale(0.55)">
+    <polygon points="27.9,26.9 18.8,26.9 54.6,89.0 95.0,19.0 90.4,11.1 54.6,73.1"
+             fill="#4DE8A0" stroke="#0a2818" stroke-width="1" stroke-linejoin="bevel"/>
+    <polygon points="72.1,26.9 76.7,19.0 5.0,19.0 45.4,89.0 54.6,89.0 18.8,26.9"
+             fill="#C7FF00" stroke="#0a2818" stroke-width="1" stroke-linejoin="bevel"/>
+    <polygon points="50.0,65.1 54.6,73.1 90.4,11.0 9.6,11.1 5.0,19.0 76.7,19.0"
+             fill="#1A7848" stroke="#0a2818" stroke-width="1" stroke-linejoin="bevel"/>
   </g>
 
   <!-- TorchEBM text -->
