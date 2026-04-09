@@ -12,8 +12,8 @@ copyright: Copyright © 2025 Soran Ghaderi. Licensed under the MIT License.
 theme:
   name: material
   custom_dir: docs/overrides
-  logo: assets/images/nabla_icon.svg
-  favicon: assets/images/favicon.svg
+  logo: assets/images/penrose_nabla_icon.svg
+  favicon: assets/images/penrose_nabla_icon.svg
   features:
     - navigation.tabs
     - navigation.sections
