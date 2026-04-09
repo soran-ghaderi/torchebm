@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /torchebm/latest/
+Disallow: /torchebm/0.
+Sitemap: https://soran-ghaderi.github.io/torchebm/latest/sitemap.xml
