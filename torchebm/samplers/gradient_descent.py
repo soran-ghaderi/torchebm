@@ -105,9 +105,14 @@ class GradientDescentSampler(BaseSampler):
 
         diagnostics = self._setup_diagnostics() if return_diagnostics else None
         trajectory = [x.clone()] if return_trajectory else None
+        # if return_trajectory:
+        #     trajectory = torch.empty(x.shape[0], n_steps + 1, *x.shape[1:], device=x.device, dtype=x.dtype)
+        #     trajectory[:, 0] = x
+        # else:
+        #     trajectory = None
 
         with self.autocast_context():
-            for _ in range(n_steps):
+            for i in range(n_steps):
                 self.step_schedulers()
                 eta = self.get_scheduled_value("step_size")
                 grad = self.model.gradient(x)
@@ -115,6 +120,7 @@ class GradientDescentSampler(BaseSampler):
 
                 if return_trajectory:
                     trajectory.append(x.clone())
+                    # trajectory[:, i + 1] = x
 
         if return_diagnostics:
             return (
@@ -122,6 +128,12 @@ class GradientDescentSampler(BaseSampler):
                 [diagnostics],
             )
         return torch.stack(trajectory, dim=1) if return_trajectory else x
+        #     return (
+        #         trajectory if return_trajectory else x,
+        #         [diagnostics],
+        #     )
+        # return trajectory if return_trajectory else x
+
 
 
 class NesterovSampler(BaseSampler):
