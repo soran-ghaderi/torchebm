@@ -150,7 +150,7 @@ if [[ -n "$MODULE" ]]; then
 fi
 
 if [[ -n "$FILTER" ]]; then
-    PYTEST_ARGS="$PYTEST_ARGS -k $FILTER"
+    PYTEST_ARGS="$PYTEST_ARGS -k '$FILTER'"
     echo "  Filter  : $FILTER"
 fi
 
@@ -168,7 +168,7 @@ echo "================================================================"
 echo ""
 
 # ── Run benchmarks ──
-pytest $PYTEST_ARGS -v
+eval pytest $PYTEST_ARGS -v
 
 # ── Save versioned copy (replace previous for same version+device) ──
 LATEST_FILE=$(ls -t "$RESULTS_DIR"/*.json 2>/dev/null | head -1)
