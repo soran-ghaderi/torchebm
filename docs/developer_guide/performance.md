@@ -377,7 +377,68 @@ The benchmark suite auto-discovers components from `torchebm.*` exports and gene
 | Interpolants | Linear, Cosine, VariancePreserving | Interpolate time |
 | Models | ConditionalTransformer2D (disabled by default) | Forward, forward+backward |
 
-Results are stored in `benchmarks/results/` as JSON files, with a versioned naming scheme (`v{version}_{device}_{timestamp}.json`) and an interactive dashboard at `benchmarks/results/dashboard.html`.
+Results are stored locally in `benchmarks/results/` as JSON files (gitignored). Published results and the interactive dashboard are maintained in the separate [`torchebm-benchmarks`](https://github.com/soran-ghaderi/torchebm-benchmarks) repository.
+
+### Benchmark Results Repository
+
+Benchmark results are kept in a dedicated repository, separate from the main codebase:
+
+```
+torchebm-benchmarks/
+├── results/                  # All historical JSON results
+│   ├── v0.5.12_cuda_A100/   # Grouped by version + GPU
+│   ├── v0.6.0_cuda_A100/
+│   └── ...
+├── dashboard/                # Generated dashboard HTML
+├── site/                     # GitHub Pages source
+├── scripts/
+│   └── publish.sh            # Copies JSON to results/, rebuilds site
+└── README.md
+```
+
+**Why separate?**
+
+- Main repo stays lean — no benchmark data in git history
+- Results grow indefinitely without affecting clone speed
+- The benchmark site can deploy independently
+- Clear separation: library code vs performance tracking
+
+**Workflow:**
+
+1. Run benchmarks locally or on a remote GPU (see below)
+2. Copy the versioned JSON (`v{version}_{device}_{timestamp}.json`) to the benchmark repo
+3. Push to the benchmark repo — site auto-deploys
+
+### Remote GPU Benchmarking (vast.ai)
+
+If you don't have a suitable GPU locally, rent one on-demand from [vast.ai](https://vast.ai):
+
+1. **Create a vast.ai account** and add credits (~$5 is enough for many runs)
+
+2. **Rent an instance** — search for an A100 or A6000 (~$0.20/hr), select a PyTorch template
+
+3. **SSH into the instance** (vast.ai provides the command, different each time):
+    ```bash
+    ssh -p <port> root@<host>
+    ```
+
+4. **Set up and run benchmarks on the instance:**
+    ```bash
+    git clone https://github.com/soran-ghaderi/torchebm.git
+    cd torchebm && git checkout <your-branch>
+    pip install -e ".[dev]"
+    bash benchmarks/run.sh                    # full run
+    bash benchmarks/run.sh --module losses    # or targeted
+    ```
+
+5. **Download results to your local machine** (from a separate terminal):
+    ```bash
+    scp -P <port> root@<host>:torchebm/benchmarks/results/v*.json benchmarks/results/
+    ```
+
+6. **Destroy the instance** — you're done
+
+**Cost:** ~$0.10–0.50 per benchmark run. Each instance is ephemeral — there's no persistent state between runs.
 
 
 ## Performance Tips and Best Practices
