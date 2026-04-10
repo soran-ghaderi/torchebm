@@ -103,8 +103,7 @@ class TestBenchmarks:
 
         # Apply mode transformations
         if mode == "compiled":
-            compile_mode = "reduce-overhead" if bench_device.type == "cuda" else "default"
-            fn = torch.compile(fn, mode=compile_mode)
+            fn = torch.compile(fn, mode="default")
             info["mode"] = "compiled"
         elif mode == "amp_fp16":
             _orig_fn = fn
