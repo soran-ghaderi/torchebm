@@ -106,8 +106,20 @@ class TestBenchmarks:
         counting_drift = info.pop("_counting_drift", None)
 
         # Apply mode transformations
-        fn = apply_mode(fn, mode, bench_device)
-        info["mode"] = mode
+        if mode == "compiled":
+            fn = torch.compile(fn, mode="default")
+            info["mode"] = "compiled"
+        elif mode == "amp_fp16":
+            _orig_fn = fn
+            _dev_type = bench_device.type
+
+            def fn():
+                with torch.autocast(device_type=_dev_type, dtype=torch.float16):
+                    _orig_fn()
+
+            info["mode"] = "amp_fp16"
+        else:
+            info["mode"] = "eager"
 
         info["scale"] = scale
         benchmark.extra_info.update(info)
