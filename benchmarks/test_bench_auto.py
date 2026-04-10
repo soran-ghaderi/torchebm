@@ -120,7 +120,7 @@ class TestBenchmarks:
 
         info["scale"] = scale
         benchmark.extra_info.update(info)
-        warmup, rounds, iters = get_bench_params(bench_device)
+        warmup, rounds, iters = get_bench_params(bench_device, mode=mode)
         benchmark.pedantic(
             fn,
             setup=make_pedantic_setup(bench_device),

@@ -182,8 +182,10 @@ def make_pedantic_setup(device):
     return setup
 
 
-def get_bench_params(device):
+def get_bench_params(device, mode="eager"):
     """Return (warmup_rounds, rounds, iterations) for benchmark.pedantic."""
     if device.type == "cuda":
+        if mode == "compiled":
+            return 1, 10, 1
         return 10, 30, 1
     return 3, 15, 1
