@@ -104,12 +104,12 @@ class GradientDescentSampler(BaseSampler):
             x = x.to(device=self.device, dtype=self.dtype)
 
         diagnostics = self._setup_diagnostics() if return_diagnostics else None
-        trajectory = [x.clone()] if return_trajectory else None
-        # if return_trajectory:
-        #     trajectory = torch.empty(x.shape[0], n_steps + 1, *x.shape[1:], device=x.device, dtype=x.dtype)
-        #     trajectory[:, 0] = x
-        # else:
-        #     trajectory = None
+        # trajectory = [x.clone()] if return_trajectory else None
+        if return_trajectory:
+            trajectory = torch.empty(x.shape[0], n_steps + 1, *x.shape[1:], device=x.device, dtype=x.dtype)
+            trajectory[:, 0] = x
+        else:
+            trajectory = None
 
         with self.autocast_context():
             for i in range(n_steps):
@@ -119,20 +119,20 @@ class GradientDescentSampler(BaseSampler):
                 x = x - eta * grad
 
                 if return_trajectory:
-                    trajectory.append(x.clone())
-                    # trajectory[:, i + 1] = x
+                    # trajectory.append(x.clone())
+                    trajectory[:, i + 1] = x
 
         if return_diagnostics:
-            return (
-                torch.stack(trajectory, dim=1) if return_trajectory else x,
-                [diagnostics],
-            )
-        return torch.stack(trajectory, dim=1) if return_trajectory else x
         #     return (
-        #         trajectory if return_trajectory else x,
+        #         torch.stack(trajectory, dim=1) if return_trajectory else x,
         #         [diagnostics],
         #     )
-        # return trajectory if return_trajectory else x
+        # return torch.stack(trajectory, dim=1) if return_trajectory else x
+            return (
+                trajectory if return_trajectory else x,
+                [diagnostics],
+            )
+        return trajectory if return_trajectory else x
 
 
 
