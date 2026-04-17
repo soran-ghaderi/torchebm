@@ -86,13 +86,16 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
             "dopri8_fixed": {"bench_kwargs": {"adaptive": False}},
         }
     },
-
     # ── Losses ──
     "ScoreMatching": {
         "model_type": "ebm",
         "needs_grad": True,
         "variants": {
-            "score_matching_exact": {"init_kwargs": {"hessian_method": "exact"}, "max_dim": 16, "max_batch": 128},
+            "score_matching_exact": {
+                "init_kwargs": {"hessian_method": "exact"},
+                "max_dim": 16,
+                "max_batch": 128,
+            },
             "score_matching_approx": {"init_kwargs": {"hessian_method": "approx"}},
         },
     },
@@ -113,12 +116,15 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "EquilibriumMatchingLoss": {
         "model_type": "velocity",
-        "init_kwargs": {"prediction": "velocity", "energy_type": "none", "interpolant": "linear"},
+        "init_kwargs": {
+            "prediction": "velocity",
+            "energy_type": "none",
+            "interpolant": "linear",
+        },
     },
     # Stubs — skip
     "PersistentContrastiveDivergence": {"skip": True},
     "ParallelTemperingCD": {"skip": True},
-
     # ── Samplers ──
     "LangevinDynamics": {
         "model_type": "ebm_double_well",
@@ -139,18 +145,37 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "bench_fn": "sample_ode",
         "bench_kwargs": {"method": "euler"},
     },
-
     # ── Interpolants (defaults are fine — no overrides needed) ──
     "VariancePreservingInterpolant": {
         "init_kwargs": {"sigma_min": 0.1, "sigma_max": 20.0},
     },
-
     # ── Models (completely custom configs) ──
     "ConditionalTransformer2D": {
         "model_configs": {
-            "small": {"input_size": 16, "patch_size": 4, "embed_dim": 128, "depth": 4, "num_heads": 4, "bs": 16},
-            "medium": {"input_size": 32, "patch_size": 4, "embed_dim": 256, "depth": 8, "num_heads": 8, "bs": 8},
-            "large": {"input_size": 32, "patch_size": 4, "embed_dim": 512, "depth": 12, "num_heads": 8, "bs": 4},
+            "small": {
+                "input_size": 16,
+                "patch_size": 4,
+                "embed_dim": 128,
+                "depth": 4,
+                "num_heads": 4,
+                "bs": 16,
+            },
+            "medium": {
+                "input_size": 32,
+                "patch_size": 4,
+                "embed_dim": 256,
+                "depth": 8,
+                "num_heads": 8,
+                "bs": 8,
+            },
+            "large": {
+                "input_size": 32,
+                "patch_size": 4,
+                "embed_dim": 512,
+                "depth": 12,
+                "num_heads": 8,
+                "bs": 4,
+            },
         },
         "variants": {
             "transformer_fwd": {},
@@ -165,8 +190,14 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 _CATEGORY_MAP = {
-    "integrators": ("torchebm.integrators", "torchebm.core.base_integrator.BaseIntegrator"),
-    "interpolants": ("torchebm.interpolants", "torchebm.core.base_interpolant.BaseInterpolant"),
+    "integrators": (
+        "torchebm.integrators",
+        "torchebm.core.base_integrator.BaseIntegrator",
+    ),
+    "interpolants": (
+        "torchebm.interpolants",
+        "torchebm.core.base_interpolant.BaseInterpolant",
+    ),
     "losses": ("torchebm.losses", "torchebm.core.base_loss.BaseLoss"),
     "samplers": ("torchebm.samplers", "torchebm.core.base_sampler.BaseSampler"),
     "models": ("torchebm.models", None),  # no single base; use __all__ directly
@@ -208,6 +239,7 @@ def _is_benchmarkable(obj, base_cls) -> bool:
 # Auto-discovery
 # ---------------------------------------------------------------------------
 
+
 def discover_components() -> List[BenchSpec]:
     """Scan torchebm subpackages and return BenchSpec for every exported component."""
     specs: List[BenchSpec] = []
@@ -231,12 +263,24 @@ def discover_components() -> List[BenchSpec]:
                 continue
 
             # Handle "variants" (e.g. ScoreMatching with exact/approx, Transformer fwd/fwd_bwd)
-            variants = overrides.pop("variants", None) if "variants" in overrides else None
+            variants = (
+                overrides.pop("variants", None) if "variants" in overrides else None
+            )
             if variants:
                 for variant_name, variant_overrides in variants.items():
                     merged = {**overrides, **variant_overrides}
-                    merged_init = {**overrides.get("init_kwargs", {}), **variant_overrides.get("init_kwargs", {})}
-                    specs.append(_build_spec(variant_name, category, obj, {**merged, "init_kwargs": merged_init}))
+                    merged_init = {
+                        **overrides.get("init_kwargs", {}),
+                        **variant_overrides.get("init_kwargs", {}),
+                    }
+                    specs.append(
+                        _build_spec(
+                            variant_name,
+                            category,
+                            obj,
+                            {**merged, "init_kwargs": merged_init},
+                        )
+                    )
             else:
                 specs.append(_build_spec(name, category, obj, overrides))
 
@@ -267,6 +311,7 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
 # ---------------------------------------------------------------------------
 # Template factories — build (callable, extra_info) for each category
 # ---------------------------------------------------------------------------
+
 
 def _ess_from_chain(chain):
     """Compute effective sample size from a 1D chain via FFT autocorrelation."""
@@ -299,8 +344,10 @@ class _MLPEnergy(nn.Module):
     def __init__(self, dim, hidden=_MLP_HIDDEN):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(dim, hidden), nn.SiLU(),
-            nn.Linear(hidden, hidden), nn.SiLU(),
+            nn.Linear(dim, hidden),
+            nn.SiLU(),
+            nn.Linear(hidden, hidden),
+            nn.SiLU(),
             nn.Linear(hidden, 1),
         )
 
@@ -312,8 +359,10 @@ class _MLPVelocity(nn.Module):
     def __init__(self, dim, hidden=_MLP_HIDDEN):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(dim + 1, hidden), nn.SiLU(),
-            nn.Linear(hidden, hidden), nn.SiLU(),
+            nn.Linear(dim + 1, hidden),
+            nn.SiLU(),
+            nn.Linear(hidden, hidden),
+            nn.SiLU(),
             nn.Linear(hidden, dim),
         )
         self._dim = dim
@@ -347,10 +396,13 @@ def _wrap_ebm(net, device, dtype):
 
 class _CountingDrift:
     """Wrap a drift callable to count total invocations."""
+
     __slots__ = ("_fn", "count")
+
     def __init__(self, fn):
         self._fn = fn
         self.count = 0
+
     def __call__(self, x, t):
         self.count += 1
         return self._fn(x, t)
@@ -373,6 +425,7 @@ def _make_drift(net, device, dtype):
         x_req = x.detach().requires_grad_(True)
         e = net(x_req)
         return -torch.autograd.grad(e.sum(), x_req)[0]
+
     return drift
 
 
@@ -384,7 +437,12 @@ def _make_data(bs, dim, device, dtype):
 
 
 def build_integrator_bench(
-    spec: BenchSpec, dim: int, bs: int, n_steps: int, device: torch.device, dtype: torch.dtype,
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> Tuple[Callable, Dict]:
     net = _MLPEnergy(dim).to(device, dtype)
     integrator = spec.cls(device=device, dtype=dtype)
@@ -409,21 +467,32 @@ def build_integrator_bench(
         def fn():
             integrator.integrate(
                 state={"x": x0.clone(), "p": p0.clone()},
-                step_size=step_size, n_steps=n_steps, drift=drift,
+                step_size=step_size,
+                n_steps=n_steps,
+                drift=drift,
             )
+
     elif spec.needs_diffusion:
         diffusion_val = torch.tensor(_DIFFUSION_COEFF, device=device, dtype=dtype)
 
         def fn():
             integrator.integrate(
-                state={"x": x0.clone()}, step_size=step_size, n_steps=n_steps,
-                drift=drift, diffusion=lambda x, t: diffusion_val,
+                state={"x": x0.clone()},
+                step_size=step_size,
+                n_steps=n_steps,
+                drift=drift,
+                diffusion=lambda x, t: diffusion_val,
             )
+
     else:
+
         def fn():
             integrator.integrate(
-                state={"x": x0.clone()}, step_size=step_size, n_steps=n_steps,
-                drift=drift, adaptive=_adaptive,
+                state={"x": x0.clone()},
+                step_size=step_size,
+                n_steps=n_steps,
+                drift=drift,
+                adaptive=_adaptive,
             )
 
     info = {"module": spec.module, "batch_size": bs, "dim": dim, "n_steps": n_steps}
@@ -440,7 +509,12 @@ def build_integrator_bench(
 
 
 def build_interpolant_bench(
-    spec: BenchSpec, dim: int, bs: int, n_steps: int, device: torch.device, dtype: torch.dtype,
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> Tuple[Callable, Dict]:
     interp = spec.cls(**spec.init_kwargs)
     x0 = _make_data(bs, dim, device, dtype)
@@ -455,7 +529,12 @@ def build_interpolant_bench(
 
 
 def build_loss_bench(
-    spec: BenchSpec, dim: int, bs: int, n_steps: int, device: torch.device, dtype: torch.dtype,
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> Tuple[Callable, Dict]:
     eff_dim = min(dim, spec.max_dim) if spec.max_dim else dim
     eff_bs = min(bs, spec.max_batch) if spec.max_batch else bs
@@ -475,7 +554,10 @@ def build_loss_bench(
 
     if spec.needs_sampler:
         from torchebm.samplers.langevin_dynamics import LangevinDynamics
-        sampler = LangevinDynamics(model=model, step_size=_CD_STEP_SIZE, device=device, dtype=dtype)
+
+        sampler = LangevinDynamics(
+            model=model, step_size=_CD_STEP_SIZE, device=device, dtype=dtype
+        )
         init_kw["sampler"] = sampler
 
     if spec.model_type in ("ebm", "velocity"):
@@ -487,18 +569,23 @@ def build_loss_bench(
         x = x.requires_grad_(True)
 
     if spec.returns_tuple:
+
         def fn():
             loss, _ = loss_fn(x)
             loss.backward()
             net.zero_grad()
+
     else:
+
         def fn():
             loss = loss_fn(x)
             loss.backward()
             net.zero_grad()
 
     info = {
-        "module": spec.module, "batch_size": eff_bs, "dim": eff_dim,
+        "module": spec.module,
+        "batch_size": eff_bs,
+        "dim": eff_dim,
         "n_params": sum(p.numel() for p in net.parameters()),
         "includes_backward": True,
     }
@@ -527,12 +614,18 @@ def build_loss_bench(
 
 
 def build_sampler_bench(
-    spec: BenchSpec, dim: int, bs: int, n_steps: int, device: torch.device, dtype: torch.dtype,
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> Tuple[Callable, Dict]:
     init_kw: Dict[str, Any] = {"device": device, "dtype": dtype, **spec.init_kwargs}
 
     if spec.model_type == "ebm_double_well":
         from torchebm.core.base_model import DoubleWellModel
+
         model = DoubleWellModel(barrier_height=_BARRIER_HEIGHT, dtype=dtype)
         model._device = device
         init_kw["model"] = model
@@ -541,7 +634,9 @@ def build_sampler_bench(
         vel_model = _MLPVelocity(dim).to(device, dtype)
         init_kw["model"] = vel_model
     else:
-        raise ValueError(f"Unknown model_type {spec.model_type!r} for sampler {spec.name}")
+        raise ValueError(
+            f"Unknown model_type {spec.model_type!r} for sampler {spec.name}"
+        )
 
     sampler = spec.cls(**init_kw)
     x0 = _make_data(bs, dim, device, dtype)
@@ -552,7 +647,9 @@ def build_sampler_bench(
 
         def fn():
             method(x0, **call_kwargs)
+
     else:
+
         def fn():
             sampler.sample(x=x0, n_steps=n_steps, n_samples=bs, dim=dim)
 
@@ -569,7 +666,10 @@ def build_sampler_bench(
         info["gradient_evals"] = n_steps
 
     # Quality metrics for MCMC samplers (not timed)
-    if spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics") and not spec.bench_fn:
+    if (
+        spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics")
+        and not spec.bench_fn
+    ):
         _sampler_q = sampler
         _x0_q = x0
         _n_steps_q = min(n_steps, 100)
@@ -581,19 +681,27 @@ def build_sampler_bench(
             metrics = {}
             try:
                 result = _sampler_q.sample(
-                    x=_x0_q.clone(), n_steps=_n_steps_q,
-                    n_samples=_bs_q, dim=_dim_q, return_diagnostics=True,
+                    x=_x0_q.clone(),
+                    n_steps=_n_steps_q,
+                    n_samples=_bs_q,
+                    dim=_dim_q,
+                    return_diagnostics=True,
                 )
                 if isinstance(result, tuple) and len(result) == 2:
                     samples, diagnostics = result
                     if diagnostics is not None and diagnostics.dim() >= 2:
                         # HMC acceptance rate
-                        if _cls_name == "HamiltonianMonteCarlo" and diagnostics.shape[1] >= 4:
+                        if (
+                            _cls_name == "HamiltonianMonteCarlo"
+                            and diagnostics.shape[1] >= 4
+                        ):
                             acc = diagnostics[:, 3, 0, 0].mean().item()
                             metrics["acceptance_rate"] = round(acc, 4)
                         # ESS from energy chain
                         if diagnostics.shape[1] >= 3:
-                            energy_chain = diagnostics[:, 2, 0, 0].detach().cpu().float()
+                            energy_chain = (
+                                diagnostics[:, 2, 0, 0].detach().cpu().float()
+                            )
                             ess = _ess_from_chain(energy_chain)
                             metrics["ess"] = round(ess, 2)
             except Exception:
@@ -606,7 +714,12 @@ def build_sampler_bench(
 
 
 def build_model_bench(
-    spec: BenchSpec, dim: int, bs: int, n_steps: int, device: torch.device, dtype: torch.dtype,
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
     scale: str = "small",
 ) -> Tuple[Callable, Dict]:
     if spec.model_configs is None:
@@ -629,12 +742,15 @@ def build_model_bench(
             loss = (out - target).pow(2).mean()
             loss.backward()
             model.zero_grad()
+
     else:
+
         def fn():
             model(x, cond)
 
     info = {
-        "module": spec.module, "batch_size": bs_model,
+        "module": spec.module,
+        "batch_size": bs_model,
         "n_params": sum(p.numel() for p in model.parameters()),
         "n_params_m": round(sum(p.numel() for p in model.parameters()) / 1e6, 2),
     }
@@ -650,3 +766,25 @@ TEMPLATE_BUILDERS = {
     "samplers": build_sampler_bench,
     "models": build_model_bench,
 }
+
+
+# ---------------------------------------------------------------------------
+# Mode transformation (eager | compiled | amp_fp16) — shared by benchmarks
+# and profiler so both paths time identical callables.
+# ---------------------------------------------------------------------------
+
+
+def apply_mode(fn: Callable, mode: str, device: torch.device) -> Callable:
+    """Wrap a zero-arg callable according to the requested execution mode."""
+    if mode == "compiled":
+        return torch.compile(fn, mode="default")
+    if mode == "amp_fp16":
+        _orig = fn
+        _dev_type = device.type
+
+        def _amp():
+            with torch.autocast(device_type=_dev_type, dtype=torch.float16):
+                _orig()
+
+        return _amp
+    return fn

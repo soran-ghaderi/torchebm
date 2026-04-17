@@ -1,160 +1,107 @@
 ---
 title: Getting Started
-description: Your first steps to contributing to TorchEBM
+description: Set up, make changes, and open a PR against TorchEBM
 icon: material/rocket-launch
 ---
 
-# Getting Started with TorchEBM Development
+# Getting Started
 
-Welcome to the TorchEBM development community! This guide provides everything you need to set up your environment, understand our workflow, and make your first contribution.
+This page takes you from a fresh clone to a merged pull request.
 
-## Ways to Contribute
+---
 
-We welcome contributions of all kinds:
+## Setup
 
-<div class="grid cards" markdown>
-
--   :material-bug:{ .lg .middle } __Report Bugs__
-
-    ---
-
-    Find a bug? Report it on our [issue tracker](https://github.com/soran-ghaderi/torchebm/issues) with a clear description and steps to reproduce.
-
--   :material-lightbulb-on:{ .lg .middle } __Suggest Features__
-
-    ---
-
-    Have an idea for a new feature or an improvement? Share it in the [discussions](https://github.com/soran-ghaderi/torchebm/discussions).
-
--   :material-file-document-edit:{ .lg .middle } __Improve Documentation__
-
-    ---
-
-    Help us make our documentation better by fixing typos, clarifying explanations, or adding new examples.
-
--   :material-source-pull:{ .lg .middle } __Write Code__
-
-    ---
-
-    Contribute directly to the codebase by fixing bugs, implementing new features, or improving performance.
-
-</div>
-
-## Development Setup
-
-Follow these steps to set up your local development environment.
-
-### 1. Prerequisites
-
-Make sure you have the following installed:
-
-*   **Python 3.9+**
-*   **Git**
-*   A **GitHub Account**
-
-### 2. Fork and Clone
-
-First, fork the [TorchEBM repository](https://github.com/soran-ghaderi/torchebm) on GitHub. Then, clone your fork locally:
+Requirements: Python 3.9+, Git, a GitHub account.
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/torchebm.git
+# Fork on GitHub, then:
+git clone https://github.com/<your-user>/torchebm.git
 cd torchebm
-```
-
-### 3. Set Up Virtual Environment
-
-It's highly recommended to use a virtual environment:
-
-```bash
-# Create a virtual environment
-python -m venv venv
-
-# Activate it (macOS/Linux)
-source venv/bin/activate
-
-# Or on Windows
-venv\Scripts\activate
-```
-
-### 4. Install Dependencies
-
-Install TorchEBM in editable mode along with all development dependencies:
-
-```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-## Contribution Workflow
-
-### 1. Create a Branch
-
-Create a new branch for your changes. Use a descriptive name, like `feature/new-sampler` or `fix/gradient-bug`.
-
-```bash
-git checkout -b feature/your-feature-name
-```
-
-### 2. Make Changes
-
-Make your changes to the codebase. Be sure to follow our [Code Guidelines](code_guidelines.md).
-
-### 3. Run Tests
-
-Before committing, run the tests to ensure your changes haven't broken anything:
-
-```bash
-pytest
-```
-
-### 4. Commit Your Changes
-
-We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification. Your commit messages should be structured as follows:
-
-```
-<type>: <description>
-
-[optional body]
-
-[optional footer]
-```
-
-**Common types:**
-
-| Type       | Description                                                 |
-|------------|-------------------------------------------------------------|
-| **feat**   | A new feature                                               |
-| **fix**    | A bug fix                                                   |
-| **docs**   | Documentation only changes                                  |
-| **style**  | Changes that do not affect the meaning of the code          |
-| **refactor**| A code change that neither fixes a bug nor adds a feature   |
-| **perf**   | A code change that improves performance                     |
-| **test**   | Adding missing tests or correcting existing tests           |
-| **chore**  | Changes to the build process or auxiliary tools             |
-
-
-**Example:**
-
-```bash
-git commit -m "feat: add support for adaptive step sizes in LangevinDynamics"
-```
-
-### 5. Create a Pull Request
-
-Push your branch to your fork and open a pull request to the `main` branch of the TorchEBM repository.
-
-```bash
-git push origin feature/your-feature-name
-```
-
-In your pull request description, clearly explain the changes you've made and reference any relevant issues.
-
-## Documentation Development
-
-To work on the documentation locally, install the docs dependencies and serve the site:
+For docs work, additionally:
 
 ```bash
 pip install -e ".[docs]"
-mkdocs serve
+mkdocs serve                     # live preview at http://127.0.0.1:8000
 ```
 
-This will start a live-reloading server at `http://127.0.0.1:8000`.
+---
+
+## Workflow
+
+1. **Branch** from `main` with a descriptive name.
+   ```bash
+   git checkout -b feat/adaptive-step-size
+   ```
+2. **Code**: follow the [Code Guidelines](code_guidelines.md). Mirror the package layout under `tests/`.
+3. **Test & format** before every commit.
+   ```bash
+   black torchebm/ tests/
+   isort torchebm/ tests/
+   pytest tests/ -v
+   ```
+4. **Commit** using Conventional Commits (see below).
+5. **Push & open a PR** against `main`. Link any related issue.
+
+---
+
+## Commit conventions (mandatory)
+
+TorchEBM uses [Conventional Commits](https://www.conventionalcommits.org/). The format is:
+
+```
+<type>(<optional scope>): <summary>
+
+<optional body>
+
+<optional footer>
+```
+
+| Type       | Use for                                                   |
+|------------|-----------------------------------------------------------|
+| `feat`     | A new user-facing feature                                 |
+| `fix`      | A bug fix                                                 |
+| `perf`     | A change that improves performance                        |
+| `refactor` | Code change that is neither a feature nor a fix           |
+| `test`     | Adding or fixing tests                                    |
+| `docs`     | Documentation only                                        |
+| `style`    | Formatting, whitespace, no logic change                   |
+| `build`    | Build system, packaging                                   |
+| `ci`       | CI configuration                                          |
+| `chore`    | Other maintenance (deps, tooling)                         |
+
+**Examples**
+
+```text
+feat(samplers): add adaptive step size to LangevinDynamics
+fix(losses): correct gradient sign in EquilibriumMatching
+perf(integrators): cache RK buffers on device once per integrate()
+docs(developer_guide): tighten profiling page
+```
+
+Breaking changes add a `!` after the type and a `BREAKING CHANGE:` footer:
+
+```text
+refactor(core)!: rename BaseSampler.step -> BaseSampler.step_one
+
+BREAKING CHANGE: external subclasses must rename the overridden method.
+```
+
+Keep the summary under 72 chars, imperative mood, no trailing period.
+
+---
+
+## Before opening the PR
+
+- [ ] Tests pass: `pytest tests/ -v`
+- [ ] Formatting applied: `black` and `isort`
+- [ ] Public API changes documented in the relevant docstring
+- [ ] If performance-sensitive: benchmarked per [Benchmarking](benchmarking.md); profiled only if the change is non-trivial (see [Profiling](profiling.md))
+- [ ] Commit messages follow Conventional Commits
+
+The PR description should say **what** changed and **why**, and reference any issue it closes (`Closes #123`).
