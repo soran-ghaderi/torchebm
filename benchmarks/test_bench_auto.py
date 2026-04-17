@@ -17,7 +17,7 @@ from conftest import (
     is_module_enabled,
     make_pedantic_setup,
 )
-from registry import TEMPLATE_BUILDERS, BenchSpec, discover_components
+from registry import TEMPLATE_BUILDERS, BenchSpec, apply_mode, discover_components
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,9 @@ def pytest_generate_tests(metafunc):
     if "bench_spec" not in metafunc.fixturenames:
         return
     module_filter = metafunc.config.getoption("--bench-module", default=None)
-    scale_filter = set(metafunc.config.getoption("--bench-scales", default=list(SCALES.keys())))
+    scale_filter = set(
+        metafunc.config.getoption("--bench-scales", default=list(SCALES.keys()))
+    )
 
     modes = ["eager"]
     if metafunc.config.getoption("--bench-compile", default=False):
@@ -90,7 +92,9 @@ class TestBenchmarks:
         builder = TEMPLATE_BUILDERS[spec.module]
 
         if spec.module == "models":
-            fn, info = builder(spec, dim, bs, n_steps, bench_device, bench_dtype, scale=scale)
+            fn, info = builder(
+                spec, dim, bs, n_steps, bench_device, bench_dtype, scale=scale
+            )
         else:
             fn, info = builder(spec, dim, bs, n_steps, bench_device, bench_dtype)
 
@@ -102,20 +106,8 @@ class TestBenchmarks:
         counting_drift = info.pop("_counting_drift", None)
 
         # Apply mode transformations
-        if mode == "compiled":
-            fn = torch.compile(fn, mode="default")
-            info["mode"] = "compiled"
-        elif mode == "amp_fp16":
-            _orig_fn = fn
-            _dev_type = bench_device.type
-
-            def fn():
-                with torch.autocast(device_type=_dev_type, dtype=torch.float16):
-                    _orig_fn()
-
-            info["mode"] = "amp_fp16"
-        else:
-            info["mode"] = "eager"
+        fn = apply_mode(fn, mode, bench_device)
+        info["mode"] = mode
 
         info["scale"] = scale
         benchmark.extra_info.update(info)
@@ -141,6 +133,7 @@ class TestBenchmarks:
         # FLOPS estimation (always use eager fn)
         try:
             from torch.utils.flop_counter import FlopCounterMode
+
             flop_counter = FlopCounterMode(display=False)
             with flop_counter:
                 eager_fn()
@@ -161,7 +154,11 @@ class TestBenchmarks:
                 if quality:
                     benchmark.extra_info.update(quality)
                     # ESS per second
-                    if "ess" in quality and benchmark.stats and benchmark.stats.get("median", 0) > 0:
+                    if (
+                        "ess" in quality
+                        and benchmark.stats
+                        and benchmark.stats.get("median", 0) > 0
+                    ):
                         benchmark.extra_info["ess_per_sec"] = round(
                             quality["ess"] / benchmark.stats["median"], 2
                         )
