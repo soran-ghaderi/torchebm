@@ -1,96 +1,95 @@
 ---
 title: Architecture
-description: A deep dive into the architecture and design of TorchEBM
+description: Package layout and how the core abstractions compose
 icon: material/folder-outline
 ---
 
-# TorchEBM Architecture
+# Architecture
 
-This document provides a comprehensive overview of TorchEBM's architecture, from high-level design principles to the details of its core components.
+TorchEBM is organised around a small set of base classes (`BaseModel`, `BaseSampler`, `BaseLoss`, `BaseIntegrator`, `BaseInterpolant`). Everything else is composition: a loss uses a sampler, a sampler uses an integrator, an integrator steps a field derived from a model.
 
-## Design Philosophy
+---
 
-TorchEBM is built on a foundation of modularity, performance, and ease of use. Our core philosophy is to provide a set of powerful, composable tools for energy-based modeling that are both highly efficient and intuitive for researchers and developers.
-
-<div class="grid cards" markdown>
-
--   :material-puzzle:{ .lg .middle } __Modularity & Composability__
-
-    ---
-
-    Components are designed to be mixed and matched, allowing for flexible construction of complex models and algorithms.
-
--   :material-flash:{ .lg .middle } __Performance__
-
-    ---
-
-    The library is optimized for speed, leveraging PyTorch's vectorized operations and providing CUDA support for critical components.
-
--   :material-book-open-variant:{ .lg .middle } __Intuitiveness__
-
-    ---
-
-    APIs are designed to be clean, consistent, and well-documented, following standard PyTorch conventions.
-
-</div>
-
-## Project Structure
-
-The repository is organized into the following key directories:
+## Package layout
 
 ```
 torchebm/
-├── torchebm/              # Main package source code
-│   ├── core/              # Core functionality and base classes
-│   ├── samplers/          # Sampling algorithms
-│   ├── losses/            # Loss functions for training
-│   ├── models/            # Pre-built model architectures
-│   └── utils/             # Utility functions
-├── tests/                 # Unit and integration tests
-├── docs/                  # Documentation source
-├── examples/              # Example usage scripts
-└── setup.py               # Package installation script
+├── core/          # Base classes + DeviceMixin
+├── losses/        # ContrastiveDivergence, ScoreMatching, EquilibriumMatching, …
+├── samplers/      # LangevinDynamics, HamiltonianMonteCarlo, FlowSampler, GradientDescent
+├── integrators/   # EulerMaruyama, Heun, Leapfrog, RK4, DOPRI5, …
+├── interpolants/  # Linear, Cosine, VariancePreserving (flow / diffusion paths)
+├── datasets/      # Synthetic data generators (gaussian mixture, 2D shapes, etc.)
+├── models/        # Neural architectures (MLPs, transformers) used as energies or fields
+├── cuda/          # Custom CUDA kernels (placeholder, see cuRBLAS)
+└── utils/         # Shared helpers
 ```
 
-## Core Components
+Mirror this layout under `tests/` when adding tests.
 
-TorchEBM's functionality is centered around a few fundamental abstractions:
+---
 
-### 1. Models (`torchebm.core.BaseModel`)
+## Core abstractions
 
-A **Model** defines the energy function \( E(x) \), which assigns a scalar energy value to each input state \( x \). This is the central component of any EBM. In TorchEBM, models are PyTorch modules (`nn.Module`) that implement a `forward(x)` method to compute the energy.
+| Base class         | Contract                                          | Notable subclasses                    |
+|--------------------|---------------------------------------------------|---------------------------------------|
+| `BaseModel`        | `forward(x) -> energy` or score/velocity          | `GaussianEnergy`, `MLP2D`, transformers |
+| `BaseSampler`      | `sample(x=None, dim, n_steps, n_samples, …)`      | `LangevinDynamics`, `HMC`, `FlowSampler` |
+| `BaseIntegrator`   | One numerical step of an ODE/SDE                  | `Leapfrog`, `EulerMaruyama`, `DOPRI5` |
+| `BaseLoss`         | `forward(x, *args, **kw) -> scalar`               | `ScoreMatching`, `ContrastiveDivergence`, `EquilibriumMatching` |
+| `BaseInterpolant`  | `interpolate(x0, x1, t) -> (xt, ut)`              | `Linear`, `Cosine`, `VariancePreserving` |
+| `DeviceMixin`      | `self.device`, `self.dtype`, `autocast_context()` | used by everything above              |
 
-### 2. Samplers (`torchebm.core.BaseSampler`)
+Every component exposed through `torchebm.*.__init__` is auto-discovered by the benchmark suite (see [Benchmarking](benchmarking.md)).
 
-A **Sampler** is an algorithm that generates samples from the probability distribution defined by an energy model, \( p(x) = \frac{e^{-E(x)}}{Z} \). Samplers in TorchEBM are designed to work with any `BaseModel` instance. Examples include `LangevinDynamics` and `HamiltonianMonteCarlo`.
+---
 
-### 3. Losses (`torchebm.core.BaseLoss`)
+## How the pieces compose
 
-A **Loss** function is used to train the parameters of a model. These typically rely on a sampler to generate "negative" samples from the model's current distribution to contrast with "positive" samples from the data. `ContrastiveDivergence` is a key example.
+Training wiring depends on the loss family. Two patterns cover everything in the library:
 
-### Component Interactions
+=== "Sampler-free (score / flow / EqM)"
+    ```mermaid
+    graph LR
+        data[x1] --> loss
+        noise["x0 ~ N(0,I)"] --> interp[interpolant]
+        data --> interp
+        interp -- xt, target --> loss
+        model --> loss
+        loss -- grad --> opt[optimizer]
+        opt --> model
+    ```
+    Score matching, equilibrium matching, and flow matching compute their target from data plus a noise / interpolation step. **No sampler runs during training.** Samplers are only used at generation time.
 
-The components interact in a clear, defined workflow, particularly during training:
+=== "Sampler-based (CD family)"
+    ```mermaid
+    graph LR
+        data[data x] --> loss
+        model --> sampler
+        sampler -- negatives --> loss
+        loss -- grad --> opt[optimizer]
+        opt --> model
+    ```
+    Contrastive divergence and its variants draw negatives from the current model via a sampler (e.g. `LangevinDynamics`, `HMC`) every step.
 
-```mermaid
-graph TD
-    subgraph "Training Loop"
-        Data[Data Samples] --> Loss
-        Model --> Sampler
-        Sampler --> Loss
-        Loss -- Gradient --> Optimizer
-        Optimizer -- Updates --> Model
-    end
+=== "Generation (all objectives)"
+    ```mermaid
+    graph LR
+        model2[trained model] --> sampler2[sampler]
+        sampler2 --> samples[x ~ p]
+    ```
+    A sampler drives a **field** derived from the trained model through an **integrator** to produce samples.
 
-    subgraph "Inference/Sampling"
-        Trained_Model[Trained Model] --> Inference_Sampler[Sampler]
-        Inference_Sampler --> Generated_Samples[Generated Samples]
-    end
-```
+Swapping any one piece (e.g. replacing `EulerMaruyama` with `Heun` inside `LangevinDynamics`) does not require touching the others.
 
-1.  A **Loss** function takes the **Model** and a batch of real data.
-2.  It uses a **Sampler** to generate samples from the model's current distribution.
-3.  The loss is computed based on the energies of the real and generated samples.
-4.  The gradient of the loss is used to update the **Model**'s parameters.
+---
 
-This modular design allows you to, for example, swap out different samplers to see their effect on the training of a given model, without changing the model or the loss function. 
+## Time conditioning
+
+Not all objectives condition the model on \( t \). The distinction matters when wiring components:
+
+- **EquilibriumMatching**: time-invariant. The loss passes \( x_t \) only; the model receives **no** time input.
+- **FlowSampler / score-matching with diffusion**: time-conditional. The field is \( v(x, t) \); the sampler feeds \( t \) every step.
+
+See `torchebm/losses/equilibrium_matching.py` and `torchebm/samplers/flow.py` for the reference patterns.
+

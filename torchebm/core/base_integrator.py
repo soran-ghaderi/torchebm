@@ -394,9 +394,12 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             err_vec = h_t * (e_view * k_err_stack).sum(0)
 
             scale = self.atol + self.rtol * torch.max(x.abs(), y_new.abs())
-            err_ratio = norm_fn(err_vec / scale).item()
+            # err_ratio = norm_fn(err_vec / scale).item()
+            err_ratio = norm_fn(err_vec / scale)
 
-            if err_ratio <= 1.0:
+
+            # if err_ratio <= 1.0:
+            if err_ratio.le(1.0):
                 x = y_new
                 t_current += h
                 k1_cached = k_fsal if is_fsal else None

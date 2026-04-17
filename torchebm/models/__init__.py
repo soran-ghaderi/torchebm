@@ -9,21 +9,6 @@ This package therefore exposes *reusable building blocks* under
 `torchebm.models.components` and a small set of generic backbones/wrappers.
 """
 
-from .conditional_transformer_2d import ConditionalTransformer2D
-from .components import (
-    AdaLNZeroBlock,
-    AdaLNZeroPatchHead,
-    ConvPatchEmbed2d,
-    FeedForward,
-    LabelEmbedder,
-    MLPTimestepEmbedder,
-    MultiheadSelfAttention,
-    build_2d_sincos_pos_embed,
-    patchify2d,
-    unpatchify2d,
-)
-from .wrappers import LabelClassifierFreeGuidance
-
 __all__ = [
     "ConditionalTransformer2D",
     "LabelClassifierFreeGuidance",
@@ -38,3 +23,27 @@ __all__ = [
     "AdaLNZeroBlock",
     "AdaLNZeroPatchHead",
 ]
+
+_LAZY_IMPORTS = {
+    "ConditionalTransformer2D": ".conditional_transformer_2d",
+    "LabelClassifierFreeGuidance": ".wrappers",
+    "AdaLNZeroBlock": ".components",
+    "AdaLNZeroPatchHead": ".components",
+    "ConvPatchEmbed2d": ".components",
+    "FeedForward": ".components",
+    "LabelEmbedder": ".components",
+    "MLPTimestepEmbedder": ".components",
+    "MultiheadSelfAttention": ".components",
+    "build_2d_sincos_pos_embed": ".components",
+    "patchify2d": ".components",
+    "unpatchify2d": ".components",
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_IMPORTS:
+        import importlib
+
+        module = importlib.import_module(_LAZY_IMPORTS[name], __package__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

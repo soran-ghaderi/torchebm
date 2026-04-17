@@ -150,7 +150,7 @@ if [[ -n "$MODULE" ]]; then
 fi
 
 if [[ -n "$FILTER" ]]; then
-    PYTEST_ARGS="$PYTEST_ARGS -k $FILTER"
+    PYTEST_ARGS="$PYTEST_ARGS -k '$FILTER'"
     echo "  Filter  : $FILTER"
 fi
 
@@ -168,10 +168,11 @@ echo "================================================================"
 echo ""
 
 # ── Run benchmarks ──
-pytest $PYTEST_ARGS -v
+eval pytest $PYTEST_ARGS -v
 
 # ── Save versioned copy (replace previous for same version+device) ──
-LATEST_FILE=$(ls -t "$RESULTS_DIR"/*.json 2>/dev/null | head -1)
+# pytest-benchmark autosave writes into a platform subdirectory (e.g. Linux-CPython-3.10-64bit/)
+LATEST_FILE=$(find "$RESULTS_DIR" -maxdepth 2 -name '*.json' -newer "$RESULTS_DIR" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 if [[ -n "$LATEST_FILE" ]]; then
     # Remove old versioned copies for this version+device
     for old in "$RESULTS_DIR"/v${TORCHEBM_VERSION}_${EFFECTIVE_DEVICE}_*.json; do
