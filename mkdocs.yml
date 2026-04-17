@@ -93,6 +93,8 @@ nav:
     - Code Guidelines: developer_guide/code_guidelines.md
     - Architecture: developer_guide/architecture.md
     - Performance: developer_guide/performance.md
+    - Profiling: developer_guide/profiling.md
+    - Benchmarking: developer_guide/benchmarking.md
   - Benchmarks:
     - benchmarks/index.md
   - Blog: blog/index.md
