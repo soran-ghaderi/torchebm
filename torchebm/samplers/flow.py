@@ -11,7 +11,7 @@ import torch
 from torch import nn
 import numpy as np
 
-from torchebm.core import BaseSampler, BaseInterpolant, BaseScheduler, expand_t_like_x, safe_to
+from torchebm.core import BaseSampler, BaseInterpolant, expand_t_like_x, safe_to
 from torchebm.integrators import (
     EulerMaruyamaIntegrator,
     HeunIntegrator,
@@ -112,6 +112,7 @@ class FlowSampler(BaseSampler):
         }
         self.prediction_type = prediction_map[prediction]
 
+        self.interpolant = safe_to(
         self.interpolant = safe_to(
             self.interpolant, device=self.device, dtype=self.dtype
         )
