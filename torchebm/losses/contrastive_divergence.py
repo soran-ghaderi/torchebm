@@ -144,7 +144,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         # Update persistent buffer if using PCD
         if self.persistent:
             with torch.no_grad():
-                self.update_buffer(pred_samples.detach())
+                self.update_buffer(pred_samples)
 
         # Add energy regularization to kwargs for compute_loss
         kwargs["energy_reg_weight"] = kwargs.get(
