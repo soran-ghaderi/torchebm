@@ -241,7 +241,7 @@ class BaseContrastiveDivergence(BaseLoss):
                 offset = torch.randint(0, stride, (batch_size,), device=self.device)
                 indices = (base_indices + offset) % self.buffer_size
 
-            start_points = self.replay_buffer[indices].detach()
+            start_points = self.replay_buffer[indices]
 
             # add some noise for exploration
             if self.new_sample_ratio > 0.0:
@@ -324,7 +324,7 @@ class BaseContrastiveDivergence(BaseLoss):
 
         if batch_size >= self.buffer_size:
             # batch larger than buffer, use latest samples
-            self.replay_buffer[:] = samples[-self.buffer_size :].detach()
+            self.replay_buffer[:] = samples[-self.buffer_size :]
             self._buffer_ptr_int = 0
             self.buffer_ptr.zero_()
         else:
@@ -336,8 +336,8 @@ class BaseContrastiveDivergence(BaseLoss):
             else:
                 # wraparound case - split update
                 first_part = self.buffer_size - ptr
-                self.replay_buffer[ptr:] = samples[:first_part].detach()
-                self.replay_buffer[:end_ptr] = samples[first_part:].detach()
+                self.replay_buffer[ptr:] = samples[:first_part]
+                self.replay_buffer[:end_ptr] = samples[first_part:]
 
             self._buffer_ptr_int = end_ptr
             self.buffer_ptr.fill_(end_ptr)
