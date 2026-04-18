@@ -180,10 +180,10 @@ class HamiltonianMonteCarlo(BaseSampler):
                 )  # -1/+1 -> for sign flipping
                 current_momentum = current_momentum * momentum_direction
 
-                current_energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
-                current_kinetic = torch.clamp(
-                    self._compute_kinetic_energy(current_momentum), min=0, max=1e10
-                )
+                current_energy = self.model(x).clamp_(min=-1e10, max=1e10)
+                current_kinetic = self._compute_kinetic_energy(
+                    current_momentum
+                ).clamp_(min=0.0, max=1e10)
 
                 current_hamiltonian = current_energy + current_kinetic
 
@@ -199,28 +199,29 @@ class HamiltonianMonteCarlo(BaseSampler):
                 )
                 proposed_position, proposed_momentum = proposed["x"], proposed["p"]
 
-                proposed_energy = torch.clamp(
-                    self.model(proposed_position), min=-1e10, max=1e10
+                proposed_energy = self.model(proposed_position).clamp_(
+                    min=-1e10, max=1e10
                 )
-                proposed_kinetic = torch.clamp(
-                    self._compute_kinetic_energy(proposed_momentum), min=0, max=1e10
-                )
+                proposed_kinetic = self._compute_kinetic_energy(
+                    proposed_momentum
+                ).clamp_(min=0.0, max=1e10)
 
                 proposed_hamiltonian = proposed_energy + proposed_kinetic
 
-                hamiltonian_diff = current_hamiltonian - proposed_hamiltonian
-                hamiltonian_diff = torch.clamp(hamiltonian_diff, max=50, min=-50)
-
-                acceptance_prob = torch.minimum(
-                    torch.ones(batch_size, device=self.device),
-                    torch.exp(hamiltonian_diff),
+                hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
+                    min=-50.0, max=50.0
                 )
+
+                # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
+                # the freshly allocated `exp` result (no `ones` tensor allocation).
+                acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
 
                 random_uniform = torch.rand(batch_size, device=self.device)
                 accepted = random_uniform < acceptance_prob
-                accepted_mask = accepted.float().view(-1, *([1] * (len(x.shape) - 1)))
-
-                x = accepted_mask * proposed_position + (1.0 - accepted_mask) * x
+                # `torch.where` on the broadcast accept mask: single fused kernel,
+                # no `mask*proposed + (1-mask)*x` quartet of temporaries.
+                accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
+                x = torch.where(accept_view, proposed_position, x)
 
                 if return_trajectory:
                     trajectory[:, i, :] = x
