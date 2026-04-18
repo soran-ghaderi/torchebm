@@ -3,6 +3,7 @@ Base Loss Classes for Energy-Based Models
 """
 
 import logging
+import logging
 import warnings
 from abc import abstractmethod, ABC
 from typing import Tuple, Union, Optional, Dict, Any, Callable
@@ -13,6 +14,8 @@ from torch import nn
 from torchebm.core import BaseModel
 from torchebm.core import BaseSampler
 from torchebm.core import TorchEBMModule
+
+logger = logging.getLogger(__name__)
 
 
 class BaseLoss(TorchEBMModule, ABC):
@@ -127,6 +130,7 @@ class BaseContrastiveDivergence(BaseLoss):
             "buffer_ptr", torch.tensor(0, dtype=torch.long, device=self.device)
         )
         self._buffer_ptr_int: int = 0
+        self._buffer_ptr_int: int = 0
         self.buffer_initialized = False
 
     def initialize_buffer(
@@ -158,6 +162,7 @@ class BaseContrastiveDivergence(BaseLoss):
             self.buffer_size,
         ) + data_shape_no_batch  # shape: [buffer_size, *data_shape]
         logger.info("Initializing replay buffer with shape %s...", buffer_shape)
+        logger.info("Initializing replay buffer with shape %s...", buffer_shape)
 
         self.replay_buffer = (
             torch.randn(buffer_shape, dtype=self.dtype, device=self.device)
@@ -165,6 +170,7 @@ class BaseContrastiveDivergence(BaseLoss):
         )
 
         if self.init_steps > 0:
+            logger.info("Running %d MCMC steps to populate buffer...", self.init_steps)
             logger.info("Running %d MCMC steps to populate buffer...", self.init_steps)
             with torch.no_grad():
                 chunk_size = min(self.buffer_size, buffer_chunk_size)
@@ -190,7 +196,9 @@ class BaseContrastiveDivergence(BaseLoss):
 
         self.buffer_ptr.zero_()
         self._buffer_ptr_int = 0
+        self._buffer_ptr_int = 0
         self.buffer_initialized = True
+        logger.info("Replay buffer initialized.")
         logger.info("Replay buffer initialized.")
 
         return self.replay_buffer
@@ -311,10 +319,12 @@ class BaseContrastiveDivergence(BaseLoss):
 
         # FIFO strategy — use cached Python int to avoid GPU sync every step
         ptr = self._buffer_ptr_int
+        # FIFO strategy — use cached Python int to avoid GPU sync every step
+        ptr = self._buffer_ptr_int
 
         if batch_size >= self.buffer_size:
             # batch larger than buffer, use latest samples
-            self.replay_buffer[:] = samples[-self.buffer_size :]
+            self.replay_buffer[:] = samples[-self.buffer_size :].detach()
             self._buffer_ptr_int = 0
             self.buffer_ptr.zero_()
         else:
@@ -326,8 +336,8 @@ class BaseContrastiveDivergence(BaseLoss):
             else:
                 # wraparound case - split update
                 first_part = self.buffer_size - ptr
-                self.replay_buffer[ptr:] = samples[:first_part]
-                self.replay_buffer[:end_ptr] = samples[first_part:]
+                self.replay_buffer[ptr:] = samples[:first_part].detach()
+                self.replay_buffer[:end_ptr] = samples[first_part:].detach()
 
             self._buffer_ptr_int = end_ptr
             self.buffer_ptr.fill_(end_ptr)
@@ -568,6 +578,7 @@ class BaseScoreMatching(BaseLoss):
         # default: L2 norm of score
         else:
             score = self.compute_score(x)
+            reg_term = score.square().sum(dim=list(range(1, len(x.shape)))).mean()
             reg_term = score.square().sum(dim=list(range(1, len(x.shape)))).mean()
 
         return loss + strength * reg_term
