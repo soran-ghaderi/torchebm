@@ -73,6 +73,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         The momentum is sampled from \(\mathcal{N}(0, M)\), where `M` is the mass matrix.
         Reuses a cached buffer when shape/dtype/device match to avoid per-step allocation.
+        Reuses a cached buffer when shape/dtype/device match to avoid per-step allocation.
 
         Args:
             shape (torch.Size): The shape of the momentum tensor to generate.
@@ -80,6 +81,16 @@ class HamiltonianMonteCarlo(BaseSampler):
         Returns:
             torch.Tensor: The initialized momentum tensor.
         """
+        buf = getattr(self, "_momentum_buf", None)
+        if (
+            buf is None
+            or buf.shape != shape
+            or buf.dtype != self.dtype
+            or buf.device != self.device
+        ):
+            buf = torch.empty(shape, dtype=self.dtype, device=self.device)
+            self._momentum_buf = buf
+        p = buf.normal_()
         buf = getattr(self, "_momentum_buf", None)
         if (
             buf is None
@@ -238,11 +249,11 @@ class HamiltonianMonteCarlo(BaseSampler):
 
                     mean_exp = mean_x.expand(batch_size, dim)
                     diagnostics[i, 0, :, :] = mean_exp
+                    mean_exp = mean_x.expand(batch_size, dim)
+                    diagnostics[i, 0, :, :] = mean_exp
                     diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)
                     diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
                     diagnostics[i, 3, :, :] = acceptance_rate
-
-                self.step_schedulers()
 
         if return_trajectory:
             if return_diagnostics:

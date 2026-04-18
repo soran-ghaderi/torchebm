@@ -1,4 +1,5 @@
 import logging
+import logging
 import warnings
 from contextlib import nullcontext
 import torch
@@ -10,9 +11,6 @@ from .base_sampler import BaseSampler
 from .base_loss import BaseLoss
 
 logger = logging.getLogger(__name__)
-
-# TF32 for fp32 matmuls on Ampere+ (no-op on CPU / pre-Ampere).
-torch.set_float32_matmul_precision("high")
 
 
 class BaseTrainer:
@@ -240,10 +238,12 @@ class BaseTrainer:
 
             # Print progress
             logger.info("Epoch %d/%d, Loss: %.6f", epoch + 1, num_epochs, epoch_metrics["loss"])
+            logger.info("Epoch %d/%d, Loss: %.6f", epoch + 1, num_epochs, epoch_metrics["loss"])
 
             # Validate if function provided
             if validate_fn is not None:
                 val_metrics = validate_fn(self.model)
+                logger.info("Validation: %s", val_metrics)
                 logger.info("Validation: %s", val_metrics)
 
                 # Update validation metrics in history
