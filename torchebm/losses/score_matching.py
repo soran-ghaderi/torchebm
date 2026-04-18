@@ -152,7 +152,7 @@ class ScoreMatching(BaseScoreMatching):
         score = vmap(score_fn)(x_flat)
         laplacian = vmap(laplacian_fn)(x_flat)
 
-        term1 = 0.5 * score.pow(2).sum(dim=-1)
+        term1 = 0.5 * score.square().sum(dim=-1)
         return (term1 + laplacian).mean()
         # feature_dim = x.numel() // batch_size
 
@@ -206,7 +206,7 @@ class ScoreMatching(BaseScoreMatching):
 
         score = self.compute_score(x_detached)
         score_square_term = (
-            0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
+            0.5 * torch.sum(score.square(), dim=list(range(1, len(x.shape)))).mean()
         )
 
         epsilon = 1e-5
@@ -427,10 +427,8 @@ class SlicedScoreMatching(BaseScoreMatching):
         if self.projection_type == "rademacher":
             return vectors.sign()
         elif self.projection_type == "sphere":
-            return (
-                vectors
-                / torch.norm(vectors, dim=-1, keepdim=True)
-                * torch.sqrt(vectors.shape[-1])
+            return torch.nn.functional.normalize(vectors, dim=-1) * torch.sqrt(
+                torch.tensor(vectors.shape[-1], dtype=vectors.dtype, device=vectors.device)
             )
         else:
             return vectors
