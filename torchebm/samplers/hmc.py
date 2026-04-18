@@ -191,6 +191,11 @@ class HamiltonianMonteCarlo(BaseSampler):
             for i in range(n_steps):
                 current_momentum = self._initialize_momentum(x.shape)
 
+                momentum_direction = (
+                    torch.randint(0, 2, (batch_size, 1), device=self.device) * 2 - 1
+                )  # -1/+1 -> for sign flipping
+                current_momentum = current_momentum * momentum_direction
+
                 current_energy = self.model(x).clamp_(min=-1e10, max=1e10)
                 current_kinetic = self._compute_kinetic_energy(
                     current_momentum
@@ -212,7 +217,12 @@ class HamiltonianMonteCarlo(BaseSampler):
 
                 proposed_energy = self.model(proposed_position).clamp_(
                     min=-1e10, max=1e10
+                proposed_energy = self.model(proposed_position).clamp_(
+                    min=-1e10, max=1e10
                 )
+                proposed_kinetic = self._compute_kinetic_energy(
+                    proposed_momentum
+                ).clamp_(min=0.0, max=1e10)
                 proposed_kinetic = self._compute_kinetic_energy(
                     proposed_momentum
                 ).clamp_(min=0.0, max=1e10)
@@ -222,13 +232,23 @@ class HamiltonianMonteCarlo(BaseSampler):
                 hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
                     min=-50.0, max=50.0
                 )
+                hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
+                    min=-50.0, max=50.0
+                )
 
+                # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
+                # the freshly allocated `exp` result (no `ones` tensor allocation).
+                acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
                 # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
                 # the freshly allocated `exp` result (no `ones` tensor allocation).
                 acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
 
                 random_uniform = torch.rand(batch_size, device=self.device)
                 accepted = random_uniform < acceptance_prob
+                # `torch.where` on the broadcast accept mask: single fused kernel,
+                # no `mask*proposed + (1-mask)*x` quartet of temporaries.
+                accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
+                x = torch.where(accept_view, proposed_position, x)
                 # `torch.where` on the broadcast accept mask: single fused kernel,
                 # no `mask*proposed + (1-mask)*x` quartet of temporaries.
                 accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
