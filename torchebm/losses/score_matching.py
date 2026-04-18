@@ -1,5 +1,6 @@
 r"""Score Matching Loss Module"""
 
+import math
 import warnings
 from typing import Optional, Union, Dict, Tuple, Any, Callable
 
@@ -427,8 +428,8 @@ class SlicedScoreMatching(BaseScoreMatching):
         if self.projection_type == "rademacher":
             return vectors.sign()
         elif self.projection_type == "sphere":
-            return torch.nn.functional.normalize(vectors, dim=-1) * torch.sqrt(
-                torch.tensor(vectors.shape[-1], dtype=vectors.dtype, device=vectors.device)
+            return torch.nn.functional.normalize(vectors, dim=-1) * math.sqrt(
+                vectors.shape[-1]
             )
         else:
             return vectors
@@ -484,7 +485,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         logp = (-self.model(dup_x)).sum()
         grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
         v_score = torch.sum(grad1 * n_vectors, dim=-1)
-        term1 = 0.5 * (v_score**2)
+        term1 = 0.5 * v_score.square()
 
         grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[0]
         term2 = torch.sum(n_vectors * grad_v, dim=-1)

@@ -303,7 +303,7 @@ class FlowSampler(BaseSampler):
         if reverse:
 
             def wrapped_drift(x, t_val, **kwargs):
-                return drift_fn(x, torch.ones_like(t_val) * (1 - t_val), **kwargs)
+                return drift_fn(x, 1.0 - t_val, **kwargs)
 
         else:
             wrapped_drift = drift_fn
@@ -456,17 +456,16 @@ class FlowSampler(BaseSampler):
             alpha, _ = self.interpolant.compute_alpha_t(t_expanded)
             sigma, _ = self.interpolant.compute_sigma_t(t_expanded)
             score = self._get_score()(x, t, **model_kwargs)
-            return x / alpha + (sigma**2) / alpha * score
+            return x / alpha + sigma.square() / alpha * score
         else:
             return x
 
     def prior_logp(self, z: torch.Tensor) -> torch.Tensor:
         r"""Compute log probability under standard Gaussian prior."""
-        shape = torch.tensor(z.size())
-        N = torch.prod(shape[1:])
+        N = z[0].numel()
         return (
             -N / 2.0 * np.log(2 * np.pi)
-            - torch.sum(z**2, dim=tuple(range(1, z.ndim))) / 2.0
+            - torch.sum(z.square(), dim=tuple(range(1, z.ndim))) / 2.0
         )
 
 

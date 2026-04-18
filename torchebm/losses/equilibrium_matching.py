@@ -152,6 +152,13 @@ class EquilibriumMatchingLoss(BaseLoss):
         t1 = 1.0 - self.train_eps
         return t0, t1
 
+    def _reduce_dims(self, ndim: int) -> tuple:
+        r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
+        cache = getattr(self, "_reduce_dims_cache", None)
+        if cache is None or cache[0] != ndim:
+            self._reduce_dims_cache = (ndim, tuple(range(1, ndim)))
+        return self._reduce_dims_cache[1]
+
     def _compute_explicit_energy_gradient(
         self,
         xt: torch.Tensor,
@@ -170,10 +177,10 @@ class EquilibriumMatchingLoss(BaseLoss):
         """
         if self.energy_type == "dot" or self.energy_type == "mean":
             # g(x) = x · f(x)
-            energy = (xt * model_output).sum(dim=tuple(range(1, xt.ndim)))
+            energy = (xt * model_output).sum(dim=self._reduce_dims(xt.ndim))
         elif self.energy_type == "l2":
             # g(x) = -0.5 ||f(x)||^2
-            energy = -0.5 * (model_output**2).sum(dim=tuple(range(1, model_output.ndim)))
+            energy = -0.5 * model_output.square().sum(dim=self._reduce_dims(model_output.ndim))
         else:
             raise ValueError(f"Unknown energy type: {self.energy_type}")
 
@@ -293,13 +300,13 @@ class EquilibriumMatchingLoss(BaseLoss):
         if self.prediction == "velocity":
             if self.energy_type == "none":
                 # Implicit EqM: model directly predicts gradient field
-                terms["loss"] = mean_flat((model_output - target) ** 2)
+                terms["loss"] = mean_flat((model_output - target).square())
             else:
                 # Explicit EqM-E: compute gradient of energy function
                 grad, energy = self._compute_explicit_energy_gradient(
                     xt, model_output, training=self.model.training
                 )
-                terms["loss"] = mean_flat((grad - target) ** 2)
+                terms["loss"] = mean_flat((grad - target).square())
                 terms["energy"] = energy
         else:
             # Score or noise prediction with optional weighting
@@ -308,16 +315,16 @@ class EquilibriumMatchingLoss(BaseLoss):
             sigma_t, _ = self.interpolant.compute_sigma_t(t_expanded)
 
             if self.loss_weight == "velocity":
-                weight = (drift_var / sigma_t) ** 2
+                weight = (drift_var / sigma_t).square()
             elif self.loss_weight == "likelihood":
-                weight = drift_var / (sigma_t**2)
+                weight = drift_var / sigma_t.square()
             else:
                 weight = 1.0
 
             if self.prediction == "noise":
-                terms["loss"] = mean_flat(weight * (model_output - x0) ** 2)
+                terms["loss"] = mean_flat(weight * (model_output - x0).square())
             elif self.prediction == "score":
-                terms["loss"] = mean_flat(weight * (model_output * sigma_t + x0) ** 2)
+                terms["loss"] = mean_flat(weight * (model_output * sigma_t + x0).square())
             else:
                 raise ValueError(f"Unknown prediction type: {self.prediction}")
 

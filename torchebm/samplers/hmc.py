@@ -1,5 +1,6 @@
 r"""Hamiltonian Monte Carlo Sampler Module."""
 
+import math
 from typing import Optional, Union, Tuple
 
 import torch
@@ -99,12 +100,18 @@ class HamiltonianMonteCarlo(BaseSampler):
         if self.mass is not None:
             # Apply mass matrix (equivalent to sampling from N(0, M))
             if isinstance(self.mass, float):
-                p = p * torch.sqrt(
-                    torch.tensor(self.mass, dtype=self.dtype, device=self.device)
-                )
+                if getattr(self, "_mass_sqrt_float", None) is None:
+                    self._mass_sqrt_float = math.sqrt(self.mass)
+                p.mul_(self._mass_sqrt_float)
             else:
-                mass_sqrt = torch.sqrt(self.mass)
-                p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1).expand_as(p)
+                ndim = p.ndim
+                cached = getattr(self, "_mass_sqrt_view", None)
+                if cached is None or cached[0] != ndim:
+                    mass_sqrt = torch.sqrt(self.mass)
+                    view_shape = (1,) * (ndim - 1) + (-1,)
+                    self._mass_sqrt_view = (ndim, mass_sqrt.view(view_shape))
+                    cached = self._mass_sqrt_view
+                p.mul_(cached[1])
         return p
 
     def _compute_kinetic_energy(self, p: torch.Tensor) -> torch.Tensor:
@@ -120,13 +127,17 @@ class HamiltonianMonteCarlo(BaseSampler):
             torch.Tensor: The kinetic energy for each sample in the batch.
         """
         if self.mass is None:
-            return 0.5 * torch.sum(p**2, dim=-1)
+            return 0.5 * torch.sum(p.square(), dim=-1)
         elif isinstance(self.mass, float):
-            return 0.5 * torch.sum(p**2, dim=-1) / self.mass
+            return 0.5 * torch.sum(p.square(), dim=-1) / self.mass
         else:
-            return 0.5 * torch.sum(
-                p**2 / self.mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
-            )
+            ndim = p.ndim
+            cached = getattr(self, "_mass_kin_view", None)
+            if cached is None or cached[0] != ndim:
+                view_shape = (1,) * (ndim - 1) + (-1,)
+                self._mass_kin_view = (ndim, self.mass.view(view_shape))
+                cached = self._mass_kin_view
+            return 0.5 * torch.sum(p.square() / cached[1], dim=-1)
 
     @torch.no_grad()
     def sample(

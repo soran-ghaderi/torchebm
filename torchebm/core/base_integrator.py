@@ -522,10 +522,10 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             drift_fn = self._resolve_drift(drift)
             n = t_grid.numel() - 1
             batch_size = x.size(0)
+            dts = t_grid[1:] - t_grid[:-1]
             for i in range(n):
-                dt = t_grid[i + 1] - t_grid[i]
                 t_batch = t_grid[i].expand(batch_size)
-                x = self._deterministic_step(x, dt, drift_fn, t_batch)
+                x = self._deterministic_step(x, dts[i], drift_fn, t_batch)
             return {"x": x}
 
         # adaptive path
