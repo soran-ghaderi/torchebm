@@ -449,7 +449,7 @@ def test_temperature_annealing(energy_function, sampler, device):
 
 
 def test_nan_handling_in_loss(energy_function, sampler, device):
-    """Test that the compute_loss method handles NaNs appropriately."""
+    """Test that the compute_loss method substitutes a finite fallback for NaN/Inf."""
     cd = ContrastiveDivergence(
         model=energy_function,
         sampler=sampler,
@@ -461,11 +461,9 @@ def test_nan_handling_in_loss(energy_function, sampler, device):
     x = torch.randn(10, 2, device=device)
     pred_x = torch.ones_like(x) * float("inf")  # Will cause NaN in energy calculation
 
-    # There should be a warning
-    with pytest.warns(RuntimeWarning):
-        loss = cd.compute_loss(x, pred_x)
+    # Sync-free fallback: returns the constant 0.1 on-device when loss is non-finite.
+    loss = cd.compute_loss(x, pred_x)
 
-    # Loss should be a fallback value, not NaN
     assert not torch.isnan(loss)
     assert abs(loss.item() - 0.1) < 1e-4  # Allow for small float precision differences
 
