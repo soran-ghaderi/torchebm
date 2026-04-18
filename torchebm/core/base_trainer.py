@@ -1,3 +1,4 @@
+import logging
 import warnings
 from contextlib import nullcontext
 import torch
@@ -7,6 +8,8 @@ from torch.utils.data import DataLoader
 from .base_model import BaseModel
 from .base_sampler import BaseSampler
 from .base_loss import BaseLoss
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTrainer:
@@ -229,12 +232,12 @@ class BaseTrainer:
                 history[key].append(value)
 
             # Print progress
-            print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_metrics['loss']:.6f}")
+            logger.info("Epoch %d/%d, Loss: %.6f", epoch + 1, num_epochs, epoch_metrics["loss"])
 
             # Validate if function provided
             if validate_fn is not None:
                 val_metrics = validate_fn(self.model)
-                print(f"Validation: {val_metrics}")
+                logger.info("Validation: %s", val_metrics)
 
                 # Update validation metrics in history
                 for key, value in val_metrics.items():

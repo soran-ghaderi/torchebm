@@ -94,7 +94,7 @@ def dispersive_loss(z: torch.Tensor) -> torch.Tensor:
         Scalar dispersive loss.
     """
     z = z.reshape((z.shape[0], -1))
-    diff = torch.nn.functional.pdist(z).pow(2) / z.shape[1]
+    diff = torch.nn.functional.pdist(z).square() / z.shape[1]
     diff = torch.concat((diff, diff, torch.zeros(z.shape[0], device=z.device)))
     return torch.log(torch.exp(-diff).mean())
 
