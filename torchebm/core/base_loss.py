@@ -11,10 +11,10 @@ from torch import nn
 
 from torchebm.core import BaseModel
 from torchebm.core import BaseSampler
-from torchebm.core import DeviceMixin
+from torchebm.core import TorchEBMModule
 
 
-class BaseLoss(DeviceMixin, nn.Module, ABC):
+class BaseLoss(TorchEBMModule, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
 
@@ -35,11 +35,8 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
         **kwargs: Any,
     ):
         """Initialize the base loss class."""
-        super().__init__(device=device, *args, **kwargs)
+        super().__init__(device=device, dtype=dtype, *args, **kwargs)
 
-        # if isinstance(device, str):
-        #     device = torch.device(device)
-        self.dtype = dtype
         self.clip_value = clip_value
         self.setup_mixed_precision(use_mixed_precision)
 
@@ -252,7 +249,7 @@ class BaseContrastiveDivergence(BaseLoss):
                 offset = torch.randint(0, stride, (batch_size,), device=self.device)
                 indices = (base_indices + offset) % self.buffer_size
 
-            start_points = self.replay_buffer[indices].detach().clone()
+            start_points = self.replay_buffer[indices].detach()
 
             # add some noise for exploration
             if self.new_sample_ratio > 0.0:

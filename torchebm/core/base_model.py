@@ -5,10 +5,10 @@ import torch
 from torch import nn
 from typing import Optional, Union
 
-from torchebm.core import DeviceMixin
+from torchebm.core import TorchEBMModule
 
 
-class BaseModel(DeviceMixin, nn.Module, ABC):
+class BaseModel(TorchEBMModule, ABC):
     r"""
     Abstract base class for energy-based models (EBMs).
 
@@ -27,8 +27,7 @@ class BaseModel(DeviceMixin, nn.Module, ABC):
         **kwargs,
     ):
         """Initializes the BaseModel base class."""
-        super().__init__(*args, **kwargs)
-        self.dtype = dtype
+        super().__init__(dtype=dtype, *args, **kwargs)
         self.setup_mixed_precision(use_mixed_precision)
 
     # @property
