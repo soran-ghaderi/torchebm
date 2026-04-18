@@ -264,6 +264,23 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         r"""Root-mean-square norm: \(\sqrt{\mathrm{mean}(x^2)}\)."""
         return torch.sqrt(torch.mean(x ** 2))
 
+    def _tableau_on(
+        self, device: torch.device, dtype: torch.dtype
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        r"""Return tableau tensors (a, b, c, e) cached on (device, dtype)."""
+        key = (device, dtype)
+        if getattr(self, "_tableau_cache_key", None) != key:
+            self._cached_a = self._buf_a.to(device=device, dtype=dtype)
+            self._cached_b = self._buf_b.to(device=device, dtype=dtype)
+            self._cached_c = self._buf_c.to(device=device, dtype=dtype)
+            self._cached_e = (
+                self._buf_e.to(device=device, dtype=dtype)
+                if self._buf_e is not None
+                else None
+            )
+            self._tableau_cache_key = key
+        return self._cached_a, self._cached_b, self._cached_c, self._cached_e
+
     def _evaluate_stages(
         self,
         x: torch.Tensor,
@@ -271,8 +288,8 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         step_size: torch.Tensor,
         drift_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
         k0: Optional[torch.Tensor] = None,
-    ) -> List[torch.Tensor]:
-        r"""Evaluate all RK stages and return the list ``[k_0, ..., k_{s-1}]``.
+    ) -> torch.Tensor:
+        r"""Evaluate all RK stages and return a tensor of shape ``(s, *x.shape)``.
 
         Args:
             x: Current position tensor.
@@ -283,35 +300,33 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                 drift evaluation is skipped (used by FSAL methods to reuse
                 the last stage of the previous step).
         """
-        a = self._buf_a.to(device=x.device, dtype=x.dtype)
-        c = self._buf_c.to(device=x.device, dtype=x.dtype)
+        a, _, c, _ = self._tableau_on(x.device, x.dtype)
         s = a.size(0)
-        k: List[torch.Tensor] = []
+        k = x.new_empty((s,) + x.shape)
         for i in range(s):
             if i == 0 and k0 is not None:
-                k.append(k0)
+                k[0] = k0
                 continue
             if i == 0:
                 x_stage = x
             else:
-                k_stack = torch.stack(k)
                 a_row = a[i, :i].reshape(-1, *([1] * x.ndim))
-                x_stage = x + step_size * (a_row * k_stack).sum(0)
+                x_stage = x + step_size * (a_row * k[:i]).sum(0)
             t_stage = t + c[i] * step_size
-            k.append(drift_fn(x_stage, t_stage))
+            k[i] = drift_fn(x_stage, t_stage)
         return k
 
     def _combine_stages(
         self,
         x: torch.Tensor,
         step_size: torch.Tensor,
-        k: List[torch.Tensor],
+        k: torch.Tensor,
     ) -> torch.Tensor:
         r"""Combine RK stages into the deterministic update \(x + h \sum b_i k_i\)."""
-        b = self._buf_b.to(device=x.device, dtype=x.dtype)
-        k_stack = torch.stack(k)
-        b_view = b[:len(k)].reshape(-1, *([1] * x.ndim))
-        return x + step_size * (b_view * k_stack).sum(0)
+        _, b, _, _ = self._tableau_on(x.device, x.dtype)
+        s = k.size(0)
+        b_view = b[:s].reshape(-1, *([1] * x.ndim))
+        return x + step_size * (b_view * k).sum(0)
 
     def _deterministic_step(
         self,
@@ -384,14 +399,13 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             # Error estimation
             if is_fsal:
                 k_fsal = drift_fn(y_new, t_batch + h_t)
-                k_err = k + [k_fsal]
+                k_err = torch.cat([k, k_fsal.unsqueeze(0)], dim=0)
             else:
                 k_err = k
 
-            k_err_stack = torch.stack(k_err)
-            e_buf = self._buf_e.to(device=x.device, dtype=x.dtype)
-            e_view = e_buf[:len(k_err)].reshape(-1, *([1] * x.ndim))
-            err_vec = h_t * (e_view * k_err_stack).sum(0)
+            _, _, _, e_buf = self._tableau_on(x.device, x.dtype)
+            e_view = e_buf[: k_err.size(0)].reshape(-1, *([1] * x.ndim))
+            err_vec = h_t * (e_view * k_err).sum(0)
 
             scale = self.atol + self.rtol * torch.max(x.abs(), y_new.abs())
             err_ratio = norm_fn(err_vec / scale).item()
