@@ -4,10 +4,10 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 from torch import nn
 
-from torchebm.core import BaseScheduler, DeviceMixin
+from torchebm.core import BaseScheduler, TorchEBMModule, safe_to
 
 
-class BaseSampler(DeviceMixin, nn.Module, ABC):
+class BaseSampler(TorchEBMModule, ABC):
     """
     Abstract base class for samplers.
 
@@ -31,18 +31,12 @@ class BaseSampler(DeviceMixin, nn.Module, ABC):
     ):
         super().__init__(device=device, dtype=dtype, *args, **kwargs)
         self.model = model
-        self.dtype = dtype
-        # if isinstance(device, str):
-        #     device = torch.device(device)
-        # self.device = device or torch.device(
-        #     "cuda" if torch.cuda.is_available() else "cpu"
-        # )
         self.setup_mixed_precision(use_mixed_precision)
 
         self.schedulers: Dict[str, BaseScheduler] = {}
 
-        # Align child components using the mixin helper
-        self.model = DeviceMixin.safe_to(
+        # Align child components using the helper
+        self.model = safe_to(
             self.model, device=self.device, dtype=self.dtype
         )
 
@@ -209,7 +203,7 @@ class BaseSampler(DeviceMixin, nn.Module, ABC):
         # Let DeviceMixin update internal state and parent class handle movement
         result = super().to(*args, **kwargs)
         # After move, make sure energy_function follows
-        self.model = DeviceMixin.safe_to(
+        self.model = safe_to(
             self.model, device=self.device, dtype=self.dtype
         )
         return result

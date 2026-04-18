@@ -5,10 +5,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 import torch
 from torch import nn
 
-from torchebm.core import DeviceMixin
+from torchebm.core import TorchEBMModule
 
 
-class BaseIntegrator(DeviceMixin, nn.Module, ABC):
+class BaseIntegrator(TorchEBMModule, ABC):
     """
     Abstract integrator that advances a sampler state according to dynamics.
 
@@ -16,8 +16,8 @@ class BaseIntegrator(DeviceMixin, nn.Module, ABC):
     samplers (e.g., Langevin uses only position `x`, HMC uses position `x` and
     momentum `p`).
 
-    Methods follow PyTorch conventions and respect `device`/`dtype` from
-    `DeviceMixin`.
+    Methods follow PyTorch conventions and inherit `device`/`dtype` from
+    `TorchEBMModule`.
     """
 
     def __init__(
@@ -394,12 +394,9 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             err_vec = h_t * (e_view * k_err_stack).sum(0)
 
             scale = self.atol + self.rtol * torch.max(x.abs(), y_new.abs())
-            # err_ratio = norm_fn(err_vec / scale).item()
-            err_ratio = norm_fn(err_vec / scale)
+            err_ratio = norm_fn(err_vec / scale).item()
 
-
-            # if err_ratio <= 1.0:
-            if err_ratio.le(1.0):
+            if err_ratio <= 1.0:
                 x = y_new
                 t_current += h
                 k1_cached = k_fsal if is_fsal else None
