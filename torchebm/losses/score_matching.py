@@ -201,7 +201,7 @@ class ScoreMatching(BaseScoreMatching):
         batch_size = x.shape[0]
         data_dim = x.numel() // batch_size
 
-        x_detached = x.detach().clone()
+        x_detached = x.detach()
         x_detached.requires_grad_(True)
 
         score = self.compute_score(x_detached)
