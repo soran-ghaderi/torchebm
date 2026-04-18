@@ -160,6 +160,13 @@ class EquilibriumMatchingLoss(BaseLoss):
             self._reduce_dims_cache = (ndim, tuple(range(1, ndim)))
         return self._reduce_dims_cache[1]
 
+    def _reduce_dims(self, ndim: int) -> tuple:
+        r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
+        cache = getattr(self, "_reduce_dims_cache", None)
+        if cache is None or cache[0] != ndim:
+            self._reduce_dims_cache = (ndim, tuple(range(1, ndim)))
+        return self._reduce_dims_cache[1]
+
     def _compute_explicit_energy_gradient(
         self,
         xt: torch.Tensor,

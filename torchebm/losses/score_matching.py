@@ -365,8 +365,8 @@ class SlicedScoreMatching(BaseScoreMatching):
         if self.projection_type == "rademacher":
             return vectors.sign()
         elif self.projection_type == "sphere":
-            return torch.nn.functional.normalize(vectors, dim=-1) * torch.sqrt(
-                torch.tensor(vectors.shape[-1], dtype=vectors.dtype, device=vectors.device)
+            return torch.nn.functional.normalize(vectors, dim=-1) * math.sqrt(
+                vectors.shape[-1]
             )
         else:
             return vectors
