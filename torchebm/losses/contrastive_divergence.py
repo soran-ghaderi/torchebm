@@ -6,7 +6,6 @@ import torch
 from torch import nn
 import math
 from abc import abstractmethod
-import warnings
 
 from torchebm.core import BaseContrastiveDivergence
 
@@ -206,14 +205,11 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             )
             loss = loss + energy_reg
 
-        # Prevent extremely large gradients with a safety check
-        if torch.isnan(loss) or torch.isinf(loss):
-            warnings.warn(
-                f"NaN or Inf detected in CD loss. x_energy: {mean_x_energy}, pred_energy: {mean_pred_energy}",
-                RuntimeWarning,
-            )
-            # Return a small positive constant instead of NaN/Inf to prevent training collapse
-            return torch.tensor(0.1, device=self.device, dtype=self.dtype)
+        # Sync-free NaN/Inf guard: substitute a small constant on-device when
+        # the loss is non-finite. Avoids the per-step CPU sync that
+        # ``if torch.isnan(loss) or torch.isinf(loss)`` would force.
+        fallback = torch.tensor(0.1, device=loss.device, dtype=loss.dtype)
+        loss = torch.where(torch.isfinite(loss), loss, fallback)
 
         return loss
 

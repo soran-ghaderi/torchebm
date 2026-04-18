@@ -310,8 +310,11 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             if i == 0:
                 x_stage = x
             else:
-                a_row = a[i, :i].reshape(-1, *([1] * x.ndim))
-                x_stage = x + step_size * (a_row * k[:i]).sum(0)
+                # Fused mul+reduce via einsum (1 kernel) instead of
+                # broadcast-mul + sum (2 kernels per stage).
+                x_stage = x + step_size * torch.einsum(
+                    "i,i...->...", a[i, :i], k[:i]
+                )
             t_stage = t + c[i] * step_size
             k[i] = drift_fn(x_stage, t_stage)
         return k
@@ -325,8 +328,8 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         r"""Combine RK stages into the deterministic update \(x + h \sum b_i k_i\)."""
         _, b, _, _ = self._tableau_on(x.device, x.dtype)
         s = k.size(0)
-        b_view = b[:s].reshape(-1, *([1] * x.ndim))
-        return x + step_size * (b_view * k).sum(0)
+        # Fused mul+reduce via einsum (1 kernel) instead of broadcast + sum.
+        return x + step_size * torch.einsum("i,i...->...", b[:s], k)
 
     def _deterministic_step(
         self,
@@ -404,8 +407,10 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                 k_err = k
 
             _, _, _, e_buf = self._tableau_on(x.device, x.dtype)
-            e_view = e_buf[: k_err.size(0)].reshape(-1, *([1] * x.ndim))
-            err_vec = h_t * (e_view * k_err).sum(0)
+            # Fused mul+reduce via einsum (1 kernel) instead of broadcast + sum.
+            err_vec = h_t * torch.einsum(
+                "i,i...->...", e_buf[: k_err.size(0)], k_err
+            )
 
             scale = self.atol + self.rtol * torch.max(x.abs(), y_new.abs())
             err_ratio = norm_fn(err_vec / scale).item()
