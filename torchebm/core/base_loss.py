@@ -12,14 +12,10 @@ from torch import nn
 
 from torchebm.core import BaseModel
 from torchebm.core import BaseSampler
-from torchebm.core import BaseScheduler
-from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
 
-logger = logging.getLogger(__name__)
 
-
-class BaseLoss(Schedulable, TorchEBMModule, ABC):
+class BaseLoss(TorchEBMModule, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
 
@@ -37,6 +33,9 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
     ):
         """Initialize the base loss class."""
         super().__init__(device=device, dtype=dtype, *args, **kwargs)
+
+        self.clip_value = clip_value
+        self.setup_mixed_precision(use_mixed_precision)
 
 
     @abstractmethod
@@ -234,7 +233,7 @@ class BaseContrastiveDivergence(BaseLoss):
                 offset = torch.randint(0, stride, (batch_size,), device=self.device)
                 indices = (base_indices + offset) % self.buffer_size
 
-            start_points = self.replay_buffer[indices]
+            start_points = self.replay_buffer[indices].detach()
 
             # add some noise for exploration
             if self.new_sample_ratio > 0.0:
