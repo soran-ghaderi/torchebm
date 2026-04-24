@@ -12,6 +12,9 @@ from .base_loss import BaseLoss
 
 logger = logging.getLogger(__name__)
 
+# TF32 for fp32 matmuls on Ampere+ (no-op on CPU / pre-Ampere).
+torch.set_float32_matmul_precision("high")
+
 
 class BaseTrainer:
     """
