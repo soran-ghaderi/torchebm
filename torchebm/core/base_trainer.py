@@ -11,6 +11,9 @@ from .base_loss import BaseLoss
 
 logger = logging.getLogger(__name__)
 
+# TF32 for fp32 matmuls on Ampere+ (no-op on CPU / pre-Ampere).
+torch.set_float32_matmul_precision("high")
+
 
 class BaseTrainer:
     """
@@ -45,8 +48,16 @@ class BaseTrainer:
         device: Optional[Union[str, torch.device]] = None,
         dtype: torch.dtype = torch.float32,
         use_mixed_precision: bool = False,
+        grad_accum_steps: int = 1,
         callbacks: Optional[List[Callable]] = None,
     ):
+        if grad_accum_steps < 1:
+            raise ValueError(
+                f"grad_accum_steps must be >= 1, got {grad_accum_steps}"
+            )
+        self.grad_accum_steps = int(grad_accum_steps)
+        self._accum_step_count = 0
+
         self.model = model
         self.optimizer = optimizer
         self.loss_fn = loss_fn
@@ -116,34 +127,41 @@ class BaseTrainer:
         """
         Perform a single training step.
 
+        When ``grad_accum_steps > 1``, gradients accumulate across calls and the
+        optimizer only steps on the accumulation boundary. The loss is scaled by
+        ``1 / grad_accum_steps`` so the accumulated gradient matches a single
+        step at the larger effective batch size.
+
         Args:
             batch: Batch of training data
 
         Returns:
             Dictionary containing metrics from this step
         """
-        # Ensure batch is on the correct device and dtype
         batch = batch.to(device=self.device, dtype=self.dtype)
 
-        # Zero gradients
-        self.optimizer.zero_grad()
+        if self._accum_step_count == 0:
+            self.optimizer.zero_grad(set_to_none=True)
 
-        # Forward pass with mixed precision if enabled
         if self.use_mixed_precision and self.autocast_available:
             with self.autocast_context():
                 loss = self.loss_fn(batch)
-
-            # Backward pass with gradient scaling
-            self.grad_scaler.scale(loss).backward()
-            self.grad_scaler.step(self.optimizer)
-            self.grad_scaler.update()
+            scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
+            self.grad_scaler.scale(scaled).backward()
         else:
-            # Standard training step
             loss = self.loss_fn(batch)
-            loss.backward()
-            self.optimizer.step()
+            scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
+            scaled.backward()
 
-        # Return metrics
+        self._accum_step_count += 1
+        if self._accum_step_count >= self.grad_accum_steps:
+            if self.use_mixed_precision and self.autocast_available:
+                self.grad_scaler.step(self.optimizer)
+                self.grad_scaler.update()
+            else:
+                self.optimizer.step()
+            self._accum_step_count = 0
+
         return {"loss": loss.item()}
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:
@@ -328,6 +346,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
         device: Optional[Union[str, torch.device]] = None,
         dtype: torch.dtype = torch.float32,
         use_mixed_precision: bool = False,
+        grad_accum_steps: int = 1,
     ):
         # Create optimizer if not provided
         if optimizer is None:
@@ -356,6 +375,7 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
             device=device,
             dtype=dtype,
             use_mixed_precision=use_mixed_precision,
+            grad_accum_steps=grad_accum_steps,
         )
 
         self.sampler = sampler
@@ -364,35 +384,38 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
         """
         Perform a single contrastive divergence training step.
 
+        Honors ``grad_accum_steps`` in the same way as ``BaseTrainer.train_step``.
+
         Args:
             batch: Batch of real data samples
 
         Returns:
             Dictionary containing metrics from this step
         """
-        # Ensure batch is on the correct device and dtype
         batch = batch.to(device=self.device, dtype=self.dtype)
 
-        # Zero gradients
-        self.optimizer.zero_grad()
+        if self._accum_step_count == 0:
+            self.optimizer.zero_grad(set_to_none=True)
 
-        # Forward pass with mixed precision if enabled
         if self.use_mixed_precision and self.autocast_available:
             with self.autocast_context():
-                # ContrastiveDivergence returns (loss, neg_samples)
                 loss, neg_samples = self.loss_fn(batch)
-
-            # Backward pass with gradient scaling
-            self.grad_scaler.scale(loss).backward()
-            self.grad_scaler.step(self.optimizer)
-            self.grad_scaler.update()
+            scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
+            self.grad_scaler.scale(scaled).backward()
         else:
-            # Standard training step
             loss, neg_samples = self.loss_fn(batch)
-            loss.backward()
-            self.optimizer.step()
+            scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
+            scaled.backward()
 
-        # Return metrics
+        self._accum_step_count += 1
+        if self._accum_step_count >= self.grad_accum_steps:
+            if self.use_mixed_precision and self.autocast_available:
+                self.grad_scaler.step(self.optimizer)
+                self.grad_scaler.update()
+            else:
+                self.optimizer.step()
+            self._accum_step_count = 0
+
         return {
             "loss": loss.item(),
             "pos_energy": self.model(batch).mean().item(),
