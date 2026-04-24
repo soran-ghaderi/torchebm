@@ -142,8 +142,7 @@ class LangevinDynamics(BaseSampler):
                 if return_diagnostics:
                     if n_samples > 1:
                         mean_x = x.mean(dim=0, keepdim=True)
-                        var_x = torch.clamp(
-                            x.var(dim=0, unbiased=False, keepdim=True),
+                        var_x = x.var(dim=0, unbiased=False, keepdim=True).clamp_(
                             min=1e-10,
                             max=1e10,
                         )
