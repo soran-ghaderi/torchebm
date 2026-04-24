@@ -186,11 +186,6 @@ class HamiltonianMonteCarlo(BaseSampler):
 
                 current_momentum = self._initialize_momentum(x.shape)
 
-                momentum_direction = (
-                    torch.randint(0, 2, (batch_size, 1), device=self.device) * 2 - 1
-                )  # -1/+1 -> for sign flipping
-                current_momentum = current_momentum * momentum_direction
-
                 current_energy = self.model(x).clamp_(min=-1e10, max=1e10)
                 current_kinetic = self._compute_kinetic_energy(
                     current_momentum
