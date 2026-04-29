@@ -32,6 +32,7 @@ from .base_scheduler import (
     MultiStepScheduler,
     WarmupScheduler,
 )
+from .schedulable import Schedulable
 from .base_sampler import BaseSampler
 
 from .base_loss import BaseLoss, BaseContrastiveDivergence, BaseScoreMatching
@@ -80,6 +81,9 @@ __all__ = [
     "ExponentialDecayScheduler",
     "LinearScheduler",
     "CosineScheduler",
+    "MultiStepScheduler",
+    "WarmupScheduler",
+    "Schedulable",
 ]
 
 # todo: Add ODE solver package
