@@ -4,7 +4,6 @@ from typing import Union, Callable, Tuple, Any, Optional, Dict
 
 import torch
 from torch import nn
-import math
 from abc import abstractmethod
 
 from torchebm.core import BaseContrastiveDivergence
@@ -26,10 +25,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         init_steps: Number of MCMC steps to warm up the buffer.
         new_sample_ratio: Fraction of new random samples for PCD chains.
         energy_reg_weight: Weight for energy regularization term.
-        use_temperature_annealing: Whether to use temperature annealing.
-        min_temp: Minimum temperature for annealing.
-        max_temp: Maximum temperature for annealing.
-        temp_decay: Decay rate for temperature annealing.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -57,10 +52,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         init_steps=100,
         new_sample_ratio=0.05,
         energy_reg_weight=0.001,
-        use_temperature_annealing=False,
-        min_temp=0.01,
-        max_temp=2.0,
-        temp_decay=0.999,
         dtype=torch.float32,
         device=torch.device("cpu"),
         *args,
@@ -79,18 +70,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             *args,
             **kwargs,
         )
-        # Additional parameters for improved stability
         self.energy_reg_weight = energy_reg_weight
-        self.use_temperature_annealing = use_temperature_annealing
-        self.min_temp = min_temp
-        self.max_temp = max_temp
-        self.temp_decay = temp_decay
-        self.current_temp = max_temp
-
-        # Register temperature as buffer for persistence
-        self.register_buffer(
-            "temperature", torch.tensor(max_temp, dtype=self.dtype, device=self.device)
-        )
 
     def forward(
         self, x: torch.Tensor, *args, **kwargs
@@ -111,25 +91,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
         batch_size = x.shape[0]
         data_shape = x.shape[1:]
-
-        # Update temperature if annealing is enabled
-        if self.use_temperature_annealing and self.training:
-            self.current_temp = max(self.min_temp, self.current_temp * self.temp_decay)
-            self.temperature[...] = self.current_temp  # Use ellipsis instead of index
-
-            # If sampler has a temperature parameter, update it
-            if hasattr(self.sampler, "temperature"):
-                self.sampler.temperature = self.current_temp
-            elif hasattr(self.sampler, "noise_scale"):
-                # For samplers like Langevin, adjust noise scale based on temperature
-                original_noise = getattr(self.sampler, "_original_noise_scale", None)
-                if original_noise is None:
-                    setattr(
-                        self.sampler, "_original_noise_scale", self.sampler.noise_scale
-                    )
-                    original_noise = self.sampler.noise_scale
-
-                self.sampler.noise_scale = original_noise * math.sqrt(self.current_temp)
 
         # Get starting points for chains (either from buffer or data)
         start_points = self.get_start_points(x)

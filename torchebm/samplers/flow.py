@@ -11,7 +11,7 @@ import torch
 from torch import nn
 import numpy as np
 
-from torchebm.core import BaseSampler, BaseInterpolant, expand_t_like_x, safe_to
+from torchebm.core import BaseSampler, BaseInterpolant, BaseScheduler, expand_t_like_x, safe_to
 from torchebm.integrators import (
     EulerMaruyamaIntegrator,
     HeunIntegrator,
@@ -53,12 +53,13 @@ class FlowSampler(BaseSampler):
         interpolant: Interpolant type ('linear', 'cosine', 'vp') or instance.
         prediction: Model prediction type ('velocity', 'score', or 'noise').
         train_eps: Epsilon used during training for time interval stability.
-        sample_eps: Epsilon for sampling time interval.
+            Accepts a float or a `BaseScheduler`.
+        sample_eps: Epsilon for sampling time interval. Accepts a float or a
+            `BaseScheduler` (advanced via `step_schedulers()`).
         negate_velocity: Negate the velocity during sampling. Set True for
             EqM models which learn (ε - x) direction; velocity is v = -f(x).
         dtype: Data type for computations.
         device: Device for computations.
-        use_mixed_precision: Whether to use mixed precision.
 
     Example:
         ```python
@@ -82,12 +83,11 @@ class FlowSampler(BaseSampler):
         model: nn.Module,
         interpolant: Union[str, BaseInterpolant] = "linear",
         prediction: Literal["velocity", "score", "noise"] = "velocity",
-        train_eps: float = 0.0,
-        sample_eps: float = 0.0,
+        train_eps: Union[float, BaseScheduler] = 0.0,
+        sample_eps: Union[float, BaseScheduler] = 0.0,
         negate_velocity: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        use_mixed_precision: bool = False,
         *args,
         **kwargs,
     ):
@@ -95,10 +95,9 @@ class FlowSampler(BaseSampler):
             model=model,
             dtype=dtype,
             device=device,
-            use_mixed_precision=use_mixed_precision,
         )
-        self.train_eps = train_eps
-        self.sample_eps = sample_eps
+        self._register_param("train_eps", train_eps)
+        self._register_param("sample_eps", sample_eps)
         self.negate_velocity = negate_velocity
 
         if isinstance(interpolant, str):
@@ -116,6 +115,22 @@ class FlowSampler(BaseSampler):
         self.interpolant = safe_to(
             self.interpolant, device=self.device, dtype=self.dtype
         )
+
+    @property
+    def train_eps(self) -> float:
+        return self.get_scheduled_value("train_eps")
+
+    @train_eps.setter
+    def train_eps(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("train_eps", value)
+
+    @property
+    def sample_eps(self) -> float:
+        return self.get_scheduled_value("sample_eps")
+
+    @sample_eps.setter
+    def sample_eps(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("sample_eps", value)
 
     @torch.no_grad()
     def sample(

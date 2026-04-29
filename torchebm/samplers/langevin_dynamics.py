@@ -9,7 +9,6 @@ from torchebm.core import (
     BaseModel,
     BaseSampler,
     BaseScheduler,
-    ConstantScheduler,
 )
 from torchebm.integrators import EulerMaruyamaIntegrator
 
@@ -57,19 +56,8 @@ class LangevinDynamics(BaseSampler):
     ):
         super().__init__(model=model, dtype=dtype, device=device)
 
-        if isinstance(step_size, BaseScheduler):
-            self.register_scheduler("step_size", step_size)
-        else:
-            if step_size <= 0:
-                raise ValueError("step_size must be positive")
-            self.register_scheduler("step_size", ConstantScheduler(step_size))
-
-        if isinstance(noise_scale, BaseScheduler):
-            self.register_scheduler("noise_scale", noise_scale)
-        else:
-            if noise_scale <= 0:
-                raise ValueError("noise_scale must be positive")
-            self.register_scheduler("noise_scale", ConstantScheduler(noise_scale))
+        self._register_param("step_size", step_size, positive=True)
+        self._register_param("noise_scale", noise_scale, positive=True)
 
         self.decay = decay
         self.integrator = EulerMaruyamaIntegrator(device=self.device, dtype=self.dtype)
@@ -84,6 +72,7 @@ class LangevinDynamics(BaseSampler):
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        reset_schedulers: bool = True,
         *args,
         **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
@@ -107,7 +96,8 @@ class LangevinDynamics(BaseSampler):
                 - If `return_diagnostics` is `True`, a tuple of samples and diagnostics.
         """
 
-        self.reset_schedulers()
+        if reset_schedulers:
+            self.reset_schedulers()
 
         if x is None:
             x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
@@ -127,7 +117,6 @@ class LangevinDynamics(BaseSampler):
         drift = lambda x_, t_: -self.model.gradient(x_)
         with self.autocast_context():
             for i in range(n_steps):
-                self.step_schedulers()
                 state = {"x": x}
                 x = self.integrator.step(
                     state=state,
@@ -135,6 +124,7 @@ class LangevinDynamics(BaseSampler):
                     noise_scale=self.get_scheduled_value("noise_scale"),
                     drift=drift,
                 )["x"]
+                self.step_schedulers()
 
                 if return_trajectory:
                     trajectory[:, i, :] = x
