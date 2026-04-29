@@ -98,18 +98,7 @@ class BaseTrainer:
                 self.use_mixed_precision = False
                 self.autocast_available = False
 
-        # Move model and loss function to appropriate device/dtype
-        self.model = self.model.to(
-            device=self.device, dtype=self.dtype
-        )
-
-        # Propagate mixed precision settings to components
-        if hasattr(self.loss_fn, "use_mixed_precision"):
-            self.loss_fn.use_mixed_precision = self.use_mixed_precision
-        if hasattr(self.model, "use_mixed_precision"):
-            self.model.use_mixed_precision = self.use_mixed_precision
-
-        # Move loss function to appropriate device
+        self.model = self.model.to(device=self.device, dtype=self.dtype)
         if hasattr(self.loss_fn, "to"):
             self.loss_fn = self.loss_fn.to(device=self.device, dtype=self.dtype)
 
