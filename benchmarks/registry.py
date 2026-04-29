@@ -626,8 +626,7 @@ def build_sampler_bench(
     if spec.model_type == "ebm_double_well":
         from torchebm.core.base_model import DoubleWellModel
 
-        model = DoubleWellModel(barrier_height=_BARRIER_HEIGHT, dtype=dtype)
-        model._device = device
+        model = DoubleWellModel(barrier_height=_BARRIER_HEIGHT, dtype=dtype).to(device)
         init_kw["model"] = model
         init_kw.setdefault("step_size", _STEP_SIZE)
     elif spec.model_type == "velocity":
