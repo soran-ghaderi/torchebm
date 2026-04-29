@@ -98,9 +98,6 @@ def ssm_loss(request, energy_function):
     projection_type = params.get("projection_type", "rademacher")
     regularization_strength = params.get("regularization_strength", 0.0)
     noise_scale = params.get("noise_scale", 0.0)
-    # scale_factor = params.get("scale_factor", 1.0)
-    clip_value = params.get("clip_value", None)
-    use_mixed_precision = params.get("use_mixed_precision", False)
 
     return SlicedScoreMatching(
         model=energy_function,
@@ -108,9 +105,6 @@ def ssm_loss(request, energy_function):
         projection_type=projection_type,
         regularization_strength=regularization_strength,
         noise_scale=noise_scale,
-        # scale_factor=scale_factor, # not supported yet
-        clip_value=clip_value,  # not supported yet
-        use_mixed_precision=use_mixed_precision,
         device=device,
     )
 
@@ -139,7 +133,6 @@ def test_sliced_score_matching_initialization(energy_function, device):
         projection_type="gaussian",
         regularization_strength=0.01,
         noise_scale=0.001,
-        clip_value=10.0,
         device=device,
     )
 
@@ -224,28 +217,6 @@ def test_forward_with_noise(energy_function):
 
     assert isinstance(loss, torch.Tensor)
     assert not torch.isnan(loss)
-
-
-def test_forward_with_clipping(energy_function):
-    """Test forward method with loss clipping."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    clip_value = 1000.0  # Use a higher value that won't trigger the clipping
-    ssm = SlicedScoreMatching(
-        model=energy_function,
-        clip_value=clip_value,
-        device=device,
-    )
-
-    x = torch.randn(10, 2, device=device)
-
-    # Run with clipping
-    loss = ssm(x)
-
-    assert isinstance(loss, torch.Tensor)
-    # Don't assert about the actual value
-    assert (
-        loss.detach().item() <= clip_value + 1.0
-    )  # Allow for some floating point error
 
 
 def test_forward_with_regularization(energy_function):
@@ -378,7 +349,6 @@ def test_numerical_stability():
     ssm = SlicedScoreMatching(
         model=energy_fn,
         n_projections=5,
-        clip_value=100.0,  # Large clip value to see if it handles extreme values
         device=device,
     )
 
