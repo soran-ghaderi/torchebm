@@ -29,7 +29,6 @@ class BaseModel(TorchEBMModule, ABC):
     ):
         """Initializes the BaseModel base class."""
         super().__init__(dtype=dtype, *args, **kwargs)
-        self.setup_mixed_precision(use_mixed_precision)
 
     # @property
     # def device(self) -> torch.device:

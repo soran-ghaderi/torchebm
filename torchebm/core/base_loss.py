@@ -13,12 +13,14 @@ from torch import nn
 
 from torchebm.core import BaseModel
 from torchebm.core import BaseSampler
+from torchebm.core import BaseScheduler
+from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
 
 logger = logging.getLogger(__name__)
 
 
-class BaseLoss(TorchEBMModule, ABC):
+class BaseLoss(Schedulable, TorchEBMModule, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
 
@@ -36,9 +38,6 @@ class BaseLoss(TorchEBMModule, ABC):
     ):
         """Initialize the base loss class."""
         super().__init__(device=device, dtype=dtype, *args, **kwargs)
-
-        self.clip_value = clip_value
-        self.setup_mixed_precision(use_mixed_precision)
 
 
     @abstractmethod
@@ -78,7 +77,7 @@ class BaseLoss(TorchEBMModule, ABC):
             torch.Tensor: The computed loss value.
         """
         x = x.to(device=self.device, dtype=self.dtype)
-        return super().__call__(x, *args, **kwargs)
+        return self.forward(x, *args, **kwargs)
 
 
 class BaseContrastiveDivergence(BaseLoss):
@@ -409,6 +408,8 @@ class BaseScoreMatching(BaseLoss):
         model: BaseModel,
         noise_scale: Union[float, BaseScheduler] = 0.01,
         regularization_strength: Union[float, BaseScheduler] = 0.0,
+        noise_scale: Union[float, BaseScheduler] = 0.01,
+        regularization_strength: Union[float, BaseScheduler] = 0.0,
         use_autograd: bool = True,
         hutchinson_samples: int = 1,
         custom_regularization: Optional[Callable] = None,
@@ -419,9 +420,29 @@ class BaseScoreMatching(BaseLoss):
         self.model = model
         self._register_param("noise_scale", noise_scale)
         self._register_param("regularization_strength", regularization_strength)
+        super().__init__(*args, **kwargs)
+        self.model = model
+        self._register_param("noise_scale", noise_scale)
+        self._register_param("regularization_strength", regularization_strength)
         self.use_autograd = use_autograd
         self.hutchinson_samples = hutchinson_samples
         self.custom_regularization = custom_regularization
+
+    @property
+    def noise_scale(self) -> float:
+        return self.get_scheduled_value("noise_scale")
+
+    @noise_scale.setter
+    def noise_scale(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("noise_scale", value)
+
+    @property
+    def regularization_strength(self) -> float:
+        return self.get_scheduled_value("regularization_strength")
+
+    @regularization_strength.setter
+    def regularization_strength(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("regularization_strength", value)
 
     @property
     def noise_scale(self) -> float:
