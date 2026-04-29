@@ -128,6 +128,8 @@ def hmc_sampler(request, energy_function):
     if isinstance(mass, torch.Tensor):
         mass = mass.to(device)
 
+    energy_function = energy_function.to(device)
+
     return HamiltonianMonteCarlo(
         model=energy_function,
         step_size=step_size,

@@ -179,6 +179,7 @@ def sampler(request, energy_function):
     """Fixture to create a sampler for testing."""
     if not hasattr(request, "param"):
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        energy_function = energy_function.to(device)
         return LangevinDynamics(
             model=energy_function,
             step_size=0.1,
@@ -207,6 +208,7 @@ def cd_loss(request, energy_function, sampler):
     """Fixture to create a ContrastiveDivergence loss for testing."""
     if not hasattr(request, "param"):
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        energy_function = energy_function.to(device)
         return ContrastiveDivergence(
             model=energy_function,
             sampler=sampler,
@@ -222,7 +224,7 @@ def cd_loss(request, energy_function, sampler):
     buffer_size = params.get("buffer_size", 100)
     init_steps = params.get("init_steps", 0)
     energy_reg_weight = params.get("energy_reg_weight", 0.001)
-    use_temperature_annealing = params.get("use_temperature_annealing", False)
+    energy_function = energy_function.to(device)
 
     return ContrastiveDivergence(
         model=energy_function,
@@ -232,7 +234,6 @@ def cd_loss(request, energy_function, sampler):
         buffer_size=buffer_size,
         init_steps=init_steps,
         energy_reg_weight=energy_reg_weight,
-        use_temperature_annealing=use_temperature_annealing,
         device=device,
     )
 
@@ -263,10 +264,6 @@ def test_contrastive_divergence_initialization(energy_function, sampler, device)
         buffer_size=1000,
         init_steps=5,
         energy_reg_weight=0.002,
-        use_temperature_annealing=True,
-        max_temp=1.5,
-        min_temp=0.1,
-        temp_decay=0.99,
         device=device,
     )
 
@@ -278,12 +275,6 @@ def test_contrastive_divergence_initialization(energy_function, sampler, device)
     assert cd.buffer_size == 1000
     assert cd.init_steps == 5
     assert cd.energy_reg_weight == 0.002
-    assert cd.use_temperature_annealing is True
-    assert cd.max_temp == 1.5
-    assert cd.min_temp == 0.1
-    assert cd.temp_decay == 0.99
-    assert cd.current_temp == 1.5
-    assert cd.model.device == device
     assert cd.device == device
     assert cd.replay_buffer is None
 
@@ -403,49 +394,6 @@ def test_contrastive_divergence_with_different_energy_functions(cd_loss):
 
     assert isinstance(loss, torch.Tensor)
     assert samples.shape == x.shape
-
-
-def test_temperature_annealing(energy_function, sampler, device):
-    """Test temperature annealing functionality."""
-    cd = ContrastiveDivergence(
-        model=energy_function,
-        sampler=sampler,
-        k_steps=5,
-        persistent=True,
-        buffer_size=20,
-        use_temperature_annealing=True,
-        max_temp=2.0,
-        min_temp=0.1,
-        temp_decay=0.8,  # Fast decay for testing
-        device=device,
-    )
-
-    # Set to training mode
-    cd.train()
-
-    # Store initial temperature
-    initial_temp = cd.current_temp
-
-    # Run multiple forward passes to check temperature decay
-    x = torch.randn(10, 2, device=device)
-    cd(x)
-
-    # Temperature should have been updated
-    assert cd.current_temp < initial_temp
-    assert cd.current_temp >= cd.min_temp
-
-    # Run enough iterations to reach near min_temp
-    for _ in range(20):  # More iterations to get closer to min_temp
-        cd(x)
-
-    # Temperature should be closer to min_temp after more iterations
-    # Allow more tolerance - we just need to verify it's decreasing
-    assert (
-        cd.current_temp <= 0.2
-    ), f"Temperature {cd.current_temp} should be closer to min_temp {cd.min_temp}"
-
-    # Verify it never goes below min_temp
-    assert cd.current_temp >= cd.min_temp
 
 
 def test_nan_handling_in_loss(energy_function, sampler, device):
@@ -662,7 +610,7 @@ def test_contrastive_divergence_cuda():
     device = torch.device("cuda")
     energy_fn = GaussianModel(
         mean=torch.zeros(2, device=device), cov=torch.eye(2, device=device)
-    )
+    ).to(device)
     sampler = LangevinDynamics(
         model=energy_fn,
         step_size=0.1,
@@ -678,7 +626,6 @@ def test_contrastive_divergence_cuda():
         buffer_size=100,
         init_steps=5,
         energy_reg_weight=0.001,
-        use_temperature_annealing=True,
         device=device,
     )
 
@@ -784,7 +731,6 @@ def test_convergence_potential():
         device=device,
     )
 
-    # Create CD loss with temperature annealing for better convergence
     cd = ContrastiveDivergence(
         model=energy_fn,
         sampler=sampler,
@@ -792,10 +738,6 @@ def test_convergence_potential():
         persistent=True,
         buffer_size=200,
         init_steps=10,
-        use_temperature_annealing=True,
-        max_temp=2.0,
-        min_temp=0.1,
-        temp_decay=0.9,
         energy_reg_weight=0.0001,
         device=device,
     )
