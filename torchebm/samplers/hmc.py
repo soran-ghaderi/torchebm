@@ -270,6 +270,8 @@ class HamiltonianMonteCarlo(BaseSampler):
                     diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
                     diagnostics[i, 3, :, :] = acceptance_rate
 
+                self.step_schedulers()
+
         if return_trajectory:
             if return_diagnostics:
                 return trajectory.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)

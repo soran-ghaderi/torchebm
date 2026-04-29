@@ -33,6 +33,7 @@ import torch
 from torch import nn
 
 from torchebm.core import BaseLoss, BaseInterpolant, BaseScheduler, expand_t_like_x
+from torchebm.core import BaseLoss, BaseInterpolant, BaseScheduler, expand_t_like_x
 from torchebm.losses import (
     mean_flat,
     get_interpolant,
@@ -109,6 +110,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         interpolant: Union[str, BaseInterpolant] = "linear",
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
         train_eps: Union[float, BaseScheduler] = 0.0,
+        train_eps: Union[float, BaseScheduler] = 0.0,
         ct_threshold: float = 0.8,
         ct_multiplier: float = 4.0,
         apply_dispersion: bool = False,
@@ -126,9 +128,11 @@ class EquilibriumMatchingLoss(BaseLoss):
             **kwargs,
         )
         self.model = model
+        self.model = model
         self.prediction = prediction
         self.energy_type = energy_type
         self.loss_weight = loss_weight
+        self._register_param("train_eps", train_eps)
         self._register_param("train_eps", train_eps)
         self.ct_threshold = ct_threshold
         self.ct_multiplier = ct_multiplier
@@ -148,17 +152,18 @@ class EquilibriumMatchingLoss(BaseLoss):
     def train_eps(self, value: Union[float, BaseScheduler]) -> None:
         self._register_param("train_eps", value)
 
+    @property
+    def train_eps(self) -> float:
+        return self.get_scheduled_value("train_eps")
+
+    @train_eps.setter
+    def train_eps(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("train_eps", value)
+
     def _check_interval(self) -> tuple[float, float]:
         r"""Get training time interval respecting epsilon."""
         eps = self.train_eps
         return eps, 1.0 - eps
-
-    def _reduce_dims(self, ndim: int) -> tuple:
-        r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
-        cache = getattr(self, "_reduce_dims_cache", None)
-        if cache is None or cache[0] != ndim:
-            self._reduce_dims_cache = (ndim, tuple(range(1, ndim)))
-        return self._reduce_dims_cache[1]
 
     def _reduce_dims(self, ndim: int) -> tuple:
         r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""

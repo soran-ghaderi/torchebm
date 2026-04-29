@@ -108,7 +108,6 @@ class GradientDescentSampler(BaseSampler):
 
         with self.autocast_context():
             for i in range(n_steps):
-                self.step_schedulers()
                 eta = self.get_scheduled_value("step_size")
                 grad = self.model.gradient(x)
                 x = torch.sub(x, grad, alpha=eta)
@@ -116,6 +115,8 @@ class GradientDescentSampler(BaseSampler):
 
                 if return_trajectory:
                     trajectory[:, i + 1] = x
+
+                self.step_schedulers()
 
         if return_diagnostics:
             return (
@@ -241,7 +242,6 @@ class NesterovSampler(BaseSampler):
         mu = self.momentum
         with self.autocast_context():
             for i in range(n_steps):
-                self.step_schedulers()
                 eta = self.get_scheduled_value("step_size")
                 lookahead = torch.add(x, v, alpha=mu)
                 lookahead = torch.add(x, v, alpha=mu)
@@ -252,6 +252,8 @@ class NesterovSampler(BaseSampler):
 
                 if return_trajectory:
                     trajectory[:, i + 1] = x
+
+                self.step_schedulers()
 
         if return_diagnostics:
             return (
