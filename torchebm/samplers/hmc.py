@@ -9,7 +9,6 @@ from torchebm.core import (
     BaseModel,
     BaseSampler,
     BaseScheduler,
-    ConstantScheduler,
 )
 from torchebm.integrators import LeapfrogIntegrator
 
@@ -55,12 +54,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         **kwargs,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
-        if isinstance(step_size, BaseScheduler):
-            self.register_scheduler("step_size", step_size)
-        else:
-            if step_size <= 0:
-                raise ValueError("step_size must be positive")
-            self.register_scheduler("step_size", ConstantScheduler(step_size))
+        self._register_param("step_size", step_size, positive=True)
 
         if n_leapfrog_steps <= 0:
             raise ValueError("n_leapfrog_steps must be positive")
@@ -149,8 +143,10 @@ class HamiltonianMonteCarlo(BaseSampler):
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        reset_schedulers: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.reset_schedulers()
+        if reset_schedulers:
+            self.reset_schedulers()
 
         if x is None:
             if dim is None:
@@ -182,8 +178,6 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         with self.autocast_context():
             for i in range(n_steps):
-                self.step_schedulers()
-
                 current_momentum = self._initialize_momentum(x.shape)
 
                 current_energy = self.model(x).clamp_(min=-1e10, max=1e10)
@@ -247,6 +241,8 @@ class HamiltonianMonteCarlo(BaseSampler):
                     diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)
                     diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
                     diagnostics[i, 3, :, :] = acceptance_rate
+
+                self.step_schedulers()
 
         if return_trajectory:
             if return_diagnostics:

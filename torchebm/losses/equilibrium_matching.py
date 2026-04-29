@@ -32,7 +32,7 @@ from typing import Dict, Literal, Optional, Any, Union
 import torch
 from torch import nn
 
-from torchebm.core import BaseLoss, BaseInterpolant, expand_t_like_x
+from torchebm.core import BaseLoss, BaseInterpolant, BaseScheduler, expand_t_like_x
 from torchebm.losses import (
     mean_flat,
     get_interpolant,
@@ -74,8 +74,6 @@ class EquilibriumMatchingLoss(BaseLoss):
         time_invariant: If True, pass zeros for time to model (EqM default).
         dtype: Data type for computations.
         device: Device for computations.
-        use_mixed_precision: Whether to use mixed precision.
-        clip_value: Optional value to clamp the loss.
 
     Example:
         ```python
@@ -110,7 +108,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         energy_type: Literal["none", "dot", "l2", "mean"] = "none",
         interpolant: Union[str, BaseInterpolant] = "linear",
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
-        train_eps: float = 0.0,
+        train_eps: Union[float, BaseScheduler] = 0.0,
         ct_threshold: float = 0.8,
         ct_multiplier: float = 4.0,
         apply_dispersion: bool = False,
@@ -118,24 +116,20 @@ class EquilibriumMatchingLoss(BaseLoss):
         time_invariant: bool = True,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        use_mixed_precision: bool = False,
-        clip_value: Optional[float] = None,
         *args,
         **kwargs,
     ):
         super().__init__(
             dtype=dtype,
             device=device,
-            use_mixed_precision=use_mixed_precision,
-            clip_value=clip_value,
             *args,
             **kwargs,
         )
-        self.model = model.to(device=self.device, dtype=self.dtype)
+        self.model = model
         self.prediction = prediction
         self.energy_type = energy_type
         self.loss_weight = loss_weight
-        self.train_eps = train_eps
+        self._register_param("train_eps", train_eps)
         self.ct_threshold = ct_threshold
         self.ct_multiplier = ct_multiplier
         self.apply_dispersion = apply_dispersion
@@ -146,11 +140,18 @@ class EquilibriumMatchingLoss(BaseLoss):
         else:
             self.interpolant = interpolant
 
+    @property
+    def train_eps(self) -> float:
+        return self.get_scheduled_value("train_eps")
+
+    @train_eps.setter
+    def train_eps(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("train_eps", value)
+
     def _check_interval(self) -> tuple[float, float]:
         r"""Get training time interval respecting epsilon."""
-        t0 = self.train_eps
-        t1 = 1.0 - self.train_eps
-        return t0, t1
+        eps = self.train_eps
+        return eps, 1.0 - eps
 
     def _reduce_dims(self, ndim: int) -> tuple:
         r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
