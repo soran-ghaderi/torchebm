@@ -49,6 +49,15 @@ class LeapfrogIntegrator(BaseIntegrator):
         dtype: Optional[torch.dtype] = None,
     ):
         super().__init__(device=device, dtype=dtype)
+        self._mass_view_ndim: Optional[int] = None
+        self._mass_view_shape: Optional[tuple] = None
+
+    def _broadcast_mass(self, mass: torch.Tensor, ndim: int) -> torch.Tensor:
+        r"""Reshape ``mass`` for broadcasting against an ``ndim``-D state tensor."""
+        if self._mass_view_ndim != ndim:
+            self._mass_view_shape = (1,) * (ndim - 1) + (-1,)
+            self._mass_view_ndim = ndim
+        return mass.view(self._mass_view_shape)
 
     @staticmethod
     def _resolve_deprecated_to_drift(model, potential_grad, drift):
@@ -114,7 +123,7 @@ class LeapfrogIntegrator(BaseIntegrator):
 
         force = drift_fn(x, t)
         if safe:
-            force = torch.clamp(force, min=-1e6, max=1e6)
+            force.clamp_(min=-1e6, max=1e6)
 
         p_half = p + 0.5 * step_size * force
 
@@ -126,18 +135,21 @@ class LeapfrogIntegrator(BaseIntegrator):
                 x_new = x + step_size * p_half / safe_mass
             else:
                 safe_mass = torch.clamp(mass, min=1e-10)
-                x_new = x + step_size * p_half / safe_mass.view(
-                    *([1] * (len(x.shape) - 1)), -1
+                x_new = x + step_size * p_half / self._broadcast_mass(
+                    safe_mass, x.ndim
                 )
 
         force_new = drift_fn(x_new, t)
         if safe:
-            force_new = torch.clamp(force_new, min=-1e6, max=1e6)
+            force_new.clamp_(min=-1e6, max=1e6)
         p_new = p_half + 0.5 * step_size * force_new
 
-        if safe and (torch.isnan(x_new).any() or torch.isnan(p_new).any()):
-            x_new = torch.nan_to_num(x_new, nan=0.0)
-            p_new = torch.nan_to_num(p_new, nan=0.0)
+        if safe:
+            # Unconditional `nan_to_num_` on freshly owned tensors avoids the
+            # CPU sync that `if isnan(x).any() or isnan(p).any()` would force
+            # every step (Python `or` materialises both 0-d bools to host).
+            x_new.nan_to_num_(nan=0.0)
+            p_new.nan_to_num_(nan=0.0)
         return {"x": x_new, "p": p_new}
 
     def integrate(
@@ -202,7 +214,7 @@ class LeapfrogIntegrator(BaseIntegrator):
         for _ in range(n_steps):
             force = drift_fn(x, t)
             if safe:
-                force = torch.clamp(force, min=-1e6, max=1e6)
+                force.clamp_(min=-1e6, max=1e6)
 
             p_half = p + 0.5 * step_size * force
 
@@ -214,17 +226,20 @@ class LeapfrogIntegrator(BaseIntegrator):
                     x = x + step_size * p_half / safe_mass
                 else:
                     safe_mass = torch.clamp(mass, min=1e-10)
-                    x = x + step_size * p_half / safe_mass.view(
-                        *([1] * (len(x.shape) - 1)), -1
+                    x = x + step_size * p_half / self._broadcast_mass(
+                        safe_mass, x.ndim
                     )
 
             force_new = drift_fn(x, t)
             if safe:
-                force_new = torch.clamp(force_new, min=-1e6, max=1e6)
+                force_new.clamp_(min=-1e6, max=1e6)
             p = p_half + 0.5 * step_size * force_new
 
-            if safe and (torch.isnan(x).any() or torch.isnan(p).any()):
-                x = torch.nan_to_num(x, nan=0.0)
-                p = torch.nan_to_num(p, nan=0.0)
+            if safe:
+                # Unconditional in-place sanitization — idempotent on clean
+                # tensors and avoids the per-substep CPU sync caused by
+                # ``isnan(x).any() or isnan(p).any()``.
+                x.nan_to_num_(nan=0.0)
+                p.nan_to_num_(nan=0.0)
 
         return {"x": x, "p": p}

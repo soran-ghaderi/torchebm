@@ -2,6 +2,7 @@
 Base Loss Classes for Energy-Based Models
 """
 
+import logging
 import warnings
 from abc import abstractmethod, ABC
 from typing import Tuple, Union, Optional, Dict, Any, Callable
@@ -11,37 +12,31 @@ from torch import nn
 
 from torchebm.core import BaseModel
 from torchebm.core import BaseSampler
-from torchebm.core import DeviceMixin
+from torchebm.core import BaseScheduler
+from torchebm.core import Schedulable
+from torchebm.core import TorchEBMModule
+
+logger = logging.getLogger(__name__)
 
 
-class BaseLoss(DeviceMixin, nn.Module, ABC):
+class BaseLoss(Schedulable, TorchEBMModule, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
 
     Args:
         dtype (torch.dtype): Data type for computations.
         device (Optional[Union[str, torch.device]]): Device for computations.
-        use_mixed_precision (bool): Whether to use mixed precision training.
-        clip_value (Optional[float]): Optional value to clamp the loss.
     """
 
     def __init__(
         self,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        use_mixed_precision: bool = False,
-        clip_value: Optional[float] = None,
         *args: Any,
         **kwargs: Any,
     ):
         """Initialize the base loss class."""
-        super().__init__(device=device, *args, **kwargs)
-
-        # if isinstance(device, str):
-        #     device = torch.device(device)
-        self.dtype = dtype
-        self.clip_value = clip_value
-        self.setup_mixed_precision(use_mixed_precision)
+        super().__init__(device=device, dtype=dtype, *args, **kwargs)
 
 
     @abstractmethod
@@ -80,13 +75,7 @@ class BaseLoss(DeviceMixin, nn.Module, ABC):
             torch.Tensor: The computed loss value.
         """
         x = x.to(device=self.device, dtype=self.dtype)
-
-        with self.autocast_context():
-            loss = self.forward(x, *args, **kwargs)
-
-        if self.clip_value:
-            loss = torch.clamp(loss, -self.clip_value, self.clip_value)
-        return loss
+        return self.forward(x, *args, **kwargs)
 
 
 class BaseContrastiveDivergence(BaseLoss):
@@ -103,8 +92,6 @@ class BaseContrastiveDivergence(BaseLoss):
         init_steps (int): The number of MCMC steps to run when initializing new chain elements.
         dtype (torch.dtype): Data type for computations.
         device (Optional[Union[str, torch.device]]): Device for computations.
-        use_mixed_precision (bool): Whether to use mixed precision training.
-        clip_value (Optional[float]): Optional value to clamp the loss.
     """
 
     def __init__(
@@ -118,16 +105,12 @@ class BaseContrastiveDivergence(BaseLoss):
         init_steps: int = 0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        use_mixed_precision: bool = False,
-        clip_value: Optional[float] = None,
         *args,
         **kwargs,
     ):
         super().__init__(
             dtype=dtype,
             device=device,
-            use_mixed_precision=use_mixed_precision,
-            clip_value=clip_value,
             *args,
             **kwargs,
         )
@@ -139,14 +122,11 @@ class BaseContrastiveDivergence(BaseLoss):
         self.new_sample_ratio = new_sample_ratio
         self.init_steps = init_steps
 
-        self.model = self.model.to(device=self.device)
-        if hasattr(self.sampler, "to") and callable(getattr(self.sampler, "to")):
-            self.sampler = self.sampler.to(device=self.device)
-
         self.register_buffer("replay_buffer", None)
         self.register_buffer(
             "buffer_ptr", torch.tensor(0, dtype=torch.long, device=self.device)
         )
+        self._buffer_ptr_int: int = 0
         self.buffer_initialized = False
 
     def initialize_buffer(
@@ -177,7 +157,7 @@ class BaseContrastiveDivergence(BaseLoss):
         buffer_shape = (
             self.buffer_size,
         ) + data_shape_no_batch  # shape: [buffer_size, *data_shape]
-        print(f"Initializing replay buffer with shape {buffer_shape}...")
+        logger.info("Initializing replay buffer with shape %s...", buffer_shape)
 
         self.replay_buffer = (
             torch.randn(buffer_shape, dtype=self.dtype, device=self.device)
@@ -185,7 +165,7 @@ class BaseContrastiveDivergence(BaseLoss):
         )
 
         if self.init_steps > 0:
-            print(f"Running {self.init_steps} MCMC steps to populate buffer...")
+            logger.info("Running %d MCMC steps to populate buffer...", self.init_steps)
             with torch.no_grad():
                 chunk_size = min(self.buffer_size, buffer_chunk_size)
                 for i in range(0, self.buffer_size, chunk_size):
@@ -209,8 +189,9 @@ class BaseContrastiveDivergence(BaseLoss):
                         )
 
         self.buffer_ptr.zero_()
+        self._buffer_ptr_int = 0
         self.buffer_initialized = True
-        print(f"Replay buffer initialized.")
+        logger.info("Replay buffer initialized.")
 
         return self.replay_buffer
 
@@ -252,7 +233,7 @@ class BaseContrastiveDivergence(BaseLoss):
                 offset = torch.randint(0, stride, (batch_size,), device=self.device)
                 indices = (base_indices + offset) % self.buffer_size
 
-            start_points = self.replay_buffer[indices].detach().clone()
+            start_points = self.replay_buffer[indices]
 
             # add some noise for exploration
             if self.new_sample_ratio > 0.0:
@@ -328,26 +309,33 @@ class BaseContrastiveDivergence(BaseLoss):
 
         batch_size = samples.shape[0]
 
-        # FIFO strategy
-        ptr = int(self.buffer_ptr.item())
+        # FIFO strategy — use cached Python int to avoid GPU sync every step
+        ptr = self._buffer_ptr_int
 
         if batch_size >= self.buffer_size:
             # batch larger than buffer, use latest samples
-            self.replay_buffer[:] = samples[-self.buffer_size :].detach()
-            self.buffer_ptr[...] = 0
+            self.replay_buffer[:] = samples[-self.buffer_size :]
+            self._buffer_ptr_int = 0
+            self.buffer_ptr.zero_()
         else:
             # handle buffer wraparound
             end_ptr = (ptr + batch_size) % self.buffer_size
 
             if end_ptr > ptr:
-                self.replay_buffer[ptr:end_ptr] = samples.detach()
+                self.replay_buffer[ptr:end_ptr] = samples
             else:
                 # wraparound case - split update
                 first_part = self.buffer_size - ptr
-                self.replay_buffer[ptr:] = samples[:first_part].detach()
-                self.replay_buffer[:end_ptr] = samples[first_part:].detach()
+                self.replay_buffer[ptr:] = samples[:first_part]
+                self.replay_buffer[:end_ptr] = samples[first_part:]
 
-            self.buffer_ptr[...] = end_ptr
+            self._buffer_ptr_int = end_ptr
+            self.buffer_ptr.fill_(end_ptr)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+        # sync cached int with loaded tensor buffer_ptr
+        self._buffer_ptr_int = int(self.buffer_ptr.item())
 
     @abstractmethod
     def forward(
@@ -404,42 +392,42 @@ class BaseScoreMatching(BaseLoss):
         use_autograd (bool): Whether to use `torch.autograd` for computing derivatives.
         hutchinson_samples (int): The number of random samples for Hutchinson's trick.
         custom_regularization (Optional[Callable]): An optional function for custom regularization.
-        use_mixed_precision (bool): Whether to use mixed precision training.
-        clip_value (Optional[float]): Optional value to clamp the loss.
     """
 
     def __init__(
         self,
         model: BaseModel,
-        noise_scale: float = 0.01,
-        regularization_strength: float = 0.0,
+        noise_scale: Union[float, BaseScheduler] = 0.01,
+        regularization_strength: Union[float, BaseScheduler] = 0.0,
         use_autograd: bool = True,
         hutchinson_samples: int = 1,
         custom_regularization: Optional[Callable] = None,
-        use_mixed_precision: bool = False,
-        clip_value: Optional[float] = None,
-        # dtype: torch.dtype = torch.float32,
-        # device: Optional[Union[str, torch.device]] = None,
         *args,
         **kwargs,
     ):
-        super().__init__(
-            use_mixed_precision=use_mixed_precision,
-            clip_value=clip_value,
-            *args,
-            **kwargs,  # dtype=dtype, device=device,
-        )
-        self.model = model.to(device=self.device)
-        self.noise_scale = noise_scale
-        self.regularization_strength = regularization_strength
+        super().__init__(*args, **kwargs)
+        self.model = model
+        self._register_param("noise_scale", noise_scale)
+        self._register_param("regularization_strength", regularization_strength)
         self.use_autograd = use_autograd
         self.hutchinson_samples = hutchinson_samples
         self.custom_regularization = custom_regularization
-        self.use_mixed_precision = use_mixed_precision
 
-        self.model = self.model.to(device=self.device)
+    @property
+    def noise_scale(self) -> float:
+        return self.get_scheduled_value("noise_scale")
 
-        self.setup_mixed_precision(use_mixed_precision)
+    @noise_scale.setter
+    def noise_scale(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("noise_scale", value)
+
+    @property
+    def regularization_strength(self) -> float:
+        return self.get_scheduled_value("regularization_strength")
+
+    @regularization_strength.setter
+    def regularization_strength(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("regularization_strength", value)
 
     def compute_score(
         self, x: torch.Tensor, noise: Optional[torch.Tensor] = None
@@ -579,7 +567,7 @@ class BaseScoreMatching(BaseLoss):
         # default: L2 norm of score
         else:
             score = self.compute_score(x)
-            reg_term = score.pow(2).sum(dim=list(range(1, len(x.shape)))).mean()
+            reg_term = score.square().sum(dim=list(range(1, len(x.shape)))).mean()
 
         return loss + strength * reg_term
 

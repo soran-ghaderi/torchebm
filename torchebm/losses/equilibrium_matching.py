@@ -32,7 +32,7 @@ from typing import Dict, Literal, Optional, Any, Union
 import torch
 from torch import nn
 
-from torchebm.core import BaseLoss, BaseInterpolant, expand_t_like_x
+from torchebm.core import BaseLoss, BaseInterpolant, BaseScheduler, expand_t_like_x
 from torchebm.losses import (
     mean_flat,
     get_interpolant,
@@ -74,8 +74,6 @@ class EquilibriumMatchingLoss(BaseLoss):
         time_invariant: If True, pass zeros for time to model (EqM default).
         dtype: Data type for computations.
         device: Device for computations.
-        use_mixed_precision: Whether to use mixed precision.
-        clip_value: Optional value to clamp the loss.
 
     Example:
         ```python
@@ -110,7 +108,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         energy_type: Literal["none", "dot", "l2", "mean"] = "none",
         interpolant: Union[str, BaseInterpolant] = "linear",
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
-        train_eps: float = 0.0,
+        train_eps: Union[float, BaseScheduler] = 0.0,
         ct_threshold: float = 0.8,
         ct_multiplier: float = 4.0,
         apply_dispersion: bool = False,
@@ -118,24 +116,20 @@ class EquilibriumMatchingLoss(BaseLoss):
         time_invariant: bool = True,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        use_mixed_precision: bool = False,
-        clip_value: Optional[float] = None,
         *args,
         **kwargs,
     ):
         super().__init__(
             dtype=dtype,
             device=device,
-            use_mixed_precision=use_mixed_precision,
-            clip_value=clip_value,
             *args,
             **kwargs,
         )
-        self.model = model.to(device=self.device, dtype=self.dtype)
+        self.model = model
         self.prediction = prediction
         self.energy_type = energy_type
         self.loss_weight = loss_weight
-        self.train_eps = train_eps
+        self._register_param("train_eps", train_eps)
         self.ct_threshold = ct_threshold
         self.ct_multiplier = ct_multiplier
         self.apply_dispersion = apply_dispersion
@@ -146,11 +140,25 @@ class EquilibriumMatchingLoss(BaseLoss):
         else:
             self.interpolant = interpolant
 
+    @property
+    def train_eps(self) -> float:
+        return self.get_scheduled_value("train_eps")
+
+    @train_eps.setter
+    def train_eps(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("train_eps", value)
+
     def _check_interval(self) -> tuple[float, float]:
         r"""Get training time interval respecting epsilon."""
-        t0 = self.train_eps
-        t1 = 1.0 - self.train_eps
-        return t0, t1
+        eps = self.train_eps
+        return eps, 1.0 - eps
+
+    def _reduce_dims(self, ndim: int) -> tuple:
+        r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
+        cache = getattr(self, "_reduce_dims_cache", None)
+        if cache is None or cache[0] != ndim:
+            self._reduce_dims_cache = (ndim, tuple(range(1, ndim)))
+        return self._reduce_dims_cache[1]
 
     def _compute_explicit_energy_gradient(
         self,
@@ -170,10 +178,10 @@ class EquilibriumMatchingLoss(BaseLoss):
         """
         if self.energy_type == "dot" or self.energy_type == "mean":
             # g(x) = x · f(x)
-            energy = (xt * model_output).sum(dim=tuple(range(1, xt.ndim)))
+            energy = (xt * model_output).sum(dim=self._reduce_dims(xt.ndim))
         elif self.energy_type == "l2":
             # g(x) = -0.5 ||f(x)||^2
-            energy = -0.5 * (model_output**2).sum(dim=tuple(range(1, model_output.ndim)))
+            energy = -0.5 * model_output.square().sum(dim=self._reduce_dims(model_output.ndim))
         else:
             raise ValueError(f"Unknown energy type: {self.energy_type}")
 
@@ -293,13 +301,13 @@ class EquilibriumMatchingLoss(BaseLoss):
         if self.prediction == "velocity":
             if self.energy_type == "none":
                 # Implicit EqM: model directly predicts gradient field
-                terms["loss"] = mean_flat((model_output - target) ** 2)
+                terms["loss"] = mean_flat((model_output - target).square())
             else:
                 # Explicit EqM-E: compute gradient of energy function
                 grad, energy = self._compute_explicit_energy_gradient(
                     xt, model_output, training=self.model.training
                 )
-                terms["loss"] = mean_flat((grad - target) ** 2)
+                terms["loss"] = mean_flat((grad - target).square())
                 terms["energy"] = energy
         else:
             # Score or noise prediction with optional weighting
@@ -308,16 +316,16 @@ class EquilibriumMatchingLoss(BaseLoss):
             sigma_t, _ = self.interpolant.compute_sigma_t(t_expanded)
 
             if self.loss_weight == "velocity":
-                weight = (drift_var / sigma_t) ** 2
+                weight = (drift_var / sigma_t).square()
             elif self.loss_weight == "likelihood":
-                weight = drift_var / (sigma_t**2)
+                weight = drift_var / sigma_t.square()
             else:
                 weight = 1.0
 
             if self.prediction == "noise":
-                terms["loss"] = mean_flat(weight * (model_output - x0) ** 2)
+                terms["loss"] = mean_flat(weight * (model_output - x0).square())
             elif self.prediction == "score":
-                terms["loss"] = mean_flat(weight * (model_output * sigma_t + x0) ** 2)
+                terms["loss"] = mean_flat(weight * (model_output * sigma_t + x0).square())
             else:
                 raise ValueError(f"Unknown prediction type: {self.prediction}")
 
