@@ -108,14 +108,6 @@ class BaseModel(TorchEBMModule, ABC):
 
         return gradient.detach()
 
-    def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        """Alias for the forward method for standard PyTorch module usage."""
-        if (x.device != self.device) or (x.dtype != self.dtype):
-            x = x.to(device=self.device, dtype=self.dtype)
-
-        with self.autocast_context():
-            return super().__call__(x, *args, **kwargs)
-
 
 class DoubleWellModel(BaseModel):
     r"""
