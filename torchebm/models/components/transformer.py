@@ -4,6 +4,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
@@ -12,20 +13,37 @@ def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch
 
 
 class MultiheadSelfAttention(nn.Module):
-    """Self-attention wrapper with batch-first API."""
+    """Self-attention with fused QKV projection, dispatching to PyTorch SDPA.
+
+    Uses ``F.scaled_dot_product_attention`` so the flash-attention and
+    memory-efficient kernels are selected automatically on supported hardware
+    (Ampere+ GPUs in fp16/bf16, any CUDA device via mem-efficient fallback).
+    """
 
     def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0):
         super().__init__()
-        self.mha = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
+            )
+        self.embed_dim = int(embed_dim)
+        self.num_heads = int(num_heads)
+        self.head_dim = self.embed_dim // self.num_heads
+        self.dropout = float(dropout)
+        self.qkv = nn.Linear(self.embed_dim, 3 * self.embed_dim, bias=True)
+        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y, _ = self.mha(x, x, x, need_weights=False)
-        return y
+        B, N, D = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim)
+        q, k, v = qkv.unbind(dim=2)
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+        dropout_p = self.dropout if self.training else 0.0
+        y = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p, is_causal=False)
+        y = y.transpose(1, 2).reshape(B, N, D)
+        return self.out_proj(y)
 
 
 class FeedForward(nn.Module):

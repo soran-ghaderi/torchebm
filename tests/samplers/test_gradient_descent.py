@@ -118,11 +118,13 @@ class TestNesterovSampler:
         sampler = GradientDescentSampler(model, step_size=scheduler, device=device, dtype=dtype)
         
         x = torch.ones(1, 1, device=device, dtype=dtype)
-        
-        # Step 1: eta=0.01. x_1 = 1 - 0.01*1 = 0.99.
-        # Step 2: eta=0.001. x_2 = 0.99 - 0.001*0.99 = 0.98901
-        
+
+        # Schedulers follow torch.optim convention: iteration 0 reads the
+        # start_value, then advances. So:
+        # Step 1 (i=0): eta=0.1.  x_1 = 1   - 0.1*1   = 0.9
+        # Step 2 (i=1): eta=0.01. x_2 = 0.9 - 0.01*0.9 = 0.891
+
         samples = sampler.sample(x, n_steps=2, return_trajectory=True)
-        
-        assert_close(samples[0, 1], torch.tensor([0.99], device=device))
-        assert_close(samples[0, 2], torch.tensor([0.98901], device=device))
+
+        assert_close(samples[0, 1], torch.tensor([0.9], device=device))
+        assert_close(samples[0, 2], torch.tensor([0.891], device=device))

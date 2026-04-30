@@ -1,5 +1,6 @@
 r"""Score Matching Loss Module"""
 
+import math
 import warnings
 from typing import Optional, Union, Dict, Tuple, Any, Callable
 
@@ -24,7 +25,6 @@ class ScoreMatching(BaseScoreMatching):
         hessian_method: Method for Hessian trace ('exact' or 'approx').
         regularization_strength: Coefficient for regularization.
         custom_regularization: A custom regularization function.
-        use_mixed_precision: Whether to use mixed-precision training.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -47,8 +47,6 @@ class ScoreMatching(BaseScoreMatching):
         hessian_method: str = "exact",
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
-        use_mixed_precision: bool = False,
-        is_training=True,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -59,7 +57,6 @@ class ScoreMatching(BaseScoreMatching):
             regularization_strength=regularization_strength,
             use_autograd=True,
             custom_regularization=custom_regularization,
-            use_mixed_precision=use_mixed_precision,
             dtype=dtype,
             device=device,
             *args,
@@ -67,7 +64,6 @@ class ScoreMatching(BaseScoreMatching):
         )
 
         self.hessian_method = hessian_method
-        self.training = is_training
         valid_methods = ["exact", "approx"]
         if self.hessian_method not in valid_methods:
             warnings.warn(
@@ -76,13 +72,6 @@ class ScoreMatching(BaseScoreMatching):
                 UserWarning,
             )
             self.hessian_method = "exact"
-
-        if self.use_mixed_precision and self.hessian_method == "exact":
-            warnings.warn(
-                "Using 'exact' Hessian method with mixed precision may be unstable. "
-                "Consider using SlicedScoreMatching for better numerical stability.",
-                UserWarning,
-            )
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         r"""
@@ -152,40 +141,8 @@ class ScoreMatching(BaseScoreMatching):
         score = vmap(score_fn)(x_flat)
         laplacian = vmap(laplacian_fn)(x_flat)
 
-        term1 = 0.5 * score.pow(2).sum(dim=-1)
+        term1 = 0.5 * score.square().sum(dim=-1)
         return (term1 + laplacian).mean()
-        # feature_dim = x.numel() // batch_size
-
-        # x_leaf = x.detach().clone()
-        # x_leaf.requires_grad_(True)
-
-        # energy = self.model(x_leaf)
-        # logp_sum = (-energy).sum()
-        # grad1 = torch.autograd.grad(
-        #     logp_sum, x_leaf, create_graph=True, retain_graph=True
-        # )[0]
-
-        # grad1_flat = grad1.view(batch_size, -1)
-        # term1 = 0.5 * grad1_flat.pow(2).sum(dim=1)
-
-        # laplacian = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
-        # for i in range(feature_dim):
-        #     comp_sum = grad1_flat[:, i].sum()
-        #     grad2_full = torch.autograd.grad(
-        #         comp_sum,
-        #         x_leaf,
-        #         create_graph=True,
-        #         retain_graph=True,
-        #         allow_unused=True,
-        #     )[0]
-        #     if grad2_full is None:
-        #         grad2_comp = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
-        #     else:
-        #         grad2_comp = grad2_full.view(batch_size, -1)[:, i]
-        #     laplacian += grad2_comp
-
-        # loss_per_sample = term1 + laplacian
-        # return loss_per_sample.mean()
 
     def _approx_score_matching(self, x: torch.Tensor) -> torch.Tensor:
         r"""
@@ -201,12 +158,12 @@ class ScoreMatching(BaseScoreMatching):
         batch_size = x.shape[0]
         data_dim = x.numel() // batch_size
 
-        x_detached = x.detach().clone()
+        x_detached = x.detach()
         x_detached.requires_grad_(True)
 
         score = self.compute_score(x_detached)
         score_square_term = (
-            0.5 * torch.sum(score**2, dim=list(range(1, len(x.shape)))).mean()
+            0.5 * torch.sum(score.square(), dim=list(range(1, len(x.shape)))).mean()
         )
 
         epsilon = 1e-5
@@ -224,21 +181,6 @@ class ScoreMatching(BaseScoreMatching):
 
         return loss
 
-    def _hutchinson_score_matching(self, x: torch.Tensor) -> torch.Tensor:
-        r"""
-        DEPRECATED: Use SlicedScoreMatching for efficient trace estimation.
-
-        This method has been deprecated in favor of SlicedScoreMatching which provides
-        a more efficient and theoretically sound implementation of Hutchinson's estimator.
-        """
-        warnings.warn(
-            "ScoreMatching._hutchinson_score_matching is deprecated. "
-            "Use SlicedScoreMatching for efficient trace estimation instead.",
-            DeprecationWarning,
-        )
-        return self._exact_score_matching(x)
-
-
 class DenoisingScoreMatching(BaseScoreMatching):
     r"""
     Denoising Score Matching (DSM) from Vincent (2011).
@@ -252,7 +194,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
         noise_scale: Standard deviation of Gaussian noise to add.
         regularization_strength: Coefficient for regularization.
         custom_regularization: A custom regularization function.
-        use_mixed_precision: Whether to use mixed-precision training.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -275,7 +216,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
         noise_scale: float = 0.01,
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
-        use_mixed_precision: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -287,7 +227,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
             regularization_strength=regularization_strength,
             use_autograd=True,
             custom_regularization=custom_regularization,
-            use_mixed_precision=use_mixed_precision,
             dtype=dtype,
             device=device,
             *args,
@@ -358,7 +297,6 @@ class SlicedScoreMatching(BaseScoreMatching):
         projection_type: Type of projections ('rademacher', 'sphere', 'gaussian').
         regularization_strength: Coefficient for regularization.
         custom_regularization: A custom regularization function.
-        use_mixed_precision: Whether to use mixed-precision training.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -382,7 +320,6 @@ class SlicedScoreMatching(BaseScoreMatching):
         projection_type: str = "rademacher",
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
-        use_mixed_precision: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -393,7 +330,6 @@ class SlicedScoreMatching(BaseScoreMatching):
             regularization_strength=regularization_strength,
             use_autograd=True,
             custom_regularization=custom_regularization,
-            use_mixed_precision=use_mixed_precision,
             dtype=dtype,
             device=device,
             *args,
@@ -427,10 +363,8 @@ class SlicedScoreMatching(BaseScoreMatching):
         if self.projection_type == "rademacher":
             return vectors.sign()
         elif self.projection_type == "sphere":
-            return (
-                vectors
-                / torch.norm(vectors, dim=-1, keepdim=True)
-                * torch.sqrt(vectors.shape[-1])
+            return torch.nn.functional.normalize(vectors, dim=-1) * math.sqrt(
+                vectors.shape[-1]
             )
         else:
             return vectors
@@ -486,7 +420,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         logp = (-self.model(dup_x)).sum()
         grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
         v_score = torch.sum(grad1 * n_vectors, dim=-1)
-        term1 = 0.5 * (v_score**2)
+        term1 = 0.5 * v_score.square()
 
         grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[0]
         term2 = torch.sum(n_vectors * grad_v, dim=-1)

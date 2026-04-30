@@ -10,7 +10,7 @@ from typing import Optional, Union, Tuple, List
 
 import torch
 
-from torchebm.core import BaseModel, BaseSampler, BaseScheduler, ConstantScheduler
+from torchebm.core import BaseModel, BaseSampler, BaseScheduler
 
 
 class GradientDescentSampler(BaseSampler):
@@ -31,7 +31,6 @@ class GradientDescentSampler(BaseSampler):
         step_size: Step size \(\eta\) or scheduler.
         dtype: Data type for computations.
         device: Device for computations.
-        use_mixed_precision: Whether to use mixed precision.
 
     Example:
         ```python
@@ -51,7 +50,6 @@ class GradientDescentSampler(BaseSampler):
         step_size: Union[float, BaseScheduler] = 1e-3,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        use_mixed_precision: bool = False,
         *args,
         **kwargs,
     ):
@@ -59,14 +57,8 @@ class GradientDescentSampler(BaseSampler):
             model=model,
             dtype=dtype,
             device=device,
-            use_mixed_precision=use_mixed_precision,
         )
-        if isinstance(step_size, BaseScheduler):
-            self.register_scheduler("step_size", step_size)
-        else:
-            if step_size <= 0:
-                raise ValueError("step_size must be positive")
-            self.register_scheduler("step_size", ConstantScheduler(step_size))
+        self._register_param("step_size", step_size, positive=True)
 
     @torch.no_grad()
     def sample(
@@ -78,6 +70,7 @@ class GradientDescentSampler(BaseSampler):
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        reset_schedulers: bool = True,
         *args,
         **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
@@ -92,11 +85,14 @@ class GradientDescentSampler(BaseSampler):
             thin: Thinning factor (not currently supported).
             return_trajectory: Whether to return full trajectory.
             return_diagnostics: Whether to return diagnostics.
+            reset_schedulers: If True (default), reset registered schedulers
+                so each call starts from step 0.
 
         Returns:
             Final samples or (samples, diagnostics) if return_diagnostics=True.
         """
-        self.reset_schedulers()
+        if reset_schedulers:
+            self.reset_schedulers()
 
         if x is None:
             x = torch.randn(n_samples, dim, device=self.device, dtype=self.dtype)
@@ -112,13 +108,14 @@ class GradientDescentSampler(BaseSampler):
 
         with self.autocast_context():
             for i in range(n_steps):
-                self.step_schedulers()
                 eta = self.get_scheduled_value("step_size")
                 grad = self.model.gradient(x)
                 x = torch.sub(x, grad, alpha=eta)
 
                 if return_trajectory:
                     trajectory[:, i + 1] = x
+
+                self.step_schedulers()
 
         if return_diagnostics:
             return (
@@ -151,7 +148,6 @@ class NesterovSampler(BaseSampler):
         momentum: Momentum coefficient \(\mu \in [0, 1)\).
         dtype: Data type for computations.
         device: Device for computations.
-        use_mixed_precision: Whether to use mixed precision.
 
     Example:
         ```python
@@ -172,7 +168,6 @@ class NesterovSampler(BaseSampler):
         momentum: float = 0.9,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        use_mixed_precision: bool = False,
         *args,
         **kwargs,
     ):
@@ -180,18 +175,12 @@ class NesterovSampler(BaseSampler):
             model=model,
             dtype=dtype,
             device=device,
-            use_mixed_precision=use_mixed_precision,
         )
         if not (0 <= momentum < 1):
             raise ValueError("momentum must be in [0, 1)")
         self.momentum = momentum
 
-        if isinstance(step_size, BaseScheduler):
-            self.register_scheduler("step_size", step_size)
-        else:
-            if step_size <= 0:
-                raise ValueError("step_size must be positive")
-            self.register_scheduler("step_size", ConstantScheduler(step_size))
+        self._register_param("step_size", step_size, positive=True)
 
     @torch.no_grad()
     def sample(
@@ -203,6 +192,7 @@ class NesterovSampler(BaseSampler):
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        reset_schedulers: bool = True,
         *args,
         **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
@@ -217,11 +207,14 @@ class NesterovSampler(BaseSampler):
             thin: Thinning factor (not currently supported).
             return_trajectory: Whether to return full trajectory.
             return_diagnostics: Whether to return diagnostics.
+            reset_schedulers: If True (default), reset registered schedulers
+                so each call starts from step 0.
 
         Returns:
             Final samples or (samples, diagnostics) if return_diagnostics=True.
         """
-        self.reset_schedulers()
+        if reset_schedulers:
+            self.reset_schedulers()
 
         if x is None:
             x = torch.randn(n_samples, dim, device=self.device, dtype=self.dtype)
@@ -241,7 +234,6 @@ class NesterovSampler(BaseSampler):
         mu = self.momentum
         with self.autocast_context():
             for i in range(n_steps):
-                self.step_schedulers()
                 eta = self.get_scheduled_value("step_size")
                 lookahead = torch.add(x, v, alpha=mu)
                 grad = self.model.gradient(lookahead)
@@ -250,6 +242,8 @@ class NesterovSampler(BaseSampler):
 
                 if return_trajectory:
                     trajectory[:, i + 1] = x
+
+                self.step_schedulers()
 
         if return_diagnostics:
             return (

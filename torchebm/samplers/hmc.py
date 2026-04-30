@@ -1,5 +1,6 @@
 r"""Hamiltonian Monte Carlo Sampler Module."""
 
+import math
 from typing import Optional, Union, Tuple
 
 import torch
@@ -8,7 +9,6 @@ from torchebm.core import (
     BaseModel,
     BaseSampler,
     BaseScheduler,
-    ConstantScheduler,
 )
 from torchebm.integrators import LeapfrogIntegrator
 
@@ -54,12 +54,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         **kwargs,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
-        if isinstance(step_size, BaseScheduler):
-            self.register_scheduler("step_size", step_size)
-        else:
-            if step_size <= 0:
-                raise ValueError("step_size must be positive")
-            self.register_scheduler("step_size", ConstantScheduler(step_size))
+        self._register_param("step_size", step_size, positive=True)
 
         if n_leapfrog_steps <= 0:
             raise ValueError("n_leapfrog_steps must be positive")
@@ -77,6 +72,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         Initializes momentum variables from a Gaussian distribution.
 
         The momentum is sampled from \(\mathcal{N}(0, M)\), where `M` is the mass matrix.
+        Reuses a cached buffer when shape/dtype/device match to avoid per-step allocation.
 
         Args:
             shape (torch.Size): The shape of the momentum tensor to generate.
@@ -84,17 +80,32 @@ class HamiltonianMonteCarlo(BaseSampler):
         Returns:
             torch.Tensor: The initialized momentum tensor.
         """
-        p = torch.randn(shape, dtype=self.dtype, device=self.device)
+        buf = getattr(self, "_momentum_buf", None)
+        if (
+            buf is None
+            or buf.shape != shape
+            or buf.dtype != self.dtype
+            or buf.device != self.device
+        ):
+            buf = torch.empty(shape, dtype=self.dtype, device=self.device)
+            self._momentum_buf = buf
+        p = buf.normal_()
 
         if self.mass is not None:
             # Apply mass matrix (equivalent to sampling from N(0, M))
             if isinstance(self.mass, float):
-                p = p * torch.sqrt(
-                    torch.tensor(self.mass, dtype=self.dtype, device=self.device)
-                )
+                if getattr(self, "_mass_sqrt_float", None) is None:
+                    self._mass_sqrt_float = math.sqrt(self.mass)
+                p.mul_(self._mass_sqrt_float)
             else:
-                mass_sqrt = torch.sqrt(self.mass)
-                p = p * mass_sqrt.view(*([1] * (len(shape) - 1)), -1).expand_as(p)
+                ndim = p.ndim
+                cached = getattr(self, "_mass_sqrt_view", None)
+                if cached is None or cached[0] != ndim:
+                    mass_sqrt = torch.sqrt(self.mass)
+                    view_shape = (1,) * (ndim - 1) + (-1,)
+                    self._mass_sqrt_view = (ndim, mass_sqrt.view(view_shape))
+                    cached = self._mass_sqrt_view
+                p.mul_(cached[1])
         return p
 
     def _compute_kinetic_energy(self, p: torch.Tensor) -> torch.Tensor:
@@ -110,13 +121,17 @@ class HamiltonianMonteCarlo(BaseSampler):
             torch.Tensor: The kinetic energy for each sample in the batch.
         """
         if self.mass is None:
-            return 0.5 * torch.sum(p**2, dim=-1)
+            return 0.5 * torch.sum(p.square(), dim=-1)
         elif isinstance(self.mass, float):
-            return 0.5 * torch.sum(p**2, dim=-1) / self.mass
+            return 0.5 * torch.sum(p.square(), dim=-1) / self.mass
         else:
-            return 0.5 * torch.sum(
-                p**2 / self.mass.view(*([1] * (len(p.shape) - 1)), -1), dim=-1
-            )
+            ndim = p.ndim
+            cached = getattr(self, "_mass_kin_view", None)
+            if cached is None or cached[0] != ndim:
+                view_shape = (1,) * (ndim - 1) + (-1,)
+                self._mass_kin_view = (ndim, self.mass.view(view_shape))
+                cached = self._mass_kin_view
+            return 0.5 * torch.sum(p.square() / cached[1], dim=-1)
 
     @torch.no_grad()
     def sample(
@@ -128,8 +143,10 @@ class HamiltonianMonteCarlo(BaseSampler):
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        reset_schedulers: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.reset_schedulers()
+        if reset_schedulers:
+            self.reset_schedulers()
 
         if x is None:
             if dim is None:
@@ -161,19 +178,12 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         with self.autocast_context():
             for i in range(n_steps):
-                self.step_schedulers()
-
                 current_momentum = self._initialize_momentum(x.shape)
 
-                momentum_direction = (
-                    torch.randint(0, 2, (batch_size, 1), device=self.device) * 2 - 1
-                )  # -1/+1 -> for sign flipping
-                current_momentum = current_momentum * momentum_direction
-
-                current_energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
-                current_kinetic = torch.clamp(
-                    self._compute_kinetic_energy(current_momentum), min=0, max=1e10
-                )
+                current_energy = self.model(x).clamp_(min=-1e10, max=1e10)
+                current_kinetic = self._compute_kinetic_energy(
+                    current_momentum
+                ).clamp_(min=0.0, max=1e10)
 
                 current_hamiltonian = current_energy + current_kinetic
 
@@ -189,28 +199,29 @@ class HamiltonianMonteCarlo(BaseSampler):
                 )
                 proposed_position, proposed_momentum = proposed["x"], proposed["p"]
 
-                proposed_energy = torch.clamp(
-                    self.model(proposed_position), min=-1e10, max=1e10
+                proposed_energy = self.model(proposed_position).clamp_(
+                    min=-1e10, max=1e10
                 )
-                proposed_kinetic = torch.clamp(
-                    self._compute_kinetic_energy(proposed_momentum), min=0, max=1e10
-                )
+                proposed_kinetic = self._compute_kinetic_energy(
+                    proposed_momentum
+                ).clamp_(min=0.0, max=1e10)
 
                 proposed_hamiltonian = proposed_energy + proposed_kinetic
 
-                hamiltonian_diff = current_hamiltonian - proposed_hamiltonian
-                hamiltonian_diff = torch.clamp(hamiltonian_diff, max=50, min=-50)
-
-                acceptance_prob = torch.minimum(
-                    torch.ones(batch_size, device=self.device),
-                    torch.exp(hamiltonian_diff),
+                hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
+                    min=-50.0, max=50.0
                 )
+
+                # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
+                # the freshly allocated `exp` result (no `ones` tensor allocation).
+                acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
 
                 random_uniform = torch.rand(batch_size, device=self.device)
                 accepted = random_uniform < acceptance_prob
-                accepted_mask = accepted.float().view(-1, *([1] * (len(x.shape) - 1)))
-
-                x = accepted_mask * proposed_position + (1.0 - accepted_mask) * x
+                # `torch.where` on the broadcast accept mask: single fused kernel,
+                # no `mask*proposed + (1-mask)*x` quartet of temporaries.
+                accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
+                x = torch.where(accept_view, proposed_position, x)
 
                 if return_trajectory:
                     trajectory[:, i, :] = x
@@ -225,15 +236,13 @@ class HamiltonianMonteCarlo(BaseSampler):
                     energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
                     acceptance_rate = accepted.float().mean()
 
-                    diagnostics[i, 0, :, :] = mean_x.expand(batch_size, dim)
+                    mean_exp = mean_x.expand(batch_size, dim)
+                    diagnostics[i, 0, :, :] = mean_exp
                     diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)
                     diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
-                    diagnostics[i, 3, :, :] = torch.full(
-                        (batch_size, dim),
-                        acceptance_rate,
-                        dtype=self.dtype,
-                        device=self.device,
-                    )
+                    diagnostics[i, 3, :, :] = acceptance_rate
+
+                self.step_schedulers()
 
         if return_trajectory:
             if return_diagnostics:

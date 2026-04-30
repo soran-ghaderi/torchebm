@@ -102,18 +102,6 @@ def test_dsm_regularization_effect():
     assert abs(loss_with_reg.item() - loss_no_reg.item()) >= 0.0
 
 
-def test_dsm_mixed_precision_flag_safe():
-    # Ensure enabling mixed precision doesn't error even on CPU-only environments
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    energy = MLPEnergy(input_dim=2, hidden_dim=4).to(device)
-    dsm = DenoisingScoreMatching(model=energy, noise_scale=0.05, use_mixed_precision=True, device=device)
-
-    x = torch.randn(8, 2, device=device)
-    loss = dsm(x)
-    assert isinstance(loss, torch.Tensor)
-    assert torch.isfinite(loss)
-
-
 def test_dsm_noise_scale_behavior():
     # Larger noise scale should change loss magnitude compared to smaller noise scale
     torch.manual_seed(4)

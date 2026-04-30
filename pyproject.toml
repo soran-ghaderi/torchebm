@@ -97,6 +97,29 @@ testpaths = [
     "tests",
 ]
 
+[tool.coverage.run]
+branch = true
+source = ["torchebm"]
+omit = [
+    "torchebm/_version.py",
+    "torchebm/cuda/*",
+    "torchebm/utils/profiling.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "\\.\\.\\.",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
 [tool.mypy]
 ignore_missing_imports = true
 

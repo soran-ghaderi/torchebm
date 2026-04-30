@@ -823,37 +823,32 @@ class WarmupScheduler(BaseScheduler):
                 The initial value will be main_scheduler.start_value * warmup_init_factor.
                 Defaults to 0.01.
         """
-        # Initialize based on the main scheduler's initial value
         super().__init__(main_scheduler.start_value * warmup_init_factor)
         self.main_scheduler = main_scheduler
         self.warmup_steps = warmup_steps
         self.warmup_init_factor = warmup_init_factor
-        self.target_value = main_scheduler.start_value  # Store the target after warmup
-
-        # Reset main scheduler as warmup controls the initial phase
+        self.target_value = main_scheduler.start_value
         self.main_scheduler.reset()
 
     def _compute_value(self) -> float:
-        r"""
-        Compute the value based on warmup phase or main scheduler.
+        r"""Pure read: linear-interpolate during warmup, otherwise mirror main scheduler.
 
-        Returns:
-            float: The parameter value from warmup or main scheduler.
+        After warmup, `step()` drives the main scheduler in lockstep, so its
+        `current_value` is always at the right step.
         """
-        if self.step_count < self.warmup_steps:
-            # Linear warmup phase
+        if self.step_count <= self.warmup_steps:
             progress = self.step_count / self.warmup_steps
             return self.start_value + progress * (self.target_value - self.start_value)
-        else:
-            # Main scheduler phase
-            # We need its value based on steps *after* warmup
-            main_scheduler_step = self.step_count - self.warmup_steps
-            # Temporarily set main scheduler state, get value, restore state
-            original_step = self.main_scheduler.step_count
-            original_value = self.main_scheduler.current_value
-            self.main_scheduler.step_count = main_scheduler_step
-            computed_main_value = self.main_scheduler._compute_value()
-            # Restore state
-            self.main_scheduler.step_count = original_step
-            self.main_scheduler.current_value = original_value
-            return computed_main_value
+        return self.main_scheduler.current_value
+
+    def step(self) -> float:
+        r"""Advance one step, driving the main scheduler in lockstep post-warmup."""
+        self.step_count += 1
+        if self.step_count > self.warmup_steps:
+            self.main_scheduler.step()
+        self.current_value = self._compute_value()
+        return self.current_value
+
+    def reset(self) -> None:
+        super().reset()
+        self.main_scheduler.reset()

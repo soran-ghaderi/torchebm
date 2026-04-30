@@ -263,7 +263,7 @@ def test_contrastive_divergence_cuda():
     device = torch.device("cuda")
     energy_function = GaussianModel(
         mean=torch.zeros(2, device=device), cov=torch.eye(2, device=device)
-    )
+    ).to(device)
     sampler = LangevinDynamics(
         model=energy_function,
         step_size=0.1,
