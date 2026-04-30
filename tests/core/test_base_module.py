@@ -144,3 +144,59 @@ def test_device_mixin_to_updates_cache():
     m = _mk_mixin()
     m.to(dtype=torch.float64)
     assert m.dtype == torch.float64
+
+
+def test_loss_call_fires_forward_hook():
+    """A registered forward_hook on a loss must fire when the loss is called.
+
+    Regression for the architectural bug where `BaseLoss.__call__` /
+    `BaseScoreMatching.__call__` returned `self.forward(x)` directly,
+    bypassing `nn.Module._call_impl` and thus all hooks (forward,
+    forward-pre, full-backward), DDP gradient sync, and profiler
+    instrumentation.
+    """
+    from torchebm.core import GaussianModel
+    from torchebm.losses import SlicedScoreMatching
+
+    energy = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
+    loss_fn = SlicedScoreMatching(model=energy, n_projections=2)
+
+    fired = {"pre": 0, "post": 0}
+
+    def pre_hook(module, inputs):
+        fired["pre"] += 1
+
+    def post_hook(module, inputs, output):
+        fired["post"] += 1
+
+    h_pre = loss_fn.register_forward_pre_hook(pre_hook)
+    h_post = loss_fn.register_forward_hook(post_hook)
+    try:
+        x = torch.randn(8, 2)
+        loss_fn(x)
+    finally:
+        h_pre.remove()
+        h_post.remove()
+
+    assert fired["pre"] == 1, "forward_pre_hook did not fire"
+    assert fired["post"] == 1, "forward_hook did not fire"
+
+
+def test_model_call_fires_forward_hook():
+    """A registered forward_hook on a BaseModel must fire when the model is called."""
+    from torchebm.core import GaussianModel
+
+    energy = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
+
+    fired = {"pre": 0, "post": 0}
+
+    h_pre = energy.register_forward_pre_hook(lambda m, i: fired.__setitem__("pre", fired["pre"] + 1))
+    h_post = energy.register_forward_hook(lambda m, i, o: fired.__setitem__("post", fired["post"] + 1))
+    try:
+        energy(torch.randn(4, 2))
+    finally:
+        h_pre.remove()
+        h_post.remove()
+
+    assert fired["pre"] == 1
+    assert fired["post"] == 1
