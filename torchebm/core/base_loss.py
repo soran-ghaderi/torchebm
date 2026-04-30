@@ -77,7 +77,7 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
             torch.Tensor: The computed loss value.
         """
         x = x.to(device=self.device, dtype=self.dtype)
-        return self.forward(x, *args, **kwargs)
+        return super().__call__(x, *args, **kwargs)
 
 
 class BaseContrastiveDivergence(BaseLoss):
