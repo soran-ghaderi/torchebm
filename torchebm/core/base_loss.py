@@ -64,7 +64,8 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
-        Calls the forward method of the loss function.
+        Calls the loss function through nn.Module.__call__ to preserve hooks
+        and the full _call_impl machinery.
 
         Args:
             x (torch.Tensor): Input data tensor.
@@ -75,7 +76,7 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
             torch.Tensor: The computed loss value.
         """
         x = x.to(device=self.device, dtype=self.dtype)
-        return self.forward(x, *args, **kwargs)
+        return super().__call__(x, *args, **kwargs)
 
 
 class BaseContrastiveDivergence(BaseLoss):
@@ -489,7 +490,8 @@ class BaseScoreMatching(BaseLoss):
 
     def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
-        Calls the forward method of the loss function.
+        Calls the score matching loss through nn.Module.__call__ to preserve
+        hooks and the full _call_impl machinery.
 
         Args:
             x (torch.Tensor): Input data tensor.
@@ -501,7 +503,7 @@ class BaseScoreMatching(BaseLoss):
         """
 
         x = x.to(device=self.device, dtype=self.dtype)
-        return self.forward(x, *args, **kwargs)
+        return super().__call__(x, *args, **kwargs)
 
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
