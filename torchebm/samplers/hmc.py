@@ -73,6 +73,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         The momentum is sampled from \(\mathcal{N}(0, M)\), where `M` is the mass matrix.
         Reuses a cached buffer when shape/dtype/device match to avoid per-step allocation.
+        Reuses a cached buffer when shape/dtype/device match to avoid per-step allocation.
 
         Args:
             shape (torch.Size): The shape of the momentum tensor to generate.
@@ -80,6 +81,16 @@ class HamiltonianMonteCarlo(BaseSampler):
         Returns:
             torch.Tensor: The initialized momentum tensor.
         """
+        buf = getattr(self, "_momentum_buf", None)
+        if (
+            buf is None
+            or buf.shape != shape
+            or buf.dtype != self.dtype
+            or buf.device != self.device
+        ):
+            buf = torch.empty(shape, dtype=self.dtype, device=self.device)
+            self._momentum_buf = buf
+        p = buf.normal_()
         buf = getattr(self, "_momentum_buf", None)
         if (
             buf is None
@@ -201,7 +212,12 @@ class HamiltonianMonteCarlo(BaseSampler):
 
                 proposed_energy = self.model(proposed_position).clamp_(
                     min=-1e10, max=1e10
+                proposed_energy = self.model(proposed_position).clamp_(
+                    min=-1e10, max=1e10
                 )
+                proposed_kinetic = self._compute_kinetic_energy(
+                    proposed_momentum
+                ).clamp_(min=0.0, max=1e10)
                 proposed_kinetic = self._compute_kinetic_energy(
                     proposed_momentum
                 ).clamp_(min=0.0, max=1e10)
@@ -211,13 +227,23 @@ class HamiltonianMonteCarlo(BaseSampler):
                 hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
                     min=-50.0, max=50.0
                 )
+                hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
+                    min=-50.0, max=50.0
+                )
 
+                # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
+                # the freshly allocated `exp` result (no `ones` tensor allocation).
+                acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
                 # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
                 # the freshly allocated `exp` result (no `ones` tensor allocation).
                 acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
 
                 random_uniform = torch.rand(batch_size, device=self.device)
                 accepted = random_uniform < acceptance_prob
+                # `torch.where` on the broadcast accept mask: single fused kernel,
+                # no `mask*proposed + (1-mask)*x` quartet of temporaries.
+                accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
+                x = torch.where(accept_view, proposed_position, x)
                 # `torch.where` on the broadcast accept mask: single fused kernel,
                 # no `mask*proposed + (1-mask)*x` quartet of temporaries.
                 accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
@@ -236,6 +262,8 @@ class HamiltonianMonteCarlo(BaseSampler):
                     energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
                     acceptance_rate = accepted.float().mean()
 
+                    mean_exp = mean_x.expand(batch_size, dim)
+                    diagnostics[i, 0, :, :] = mean_exp
                     mean_exp = mean_x.expand(batch_size, dim)
                     diagnostics[i, 0, :, :] = mean_exp
                     diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)

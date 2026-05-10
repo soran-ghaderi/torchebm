@@ -142,6 +142,7 @@ class ScoreMatching(BaseScoreMatching):
         laplacian = vmap(laplacian_fn)(x_flat)
 
         term1 = 0.5 * score.square().sum(dim=-1)
+        term1 = 0.5 * score.square().sum(dim=-1)
         return (term1 + laplacian).mean()
 
     def _approx_score_matching(self, x: torch.Tensor) -> torch.Tensor:
@@ -163,6 +164,7 @@ class ScoreMatching(BaseScoreMatching):
 
         score = self.compute_score(x_detached)
         score_square_term = (
+            0.5 * torch.sum(score.square(), dim=list(range(1, len(x.shape)))).mean()
             0.5 * torch.sum(score.square(), dim=list(range(1, len(x.shape)))).mean()
         )
 

@@ -281,6 +281,23 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             self._tableau_cache_key = key
         return self._cached_a, self._cached_b, self._cached_c, self._cached_e
 
+    def _tableau_on(
+        self, device: torch.device, dtype: torch.dtype
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        r"""Return tableau tensors (a, b, c, e) cached on (device, dtype)."""
+        key = (device, dtype)
+        if getattr(self, "_tableau_cache_key", None) != key:
+            self._cached_a = self._buf_a.to(device=device, dtype=dtype)
+            self._cached_b = self._buf_b.to(device=device, dtype=dtype)
+            self._cached_c = self._buf_c.to(device=device, dtype=dtype)
+            self._cached_e = (
+                self._buf_e.to(device=device, dtype=dtype)
+                if self._buf_e is not None
+                else None
+            )
+            self._tableau_cache_key = key
+        return self._cached_a, self._cached_b, self._cached_c, self._cached_e
+
     def _evaluate_stages(
         self,
         x: torch.Tensor,
@@ -288,6 +305,8 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         step_size: torch.Tensor,
         drift_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
         k0: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        r"""Evaluate all RK stages and return a tensor of shape ``(s, *x.shape)``.
     ) -> torch.Tensor:
         r"""Evaluate all RK stages and return a tensor of shape ``(s, *x.shape)``.
 
@@ -301,10 +320,13 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                 the last stage of the previous step).
         """
         a, _, c, _ = self._tableau_on(x.device, x.dtype)
+        a, _, c, _ = self._tableau_on(x.device, x.dtype)
         s = a.size(0)
+        k = x.new_empty((s,) + x.shape)
         k = x.new_empty((s,) + x.shape)
         for i in range(s):
             if i == 0 and k0 is not None:
+                k[0] = k0
                 k[0] = k0
                 continue
             if i == 0:
@@ -317,12 +339,14 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                 )
             t_stage = t + c[i] * step_size
             k[i] = drift_fn(x_stage, t_stage)
+            k[i] = drift_fn(x_stage, t_stage)
         return k
 
     def _combine_stages(
         self,
         x: torch.Tensor,
         step_size: torch.Tensor,
+        k: torch.Tensor,
         k: torch.Tensor,
     ) -> torch.Tensor:
         r"""Combine RK stages into the deterministic update \(x + h \sum b_i k_i\)."""
@@ -402,6 +426,7 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             # Error estimation
             if is_fsal:
                 k_fsal = drift_fn(y_new, t_batch + h_t)
+                k_err = torch.cat([k, k_fsal.unsqueeze(0)], dim=0)
                 k_err = torch.cat([k, k_fsal.unsqueeze(0)], dim=0)
             else:
                 k_err = k

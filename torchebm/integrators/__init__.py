@@ -7,6 +7,7 @@ package import time.  Direct imports still work:
 
 __all__ = [
     "EulerMaruyamaIntegrator",
+    "BackwardEulerIntegrator",
     "HeunIntegrator",
     "LeapfrogIntegrator",
     "Dopri5Integrator",
@@ -20,6 +21,7 @@ __all__ = [
 _LAZY_IMPORTS = {
     "_integrate_time_grid": ".integrator_utils",
     "EulerMaruyamaIntegrator": ".euler_maruyama",
+    "BackwardEulerIntegrator": ".backward_euler",
     "HeunIntegrator": ".heun",
     "LeapfrogIntegrator": ".leapfrog",
     "Dopri5Integrator": ".dopri",

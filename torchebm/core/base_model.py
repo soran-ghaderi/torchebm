@@ -6,8 +6,10 @@ from torch import nn
 from typing import Optional, Union
 
 from torchebm.core import TorchEBMModule
+from torchebm.core import TorchEBMModule
 
 
+class BaseModel(TorchEBMModule, ABC):
 class BaseModel(TorchEBMModule, ABC):
     r"""
     Abstract base class for energy-based models (EBMs).

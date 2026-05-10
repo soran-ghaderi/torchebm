@@ -113,6 +113,7 @@ class FlowSampler(BaseSampler):
         self.prediction_type = prediction_map[prediction]
 
         self.interpolant = safe_to(
+        self.interpolant = safe_to(
             self.interpolant, device=self.device, dtype=self.dtype
         )
 

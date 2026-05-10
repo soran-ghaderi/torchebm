@@ -3,6 +3,7 @@ Base Loss Classes for Energy-Based Models
 """
 
 import logging
+import logging
 import warnings
 from abc import abstractmethod, ABC
 from typing import Tuple, Union, Optional, Dict, Any, Callable
@@ -128,6 +129,7 @@ class BaseContrastiveDivergence(BaseLoss):
             "buffer_ptr", torch.tensor(0, dtype=torch.long, device=self.device)
         )
         self._buffer_ptr_int: int = 0
+        self._buffer_ptr_int: int = 0
         self.buffer_initialized = False
 
     def initialize_buffer(
@@ -159,6 +161,7 @@ class BaseContrastiveDivergence(BaseLoss):
             self.buffer_size,
         ) + data_shape_no_batch  # shape: [buffer_size, *data_shape]
         logger.info("Initializing replay buffer with shape %s...", buffer_shape)
+        logger.info("Initializing replay buffer with shape %s...", buffer_shape)
 
         self.replay_buffer = (
             torch.randn(buffer_shape, dtype=self.dtype, device=self.device)
@@ -166,6 +169,7 @@ class BaseContrastiveDivergence(BaseLoss):
         )
 
         if self.init_steps > 0:
+            logger.info("Running %d MCMC steps to populate buffer...", self.init_steps)
             logger.info("Running %d MCMC steps to populate buffer...", self.init_steps)
             with torch.no_grad():
                 chunk_size = min(self.buffer_size, buffer_chunk_size)
@@ -191,7 +195,9 @@ class BaseContrastiveDivergence(BaseLoss):
 
         self.buffer_ptr.zero_()
         self._buffer_ptr_int = 0
+        self._buffer_ptr_int = 0
         self.buffer_initialized = True
+        logger.info("Replay buffer initialized.")
         logger.info("Replay buffer initialized.")
 
         return self.replay_buffer
@@ -312,6 +318,8 @@ class BaseContrastiveDivergence(BaseLoss):
 
         # FIFO strategy — use cached Python int to avoid GPU sync every step
         ptr = self._buffer_ptr_int
+        # FIFO strategy — use cached Python int to avoid GPU sync every step
+        ptr = self._buffer_ptr_int
 
         if batch_size >= self.buffer_size:
             # batch larger than buffer, use latest samples
@@ -400,6 +408,8 @@ class BaseScoreMatching(BaseLoss):
         model: BaseModel,
         noise_scale: Union[float, BaseScheduler] = 0.01,
         regularization_strength: Union[float, BaseScheduler] = 0.0,
+        noise_scale: Union[float, BaseScheduler] = 0.01,
+        regularization_strength: Union[float, BaseScheduler] = 0.0,
         use_autograd: bool = True,
         hutchinson_samples: int = 1,
         custom_regularization: Optional[Callable] = None,
@@ -410,9 +420,29 @@ class BaseScoreMatching(BaseLoss):
         self.model = model
         self._register_param("noise_scale", noise_scale)
         self._register_param("regularization_strength", regularization_strength)
+        super().__init__(*args, **kwargs)
+        self.model = model
+        self._register_param("noise_scale", noise_scale)
+        self._register_param("regularization_strength", regularization_strength)
         self.use_autograd = use_autograd
         self.hutchinson_samples = hutchinson_samples
         self.custom_regularization = custom_regularization
+
+    @property
+    def noise_scale(self) -> float:
+        return self.get_scheduled_value("noise_scale")
+
+    @noise_scale.setter
+    def noise_scale(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("noise_scale", value)
+
+    @property
+    def regularization_strength(self) -> float:
+        return self.get_scheduled_value("regularization_strength")
+
+    @regularization_strength.setter
+    def regularization_strength(self, value: Union[float, BaseScheduler]) -> None:
+        self._register_param("regularization_strength", value)
 
     @property
     def noise_scale(self) -> float:
@@ -569,6 +599,7 @@ class BaseScoreMatching(BaseLoss):
         # default: L2 norm of score
         else:
             score = self.compute_score(x)
+            reg_term = score.square().sum(dim=list(range(1, len(x.shape)))).mean()
             reg_term = score.square().sum(dim=list(range(1, len(x.shape)))).mean()
 
         return loss + strength * reg_term

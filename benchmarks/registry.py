@@ -96,6 +96,11 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
                 "max_dim": 16,
                 "max_batch": 128,
             },
+            "score_matching_exact": {
+                "init_kwargs": {"hessian_method": "exact"},
+                "max_dim": 16,
+                "max_batch": 128,
+            },
             "score_matching_approx": {"init_kwargs": {"hessian_method": "approx"}},
         },
     },
@@ -116,6 +121,11 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "EquilibriumMatchingLoss": {
         "model_type": "velocity",
+        "init_kwargs": {
+            "prediction": "velocity",
+            "energy_type": "none",
+            "interpolant": "linear",
+        },
         "init_kwargs": {
             "prediction": "velocity",
             "energy_type": "none",
@@ -176,6 +186,30 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
                 "num_heads": 8,
                 "bs": 4,
             },
+            "small": {
+                "input_size": 16,
+                "patch_size": 4,
+                "embed_dim": 128,
+                "depth": 4,
+                "num_heads": 4,
+                "bs": 16,
+            },
+            "medium": {
+                "input_size": 32,
+                "patch_size": 4,
+                "embed_dim": 256,
+                "depth": 8,
+                "num_heads": 8,
+                "bs": 8,
+            },
+            "large": {
+                "input_size": 32,
+                "patch_size": 4,
+                "embed_dim": 512,
+                "depth": 12,
+                "num_heads": 8,
+                "bs": 4,
+            },
         },
         "variants": {
             "transformer_fwd": {},
@@ -190,6 +224,14 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 _CATEGORY_MAP = {
+    "integrators": (
+        "torchebm.integrators",
+        "torchebm.core.base_integrator.BaseIntegrator",
+    ),
+    "interpolants": (
+        "torchebm.interpolants",
+        "torchebm.core.base_interpolant.BaseInterpolant",
+    ),
     "integrators": (
         "torchebm.integrators",
         "torchebm.core.base_integrator.BaseIntegrator",
@@ -240,6 +282,7 @@ def _is_benchmarkable(obj, base_cls) -> bool:
 # ---------------------------------------------------------------------------
 
 
+
 def discover_components() -> List[BenchSpec]:
     """Scan torchebm subpackages and return BenchSpec for every exported component."""
     specs: List[BenchSpec] = []
@@ -266,9 +309,24 @@ def discover_components() -> List[BenchSpec]:
             variants = (
                 overrides.pop("variants", None) if "variants" in overrides else None
             )
+            variants = (
+                overrides.pop("variants", None) if "variants" in overrides else None
+            )
             if variants:
                 for variant_name, variant_overrides in variants.items():
                     merged = {**overrides, **variant_overrides}
+                    merged_init = {
+                        **overrides.get("init_kwargs", {}),
+                        **variant_overrides.get("init_kwargs", {}),
+                    }
+                    specs.append(
+                        _build_spec(
+                            variant_name,
+                            category,
+                            obj,
+                            {**merged, "init_kwargs": merged_init},
+                        )
+                    )
                     merged_init = {
                         **overrides.get("init_kwargs", {}),
                         **variant_overrides.get("init_kwargs", {}),
@@ -313,6 +371,7 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
 # ---------------------------------------------------------------------------
 
 
+
 def _ess_from_chain(chain):
     """Compute effective sample size from a 1D chain via FFT autocorrelation."""
     n = len(chain)
@@ -348,6 +407,10 @@ class _MLPEnergy(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden, hidden),
             nn.SiLU(),
+            nn.Linear(dim, hidden),
+            nn.SiLU(),
+            nn.Linear(hidden, hidden),
+            nn.SiLU(),
             nn.Linear(hidden, 1),
         )
 
@@ -359,6 +422,10 @@ class _MLPVelocity(nn.Module):
     def __init__(self, dim, hidden=_MLP_HIDDEN):
         super().__init__()
         self.net = nn.Sequential(
+            nn.Linear(dim + 1, hidden),
+            nn.SiLU(),
+            nn.Linear(hidden, hidden),
+            nn.SiLU(),
             nn.Linear(dim + 1, hidden),
             nn.SiLU(),
             nn.Linear(hidden, hidden),
@@ -397,11 +464,14 @@ def _wrap_ebm(net, device, dtype):
 class _CountingDrift:
     """Wrap a drift callable to count total invocations."""
 
+
     __slots__ = ("_fn", "count")
+
 
     def __init__(self, fn):
         self._fn = fn
         self.count = 0
+
 
     def __call__(self, x, t):
         self.count += 1
@@ -426,6 +496,7 @@ def _make_drift(net, device, dtype):
         e = net(x_req)
         return -torch.autograd.grad(e.sum(), x_req)[0]
 
+
     return drift
 
 
@@ -437,6 +508,12 @@ def _make_data(bs, dim, device, dtype):
 
 
 def build_integrator_bench(
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
     spec: BenchSpec,
     dim: int,
     bs: int,
@@ -470,7 +547,11 @@ def build_integrator_bench(
                 step_size=step_size,
                 n_steps=n_steps,
                 drift=drift,
+                step_size=step_size,
+                n_steps=n_steps,
+                drift=drift,
             )
+
 
     elif spec.needs_diffusion:
         diffusion_val = torch.tensor(_DIFFUSION_COEFF, device=device, dtype=dtype)
@@ -482,12 +563,24 @@ def build_integrator_bench(
                 n_steps=n_steps,
                 drift=drift,
                 diffusion=lambda x, t: diffusion_val,
+                state={"x": x0.clone()},
+                step_size=step_size,
+                n_steps=n_steps,
+                drift=drift,
+                diffusion=lambda x, t: diffusion_val,
             )
+
 
     else:
 
+
         def fn():
             integrator.integrate(
+                state={"x": x0.clone()},
+                step_size=step_size,
+                n_steps=n_steps,
+                drift=drift,
+                adaptive=_adaptive,
                 state={"x": x0.clone()},
                 step_size=step_size,
                 n_steps=n_steps,
@@ -515,6 +608,12 @@ def build_interpolant_bench(
     n_steps: int,
     device: torch.device,
     dtype: torch.dtype,
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> Tuple[Callable, Dict]:
     interp = spec.cls(**spec.init_kwargs)
     x0 = _make_data(bs, dim, device, dtype)
@@ -529,6 +628,12 @@ def build_interpolant_bench(
 
 
 def build_loss_bench(
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
     spec: BenchSpec,
     dim: int,
     bs: int,
@@ -558,6 +663,10 @@ def build_loss_bench(
         sampler = LangevinDynamics(
             model=model, step_size=_CD_STEP_SIZE, device=device, dtype=dtype
         )
+
+        sampler = LangevinDynamics(
+            model=model, step_size=_CD_STEP_SIZE, device=device, dtype=dtype
+        )
         init_kw["sampler"] = sampler
 
     if spec.model_type in ("ebm", "velocity"):
@@ -570,12 +679,15 @@ def build_loss_bench(
 
     if spec.returns_tuple:
 
+
         def fn():
             loss, _ = loss_fn(x)
             loss.backward()
             net.zero_grad()
 
+
     else:
+
 
         def fn():
             loss = loss_fn(x)
@@ -583,6 +695,9 @@ def build_loss_bench(
             net.zero_grad()
 
     info = {
+        "module": spec.module,
+        "batch_size": eff_bs,
+        "dim": eff_dim,
         "module": spec.module,
         "batch_size": eff_bs,
         "dim": eff_dim,
@@ -620,6 +735,12 @@ def build_sampler_bench(
     n_steps: int,
     device: torch.device,
     dtype: torch.dtype,
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> Tuple[Callable, Dict]:
     init_kw: Dict[str, Any] = {"device": device, "dtype": dtype, **spec.init_kwargs}
 
@@ -636,6 +757,9 @@ def build_sampler_bench(
         raise ValueError(
             f"Unknown model_type {spec.model_type!r} for sampler {spec.name}"
         )
+        raise ValueError(
+            f"Unknown model_type {spec.model_type!r} for sampler {spec.name}"
+        )
 
     sampler = spec.cls(**init_kw)
     x0 = _make_data(bs, dim, device, dtype)
@@ -647,7 +771,9 @@ def build_sampler_bench(
         def fn():
             method(x0, **call_kwargs)
 
+
     else:
+
 
         def fn():
             sampler.sample(x=x0, n_steps=n_steps, n_samples=bs, dim=dim)
@@ -669,6 +795,10 @@ def build_sampler_bench(
         spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics")
         and not spec.bench_fn
     ):
+    if (
+        spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics")
+        and not spec.bench_fn
+    ):
         _sampler_q = sampler
         _x0_q = x0
         _n_steps_q = min(n_steps, 100)
@@ -685,6 +815,11 @@ def build_sampler_bench(
                     n_samples=_bs_q,
                     dim=_dim_q,
                     return_diagnostics=True,
+                    x=_x0_q.clone(),
+                    n_steps=_n_steps_q,
+                    n_samples=_bs_q,
+                    dim=_dim_q,
+                    return_diagnostics=True,
                 )
                 if isinstance(result, tuple) and len(result) == 2:
                     samples, diagnostics = result
@@ -694,10 +829,17 @@ def build_sampler_bench(
                             _cls_name == "HamiltonianMonteCarlo"
                             and diagnostics.shape[1] >= 4
                         ):
+                        if (
+                            _cls_name == "HamiltonianMonteCarlo"
+                            and diagnostics.shape[1] >= 4
+                        ):
                             acc = diagnostics[:, 3, 0, 0].mean().item()
                             metrics["acceptance_rate"] = round(acc, 4)
                         # ESS from energy chain
                         if diagnostics.shape[1] >= 3:
+                            energy_chain = (
+                                diagnostics[:, 2, 0, 0].detach().cpu().float()
+                            )
                             energy_chain = (
                                 diagnostics[:, 2, 0, 0].detach().cpu().float()
                             )
@@ -713,6 +855,12 @@ def build_sampler_bench(
 
 
 def build_model_bench(
+    spec: BenchSpec,
+    dim: int,
+    bs: int,
+    n_steps: int,
+    device: torch.device,
+    dtype: torch.dtype,
     spec: BenchSpec,
     dim: int,
     bs: int,
@@ -742,12 +890,16 @@ def build_model_bench(
             loss.backward()
             model.zero_grad()
 
+
     else:
+
 
         def fn():
             model(x, cond)
 
     info = {
+        "module": spec.module,
+        "batch_size": bs_model,
         "module": spec.module,
         "batch_size": bs_model,
         "n_params": sum(p.numel() for p in model.parameters()),
@@ -765,6 +917,28 @@ TEMPLATE_BUILDERS = {
     "samplers": build_sampler_bench,
     "models": build_model_bench,
 }
+
+
+# ---------------------------------------------------------------------------
+# Mode transformation (eager | compiled | amp_fp16) — shared by benchmarks
+# and profiler so both paths time identical callables.
+# ---------------------------------------------------------------------------
+
+
+def apply_mode(fn: Callable, mode: str, device: torch.device) -> Callable:
+    """Wrap a zero-arg callable according to the requested execution mode."""
+    if mode == "compiled":
+        return torch.compile(fn, mode="default")
+    if mode == "amp_fp16":
+        _orig = fn
+        _dev_type = device.type
+
+        def _amp():
+            with torch.autocast(device_type=_dev_type, dtype=torch.float16):
+                _orig()
+
+        return _amp
+    return fn
 
 
 # ---------------------------------------------------------------------------
