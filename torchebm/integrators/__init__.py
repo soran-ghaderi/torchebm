@@ -2,6 +2,7 @@ r"""Integrators for solving differential equations in energy-based models."""
 
 from torchebm.integrators.integrator_utils import _integrate_time_grid
 from torchebm.integrators.euler_maruyama import EulerMaruyamaIntegrator
+from torchebm.integrators.backward_euler import BackwardEulerIntegrator
 from torchebm.integrators.heun import HeunIntegrator
 from torchebm.integrators.leapfrog import LeapfrogIntegrator
 from torchebm.integrators.dopri import Dopri5Integrator, Dopri8Integrator
@@ -11,6 +12,7 @@ from torchebm.integrators.bosh3 import Bosh3Integrator
 
 __all__ = [
     "EulerMaruyamaIntegrator",
+    "BackwardEulerIntegrator",
     "HeunIntegrator",
     "LeapfrogIntegrator",
     "Dopri5Integrator",
