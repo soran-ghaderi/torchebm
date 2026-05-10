@@ -7,12 +7,6 @@ Includes:
 - Flow/diffusion samplers for trained generative models
 """
 
-from . import hmc, langevin_dynamics, gradient_descent, flow
-from .langevin_dynamics import LangevinDynamics
-from .hmc import HamiltonianMonteCarlo
-from .gradient_descent import GradientDescentSampler, NesterovSampler
-from .flow import FlowSampler, PredictionType
-
 __all__ = [
     # MCMC samplers
     "LangevinDynamics",
@@ -24,3 +18,21 @@ __all__ = [
     "FlowSampler",
     "PredictionType",
 ]
+
+_LAZY_IMPORTS = {
+    "LangevinDynamics": ".langevin_dynamics",
+    "HamiltonianMonteCarlo": ".hmc",
+    "GradientDescentSampler": ".gradient_descent",
+    "NesterovSampler": ".gradient_descent",
+    "FlowSampler": ".flow",
+    "PredictionType": ".flow",
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_IMPORTS:
+        import importlib
+
+        module = importlib.import_module(_LAZY_IMPORTS[name], __package__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

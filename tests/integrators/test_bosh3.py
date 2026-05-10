@@ -693,7 +693,7 @@ def test_manual_error_estimate():
     # Compute x_new for FSAL evaluation
     x_new = integrator._combine_stages(x, h, k)
     k_fsal = drift_fn(x_new, t + h)
-    k_err = k + [k_fsal]
+    k_err = torch.cat([k, k_fsal.unsqueeze(0)], dim=0)
 
     e = integrator.error_weights
     err_vec = h * sum(e[i] * k_err[i] for i in range(4))
