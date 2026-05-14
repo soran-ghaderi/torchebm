@@ -31,10 +31,10 @@ class ScoreMatching(BaseScoreMatching):
     Example:
         ```python
         from torchebm.losses import ScoreMatching
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
         import torch
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         loss_fn = ScoreMatching(model=energy, hessian_method="exact")
         x = torch.randn(32, 2)
         loss = loss_fn(x)
@@ -200,10 +200,10 @@ class DenoisingScoreMatching(BaseScoreMatching):
     Example:
         ```python
         from torchebm.losses import DenoisingScoreMatching
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
         import torch
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         loss_fn = DenoisingScoreMatching(model=energy, noise_scale=0.1)
         x = torch.randn(32, 2)
         loss = loss_fn(x)
@@ -303,10 +303,10 @@ class SlicedScoreMatching(BaseScoreMatching):
     Example:
         ```python
         from torchebm.losses import SlicedScoreMatching
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
         import torch
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         loss_fn = SlicedScoreMatching(model=energy, n_projections=5)
         x = torch.randn(32, 2)
         loss = loss_fn(x)
