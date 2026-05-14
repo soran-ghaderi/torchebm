@@ -325,7 +325,7 @@ def test_euler_maruyama_uses_integrate_time_grid(device):
     step_size = 0.02
 
     result = integrator.integrate(
-        state, model=None, step_size=step_size, n_steps=n_steps, drift=drift
+        state, step_size=step_size, n_steps=n_steps, drift=drift
     )
 
     assert result["x"].shape == x.shape
@@ -345,7 +345,7 @@ def test_heun_uses_integrate_time_grid(device):
     t = torch.linspace(0, 1, n_steps, device=device)
 
     result = integrator.integrate(
-        state, model=None, step_size=0.02, n_steps=n_steps, drift=drift, t=t
+        state, step_size=0.02, n_steps=n_steps, drift=drift, t=t
     )
 
     assert result["x"].shape == x.shape
