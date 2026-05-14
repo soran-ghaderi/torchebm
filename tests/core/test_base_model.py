@@ -1,5 +1,3 @@
-import warnings
-
 import pytest
 import torch
 
@@ -11,15 +9,6 @@ from torchebm.core.base_model import (
     HarmonicModel,
     RastriginModel,
     RosenbrockModel,
-)
-from torchebm.core.base_model import (
-    AckleyEnergy,
-    BaseEnergyFunction,
-    DoubleWellEnergy,
-    GaussianEnergy,
-    HarmonicEnergy,
-    RastriginEnergy,
-    RosenbrockEnergy,
 )
 
 
@@ -119,32 +108,6 @@ def test_rastrigin_energy_zero_at_origin():
     m = RastriginModel()
     x = torch.zeros(1, 3)
     assert torch.allclose(m(x), torch.zeros(1), atol=1e-5)
-
-
-@pytest.mark.parametrize(
-    "deprecated_cls",
-    [
-        DoubleWellEnergy,
-        GaussianEnergy,
-        HarmonicEnergy,
-        RosenbrockEnergy,
-        AckleyEnergy,
-        RastriginEnergy,
-    ],
-)
-def test_deprecated_aliases_emit_warning(deprecated_cls):
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        if deprecated_cls is GaussianEnergy:
-            deprecated_cls(mean=torch.zeros(2), cov=torch.eye(2))
-        else:
-            deprecated_cls()
-    assert any(issubclass(x.category, DeprecationWarning) for x in w)
-
-
-def test_base_energy_function_alias_still_abstract():
-    with pytest.raises(TypeError):
-        BaseEnergyFunction()
 
 
 def test_harmonic_gradient_linear_in_x():

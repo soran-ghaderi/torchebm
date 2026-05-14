@@ -6,7 +6,7 @@ Usage:
 import argparse
 import time
 import torch
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 from torchebm.samplers import GradientDescentSampler, NesterovSampler
 
 
@@ -57,7 +57,7 @@ def main():
         {"batch_size": 1024, "dim": 128, "n_steps": 200, "label": "large"},
     ]
 
-    model = DoubleWellEnergy().to(device)
+    model = DoubleWellModel().to(device)
     sampler = GradientDescentSampler(model, step_size=0.01, device=device)
 
     print(f"Device: {device}")

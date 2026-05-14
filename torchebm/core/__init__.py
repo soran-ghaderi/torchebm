@@ -2,7 +2,6 @@
 Core functionality for energy-based models, including energy functions, base sampler class, and training utilities.
 """
 
-from .device_mixin import DeviceMixin, normalize_device, safe_to
 from .base_module import TorchEBMModule
 
 from .base_model import (
@@ -13,14 +12,6 @@ from .base_model import (
     RastriginModel,
     AckleyModel,
     RosenbrockModel,
-    # deprecated
-    BaseEnergyFunction,
-    DoubleWellEnergy,
-    GaussianEnergy,
-    HarmonicEnergy,
-    RastriginEnergy,
-    AckleyEnergy,
-    RosenbrockEnergy,
 )
 
 from .base_scheduler import (
@@ -44,10 +35,7 @@ from .base_interpolant import BaseInterpolant, expand_t_like_x
 
 __all__ = [
     # Energy functions
-    "DeviceMixin",
     "TorchEBMModule",
-    "normalize_device",
-    "safe_to",
     "BaseModel",
     "DoubleWellModel",
     "GaussianModel",
@@ -55,14 +43,6 @@ __all__ = [
     "RastriginModel",
     "AckleyModel",
     "RosenbrockModel",
-    # deprecated
-    "BaseEnergyFunction",
-    "DoubleWellEnergy",
-    "GaussianEnergy",
-    "HarmonicEnergy",
-    "RastriginEnergy",
-    "AckleyEnergy",
-    "RosenbrockEnergy",
     # Base classes and utilities
     "BaseSampler",
     "BaseLoss",
