@@ -32,9 +32,9 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         ```python
         from torchebm.losses import ContrastiveDivergence
         from torchebm.samplers import LangevinDynamics
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         sampler = LangevinDynamics(energy, step_size=0.01)
         cd_loss = ContrastiveDivergence(model=energy, sampler=sampler, k_steps=10)
         x = torch.randn(32, 2)
