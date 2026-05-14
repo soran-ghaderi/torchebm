@@ -6,7 +6,7 @@ minimizing the energy function through gradient descent.
 
 from __future__ import annotations
 
-from typing import Optional, Union, Tuple, List
+from typing import Dict, Optional, Tuple, Union
 
 import torch
 
@@ -35,10 +35,10 @@ class GradientDescentSampler(BaseSampler):
     Example:
         ```python
         from torchebm.samplers import GradientDescentSampler
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
         import torch
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         sampler = GradientDescentSampler(energy, step_size=0.1)
         samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
         ```
@@ -73,24 +73,26 @@ class GradientDescentSampler(BaseSampler):
         reset_schedulers: bool = True,
         *args,
         **kwargs,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-        r"""
-        Generate samples via gradient descent optimization.
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
+        r"""Generate samples via gradient descent optimization.
 
         Args:
             x: Initial state. If None, samples from N(0, I).
             dim: Dimension of state space (used if x is None).
             n_steps: Number of gradient descent steps.
             n_samples: Number of parallel chains/samples.
-            thin: Thinning factor (not currently supported).
-            return_trajectory: Whether to return full trajectory.
-            return_diagnostics: Whether to return diagnostics.
-            reset_schedulers: If True (default), reset registered schedulers
-                so each call starts from step 0.
+            thin: Keep every `thin`-th sample. Final length `n_steps // thin`.
+            return_trajectory: If True, return the full kept trajectory of
+                shape `[n_samples, n_steps // thin, *data_shape]`.
+            return_diagnostics: If True, also return a dict with key
+                ``"energy"`` (`[n_kept]`).
+            reset_schedulers: If True (default), reset registered schedulers.
 
-        Returns:
-            Final samples or (samples, diagnostics) if return_diagnostics=True.
+        Raises:
+            ValueError: If `thin < 1`.
         """
+        if thin < 1:
+            raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
 
@@ -99,30 +101,36 @@ class GradientDescentSampler(BaseSampler):
         else:
             x = x.to(device=self.device, dtype=self.dtype)
 
-        diagnostics = self._setup_diagnostics() if return_diagnostics else None
+        n_kept = n_steps // thin
         if return_trajectory:
-            trajectory = torch.empty(x.shape[0], n_steps + 1, *x.shape[1:], device=x.device, dtype=x.dtype)
-            trajectory[:, 0] = x
-        else:
-            trajectory = None
+            trajectory = torch.empty(
+                x.shape[0], n_kept, *x.shape[1:], device=x.device, dtype=x.dtype
+            )
 
+        diagnostics: Optional[Dict[str, torch.Tensor]] = None
+        if return_diagnostics:
+            diagnostics = {
+                "energy": torch.empty(n_kept, dtype=self.dtype, device=self.device),
+            }
+
+        keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
                 eta = self.get_scheduled_value("step_size")
                 grad = self.model.gradient(x)
                 x = torch.sub(x, grad, alpha=eta)
 
-                if return_trajectory:
-                    trajectory[:, i + 1] = x
+                if (i + 1) % thin == 0:
+                    if return_trajectory:
+                        trajectory[:, keep_idx] = x
+                    if return_diagnostics:
+                        diagnostics["energy"][keep_idx] = self.model(x).mean()
+                    keep_idx += 1
 
                 self.step_schedulers()
 
-        if return_diagnostics:
-            return (
-                trajectory if return_trajectory else x,
-                [diagnostics],
-            )
-        return trajectory if return_trajectory else x
+        output = trajectory if return_trajectory else x
+        return (output, diagnostics) if return_diagnostics else output
 
 
 
@@ -152,10 +160,10 @@ class NesterovSampler(BaseSampler):
     Example:
         ```python
         from torchebm.samplers import NesterovSampler
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
         import torch
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         sampler = NesterovSampler(energy, step_size=0.1, momentum=0.9)
         samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
         ```
@@ -195,24 +203,26 @@ class NesterovSampler(BaseSampler):
         reset_schedulers: bool = True,
         *args,
         **kwargs,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-        r"""
-        Generate samples via Nesterov accelerated gradient descent.
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
+        r"""Generate samples via Nesterov accelerated gradient descent.
 
         Args:
             x: Initial state. If None, samples from N(0, I).
             dim: Dimension of state space (used if x is None).
             n_steps: Number of optimization steps.
             n_samples: Number of parallel chains/samples.
-            thin: Thinning factor (not currently supported).
-            return_trajectory: Whether to return full trajectory.
-            return_diagnostics: Whether to return diagnostics.
-            reset_schedulers: If True (default), reset registered schedulers
-                so each call starts from step 0.
+            thin: Keep every `thin`-th sample. Final length `n_steps // thin`.
+            return_trajectory: If True, return the full kept trajectory of
+                shape `[n_samples, n_steps // thin, *data_shape]`.
+            return_diagnostics: If True, also return a dict with key
+                ``"energy"`` (`[n_kept]`).
+            reset_schedulers: If True (default), reset registered schedulers.
 
-        Returns:
-            Final samples or (samples, diagnostics) if return_diagnostics=True.
+        Raises:
+            ValueError: If `thin < 1`.
         """
+        if thin < 1:
+            raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
 
@@ -222,16 +232,20 @@ class NesterovSampler(BaseSampler):
             x = x.to(device=self.device, dtype=self.dtype)
 
         v = torch.zeros_like(x)
-        diagnostics = self._setup_diagnostics() if return_diagnostics else None
+        n_kept = n_steps // thin
         if return_trajectory:
             trajectory = torch.empty(
-                x.shape[0], n_steps + 1, *x.shape[1:], device=x.device, dtype=x.dtype
+                x.shape[0], n_kept, *x.shape[1:], device=x.device, dtype=x.dtype
             )
-            trajectory[:, 0] = x
-        else:
-            trajectory = None
+
+        diagnostics: Optional[Dict[str, torch.Tensor]] = None
+        if return_diagnostics:
+            diagnostics = {
+                "energy": torch.empty(n_kept, dtype=self.dtype, device=self.device),
+            }
 
         mu = self.momentum
+        keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
                 eta = self.get_scheduled_value("step_size")
@@ -240,17 +254,17 @@ class NesterovSampler(BaseSampler):
                 v.mul_(mu).sub_(grad, alpha=eta)
                 x = x + v
 
-                if return_trajectory:
-                    trajectory[:, i + 1] = x
+                if (i + 1) % thin == 0:
+                    if return_trajectory:
+                        trajectory[:, keep_idx] = x
+                    if return_diagnostics:
+                        diagnostics["energy"][keep_idx] = self.model(x).mean()
+                    keep_idx += 1
 
                 self.step_schedulers()
 
-        if return_diagnostics:
-            return (
-                trajectory if return_trajectory else x,
-                [diagnostics],
-            )
-        return trajectory if return_trajectory else x
+        output = trajectory if return_trajectory else x
+        return (output, diagnostics) if return_diagnostics else output
 
 
 __all__ = [

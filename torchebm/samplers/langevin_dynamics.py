@@ -1,7 +1,6 @@
 r"""Langevin Dynamics Sampler Module."""
 
-import time
-from typing import Optional, Union, Tuple, List
+from typing import Dict, Optional, Tuple, Union
 
 import torch
 
@@ -25,8 +24,8 @@ class LangevinDynamics(BaseSampler):
 
     Args:
         model: Energy-based model to sample from.
-        step_size: Step size for gradient descent.
-        noise_scale: Scale of Gaussian noise injection.
+        step_size: Step size for gradient descent. Float or `BaseScheduler`.
+        noise_scale: Scale of Gaussian noise injection. Float or `BaseScheduler`.
         decay: Damping coefficient (not supported).
         dtype: Data type for computations.
         device: Device for computations.
@@ -34,10 +33,10 @@ class LangevinDynamics(BaseSampler):
     Example:
         ```python
         from torchebm.samplers import LangevinDynamics
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
         import torch
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         sampler = LangevinDynamics(energy, step_size=0.01, noise_scale=1.0)
         samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
         ```
@@ -75,27 +74,32 @@ class LangevinDynamics(BaseSampler):
         reset_schedulers: bool = True,
         *args,
         **kwargs,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-        """
-        Generates samples using Langevin dynamics.
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
+        r"""Generate samples via Langevin dynamics.
 
         Args:
-            x (Optional[torch.Tensor]): The initial state to start sampling from. If `None`,
-                a random state is created.
-            dim (int): The dimension of the state space (if `x` is not provided).
-            n_steps (int): The number of MCMC steps to perform.
-            n_samples (int): The number of parallel chains/samples to generate.
-            thin (int): The thinning factor (not currently supported).
-            return_trajectory (bool): Whether to return the full sample trajectory.
-            return_diagnostics (bool): Whether to return sampling diagnostics.
+            x: Initial state. If `None`, samples from `N(0, I)`.
+            dim: State-space dimension (used when `x is None`).
+            n_steps: Number of MCMC steps to perform.
+            n_samples: Number of parallel chains to generate.
+            thin: Keep every `thin`-th sample. Final stored length is
+                `n_steps // thin`. Must be `>= 1`.
+            return_trajectory: If True, return the full kept trajectory of shape
+                `[n_samples, n_steps // thin, dim]`.
+            return_diagnostics: If True, also return a dict with keys
+                ``"mean"`` (`[n_kept, dim]`), ``"var"`` (`[n_kept, dim]`), and
+                ``"energy"`` (`[n_kept]`).
+            reset_schedulers: If True (default), reset registered schedulers.
 
         Returns:
-            Union[torch.Tensor, Tuple[torch.Tensor, List[dict]]]:
-                - The final samples.
-                - If `return_trajectory` is `True`, the full trajectory.
-                - If `return_diagnostics` is `True`, a tuple of samples and diagnostics.
-        """
+            Sample tensor (or trajectory if `return_trajectory=True`),
+            optionally paired with the diagnostics dict.
 
+        Raises:
+            ValueError: If `thin < 1`.
+        """
+        if thin < 1:
+            raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
 
@@ -106,15 +110,23 @@ class LangevinDynamics(BaseSampler):
             dim = x.shape[-1]
             n_samples = x.shape[0]
 
+        n_kept = n_steps // thin
+
         if return_trajectory:
             trajectory = torch.empty(
-                (n_samples, n_steps, dim), dtype=self.dtype, device=self.device
+                (n_samples, n_kept, dim), dtype=self.dtype, device=self.device
             )
 
+        diagnostics: Optional[Dict[str, torch.Tensor]] = None
         if return_diagnostics:
-            diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=n_samples)
+            diagnostics = {
+                "mean": torch.empty(n_kept, dim, dtype=self.dtype, device=self.device),
+                "var": torch.empty(n_kept, dim, dtype=self.dtype, device=self.device),
+                "energy": torch.empty(n_kept, dtype=self.dtype, device=self.device),
+            }
 
         drift = lambda x_, t_: -self.model.gradient(x_)
+        keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
                 state = {"x": x}
@@ -126,41 +138,20 @@ class LangevinDynamics(BaseSampler):
                 )["x"]
                 self.step_schedulers()
 
-                if return_trajectory:
-                    trajectory[:, i, :] = x
+                if (i + 1) % thin == 0:
+                    if return_trajectory:
+                        trajectory[:, keep_idx, :] = x
+                    if return_diagnostics:
+                        if n_samples > 1:
+                            diagnostics["mean"][keep_idx] = x.mean(dim=0)
+                            diagnostics["var"][keep_idx] = x.var(
+                                dim=0, unbiased=False
+                            ).clamp_(min=1e-10, max=1e10)
+                        else:
+                            diagnostics["mean"][keep_idx] = x.squeeze(0)
+                            diagnostics["var"][keep_idx].zero_()
+                        diagnostics["energy"][keep_idx] = self.model(x).mean()
+                    keep_idx += 1
 
-                if return_diagnostics:
-                    if n_samples > 1:
-                        mean_x = x.mean(dim=0, keepdim=True)
-                        var_x = x.var(dim=0, unbiased=False, keepdim=True).clamp_(
-                            min=1e-10,
-                            max=1e10,
-                        )
-                    else:
-                        mean_x = x
-                        var_x = torch.zeros_like(x)
-                    energy = self.model(x)
-                    diagnostics[i, 0, :, :] = (
-                        mean_x if n_samples > 1 else mean_x.unsqueeze(0)
-                    )
-                    diagnostics[i, 1, :, :] = (
-                        var_x if n_samples > 1 else var_x.unsqueeze(0)
-                    )
-                    diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(n_samples, dim)
-
-        if return_trajectory:
-            if return_diagnostics:
-                return trajectory, diagnostics
-            return trajectory
-        if return_diagnostics:
-            return x, diagnostics
-        return x
-
-    def _setup_diagnostics(
-        self, dim: int, n_steps: int, n_samples: int = None
-    ) -> torch.Tensor:
-        if n_samples is not None:
-            return torch.empty(
-                (n_steps, 3, n_samples, dim), device=self.device, dtype=self.dtype
-            )
-        return torch.empty((n_steps, 3, dim), device=self.device, dtype=self.dtype)
+        output = trajectory if return_trajectory else x
+        return (output, diagnostics) if return_diagnostics else output
