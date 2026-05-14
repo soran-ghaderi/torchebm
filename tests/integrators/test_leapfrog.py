@@ -79,7 +79,7 @@ def test_step_basic(integrator, gaussian_model):
     state = {"x": x, "p": p}
     step_size = 0.01
 
-    result = integrator.step(state, model=gaussian_model, step_size=step_size)
+    result = integrator.step(state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=step_size)
 
     assert "x" in result
     assert "p" in result
@@ -99,7 +99,7 @@ def test_step_with_potential_grad(integrator):
     potential_grad = lambda x_: x_  # Harmonic potential: U(x) = 0.5 * x^2
 
     result = integrator.step(
-        state, model=None, step_size=step_size, potential_grad=potential_grad
+        state, step_size=step_size, drift=lambda x_, t_: -potential_grad(x_)
     )
 
     assert "x" in result
@@ -116,7 +116,7 @@ def test_step_requires_potential(integrator):
     state = {"x": x, "p": p}
 
     with pytest.raises(ValueError, match="drift must be provided explicitly"):
-        integrator.step(state, model=None, step_size=0.01)
+        integrator.step(state, step_size=0.01)
 
 
 def test_step_with_scalar_mass(integrator, gaussian_model):
@@ -128,7 +128,7 @@ def test_step_with_scalar_mass(integrator, gaussian_model):
     step_size = 0.01
     mass = 2.0
 
-    result = integrator.step(state, model=gaussian_model, step_size=step_size, mass=mass)
+    result = integrator.step(state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=step_size, mass=mass)
 
     assert result["x"].shape == x.shape
     assert result["p"].shape == p.shape
@@ -145,7 +145,7 @@ def test_step_with_tensor_mass(integrator, gaussian_model):
     step_size = 0.01
     mass = torch.tensor([1.0, 2.0], device=device)
 
-    result = integrator.step(state, model=gaussian_model, step_size=step_size, mass=mass)
+    result = integrator.step(state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=step_size, mass=mass)
 
     assert result["x"].shape == x.shape
     assert result["p"].shape == p.shape
@@ -166,7 +166,7 @@ def test_integrate_basic(integrator, gaussian_model):
     n_steps = 100
 
     result = integrator.integrate(
-        state, model=gaussian_model, step_size=step_size, n_steps=n_steps
+        state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=step_size, n_steps=n_steps
     )
 
     assert "x" in result
@@ -185,10 +185,10 @@ def test_integrate_invalid_n_steps(integrator, gaussian_model):
     state = {"x": x, "p": p}
 
     with pytest.raises(ValueError, match="n_steps must be positive"):
-        integrator.integrate(state, model=gaussian_model, step_size=0.01, n_steps=0)
+        integrator.integrate(state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=0.01, n_steps=0)
 
     with pytest.raises(ValueError, match="n_steps must be positive"):
-        integrator.integrate(state, model=gaussian_model, step_size=0.01, n_steps=-5)
+        integrator.integrate(state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=0.01, n_steps=-5)
 
 
 def test_integrate_with_potential_grad(integrator):
@@ -203,10 +203,9 @@ def test_integrate_with_potential_grad(integrator):
 
     result = integrator.integrate(
         state,
-        model=None,
         step_size=step_size,
         n_steps=n_steps,
-        potential_grad=potential_grad,
+        drift=lambda x_, t_: -potential_grad(x_),
     )
 
     assert result["x"].shape == x.shape
@@ -236,7 +235,7 @@ def test_manual_leapfrog_step():
     potential_grad = lambda x_: x_  # For U(x) = 0.5 * x^2
 
     result = integrator.step(
-        state, model=None, step_size=step_size, potential_grad=potential_grad
+        state, step_size=step_size, drift=lambda x_, t_: -potential_grad(x_)
     )
 
     # Manual calculation:
@@ -275,7 +274,7 @@ def test_manual_leapfrog_step_with_mass():
     potential_grad = lambda x_: x_  # For U(x) = 0.5 * x^2
 
     result = integrator.step(
-        state, model=None, step_size=step_size, mass=mass, potential_grad=potential_grad
+        state, step_size=step_size, mass=mass, drift=lambda x_, t_: -potential_grad(x_)
     )
 
     # Manual calculation with mass:
@@ -315,11 +314,10 @@ def test_energy_conservation_with_mass():
     n_steps = 500
     result = integrator.integrate(
         state,
-        model=None,
         step_size=step_size,
         n_steps=n_steps,
         mass=mass,
-        potential_grad=potential_grad,
+        drift=lambda x_, t_: -potential_grad(x_),
     )
 
     final_energy = compute_energy(result["x"], result["p"], mass)
@@ -354,10 +352,9 @@ def test_energy_conservation_harmonic():
     n_steps = 1000
     result = integrator.integrate(
         state,
-        model=None,
         step_size=step_size,
         n_steps=n_steps,
-        potential_grad=potential_grad,
+        drift=lambda x_, t_: -potential_grad(x_),
     )
 
     final_energy = compute_energy(result["x"], result["p"])
@@ -388,8 +385,8 @@ def test_symplecticity_phase_space_volume():
     # Perturb x
     state_x_plus = {"x": x0 + eps, "p": p0.clone()}
     state_x_minus = {"x": x0 - eps, "p": p0.clone()}
-    result_x_plus = integrator.step(state_x_plus, model=None, step_size=step_size, potential_grad=potential_grad)
-    result_x_minus = integrator.step(state_x_minus, model=None, step_size=step_size, potential_grad=potential_grad)
+    result_x_plus = integrator.step(state_x_plus, step_size=step_size, drift=lambda x_, t_: -potential_grad(x_))
+    result_x_minus = integrator.step(state_x_minus, step_size=step_size, drift=lambda x_, t_: -potential_grad(x_))
 
     dx_dx = (result_x_plus["x"] - result_x_minus["x"]) / (2 * eps)
     dp_dx = (result_x_plus["p"] - result_x_minus["p"]) / (2 * eps)
@@ -397,8 +394,8 @@ def test_symplecticity_phase_space_volume():
     # Perturb p
     state_p_plus = {"x": x0.clone(), "p": p0 + eps}
     state_p_minus = {"x": x0.clone(), "p": p0 - eps}
-    result_p_plus = integrator.step(state_p_plus, model=None, step_size=step_size, potential_grad=potential_grad)
-    result_p_minus = integrator.step(state_p_minus, model=None, step_size=step_size, potential_grad=potential_grad)
+    result_p_plus = integrator.step(state_p_plus, step_size=step_size, drift=lambda x_, t_: -potential_grad(x_))
+    result_p_minus = integrator.step(state_p_minus, step_size=step_size, drift=lambda x_, t_: -potential_grad(x_))
 
     dx_dp = (result_p_plus["x"] - result_p_minus["x"]) / (2 * eps)
     dp_dp = (result_p_plus["p"] - result_p_minus["p"]) / (2 * eps)
@@ -429,20 +426,18 @@ def test_reversibility():
     state = {"x": x0, "p": p0}
     forward_result = integrator.integrate(
         state,
-        model=None,
         step_size=step_size,
         n_steps=n_steps,
-        potential_grad=potential_grad,
+        drift=lambda x_, t_: -potential_grad(x_),
     )
 
     # Negate momentum and integrate again (backwards in time)
     state_reversed = {"x": forward_result["x"], "p": -forward_result["p"]}
     backward_result = integrator.integrate(
         state_reversed,
-        model=None,
         step_size=step_size,
         n_steps=n_steps,
-        potential_grad=potential_grad,
+        drift=lambda x_, t_: -potential_grad(x_),
     )
 
     # Should return to original state (with negated momentum)
@@ -469,10 +464,9 @@ def test_harmonic_oscillator_trajectory():
     state = {"x": x0, "p": p0}
     result = integrator.integrate(
         state,
-        model=None,
         step_size=step_size,
         n_steps=n_steps,
-        potential_grad=potential_grad,
+        drift=lambda x_, t_: -potential_grad(x_),
     )
 
     # After one full period, should return near starting point
@@ -493,7 +487,7 @@ def test_with_double_well_model(integrator, double_well_model):
     n_steps = 100
 
     result = integrator.integrate(
-        state, model=double_well_model, step_size=step_size, n_steps=n_steps
+        state, drift=lambda x_, t_: -double_well_model.gradient(x_), step_size=step_size, n_steps=n_steps
     )
 
     assert result["x"].shape == x.shape
@@ -528,7 +522,7 @@ def test_nan_handling():
     p = torch.randn(5, 2, device=device)
     state = {"x": x, "p": p}
 
-    result = integrator.step(state, model=model, step_size=0.1, safe=True)
+    result = integrator.step(state, drift=lambda x_, t_: -model.gradient(x_), step_size=0.1, safe=True)
 
     # Result should not contain NaN due to nan_to_num handling
     assert torch.all(torch.isfinite(result["x"]))
@@ -550,8 +544,8 @@ def test_reproducibility(integrator, gaussian_model):
     x2 = torch.randn(10, 2, device=device)
     p2 = torch.randn(10, 2, device=device)
 
-    result1 = integrator.step({"x": x1, "p": p1}, model=gaussian_model, step_size=0.01)
-    result2 = integrator.step({"x": x2, "p": p2}, model=gaussian_model, step_size=0.01)
+    result1 = integrator.step({"x": x1, "p": p1}, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=0.01)
+    result2 = integrator.step({"x": x2, "p": p2}, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=0.01)
 
     assert torch.allclose(result1["x"], result2["x"])
     assert torch.allclose(result1["p"], result2["p"])
@@ -568,7 +562,7 @@ def test_large_batch_size(integrator):
     state = {"x": x, "p": p}
     potential_grad = lambda x_: x_  # Harmonic potential
 
-    result = integrator.step(state, model=None, step_size=0.01, potential_grad=potential_grad)
+    result = integrator.step(state, step_size=0.01, drift=lambda x_, t_: -potential_grad(x_))
 
     assert result["x"].shape == x.shape
     assert torch.all(torch.isfinite(result["x"]))
@@ -584,7 +578,7 @@ def test_high_dimension(integrator):
     potential_grad = lambda x_: x_
 
     result = integrator.step(
-        state, model=None, step_size=0.01, potential_grad=potential_grad
+        state, step_size=0.01, drift=lambda x_, t_: -potential_grad(x_)
     )
 
     assert result["x"].shape == x.shape
@@ -598,7 +592,7 @@ def test_small_step_size(integrator, gaussian_model):
     p = torch.randn(10, 2, device=device)
     state = {"x": x, "p": p}
 
-    result = integrator.step(state, model=gaussian_model, step_size=1e-8)
+    result = integrator.step(state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=1e-8)
 
     # With tiny step, state should barely change
     assert torch.allclose(result["x"], x, atol=1e-5)
@@ -611,7 +605,7 @@ def test_large_step_size(integrator, gaussian_model):
     p = torch.randn(10, 2, device=device)
     state = {"x": x, "p": p}
 
-    result = integrator.step(state, model=gaussian_model, step_size=1.0)
+    result = integrator.step(state, drift=lambda x_, t_: -gaussian_model.gradient(x_), step_size=1.0)
 
     assert result["x"].shape == x.shape
     assert torch.all(torch.isfinite(result["x"]))
