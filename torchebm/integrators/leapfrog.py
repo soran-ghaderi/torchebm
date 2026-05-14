@@ -1,11 +1,10 @@
 r"""Symplectic leapfrog (Störmer-Verlet) integrator for Hamiltonian dynamics."""
 
-import warnings
 from typing import Callable, Dict, Optional, Union
 
 import torch
 
-from torchebm.core import BaseModel, BaseIntegrator
+from torchebm.core import BaseIntegrator
 
 
 class LeapfrogIntegrator(BaseIntegrator):
@@ -59,37 +58,12 @@ class LeapfrogIntegrator(BaseIntegrator):
             self._mass_view_ndim = ndim
         return mass.view(self._mass_view_shape)
 
-    @staticmethod
-    def _resolve_deprecated_to_drift(model, potential_grad, drift):
-        r"""Convert deprecated `model` or `potential_grad` to a `drift` callable."""
-        if model is not None:
-            warnings.warn(
-                "Passing 'model' to LeapfrogIntegrator is deprecated. "
-                "Use drift=lambda x, t: -model.gradient(x) instead.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-            if drift is None:
-                drift = lambda x_, t_: -model.gradient(x_)
-        if potential_grad is not None:
-            warnings.warn(
-                "Passing 'potential_grad' to LeapfrogIntegrator is deprecated. "
-                "Use drift=lambda x, t: -potential_grad(x) instead.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-            if drift is None:
-                drift = lambda x_, t_: -potential_grad(x_)
-        return drift
-
     def step(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel] = None,
         step_size: torch.Tensor = None,
         mass: Optional[Union[float, torch.Tensor]] = None,
         *,
-        potential_grad: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         drift: Optional[
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
@@ -99,12 +73,8 @@ class LeapfrogIntegrator(BaseIntegrator):
 
         Args:
             state: Current Hamiltonian state with keys `"x"` and `"p"`.
-            model: Deprecated energy model. If provided and `drift` is `None`,
-                uses `drift(x, t) = -model.gradient(x)`.
             step_size: Integration step size.
             mass: Optional mass term. Can be a scalar float or tensor.
-            potential_grad: Deprecated callable for `\nabla_x U(x)`. If provided
-                and `drift` is `None`, uses `drift(x, t) = -potential_grad(x)`.
             drift: Drift/force callable with signature `(x, t) -> force`.
             safe: If `True`, clamps force magnitudes and replaces NaNs by zeros.
 
@@ -116,7 +86,6 @@ class LeapfrogIntegrator(BaseIntegrator):
 
         if not torch.is_tensor(step_size):
             step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
-        drift = self._resolve_deprecated_to_drift(model, potential_grad, drift)
         drift_fn = self._resolve_drift(drift)
 
         t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
@@ -155,12 +124,10 @@ class LeapfrogIntegrator(BaseIntegrator):
     def integrate(
         self,
         state: Dict[str, torch.Tensor],
-        model: Optional[BaseModel] = None,
         step_size: torch.Tensor = None,
         n_steps: int = None,
         mass: Optional[Union[float, torch.Tensor]] = None,
         *,
-        potential_grad: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         drift: Optional[
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
@@ -171,13 +138,9 @@ class LeapfrogIntegrator(BaseIntegrator):
 
         Args:
             state: Initial Hamiltonian state with keys `"x"` and `"p"`.
-            model: Deprecated energy model. If provided and `drift` is `None`,
-                uses `drift(x, t) = -model.gradient(x)`.
             step_size: Integration step size.
             n_steps: Number of leapfrog steps to apply. Must be positive.
             mass: Optional mass term. Can be a scalar float or tensor.
-            potential_grad: Deprecated callable for `\nabla_x U(x)`. If provided
-                and `drift` is `None`, uses `drift(x, t) = -potential_grad(x)`.
             drift: Drift/force callable with signature `(x, t) -> force`.
             safe: If `True`, clamps force magnitudes and replaces NaNs by zeros.
             inference_mode: If `True`, runs integration under
@@ -195,12 +158,11 @@ class LeapfrogIntegrator(BaseIntegrator):
         if inference_mode:
             with torch.inference_mode():
                 return self.integrate(
-                    state, model=model, step_size=step_size,
+                    state, step_size=step_size,
                     n_steps=n_steps, mass=mass,
-                    potential_grad=potential_grad, drift=drift, safe=safe,
+                    drift=drift, safe=safe,
                 )
 
-        drift = self._resolve_deprecated_to_drift(model, potential_grad, drift)
         drift_fn = self._resolve_drift(drift)
 
         x = state["x"]
