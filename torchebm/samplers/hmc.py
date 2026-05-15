@@ -1,7 +1,7 @@
 r"""Hamiltonian Monte Carlo Sampler Module."""
 
 import math
-from typing import Optional, Union, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import torch
 
@@ -31,10 +31,10 @@ class HamiltonianMonteCarlo(BaseSampler):
     Example:
         ```python
         from torchebm.samplers import HamiltonianMonteCarlo
-        from torchebm.core import DoubleWellEnergy
+        from torchebm.core import DoubleWellModel
         import torch
 
-        energy = DoubleWellEnergy()
+        energy = DoubleWellModel()
         sampler = HamiltonianMonteCarlo(
             energy, step_size=0.1, n_leapfrog_steps=10
         )
@@ -144,7 +144,27 @@ class HamiltonianMonteCarlo(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
+        r"""Generate samples via Hamiltonian Monte Carlo.
+
+        Args:
+            x: Initial state. If `None`, samples from `N(0, I)`.
+            dim: State-space dimension (used when `x is None`); inferred from
+                `model.mean` when available.
+            n_steps: Number of MH proposals.
+            n_samples: Number of parallel chains.
+            thin: Keep every `thin`-th sample (final length `n_steps // thin`).
+            return_trajectory: If True, return the full kept trajectory.
+            return_diagnostics: If True, also return a dict with keys
+                ``"mean"`` (`[n_kept, dim]`), ``"var"`` (`[n_kept, dim]`),
+                ``"energy"`` (`[n_kept]`), and ``"acceptance_rate"`` (`[n_kept]`).
+            reset_schedulers: If True (default), reset registered schedulers.
+
+        Raises:
+            ValueError: If `thin < 1`.
+        """
+        if thin < 1:
+            raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
 
@@ -164,18 +184,28 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         dim = x.shape[1]
         batch_size = x.shape[0]
+        n_kept = n_steps // thin
 
         if return_trajectory:
             trajectory = torch.empty(
-                (batch_size, n_steps, dim),
+                (batch_size, n_kept, dim),
                 dtype=self.dtype,
                 device=self.device,
                 requires_grad=False,
             )
 
+        diagnostics: Optional[Dict[str, torch.Tensor]] = None
         if return_diagnostics:
-            diagnostics = self._setup_diagnostics(dim, n_steps, n_samples=batch_size)
+            diagnostics = {
+                "mean": torch.empty(n_kept, dim, dtype=self.dtype, device=self.device),
+                "var": torch.empty(n_kept, dim, dtype=self.dtype, device=self.device),
+                "energy": torch.empty(n_kept, dtype=self.dtype, device=self.device),
+                "acceptance_rate": torch.empty(
+                    n_kept, dtype=self.dtype, device=self.device
+                ),
+            }
 
+        keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
                 current_momentum = self._initialize_momentum(x.shape)
@@ -223,54 +253,23 @@ class HamiltonianMonteCarlo(BaseSampler):
                 accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
                 x = torch.where(accept_view, proposed_position, x)
 
-                if return_trajectory:
-                    trajectory[:, i, :] = x
-
-                if return_diagnostics:
-                    mean_x = x.mean(dim=0, keepdim=True)
-                    var_x = torch.clamp(
-                        x.var(dim=0, unbiased=False, keepdim=True),
-                        min=1e-10,
-                        max=1e10,
-                    )
-                    energy = torch.clamp(self.model(x), min=-1e10, max=1e10)
-                    acceptance_rate = accepted.float().mean()
-
-                    mean_exp = mean_x.expand(batch_size, dim)
-                    diagnostics[i, 0, :, :] = mean_exp
-                    diagnostics[i, 1, :, :] = var_x.expand(batch_size, dim)
-                    diagnostics[i, 2, :, :] = energy.view(-1, 1).expand(-1, dim)
-                    diagnostics[i, 3, :, :] = acceptance_rate
+                if (i + 1) % thin == 0:
+                    if return_trajectory:
+                        trajectory[:, keep_idx, :] = x
+                    if return_diagnostics:
+                        diagnostics["mean"][keep_idx] = x.mean(dim=0)
+                        diagnostics["var"][keep_idx] = (
+                            x.var(dim=0, unbiased=False).clamp_(min=1e-10, max=1e10)
+                            if batch_size > 1
+                            else torch.zeros(dim, dtype=self.dtype, device=self.device)
+                        )
+                        diagnostics["energy"][keep_idx] = (
+                            self.model(x).clamp_(min=-1e10, max=1e10).mean()
+                        )
+                        diagnostics["acceptance_rate"][keep_idx] = accepted.float().mean()
+                    keep_idx += 1
 
                 self.step_schedulers()
 
-        if return_trajectory:
-            if return_diagnostics:
-                return trajectory.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)
-            return trajectory.to(dtype=self.dtype)
-
-        if return_diagnostics:
-            return x.to(dtype=self.dtype), diagnostics.to(dtype=self.dtype)
-
-        return x.to(dtype=self.dtype)
-
-    def _setup_diagnostics(
-        self, dim: int, n_steps: int, n_samples: int = None
-    ) -> torch.Tensor:
-        r"""
-        Initializes a tensor to store diagnostics during sampling.
-
-        Args:
-            dim (int): The dimensionality of the state space.
-            n_steps (int): The number of sampling steps.
-            n_samples (Optional[int]): The number of parallel chains.
-
-        Returns:
-            torch.Tensor: An empty tensor for storing diagnostics.
-        """
-        if n_samples is not None:
-            return torch.empty(
-                (n_steps, 4, n_samples, dim), device=self.device, dtype=self.dtype
-            )
-        else:
-            return torch.empty((n_steps, 4, dim), device=self.device, dtype=self.dtype)
+        output = trajectory if return_trajectory else x
+        return (output, diagnostics) if return_diagnostics else output

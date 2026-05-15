@@ -1,5 +1,4 @@
 import math
-import warnings
 from abc import ABC, abstractmethod
 import torch
 from torch import nn
@@ -107,14 +106,6 @@ class BaseModel(TorchEBMModule, ABC):
         gradient = gradient_float32.to(original_dtype)
 
         return gradient.detach()
-
-    def __call__(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        """Alias for the forward method for standard PyTorch module usage."""
-        if (x.device != self.device) or (x.dtype != self.dtype):
-            x = x.to(device=self.device, dtype=self.dtype)
-
-        with self.autocast_context():
-            return super().__call__(x, *args, **kwargs)
 
 
 class DoubleWellModel(BaseModel):
@@ -304,81 +295,3 @@ class RastriginModel(BaseModel):
         return self.a * n + torch.sum(
             x**2 - self.a * torch.cos(2 * math.pi * x), dim=-1
         )
-
-
-# Deprecated Classes -> will be removed in the next two pypi releases starting from v0.4.0 
-
-class BaseEnergyFunction(BaseModel):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "`BaseEnergyFunction` is deprecated and will be removed in a future version. "
-            "Please use `BaseModel` instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super().__init__(*args, **kwargs)
-
-class DoubleWellEnergy(DoubleWellModel):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "`DoubleWellEnergy` is deprecated and will be removed in a future version. "
-            "Please use `DoubleWellModel` instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super().__init__(*args, **kwargs)
-
-
-class GaussianEnergy(GaussianModel):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "`GaussianEnergy` is deprecated and will be removed in a future version. "
-            "Please use `GaussianModel` instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super().__init__(*args, **kwargs)
-
-
-class HarmonicEnergy(HarmonicModel):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "`HarmonicEnergy` is deprecated and will be removed in a future version. "
-            "Please use `HarmonicModel` instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super().__init__(*args, **kwargs)
-
-
-class RosenbrockEnergy(RosenbrockModel):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "`RosenbrockEnergy` is deprecated and will be removed in a future version. "
-            "Please use `RosenbrockModel` instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super().__init__(*args, **kwargs)
-
-
-class AckleyEnergy(AckleyModel):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "`AckleyEnergy` is deprecated and will be removed in a future version. "
-            "Please use `AckleyModel` instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super().__init__(*args, **kwargs)
-
-
-class RastriginEnergy(RastriginModel):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "`RastriginEnergy` is deprecated and will be removed in a future version. "
-            "Please use `RastriginModel` instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super().__init__(*args, **kwargs)

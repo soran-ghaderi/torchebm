@@ -62,15 +62,14 @@ class TestGradientDescentSampler:
     def test_trajectory(self, device, dtype):
         model = QuadraticEnergy()
         sampler = GradientDescentSampler(model, step_size=0.1, device=device, dtype=dtype)
-        
+
         x = torch.ones(1, 1, device=device, dtype=dtype)
-        # n_steps=2 -> initial + 2 steps = 3 states
+        # n_steps=2 -> 2 post-step states (initial state is the input, not stored).
         samples = sampler.sample(x, n_steps=2, return_trajectory=True)
-        
-        assert samples.shape == (1, 3, 1) # (B, T, D)
-        assert_close(samples[0, 0], torch.tensor([1.0], device=device))
-        assert_close(samples[0, 1], torch.tensor([0.9], device=device))
-        assert_close(samples[0, 2], torch.tensor([0.81], device=device))
+
+        assert samples.shape == (1, 2, 1)  # (B, n_steps // thin, D)
+        assert_close(samples[0, 0], torch.tensor([0.9], device=device))
+        assert_close(samples[0, 1], torch.tensor([0.81], device=device))
 
 class TestNesterovSampler:
     
@@ -99,10 +98,11 @@ class TestNesterovSampler:
         sampler = NesterovSampler(model, step_size=0.1, momentum=0.9, device=device, dtype=dtype)
         
         x = torch.ones(1, 1, device=device, dtype=dtype)
+        # Trajectory stores post-step states only (initial input not included).
         samples = sampler.sample(x, n_steps=2, return_trajectory=True)
-        
-        assert_close(samples[0, 1], torch.tensor([0.9], device=device))
-        assert_close(samples[0, 2], torch.tensor([0.729], device=device))
+
+        assert_close(samples[0, 0], torch.tensor([0.9], device=device))
+        assert_close(samples[0, 1], torch.tensor([0.729], device=device))
 
     def test_scheduler(self, device, dtype):
         # Test with decaying step size
@@ -126,5 +126,5 @@ class TestNesterovSampler:
 
         samples = sampler.sample(x, n_steps=2, return_trajectory=True)
 
-        assert_close(samples[0, 1], torch.tensor([0.9], device=device))
-        assert_close(samples[0, 2], torch.tensor([0.891], device=device))
+        assert_close(samples[0, 0], torch.tensor([0.9], device=device))
+        assert_close(samples[0, 1], torch.tensor([0.891], device=device))

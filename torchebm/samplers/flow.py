@@ -11,7 +11,7 @@ import torch
 from torch import nn
 import numpy as np
 
-from torchebm.core import BaseSampler, BaseInterpolant, BaseScheduler, expand_t_like_x, safe_to
+from torchebm.core import BaseSampler, BaseInterpolant, BaseScheduler, expand_t_like_x
 from torchebm.integrators import (
     EulerMaruyamaIntegrator,
     HeunIntegrator,
@@ -111,10 +111,7 @@ class FlowSampler(BaseSampler):
             "noise": PredictionType.NOISE,
         }
         self.prediction_type = prediction_map[prediction]
-
-        self.interpolant = safe_to(
-            self.interpolant, device=self.device, dtype=self.dtype
-        )
+        # Interpolants are stateless math objects (no device-bound tensors).
 
     @property
     def train_eps(self) -> float:
@@ -142,6 +139,7 @@ class FlowSampler(BaseSampler):
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
+        reset_schedulers: bool = True,
         *,
         mode: Literal["ode", "sde"] = "ode",
         shape: Optional[Tuple[int, ...]] = None,
@@ -156,16 +154,30 @@ class FlowSampler(BaseSampler):
         last_step_size: float = 0.04,
         **model_kwargs,
     ) -> torch.Tensor:
-        r"""
-        Unified sampling entrypoint for flow/diffusion models.
+        r"""Unified sampling entrypoint for flow/diffusion models.
 
-        This method exists for API compatibility with `BaseSampler`. For full control,
-        prefer calling `sample_ode` or `sample_sde` directly.
+        Conforms to the `BaseSampler.sample` contract for the common kwargs.
+        Flow-specific options (`mode`, ODE/SDE method, etc.) are keyword-only.
+        For full control, call `sample_ode` or `sample_sde` directly.
+
+        ``thin``, ``return_trajectory``, and ``return_diagnostics`` are not
+        supported by ODE/SDE solvers (they integrate continuously, not stepwise);
+        passing non-default values raises `NotImplementedError`. ``reset_schedulers``
+        is honored for `train_eps` / `sample_eps` schedules.
+
+        Raises:
+            NotImplementedError: If `thin != 1`, `return_trajectory=True`, or
+                `return_diagnostics=True`.
+            ValueError: If `mode` is not `"ode"` or `"sde"`.
         """
         if thin != 1:
-            raise ValueError("thin is not supported for FlowSampler")
+            raise NotImplementedError("thin is not supported for FlowSampler")
         if return_trajectory or return_diagnostics:
-            raise ValueError("FlowSampler does not support trajectories/diagnostics")
+            raise NotImplementedError(
+                "FlowSampler does not support trajectories/diagnostics"
+            )
+        if reset_schedulers:
+            self.reset_schedulers()
 
         if x is None:
             if shape is not None:
