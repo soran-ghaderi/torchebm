@@ -265,9 +265,14 @@ def test_hmc_sample_with_diagnostics(hmc_sampler):
         dim=dim, n_steps=n_steps, return_diagnostics=True
     )
     assert final_state.shape == (1, dim)
-    # Shape: (n_steps, n_diagnostics=4, n_samples=1, dim)
-    assert diagnostics.shape == (n_steps, 4, 1, dim)
-    assert torch.all(torch.isfinite(diagnostics))
+    assert isinstance(diagnostics, dict)
+    assert set(diagnostics) == {"mean", "var", "energy", "acceptance_rate"}
+    assert diagnostics["mean"].shape == (n_steps, dim)
+    assert diagnostics["var"].shape == (n_steps, dim)
+    assert diagnostics["energy"].shape == (n_steps,)
+    assert diagnostics["acceptance_rate"].shape == (n_steps,)
+    for v in diagnostics.values():
+        assert torch.all(torch.isfinite(v))
 
 
 @pytest.mark.parametrize(
@@ -478,9 +483,11 @@ def test_hmc_float16_cuda(hmc_sampler):
     _, diagnostics = hmc_sampler.sample(
         dim=dim, n_steps=n_steps, n_samples=n_samples, return_diagnostics=True
     )
-    assert diagnostics.dtype == torch.float16
-    assert diagnostics.shape == (n_steps, 4, n_samples, dim)
-    assert torch.all(torch.isfinite(diagnostics))
+    assert isinstance(diagnostics, dict)
+    for v in diagnostics.values():
+        assert v.dtype == torch.float16
+        assert torch.all(torch.isfinite(v))
+    assert diagnostics["mean"].shape == (n_steps, dim)
 
 
 ###############################################################################
@@ -518,10 +525,10 @@ def test_leapfrog_nan_handling(hmc_sampler):
     state = {"x": position, "p": momentum}
     result = hmc_sampler.integrator.integrate(
         state,
-        hmc_sampler.model,
-        hmc_sampler.get_scheduled_value("step_size"),
-        hmc_sampler.n_leapfrog_steps,
-        hmc_sampler.mass,
+        step_size=hmc_sampler.get_scheduled_value("step_size"),
+        n_steps=hmc_sampler.n_leapfrog_steps,
+        mass=hmc_sampler.mass,
+        drift=lambda x_, t_: -hmc_sampler.model.gradient(x_),
         safe=True,
     )
     new_pos, new_mom = result["x"], result["p"]
@@ -731,10 +738,10 @@ def test_hmc_step_internals():
     state = {"x": position, "p": momentum}
     result = hmc.integrator.integrate(
         state,
-        hmc.model,
-        hmc.get_scheduled_value("step_size"),
-        hmc.n_leapfrog_steps,
-        hmc.mass,
+        step_size=hmc.get_scheduled_value("step_size"),
+        n_steps=hmc.n_leapfrog_steps,
+        mass=hmc.mass,
+        drift=lambda x_, t_: -hmc.model.gradient(x_),
     )
     new_position, new_momentum = result["x"], result["p"]
     assert new_position.shape == position.shape
@@ -748,10 +755,10 @@ def test_hmc_step_internals():
     state = {"x": far_position, "p": far_momentum}
     result = hmc.integrator.integrate(
         state,
-        hmc.model,
-        hmc.get_scheduled_value("step_size"),
-        hmc.n_leapfrog_steps,
-        hmc.mass,
+        step_size=hmc.get_scheduled_value("step_size"),
+        n_steps=hmc.n_leapfrog_steps,
+        mass=hmc.mass,
+        drift=lambda x_, t_: -hmc.model.gradient(x_),
     )
     new_pos_far, new_mom_far = result["x"], result["p"]
     assert torch.all(torch.isfinite(new_pos_far))
@@ -763,7 +770,10 @@ def test_hmc_step_internals():
     momentum = hmc._initialize_momentum(shape)
     state = {"x": position, "p": momentum}
     result = hmc.integrator.step(
-        state, hmc.model, hmc.get_scheduled_value("step_size"), hmc.mass
+        state,
+        step_size=hmc.get_scheduled_value("step_size"),
+        mass=hmc.mass,
+        drift=lambda x_, t_: -hmc.model.gradient(x_),
     )
     new_position, new_momentum = result["x"], result["p"]
     assert new_position.shape == position.shape
@@ -796,14 +806,15 @@ def test_hmc_diagnostics_stability(hmc_sampler):
         dim=dim, n_steps=n_steps, n_samples=n_samples_1, return_diagnostics=True
     )
     assert final_state_1.shape == (n_samples_1, dim)
-    assert diagnostics_1.shape == (n_steps, 4, n_samples_1, dim)
-    assert torch.all(torch.isfinite(diagnostics_1))
-    # Check variance component (index 1) - should be clamped non-negative
-    assert torch.all(diagnostics_1[:, 1, :, :] >= 0)
+    assert diagnostics_1["mean"].shape == (n_steps, dim)
+    assert diagnostics_1["var"].shape == (n_steps, dim)
+    for v in diagnostics_1.values():
+        assert torch.all(torch.isfinite(v))
+    # Variance non-negative
+    assert torch.all(diagnostics_1["var"] >= 0)
 
     # Case 2: Multiple identical samples (variance is zero, should be clamped)
     n_samples_multi = 5
-    # Start all samples at the same point
     initial_state = torch.zeros(
         (n_samples_multi, dim), device=hmc_sampler.device, dtype=hmc_sampler.dtype
     )
@@ -815,11 +826,10 @@ def test_hmc_diagnostics_stability(hmc_sampler):
     )
 
     assert final_state_multi.shape == (n_samples_multi, dim)
-    assert diagnostics_multi.shape == (1, 4, n_samples_multi, dim)
-    assert torch.all(torch.isfinite(diagnostics_multi))
-    # Check variance component (index 1) - should be clamped non-negative
-    variance_diag = diagnostics_multi[0, 1, :, :]
-    assert torch.all(variance_diag >= 0)
+    assert diagnostics_multi["var"].shape == (1, dim)
+    for v in diagnostics_multi.values():
+        assert torch.all(torch.isfinite(v))
+    assert torch.all(diagnostics_multi["var"] >= 0)
 
 
 @pytest.mark.parametrize("start_val", [1e4, 1e6])
@@ -871,10 +881,10 @@ def test_hmc_numerical_stability_extreme_values(start_val):
     state = {"x": extreme_position, "p": momentum}
     result = hmc.integrator.integrate(
         state,
-        hmc.model,
-        hmc.get_scheduled_value("step_size"),
-        hmc.n_leapfrog_steps,
-        hmc.mass,
+        step_size=hmc.get_scheduled_value("step_size"),
+        n_steps=hmc.n_leapfrog_steps,
+        mass=hmc.mass,
+        drift=lambda x_, t_: -hmc.model.gradient(x_),
         safe=True,
     )
     new_pos_leap, new_mom_leap = result["x"], result["p"]

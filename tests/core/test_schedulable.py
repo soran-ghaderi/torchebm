@@ -177,3 +177,70 @@ def test_sample_reset_schedulers_true_resets_each_call():
     assert sampler.schedulers["step_size"].step_count == 5
     sampler.sample(dim=2, n_steps=5)  # default reset=True
     assert sampler.schedulers["step_size"].step_count == 5
+
+
+def test_sample_thin_reduces_trajectory_length():
+    """`thin > 1` keeps every thin-th sample; trajectory length = n_steps // thin."""
+    from torchebm.samplers import LangevinDynamics
+
+    energy = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
+    sampler = LangevinDynamics(model=energy, step_size=0.01, noise_scale=0.1)
+    traj = sampler.sample(dim=2, n_samples=4, n_steps=20, thin=5, return_trajectory=True)
+    # n_kept = 20 // 5 = 4
+    assert traj.shape == (4, 4, 2)
+
+
+def test_sample_thin_invalid_raises():
+    """`thin < 1` raises ValueError."""
+    from torchebm.samplers import LangevinDynamics
+
+    energy = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
+    sampler = LangevinDynamics(model=energy, step_size=0.01, noise_scale=0.1)
+    with pytest.raises(ValueError, match="thin must be >= 1"):
+        sampler.sample(dim=2, n_steps=10, thin=0)
+
+
+def test_diagnostics_dict_contract_langevin():
+    """Langevin returns Dict[str, Tensor] with documented keys and shapes."""
+    from torchebm.samplers import LangevinDynamics
+
+    energy = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
+    sampler = LangevinDynamics(model=energy, step_size=0.01, noise_scale=0.1)
+    n_steps = 10
+    out, diag = sampler.sample(
+        dim=2, n_samples=4, n_steps=n_steps, return_diagnostics=True
+    )
+    assert isinstance(diag, dict)
+    assert set(diag) == {"mean", "var", "energy"}
+    assert diag["mean"].shape == (n_steps, 2)
+    assert diag["var"].shape == (n_steps, 2)
+    assert diag["energy"].shape == (n_steps,)
+
+
+def test_diagnostics_dict_contract_hmc():
+    """HMC returns Dict[str, Tensor] including acceptance_rate."""
+    from torchebm.samplers import HamiltonianMonteCarlo
+
+    energy = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
+    sampler = HamiltonianMonteCarlo(model=energy, step_size=0.05, n_leapfrog_steps=3)
+    n_steps = 5
+    out, diag = sampler.sample(
+        dim=2, n_samples=4, n_steps=n_steps, return_diagnostics=True
+    )
+    assert set(diag) == {"mean", "var", "energy", "acceptance_rate"}
+    assert diag["acceptance_rate"].shape == (n_steps,)
+    assert torch.all(diag["acceptance_rate"] >= 0)
+    assert torch.all(diag["acceptance_rate"] <= 1)
+
+
+def test_diagnostics_thin_matches_kept_length():
+    """Diagnostic tensors are sized to n_steps // thin."""
+    from torchebm.samplers import LangevinDynamics
+
+    energy = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
+    sampler = LangevinDynamics(model=energy, step_size=0.01, noise_scale=0.1)
+    out, diag = sampler.sample(
+        dim=2, n_samples=4, n_steps=20, thin=5, return_diagnostics=True
+    )
+    assert diag["mean"].shape == (4, 2)
+    assert diag["energy"].shape == (4,)

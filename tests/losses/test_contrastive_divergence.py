@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 import warnings
 
-from torchebm.core import BaseModel, GaussianModel, DoubleWellEnergy
+from torchebm.core import BaseModel, GaussianModel
 from torchebm.samplers import LangevinDynamics
 from torchebm.losses import (
     ContrastiveDivergence,
