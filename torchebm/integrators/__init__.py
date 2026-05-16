@@ -26,7 +26,7 @@ _LAZY_IMPORTS = {
     "Dopri5Integrator": ".dopri",
     "Dopri8Integrator": ".dopri",
     "RK4Integrator": ".rk4",
-    "RK438Integrator": ".rk4_38",
+    "RK438Integrator": ".rk4",
     "AdaptiveHeunIntegrator": ".adaptive_heun",
     "Bosh3Integrator": ".bosh3",
 }
