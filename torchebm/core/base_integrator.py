@@ -170,6 +170,9 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         max_factor: float = 10.0,
         max_step_size: float = float("inf"),
         norm: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        solver_max_iter: int = 8,
+        solver_tol: float = 1e-6,
+        solver_check_every: int = 0,
     ):
         super().__init__(device=device, dtype=dtype)
         self.atol = atol
@@ -180,6 +183,9 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         self.max_factor = max_factor
         self.max_step_size = max_step_size
         self._norm = norm
+        self.solver_max_iter = solver_max_iter
+        self.solver_tol = solver_tol
+        self.solver_check_every = solver_check_every
         self._register_tableau_buffers()
 
     def _register_tableau_buffers(self):
@@ -199,6 +205,13 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             "_buf_e",
             torch.tensor(e, device=_device, dtype=_dtype) if e is not None else None,
         )
+        # Per-stage implicit flag, derived from the diagonal of `a`.
+        # Stage `i` is implicit iff a[i, i] != 0 (DIRK convention).
+        # Stored as a Python tuple so the per-stage dispatch in _evaluate_stages
+        # is a free bool check with no GPU op or sync per step.
+        self._stage_implicit: Tuple[bool, ...] = tuple(
+            bool(a[i, i] != 0) for i in range(s)
+        )
 
     # butcher tableau, must be defined by subclasses
 
@@ -207,8 +220,11 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
     def tableau_a(self) -> Tuple[Tuple[float, ...], ...]:
         r"""Lower-triangular RK matrix \(a_{ij}\).
 
-        ``tableau_a[i]`` contains coefficients \(a_{i0}, \ldots, a_{i,i-1}\).
-        The first row is the empty tuple ``()``.
+        ``tableau_a[i]`` contains coefficients \(a_{i0}, \ldots, a_{i,i-1}\)
+        for explicit methods; for diagonally-implicit (DIRK) methods the row
+        extends to \(a_{ii}\) (length ``i+1``). A stage with non-zero diagonal
+        entry ``a[i, i]`` is solved by Picard iteration in ``_evaluate_stages``.
+        The first row is the empty tuple ``()`` for explicit methods.
         """
 
     @property
@@ -291,6 +307,12 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
     ) -> torch.Tensor:
         r"""Evaluate all RK stages and return a tensor of shape ``(s, *x.shape)``.
 
+        Per-stage dispatch on ``self._stage_implicit[i]``: stages with
+        ``a[i, i] == 0`` (explicit) use a single drift evaluation; stages
+        with ``a[i, i] != 0`` (DIRK) solve the implicit equation
+        \(k_i = f(x_{\text{base}} + h\,a_{ii}\,k_i,\,t_i)\) by Picard
+        iteration via ``_solve_implicit_stage``.
+
         Args:
             x: Current position tensor.
             t: Current time tensor (batch,).
@@ -316,7 +338,48 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
                     "i,i...->...", a[i, :i], k[:i]
                 )
             t_stage = t + c[i] * step_size
-            k[i] = drift_fn(x_stage, t_stage)
+            if self._stage_implicit[i]:
+                k[i] = self._solve_implicit_stage(
+                    x_stage, t_stage, step_size, a[i, i], drift_fn,
+                )
+            else:
+                k[i] = drift_fn(x_stage, t_stage)
+        return k
+
+    def _solve_implicit_stage(
+        self,
+        base: torch.Tensor,
+        t: torch.Tensor,
+        h: torch.Tensor,
+        a_ii: torch.Tensor,
+        drift_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    ) -> torch.Tensor:
+        r"""Solve \(k = f(\text{base} + h\,a_{ii}\,k,\,t)\) by Picard iteration.
+
+        Default path (``solver_check_every <= 0``) runs ``solver_max_iter``
+        iterations unconditionally with no CPU-GPU sync. The opt-in path
+        (``solver_check_every > 0``) checks the RMS residual every
+        ``solver_check_every`` iterations and exits early when below
+        ``solver_tol`` (one ``.item()`` sync per check).
+
+        The mul-add \(\text{base} + h\,a_{ii}\,k\) uses ``torch.addcmul``
+        for single-kernel fusion (cf. einsum-fusion at line 332).
+        """
+        coef = h * a_ii                              # scalar 0-d tensor, once
+        k = drift_fn(base, t)                        # warm start
+        if self.solver_check_every <= 0:
+            for _ in range(self.solver_max_iter - 1):
+                k = drift_fn(torch.addcmul(base, coef, k), t)
+            return k
+        for it in range(1, self.solver_max_iter):
+            k_next = drift_fn(torch.addcmul(base, coef, k), t)
+            if it % self.solver_check_every == 0:
+                resid = (k_next - k).square().mean().sqrt()
+                k = k_next
+                if resid.item() < self.solver_tol:
+                    break
+            else:
+                k = k_next
         return k
 
     def _combine_stages(
