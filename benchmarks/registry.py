@@ -40,6 +40,7 @@ class BenchSpec:
     needs_diffusion: bool = False  # integrators: requires diffusion= kwarg
     needs_momentum: bool = False  # integrators: state includes "p"
     needs_force_velocity: bool = False  # integrators: uses force/velocity (non-separable H)
+    needs_metric_fn: bool = False  # samplers: requires a Riemannian metric_fn
     needs_sampler: bool = False  # losses: needs an MCMC sampler
     needs_grad: bool = False  # losses: x.requires_grad_(True)
     returns_tuple: bool = False  # loss forward returns (loss, extras)

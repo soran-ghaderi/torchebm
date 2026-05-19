@@ -11,6 +11,7 @@ __all__ = [
     # MCMC samplers
     "LangevinDynamics",
     "HamiltonianMonteCarlo",
+    "RiemannianManifoldHMC",
     # Optimization-based samplers
     "GradientDescentSampler",
     "NesterovSampler",
@@ -22,6 +23,7 @@ __all__ = [
 _LAZY_IMPORTS = {
     "LangevinDynamics": ".langevin_dynamics",
     "HamiltonianMonteCarlo": ".hmc",
+    "RiemannianManifoldHMC": ".hmc",
     "GradientDescentSampler": ".gradient_descent",
     "NesterovSampler": ".gradient_descent",
     "FlowSampler": ".flow",
