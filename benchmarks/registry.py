@@ -39,6 +39,7 @@ class BenchSpec:
     init_kwargs: Dict[str, Any] = field(default_factory=dict)
     needs_diffusion: bool = False  # integrators: requires diffusion= kwarg
     needs_momentum: bool = False  # integrators: state includes "p"
+    needs_force_velocity: bool = False  # integrators: uses force/velocity (non-separable H)
     needs_sampler: bool = False  # losses: needs an MCMC sampler
     needs_grad: bool = False  # losses: x.requires_grad_(True)
     returns_tuple: bool = False  # loss forward returns (loss, extras)
@@ -59,6 +60,10 @@ class BenchSpec:
 COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     # ── Integrators ──
     "LeapfrogIntegrator": {"needs_momentum": True},
+    "GeneralisedLeapfrogIntegrator": {
+        "needs_momentum": True,
+        "needs_force_velocity": True,
+    },
     "EulerMaruyamaIntegrator": {"needs_diffusion": True},
     "HeunIntegrator": {"needs_diffusion": True},
     "RK4Integrator": {},
@@ -133,6 +138,11 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "HamiltonianMonteCarlo": {
         "model_type": "ebm_double_well",
         "init_kwargs": {"n_leapfrog_steps": 10},
+    },
+    "RiemannianManifoldHMC": {
+        "model_type": "ebm_double_well",
+        "needs_metric_fn": True,
+        "init_kwargs": {"n_leapfrog_steps": 5, "solver_max_iter": 4},
     },
     "GradientDescentSampler": {"model_type": "ebm_double_well"},
     "NesterovSampler": {
@@ -296,6 +306,8 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
         init_kwargs=overrides.get("init_kwargs", {}),
         needs_diffusion=overrides.get("needs_diffusion", False),
         needs_momentum=overrides.get("needs_momentum", False),
+        needs_force_velocity=overrides.get("needs_force_velocity", False),
+        needs_metric_fn=overrides.get("needs_metric_fn", False),
         needs_sampler=overrides.get("needs_sampler", False),
         needs_grad=overrides.get("needs_grad", False),
         returns_tuple=overrides.get("returns_tuple", False),
@@ -461,7 +473,28 @@ def build_integrator_bench(
         counting_drift = None
         drift = raw_drift
 
-    if spec.needs_momentum:
+    if spec.needs_force_velocity:
+        # Non-separable Hamiltonian integrator (e.g. GeneralisedLeapfrog).
+        # We benchmark its machinery on the trivial separable case:
+        # force(x, p, t) = drift(x, t) (≡ -∂U/∂x), velocity(x, p, t) = p.
+        p0 = torch.randn_like(x0)
+
+        def _force(x_, p_, t_):
+            return drift(x_, t_)
+
+        def _velocity(x_, p_, t_):
+            return p_
+
+        def fn():
+            integrator.integrate(
+                state={"x": x0.clone(), "p": p0.clone()},
+                step_size=step_size,
+                n_steps=n_steps,
+                force=_force,
+                velocity=_velocity,
+            )
+
+    elif spec.needs_momentum:
         p0 = torch.randn_like(x0)
 
         def fn():
@@ -636,6 +669,17 @@ def build_sampler_bench(
         raise ValueError(
             f"Unknown model_type {spec.model_type!r} for sampler {spec.name}"
         )
+
+    if spec.needs_metric_fn:
+        # Identity metric — reduces RMHMC to plain HMC but exercises the
+        # full Riemannian code path (Cholesky, solves, GLI Picard loops).
+        _dim = dim
+
+        def _metric_fn(x):
+            eye = torch.eye(_dim, dtype=x.dtype, device=x.device)
+            return eye.expand(x.shape[0], _dim, _dim).contiguous()
+
+        init_kw["metric_fn"] = _metric_fn
 
     sampler = spec.cls(**init_kw)
     x0 = _make_data(bs, dim, device, dtype)
