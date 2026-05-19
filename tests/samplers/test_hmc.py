@@ -11,7 +11,7 @@ from torchebm.core import (
     ConstantScheduler,
     LinearScheduler,
 )
-from torchebm.samplers import HamiltonianMonteCarlo
+from torchebm.samplers import HamiltonianMonteCarlo, RiemannianManifoldHMC
 from tests.conftest import requires_cuda as rc
 
 requires_cuda = pytest.mark.skipif(
@@ -894,6 +894,464 @@ def test_hmc_numerical_stability_extreme_values(start_val):
     # Test full sampling for finiteness
     result = hmc.sample(x=extreme_position.clone(), n_steps=10)
     assert torch.all(torch.isfinite(result))
+
+
+###############################################################################
+# RiemannianManifoldHMC Tests
+###############################################################################
+#
+# Shared metric helpers
+# ---------------------
+#   _identity_metric : G(x) = I — degenerate case where RMHMC must behave
+#                      like ordinary HMC on the same target.
+#   _outer_metric    : G(x) = I + alpha * x x^T — a position-dependent SPD
+#                      metric that exercises the non-separable code path
+#                      (∂H/∂p and ∂H/∂x both depend on x and p).
+#
+
+
+def _identity_metric(dim):
+    def metric_fn(x):
+        eye = torch.eye(dim, dtype=x.dtype, device=x.device)
+        return eye.expand(x.shape[0], dim, dim).contiguous()
+    return metric_fn
+
+
+def _outer_metric(dim, alpha=0.5):
+    def metric_fn(x):
+        eye = torch.eye(dim, dtype=x.dtype, device=x.device).expand(
+            x.shape[0], dim, dim
+        )
+        outer = x.unsqueeze(-1) * x.unsqueeze(-2)
+        return eye + alpha * outer
+    return metric_fn
+
+
+def _gaussian_target(dim, device):
+    return GaussianModel(
+        mean=torch.zeros(dim, device=device),
+        cov=torch.eye(dim, device=device),
+    ).to(device)
+
+
+# ----- Initialization & validation -----
+
+
+def test_rmhmc_initialization():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = _gaussian_target(2, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(2),
+        step_size=0.1, n_leapfrog_steps=10, device=device,
+    )
+    assert isinstance(sampler, RiemannianManifoldHMC)
+    assert sampler.schedulers["step_size"] is not None
+    assert isinstance(sampler.schedulers["step_size"], BaseScheduler)
+    assert sampler.n_leapfrog_steps == 10
+    # The default integrator should be the Generalised Leapfrog.
+    assert type(sampler.integrator).__name__ == "GeneralisedLeapfrogIntegrator"
+
+
+def test_rmhmc_initialization_invalid_metric_fn():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = _gaussian_target(2, device)
+    with pytest.raises(TypeError, match="metric_fn must be callable"):
+        RiemannianManifoldHMC(model, metric_fn=None)
+    with pytest.raises(TypeError, match="metric_fn must be callable"):
+        RiemannianManifoldHMC(model, metric_fn=42)
+
+
+def test_rmhmc_initialization_invalid_n_leapfrog_steps():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = _gaussian_target(2, device)
+    metric_fn = _identity_metric(2)
+    with pytest.raises(ValueError, match="n_leapfrog_steps must be positive"):
+        RiemannianManifoldHMC(model, metric_fn=metric_fn, n_leapfrog_steps=0)
+    with pytest.raises(ValueError, match="n_leapfrog_steps must be positive"):
+        RiemannianManifoldHMC(model, metric_fn=metric_fn, n_leapfrog_steps=-3)
+
+
+def test_rmhmc_initialization_invalid_step_size():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = _gaussian_target(2, device)
+    metric_fn = _identity_metric(2)
+    with pytest.raises(ValueError, match="step_size must be positive"):
+        RiemannianManifoldHMC(model, metric_fn=metric_fn, step_size=-0.1)
+    with pytest.raises(ValueError, match="step_size must be positive"):
+        RiemannianManifoldHMC(model, metric_fn=metric_fn, step_size=0.0)
+
+
+# ----- Sampling interface -----
+
+
+def test_rmhmc_sample_shape():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=8, device=device,
+    )
+    samples = sampler.sample(n_samples=8, dim=dim, n_steps=20)
+    assert samples.shape == (8, dim)
+    assert torch.all(torch.isfinite(samples))
+
+
+def test_rmhmc_sample_with_trajectory():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=6, device=device,
+    )
+    traj = sampler.sample(n_samples=4, dim=dim, n_steps=15, return_trajectory=True)
+    assert traj.shape == (4, 15, dim)
+    assert torch.all(torch.isfinite(traj))
+
+
+def test_rmhmc_sample_with_diagnostics():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    n_steps = 15
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=6, device=device,
+    )
+    final_state, diag = sampler.sample(
+        n_samples=8, dim=dim, n_steps=n_steps, return_diagnostics=True
+    )
+    assert final_state.shape == (8, dim)
+    assert isinstance(diag, dict)
+    assert set(diag) == {"mean", "var", "energy", "acceptance_rate"}
+    assert diag["mean"].shape == (n_steps, dim)
+    assert diag["var"].shape == (n_steps, dim)
+    assert diag["energy"].shape == (n_steps,)
+    assert diag["acceptance_rate"].shape == (n_steps,)
+    for v in diag.values():
+        assert torch.all(torch.isfinite(v))
+    assert torch.all(diag["acceptance_rate"] >= 0)
+    assert torch.all(diag["acceptance_rate"] <= 1)
+    assert torch.all(diag["var"] >= 0)
+
+
+def test_rmhmc_thinning():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=5, device=device,
+    )
+    thin = 5
+    n_steps = 30
+    traj = sampler.sample(
+        n_samples=4, dim=dim, n_steps=n_steps, thin=thin, return_trajectory=True
+    )
+    assert traj.shape == (4, n_steps // thin, dim)
+
+
+def test_rmhmc_thin_validation():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = _gaussian_target(2, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(2),
+        step_size=0.1, n_leapfrog_steps=5, device=device,
+    )
+    with pytest.raises(ValueError, match="thin must be >= 1"):
+        sampler.sample(n_samples=4, dim=2, n_steps=10, thin=0)
+
+
+def test_rmhmc_requires_2d_state():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = _gaussian_target(2, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(2),
+        step_size=0.1, n_leapfrog_steps=5, device=device,
+    )
+    bad_x = torch.randn(4, 2, 3, device=device)
+    with pytest.raises(ValueError, match="2-D state tensors"):
+        sampler.sample(x=bad_x, n_steps=5)
+
+
+def test_rmhmc_dim_inference():
+    """dim auto-inferred from model.mean when x and dim are both None."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 3
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=5, device=device,
+    )
+    final_state = sampler.sample(n_steps=5)
+    assert final_state.shape == (1, dim)
+
+
+def test_rmhmc_dim_inference_failure():
+    """Model without `mean` attribute and no dim/x argument must raise."""
+    device = "cpu"
+    model = DoubleWellModel(barrier_height=2.0).to(device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(2),
+        step_size=0.05, n_leapfrog_steps=4, device=device,
+    )
+    with pytest.raises(ValueError, match="dim must be provided when x is None"):
+        sampler.sample(n_steps=5)
+
+
+def test_rmhmc_custom_initial_state():
+    """Starting far from the mode, the chain must move toward it."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=10, device=device,
+    )
+    initial_state = torch.tensor(
+        [[5.0, -5.0]], device=device, dtype=sampler.dtype
+    )
+    samples = sampler.sample(x=initial_state, n_steps=80)
+    final_dist = torch.norm(samples - model.mean.to(device))
+    initial_dist = torch.norm(initial_state - model.mean.to(device))
+    assert final_dist < initial_dist
+
+
+# ----- Reproducibility -----
+
+
+def test_rmhmc_reproducibility():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    metric_fn = _identity_metric(dim)
+
+    def make_sampler():
+        return RiemannianManifoldHMC(
+            model, metric_fn=metric_fn,
+            step_size=0.1, n_leapfrog_steps=8, device=device,
+        )
+
+    torch.manual_seed(7)
+    r1 = make_sampler().sample(n_samples=4, dim=dim, n_steps=20)
+    torch.manual_seed(7)
+    r2 = make_sampler().sample(n_samples=4, dim=dim, n_steps=20)
+    assert torch.allclose(r1, r2)
+
+
+# ----- Internal helpers (identity-metric closed forms) -----
+
+
+def test_rmhmc_internal_components_identity_metric():
+    """Under an identity metric on N(0, I):
+
+        K(x, p) = 1/2 * |p|^2 + 1/2 log|I| = 1/2 |p|^2
+        velocity = G^{-1} p = p
+        force    = -∂(U + K)/∂x = -x  (since ∂K/∂x = 0)
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 3
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.05, n_leapfrog_steps=4,
+        dtype=torch.float64, device=device,
+    )
+
+    torch.manual_seed(0)
+    x = torch.randn(5, dim, dtype=torch.float64, device=device)
+    p = torch.randn(5, dim, dtype=torch.float64, device=device)
+    t = torch.zeros(5, dtype=torch.float64, device=device)
+
+    K = sampler._kinetic_energy(x, p)
+    K_expected = 0.5 * (p ** 2).sum(dim=-1)
+    assert torch.allclose(K, K_expected, atol=1e-10)
+
+    v = sampler._velocity(x, p, t)
+    assert torch.allclose(v, p, atol=1e-10)
+
+    f = sampler._force(x, p, t)
+    assert torch.allclose(f, -x, atol=1e-6)
+
+    # Momentum sampling under identity metric: roughly N(0, I).
+    torch.manual_seed(1)
+    big_batch = torch.zeros(2000, dim, dtype=torch.float64, device=device)
+    p_samples = sampler._initialize_momentum(big_batch)
+    assert p_samples.shape == big_batch.shape
+    assert torch.all(torch.isfinite(p_samples))
+    assert p_samples.std(dim=0).mean().item() == pytest.approx(1.0, abs=0.1)
+
+
+def test_rmhmc_momentum_covariance_matches_metric():
+    """Empirically, momenta sampled by the helper have covariance ≈ G(x).
+
+    Uses a constant non-identity metric so the empirical covariance has a
+    known target without depending on x.
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    G_const = torch.tensor([[2.0, 0.5], [0.5, 1.5]], dtype=torch.float64, device=device)
+
+    def metric_const(x):
+        return G_const.expand(x.shape[0], dim, dim).contiguous()
+
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=metric_const,
+        step_size=0.1, n_leapfrog_steps=4,
+        dtype=torch.float64, device=device,
+    )
+
+    torch.manual_seed(0)
+    x = torch.zeros(20_000, dim, dtype=torch.float64, device=device)
+    p = sampler._initialize_momentum(x)
+    emp_cov = (p.t() @ p) / p.shape[0]
+    assert torch.allclose(emp_cov, G_const, atol=0.06)
+
+
+# ----- Statistical target recovery -----
+
+
+def test_rmhmc_identity_metric_recovers_gaussian():
+    """Identity metric -- empirical moments must match N(0, I)."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.2, n_leapfrog_steps=8,
+        dtype=torch.float64, device=device,
+    )
+    torch.manual_seed(0)
+    samples = sampler.sample(n_samples=200, dim=dim, n_steps=100)
+    emp_mean = samples.mean(dim=0)
+    emp_std = samples.std(dim=0)
+    assert torch.allclose(
+        emp_mean, torch.zeros(dim, dtype=torch.float64, device=device), atol=0.3
+    )
+    assert torch.allclose(
+        emp_std, torch.ones(dim, dtype=torch.float64, device=device), atol=0.3
+    )
+
+
+def test_rmhmc_position_dependent_metric_recovers_gaussian():
+    """With G(x) = I + 0.5 * x x^T the Hamiltonian is non-separable, so the
+    GLI Picard solves and the MH correction are exercised together; the
+    invariant distribution must still be N(0, I).
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_outer_metric(dim, alpha=0.5),
+        step_size=0.1, n_leapfrog_steps=6,
+        dtype=torch.float64, device=device,
+    )
+    torch.manual_seed(1)
+    samples = sampler.sample(n_samples=200, dim=dim, n_steps=120)
+    emp_mean = samples.mean(dim=0)
+    emp_std = samples.std(dim=0)
+    assert torch.allclose(
+        emp_mean, torch.zeros(dim, dtype=torch.float64, device=device), atol=0.35
+    )
+    assert torch.allclose(
+        emp_std, torch.ones(dim, dtype=torch.float64, device=device), atol=0.35
+    )
+
+
+def test_rmhmc_acceptance_rate_reasonable():
+    """Tuned chain (small step, identity metric) must have high acceptance."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=5,
+        dtype=torch.float64, device=device,
+    )
+    torch.manual_seed(42)
+    _, diag = sampler.sample(
+        n_samples=32, dim=dim, n_steps=60, return_diagnostics=True
+    )
+    avg_accept = diag["acceptance_rate"][-20:].mean().item()
+    assert avg_accept > 0.7, f"Acceptance rate {avg_accept} unexpectedly low"
+
+
+# ----- Scheduler integration -----
+
+
+def test_rmhmc_with_scheduler():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    n_steps = 30
+    scheduler = LinearScheduler(start_value=0.2, end_value=0.05, n_steps=n_steps)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=scheduler, n_leapfrog_steps=5, device=device,
+    )
+    assert isinstance(sampler.schedulers["step_size"], LinearScheduler)
+    initial_step = sampler.get_scheduled_value("step_size")
+    assert np.isclose(initial_step, 0.2)
+
+    sampler.sample(n_samples=4, dim=dim, n_steps=n_steps)
+    final_step = sampler.get_scheduled_value("step_size")
+    assert np.isclose(final_step, 0.05)
+    assert final_step < initial_step
+
+
+# ----- Device consistency -----
+
+
+def test_rmhmc_device_consistency():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 3
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.1, n_leapfrog_steps=5, device=device,
+    )
+    samples = sampler.sample(n_samples=4, dim=dim, n_steps=10)
+    assert samples.device.type == sampler.device.type
+
+    x_init = torch.randn(4, dim, device=device, dtype=sampler.dtype)
+    samples_custom = sampler.sample(x=x_init, n_steps=10)
+    assert samples_custom.device.type == sampler.device.type
+
+
+# ----- Heavy statistical recovery (CUDA-gated for speed) -----
+
+
+@rc
+def test_rmhmc_gaussian_sampling_statistics():
+    """Recover a correlated 2D Gaussian's mean and covariance."""
+    device = "cuda"
+    dim = 2
+    mean = torch.tensor([1.0, -1.0], device=device)
+    cov = torch.tensor([[1.0, 0.5], [0.5, 2.0]], device=device)
+    model = GaussianModel(mean=mean, cov=cov).to(device)
+
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(dim),
+        step_size=0.05, n_leapfrog_steps=12, device=device,
+    )
+
+    n_samples = 800
+    n_steps = 200
+    burn_in = 50
+    traj = sampler.sample(
+        n_samples=n_samples, dim=dim, n_steps=n_steps, return_trajectory=True
+    )
+    samples = traj[:, burn_in:, :].reshape(-1, dim)
+
+    n = samples.shape[0]
+    smean = samples.mean(dim=0)
+    centered = samples - smean
+    scov = centered.t() @ centered / (n - 1)
+
+    assert torch.allclose(smean, mean, rtol=0.2, atol=0.2)
+    assert torch.allclose(scov, cov, rtol=0.3, atol=0.3)
 
 
 if __name__ == "__main__":
