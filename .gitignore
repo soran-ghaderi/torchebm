@@ -197,3 +197,6 @@ papers_to_add/
 benchmarks/results/
 benchmarks/profiles/
 benchmarks/torchebm_benchmarking.md
+
+# setuptools-scm generated version file
+torchebm/_version.py

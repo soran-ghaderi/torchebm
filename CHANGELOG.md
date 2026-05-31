@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-31
+
 ### Added
 
 - [`3dcb39d`](https://github.com/soran-ghaderi/torchebm/commit/3dcb39d810a506730ac288a2ce9069e9d072bdcb) - add RiemannianManifoldHMC sampler and related tests
