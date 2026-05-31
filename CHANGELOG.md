@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- [`3dcb39d`](https://github.com/soran-ghaderi/torchebm/commit/3dcb39d810a506730ac288a2ce9069e9d072bdcb) - add RiemannianManifoldHMC sampler and related tests
+- [`f12fe61`](https://github.com/soran-ghaderi/torchebm/commit/f12fe613893a6ee8acbe00bb03e48e898993df73) - implement GeneralisedLeapfrogIntegrator for non-separable Hamiltonian dynamics
+- [`0360dff`](https://github.com/soran-ghaderi/torchebm/commit/0360dff9ee8ea255b3e28d7f9145e4e27aeb48fa) - add BackwardEulerMaruyamaIntegrator and update related tests
+- [`3802a9f`](https://github.com/soran-ghaderi/torchebm/commit/3802a9f6ccf552d31af3508c68a32e6a7b050158) - add support for implicit RK integrators in the base RK SDE class
+
+### Changed
+
+- [`4d649c2`](https://github.com/soran-ghaderi/torchebm/commit/4d649c2895d155c99b194123a4a5392778fc7efa) - change diagnostics to `dict[str, tensor]` with named keys (mean, var, energy, acceptance_rate)
+
+### Performance
+
+- [`ac75c63`](https://github.com/soran-ghaderi/torchebm/commit/ac75c6327cb2bfc235b7c1fc8a35896621372b35) - addcmul fusion + safe clamp + cache metric Cholesky + stiff-metric tests
+
 ## [0.5.8] - 2026-02-17
 
 ### Added
