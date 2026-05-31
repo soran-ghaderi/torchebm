@@ -217,13 +217,21 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
     Generalised leapfrog (Störmer–Verlet) integrator for non-separable
     Hamiltonian dynamics.
 
-    Whereas :class:`LeapfrogIntegrator` assumes a separable Hamiltonian
+    Whereas `LeapfrogIntegrator` assumes a separable Hamiltonian
     \(H(x, p) = U(x) + K(p)\) — so that \(\partial H/\partial x\) depends
     only on \(x\) and \(\partial H/\partial p\) only on \(p\) — this
     integrator handles the general case where both partial derivatives may
     depend on \((x, p)\). This is the setting of Riemann-manifold HMC
     (Girolami & Calderhead, 2011), where the kinetic term carries a
     position-dependent metric \(G(x)\).
+
+    **Relation to `LeapfrogIntegrator`.** The `force` callable is the
+    non-separable generalisation of `LeapfrogIntegrator`'s `drift`. For a
+    separable Hamiltonian, `force(x, p, t)` reduces to `drift(x, t)`
+    (\(= -\nabla_x U\)) and `velocity(x, p, t)` reduces to \(p\), and this
+    scheme recovers the standard leapfrog update exactly. The Hamiltonian is
+    assumed autonomous, so the time argument `t` is passed to the callables
+    only for signature uniformity and is held at zero.
 
     Hamilton's equations are written directly:
 
@@ -262,7 +270,7 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
         dtype: Data type for computations.
         solver_max_iter: Total Picard iterations per implicit stage
             (warm start + refinements). The default of ``8`` matches the
-            implicit-RK solver in :class:`BaseRungeKuttaIntegrator`.
+            implicit-RK solver in `BaseRungeKuttaIntegrator`.
         solver_tol: RMS residual threshold for early termination. Only
             consulted when ``solver_check_every > 0``.
         solver_check_every: When positive, check the residual every
@@ -393,7 +401,7 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
         #     p_half = p + (ε/2) * force(x, p_half, t)
         p_half = self._picard(
             init=p,
-            update=lambda ph: p + half * force_fn(x, ph, t),
+            update=lambda ph: torch.addcmul(p, half, force_fn(x, ph, t)),
         )
         if safe:
             p_half.clamp_(min=-1e6, max=1e6)
@@ -402,10 +410,12 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
         #     x_new = x + (ε/2) * (velocity(x, p_half, t)
         #                          + velocity(x_new, p_half, t))
         v_at_x = velocity_fn(x, p_half, t)
-        base_x = x + half * v_at_x
+        base_x = torch.addcmul(x, half, v_at_x)
         x_new = self._picard(
             init=x,
-            update=lambda xn: base_x + half * velocity_fn(xn, p_half, t),
+            update=lambda xn: torch.addcmul(
+                base_x, half, velocity_fn(xn, p_half, t)
+            ),
         )
         if safe:
             x_new.clamp_(min=-1e6, max=1e6)
@@ -413,8 +423,8 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
         # Stage 3: explicit half-step momentum at the new position.
         force_new = force_fn(x_new, p_half, t)
         if safe:
-            force_new.clamp_(min=-1e6, max=1e6)
-        p_new = p_half + half * force_new
+            force_new = force_new.clamp(min=-1e6, max=1e6)
+        p_new = torch.addcmul(p_half, half, force_new)
 
         if safe:
             x_new.nan_to_num_(nan=0.0)
@@ -477,24 +487,26 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
         for _ in range(n_steps):
             p_half = self._picard(
                 init=p,
-                update=lambda ph: p + half * force_fn(x, ph, t),
+                update=lambda ph: torch.addcmul(p, half, force_fn(x, ph, t)),
             )
             if safe:
                 p_half.clamp_(min=-1e6, max=1e6)
 
             v_at_x = velocity_fn(x, p_half, t)
-            base_x = x + half * v_at_x
+            base_x = torch.addcmul(x, half, v_at_x)
             x_new = self._picard(
                 init=x,
-                update=lambda xn: base_x + half * velocity_fn(xn, p_half, t),
+                update=lambda xn: torch.addcmul(
+                    base_x, half, velocity_fn(xn, p_half, t)
+                ),
             )
             if safe:
                 x_new.clamp_(min=-1e6, max=1e6)
 
             force_new = force_fn(x_new, p_half, t)
             if safe:
-                force_new.clamp_(min=-1e6, max=1e6)
-            p_new = p_half + half * force_new
+                force_new = force_new.clamp(min=-1e6, max=1e6)
+            p_new = torch.addcmul(p_half, half, force_new)
 
             if safe:
                 x_new.nan_to_num_(nan=0.0)

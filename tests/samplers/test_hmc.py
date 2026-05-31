@@ -927,6 +927,21 @@ def _outer_metric(dim, alpha=0.5):
     return metric_fn
 
 
+def _stiff_metric(dim, alpha=4.0, beta=3.0):
+    """Strongly anisotropic, position-dependent SPD metric.
+
+    ``G(x) = diag(1 + beta*i) + alpha * x x^T`` has a high (and
+    position-dependent) condition number, which stresses the GLI Picard
+    solve far more than the mild ``_outer_metric``.
+    """
+    def metric_fn(x):
+        d = 1.0 + beta * torch.arange(dim, device=x.device, dtype=x.dtype)
+        base = torch.diag(d).expand(x.shape[0], dim, dim)
+        outer = x.unsqueeze(-1) * x.unsqueeze(-2)
+        return base + alpha * outer
+    return metric_fn
+
+
 def _gaussian_target(dim, device):
     return GaussianModel(
         mean=torch.zeros(dim, device=device),
@@ -1258,6 +1273,51 @@ def test_rmhmc_position_dependent_metric_recovers_gaussian():
     assert torch.allclose(
         emp_std, torch.ones(dim, dtype=torch.float64, device=device), atol=0.35
     )
+
+
+def test_rmhmc_stiff_metric_recovers_gaussian():
+    """Ill-conditioned, position-dependent metric: with enough Picard
+    iterations the GLI still converges and RMHMC recovers N(0, I).
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_stiff_metric(dim, alpha=4.0, beta=3.0),
+        step_size=0.05, n_leapfrog_steps=6,
+        solver_max_iter=20, solver_check_every=1, solver_tol=1e-8,
+        dtype=torch.float64, device=device,
+    )
+    torch.manual_seed(7)
+    samples = sampler.sample(n_samples=200, dim=dim, n_steps=150)
+    assert torch.isfinite(samples).all()
+    emp_mean = samples.mean(dim=0)
+    emp_std = samples.std(dim=0)
+    assert torch.allclose(
+        emp_mean, torch.zeros(dim, dtype=torch.float64, device=device), atol=0.4
+    )
+    assert torch.allclose(
+        emp_std, torch.ones(dim, dtype=torch.float64, device=device), atol=0.4
+    )
+
+
+def test_rmhmc_stiff_metric_stable_default_solver():
+    """The same stiff metric with the default solver must stay numerically
+    stable (no NaN/Inf) thanks to the finite-proposal guard and safe mode,
+    even if the chain is more biased or lower-acceptance.
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dim = 2
+    model = _gaussian_target(dim, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_stiff_metric(dim, alpha=4.0, beta=3.0),
+        step_size=0.05, n_leapfrog_steps=6,
+        dtype=torch.float64, device=device,
+    )
+    torch.manual_seed(8)
+    samples = sampler.sample(n_samples=64, dim=dim, n_steps=80)
+    assert samples.shape == (64, dim)
+    assert torch.isfinite(samples).all()
 
 
 def test_rmhmc_acceptance_rate_reasonable():

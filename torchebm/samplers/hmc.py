@@ -16,10 +16,6 @@ from torchebm.integrators import (
 )
 
 
-MetricFn = Callable[[torch.Tensor], torch.Tensor]
-
-MetricFn = Callable[[torch.Tensor], torch.Tensor]
-
 class HamiltonianMonteCarlo(BaseSampler):
     r"""
     Hamiltonian Monte Carlo sampler.
@@ -298,7 +294,7 @@ class RiemannianManifoldHMC(BaseSampler):
     \]
 
     The induced Hamilton's equations are non-separable, so trajectories
-    are simulated with a :class:`GeneralisedLeapfrogIntegrator` whose two
+    are simulated with a `GeneralisedLeapfrogIntegrator` whose two
     implicit stages are solved by Picard iteration. The integrator is
     volume-preserving and reversible, which keeps the Metropolis–Hastings
     acceptance correction valid.
@@ -307,7 +303,7 @@ class RiemannianManifoldHMC(BaseSampler):
         model: Energy-based model defining the potential \(U(x)\).
         metric_fn: Callable ``x -> G(x)`` returning a symmetric positive-
             definite tensor of shape ``(batch, dim, dim)``. The metric is
-            evaluated under :func:`torch.enable_grad` when computing the
+            evaluated under `torch.enable_grad` when computing the
             force, so ``metric_fn`` must be differentiable w.r.t. ``x``.
         step_size: Step size for the generalised-leapfrog integrator.
         n_leapfrog_steps: Number of integrator steps per MH proposal.
@@ -344,7 +340,7 @@ class RiemannianManifoldHMC(BaseSampler):
     def __init__(
         self,
         model: BaseModel,
-        metric_fn: MetricFn,
+        metric_fn: Callable[[torch.Tensor], torch.Tensor],
         step_size: Union[float, BaseScheduler] = 1e-3,
         n_leapfrog_steps: int = 10,
         solver_max_iter: int = 8,
@@ -386,24 +382,66 @@ class RiemannianManifoldHMC(BaseSampler):
         r"""Return \(\log\!\left|G\right| = 2 \sum_i \log L_{ii}\)."""
         return 2.0 * torch.diagonal(L, dim1=-2, dim2=-1).log().sum(dim=-1)
 
+    def _metric_chol(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Cholesky factor of \(G(x)\), memoised for the most recent position.
+
+        The metric and its factorisation are evaluated repeatedly at the same
+        position within one sampling step (momentum draw, current kinetic
+        energy, the integrator's first velocity evaluation). A single-entry
+        cache keyed on tensor identity and version returns the cached factor
+        for those hits while staying correct when ``x`` changes. The factor is
+        computed under `torch.no_grad`, so a graph-carrying tensor is never
+        cached; the autograd force path in `_force` deliberately bypasses this
+        helper.
+        """
+        cache = getattr(self, "_chol_cache", None)
+        if cache is not None and cache[0] is x and cache[1] == x._version:
+            return cache[2]
+        with torch.no_grad():
+            L = self._cholesky(self.metric_fn(x))
+        self._chol_cache = (x, x._version, L)
+        return L
+
     def _kinetic_energy(
         self,
         x: torch.Tensor,
         p: torch.Tensor,
+        *,
+        L: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        r"""Compute \(K(x, p) = \tfrac{1}{2} p^T G(x)^{-1} p + \tfrac{1}{2} \log\!\left|G(x)\right|\)."""
-        G = self.metric_fn(x)
-        L = self._cholesky(G)
+        r"""Compute \(K(x, p) = \tfrac{1}{2} p^T G(x)^{-1} p + \tfrac{1}{2} \log\!\left|G(x)\right|\).
+
+        ``L`` is the Cholesky factor of \(G(x)\); when ``None`` it is computed
+        here (the autograd path in `_force` relies on this to build the graph).
+        """
+        if L is None:
+            L = self._cholesky(self.metric_fn(x))
         G_inv_p = self._solve_metric(L, p)
         quad = 0.5 * (p * G_inv_p).sum(dim=-1)
         return quad + 0.5 * self._logdet_from_chol(L)
 
-    def _initialize_momentum(self, x: torch.Tensor) -> torch.Tensor:
-        r"""Sample \(p \sim \mathcal{N}(0, G(x))\) via \(p = L z,\; z \sim \mathcal{N}(0, I)\)."""
-        with torch.no_grad():
-            G = self.metric_fn(x)
-            L = self._cholesky(G)
-        z = torch.randn_like(x)
+    def _initialize_momentum(
+        self,
+        x: torch.Tensor,
+        *,
+        L: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        r"""Sample \(p \sim \mathcal{N}(0, G(x))\) via \(p = L z,\; z \sim \mathcal{N}(0, I)\).
+
+        Reuses a cached standard-normal buffer to avoid a per-step allocation.
+        """
+        if L is None:
+            L = self._metric_chol(x)
+        buf = getattr(self, "_z_buf", None)
+        if (
+            buf is None
+            or buf.shape != x.shape
+            or buf.dtype != x.dtype
+            or buf.device != x.device
+        ):
+            buf = torch.empty_like(x)
+            self._z_buf = buf
+        z = buf.normal_()
         return torch.einsum("bij,bj->bi", L, z)
 
     def _velocity(
@@ -413,10 +451,7 @@ class RiemannianManifoldHMC(BaseSampler):
         t: torch.Tensor,
     ) -> torch.Tensor:
         r"""\(\dot{x} = \partial H/\partial p = G(x)^{-1} p\)."""
-        with torch.no_grad():
-            G = self.metric_fn(x)
-            L = self._cholesky(G)
-            return self._solve_metric(L, p)
+        return self._solve_metric(self._metric_chol(x), p)
 
     def _force(
         self,
@@ -521,10 +556,13 @@ class RiemannianManifoldHMC(BaseSampler):
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
-                p = self._initialize_momentum(x)
+                L = self._metric_chol(x)
+                p = self._initialize_momentum(x, L=L)
 
                 current_U = self.model(x).clamp_(min=-1e10, max=1e10)
-                current_K = self._kinetic_energy(x, p).clamp_(min=-1e10, max=1e10)
+                current_K = self._kinetic_energy(x, p, L=L).clamp_(
+                    min=-1e10, max=1e10
+                )
                 current_H = current_U + current_K
 
                 proposed = self.integrator.integrate(
@@ -538,9 +576,9 @@ class RiemannianManifoldHMC(BaseSampler):
                 x_prop, p_prop = proposed["x"], proposed["p"]
 
                 proposed_U = self.model(x_prop).clamp_(min=-1e10, max=1e10)
-                proposed_K = self._kinetic_energy(x_prop, p_prop).clamp_(
-                    min=-1e10, max=1e10
-                )
+                proposed_K = self._kinetic_energy(
+                    x_prop, p_prop, L=self._metric_chol(x_prop)
+                ).clamp_(min=-1e10, max=1e10)
                 proposed_H = proposed_U + proposed_K
 
                 # exp(min(0, H_current - H_proposed)) = min(1, exp(diff))
