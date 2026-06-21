@@ -102,6 +102,8 @@ nav:
 
 hooks:
   - docs/hooks/socialmedia.py
+  - docs/hooks/gen_examples.py
+  - docs/hooks/url_schemes.py
 
 plugins:
   - search
