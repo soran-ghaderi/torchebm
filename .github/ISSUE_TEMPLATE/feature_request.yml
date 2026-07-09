@@ -1,47 +1,16 @@
-name: 🚀 Feature Request
-description: Suggest a new feature or enhancement for TorchEBM.
-title: "[Feature]: "
-labels: ["enhancement", "needs triage"]
+name: "\U0001F680 Feature request"
+description: Suggest a new capability or improvement.
+labels: ["enhancement"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for suggesting an idea to improve TorchEBM!
-
   - type: textarea
-    id: problem-summary
+    id: what
     attributes:
-      label: What is the problem you're trying to solve?
-      description: "A clear and concise description of the problem or limitation you're facing. Ex. I'm always frustrated when [...]"
-    validations:
-      required: true
-
-  - type: textarea
-    id: proposed-solution
-    attributes:
-      label: Proposed Solution
-      description: "Describe the solution you'd like to see. How would it work?"
-    validations:
-      required: true
-
-  - type: textarea
-    id: code-example
-    attributes:
-      label: Example Usage (optional)
-      description: "Show how you envision using this feature."
-      render: python
+      label: What do you want, and why?
+      description: >
+        One or two paragraphs is plenty. Example usage, papers, or links
+        welcome but optional.
       placeholder: |
-        import torchebm
-        # Your example here
-
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives Considered (optional)
-      description: "Describe any alternative solutions or features you've considered."
-
-  - type: textarea
-    id: additional-context
-    attributes:
-      label: Additional Context (optional)
-      description: "Add any other context, links, or references about the feature request here."
+        A DPM-Solver++ option for FlowSampler so image sampling needs ~20
+        steps instead of 200.
+    validations:
+      required: true

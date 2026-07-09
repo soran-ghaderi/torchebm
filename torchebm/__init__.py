@@ -19,6 +19,7 @@ __all__ = [
     "models",
     "integrators",
     "interpolants",
+    "couplings",
     "__version__",
 ]
 
@@ -32,6 +33,7 @@ _SUBPACKAGES = {
     "models",
     "integrators",
     "interpolants",
+    "couplings",
 }
 
 

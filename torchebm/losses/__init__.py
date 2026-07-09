@@ -13,9 +13,13 @@ __all__ = [
     "SlicedScoreMatching",
     # Equilibrium Matching
     "EquilibriumMatchingLoss",
+    # Energy Matching
+    "EnergyMatchingLoss",
     # Utilities
     "mean_flat",
     "get_interpolant",
+    "trimmed_mean",
+    "compute_flow_weight",
     "compute_eqm_ct",
     "dispersive_loss",
 ]
@@ -28,8 +32,11 @@ _LAZY_IMPORTS = {
     "DenoisingScoreMatching": ".score_matching",
     "SlicedScoreMatching": ".score_matching",
     "EquilibriumMatchingLoss": ".equilibrium_matching",
+    "EnergyMatchingLoss": ".energy_matching",
     "mean_flat": ".loss_utils",
     "get_interpolant": ".loss_utils",
+    "trimmed_mean": ".loss_utils",
+    "compute_flow_weight": ".loss_utils",
     "compute_eqm_ct": ".loss_utils",
     "dispersive_loss": ".loss_utils",
 }
