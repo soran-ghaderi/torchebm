@@ -797,3 +797,75 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             if diff_val is not None:
                 x = x + torch.sqrt(2.0 * diff_val) * torch.randn_like(x) * torch.sqrt(dt)
         return {"x": x}
+
+
+class BaseSymplecticIntegrator(BaseIntegrator):
+    r"""Base class for symplectic integrators of Hamiltonian dynamics.
+
+    Symplectic integrators advance a phase-space state dict with keys
+    ``"x"`` (position) and ``"p"`` (momentum) while preserving the
+    symplectic form, which makes them time-reversible and suitable for
+    Metropolis-Hastings proposals (HMC family). Two callback contracts
+    exist, distinguished by the ``separable`` class attribute:
+
+    - ``separable = True``: separable Hamiltonians
+      \( H(x, p) = U(x) + K(p) \). Subclasses take a ``drift(x, t)``
+      callable (\( = -\nabla_x U \)) and an optional ``mass`` term
+      (`LeapfrogIntegrator`).
+    - ``separable = False``: general non-separable Hamiltonians.
+      Subclasses take ``force(x, p, t)`` and ``velocity(x, p, t)``
+      callables (`GeneralisedLeapfrogIntegrator`).
+
+    Subclass ``integrate`` implementations must honor
+    ``inference_mode=True`` by re-entering themselves under
+    ``torch.inference_mode()``.
+
+    Attributes:
+        separable: Whether the integrator assumes a separable Hamiltonian.
+        _SAFE_CLAMP: Magnitude bound applied to forces/state in safe mode.
+    """
+
+    separable: bool = True
+    _SAFE_CLAMP: float = 1e6
+
+    @staticmethod
+    def _validate_n_steps(n_steps: int) -> None:
+        r"""Raise if ``n_steps`` is not a positive integer count."""
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive")
+
+    @staticmethod
+    def _unpack_state(
+        state: Dict[str, torch.Tensor],
+        step_size,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        r"""Extract ``(x, p)``, tensorize ``step_size``, build batch time.
+
+        Returns:
+            Tuple ``(x, p, step_size, t)`` with ``step_size`` on
+            ``x.device``/``x.dtype`` and ``t`` a zero tensor of shape
+            ``(batch,)`` (autonomous Hamiltonians; ``t`` exists for
+            callback signature uniformity).
+        """
+        x = state["x"]
+        p = state["p"]
+        if not torch.is_tensor(step_size):
+            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
+        t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+        return x, p, step_size, t
+
+    def _safe_clamp_(self, tensor: torch.Tensor) -> torch.Tensor:
+        r"""In-place magnitude clamp used by safe mode."""
+        return tensor.clamp_(min=-self._SAFE_CLAMP, max=self._SAFE_CLAMP)
+
+    @staticmethod
+    def _sanitize_state_(x: torch.Tensor, p: torch.Tensor) -> None:
+        r"""Replace NaNs by zeros in-place on freshly owned tensors.
+
+        Unconditional ``nan_to_num_`` is idempotent on clean tensors and
+        avoids the per-step CPU sync that
+        ``isnan(x).any() or isnan(p).any()`` would force (Python ``or``
+        materialises both 0-d bools to host).
+        """
+        x.nan_to_num_(nan=0.0)
+        p.nan_to_num_(nan=0.0)

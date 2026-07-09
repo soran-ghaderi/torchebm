@@ -22,13 +22,20 @@ from .base_scheduler import (
     CosineScheduler,
     MultiStepScheduler,
     WarmupScheduler,
+    TemperatureScheduler,
 )
 from .schedulable import Schedulable
 from .base_sampler import BaseSampler
+from .base_coupling import BaseCoupling
 
 from .base_loss import BaseLoss, BaseContrastiveDivergence, BaseScoreMatching
 
-from .base_integrator import BaseIntegrator, BaseRungeKuttaIntegrator, BaseSDERungeKuttaIntegrator
+from .base_integrator import (
+    BaseIntegrator,
+    BaseRungeKuttaIntegrator,
+    BaseSDERungeKuttaIntegrator,
+    BaseSymplecticIntegrator,
+)
 from .base_interpolant import BaseInterpolant, expand_t_like_x
 # from .trainer import Trainer
 # from .base_optimizer import Optimizer
@@ -51,7 +58,9 @@ __all__ = [
     "BaseIntegrator",
     "BaseRungeKuttaIntegrator",
     "BaseSDERungeKuttaIntegrator",
+    "BaseSymplecticIntegrator",
     "BaseInterpolant",
+    "BaseCoupling",
     "expand_t_like_x",
     # "Trainer",
     # "get_optimizer",
@@ -63,6 +72,7 @@ __all__ = [
     "CosineScheduler",
     "MultiStepScheduler",
     "WarmupScheduler",
+    "TemperatureScheduler",
     "Schedulable",
 ]
 
