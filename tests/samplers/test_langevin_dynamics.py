@@ -211,3 +211,89 @@ def test_langevin_gaussian_sampling_statistics():
 
     assert torch.allclose(sample_mean, mean, rtol=0.2, atol=0.2)
     assert torch.allclose(sample_cov, cov, rtol=0.4, atol=0.4)  # Increased tolerance
+
+
+def test_langevin_clamp_bounds_state():
+    """Per-step clamp keeps the state inside the bounds."""
+    from torchebm.core import HarmonicModel
+
+    sampler = LangevinDynamics(
+        model=HarmonicModel(k=1.0),
+        step_size=0.1,
+        noise_scale=5.0,  # large noise so unclamped states would escape
+        clamp=(-0.5, 0.5),
+    )
+    x_init = torch.linspace(-3, 3, 16).unsqueeze(-1).repeat(1, 2)
+    samples = sampler.sample(x=x_init, n_steps=20)
+    assert samples.min() >= -0.5
+    assert samples.max() <= 0.5
+
+
+def test_langevin_clamp_none_default_unchanged():
+    """clamp=None leaves the dynamics unbounded (default behavior)."""
+    from torchebm.core import HarmonicModel
+
+    sampler = LangevinDynamics(
+        model=HarmonicModel(k=1.0), step_size=0.1, noise_scale=5.0
+    )
+    assert sampler.clamp is None
+    torch.manual_seed(0)
+    samples = sampler.sample(x=torch.zeros(64, 2), n_steps=20)
+    assert samples.abs().max() > 0.5  # large noise wanders past the bounds
+
+
+def test_langevin_clamp_invalid_bounds():
+    from torchebm.core import HarmonicModel
+
+    with pytest.raises(ValueError, match="clamp"):
+        LangevinDynamics(model=HarmonicModel(), step_size=0.1, clamp=(1.0, -1.0))
+
+
+def test_langevin_default_integrator(energy_function):
+    from torchebm.integrators import EulerMaruyamaIntegrator
+
+    sampler = LangevinDynamics(model=energy_function, step_size=0.01)
+    assert type(sampler.integrator) is EulerMaruyamaIntegrator
+
+
+def test_langevin_integrator_string(energy_function):
+    from torchebm.integrators import HeunIntegrator
+
+    sampler = LangevinDynamics(
+        model=energy_function, step_size=0.01, integrator="heun"
+    )
+    assert type(sampler.integrator) is HeunIntegrator
+    samples = sampler.sample(n_samples=4, dim=10, n_steps=10)
+    assert samples.shape == (4, 10)
+    assert torch.isfinite(samples).all()
+
+
+def test_langevin_integrator_instance_passthrough(energy_function):
+    from torchebm.integrators import EulerMaruyamaIntegrator
+
+    inst = EulerMaruyamaIntegrator(dtype=torch.float32)
+    sampler = LangevinDynamics(
+        model=energy_function, step_size=0.01, integrator=inst
+    )
+    assert sampler.integrator is inst
+
+
+def test_langevin_integrator_wrong_family(energy_function):
+    from torchebm.integrators import LeapfrogIntegrator
+
+    with pytest.raises(TypeError, match="BaseSDERungeKuttaIntegrator"):
+        LangevinDynamics(
+            model=energy_function, step_size=0.01,
+            integrator=LeapfrogIntegrator(),
+        )
+
+
+def test_langevin_integrator_dtype_mismatch(energy_function):
+    from torchebm.integrators import EulerMaruyamaIntegrator
+
+    inst = EulerMaruyamaIntegrator(dtype=torch.float64)
+    with pytest.raises(ValueError, match="device/dtype"):
+        LangevinDynamics(
+            model=energy_function, step_size=0.01,
+            dtype=torch.float32, integrator=inst,
+        )

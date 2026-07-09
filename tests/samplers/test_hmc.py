@@ -1414,5 +1414,103 @@ def test_rmhmc_gaussian_sampling_statistics():
     assert torch.allclose(scov, cov, rtol=0.3, atol=0.3)
 
 
+############################### Integrator Constructor Arg #####################
+
+
+def _integrator_arg_model(dim=2):
+    return GaussianModel(mean=torch.zeros(dim), cov=torch.eye(dim))
+
+
+def test_hmc_integrator_string_and_instance():
+    from torchebm.integrators import LeapfrogIntegrator
+
+    sampler = HamiltonianMonteCarlo(
+        _integrator_arg_model(), step_size=0.1, integrator="leapfrog"
+    )
+    assert type(sampler.integrator) is LeapfrogIntegrator
+
+    inst = LeapfrogIntegrator(dtype=torch.float32)
+    sampler = HamiltonianMonteCarlo(
+        _integrator_arg_model(), step_size=0.1, integrator=inst
+    )
+    assert sampler.integrator is inst
+
+
+def test_hmc_rejects_nonseparable_integrator():
+    from torchebm.integrators import GeneralisedLeapfrogIntegrator
+
+    with pytest.raises(TypeError, match="separable"):
+        HamiltonianMonteCarlo(
+            _integrator_arg_model(), step_size=0.1,
+            integrator=GeneralisedLeapfrogIntegrator(dtype=torch.float32),
+        )
+
+
+def test_hmc_rejects_nonsymplectic_integrator():
+    from torchebm.integrators import EulerMaruyamaIntegrator
+
+    with pytest.raises(TypeError, match="BaseSymplecticIntegrator"):
+        HamiltonianMonteCarlo(
+            _integrator_arg_model(), step_size=0.1,
+            integrator=EulerMaruyamaIntegrator(dtype=torch.float32),
+        )
+
+
+def _eye_metric(x):
+    dim = x.shape[-1]
+    eye = torch.eye(dim, dtype=x.dtype, device=x.device)
+    return eye.expand(x.shape[0], dim, dim).contiguous()
+
+
+def test_rmhmc_rejects_separable_integrator():
+    from torchebm.integrators import LeapfrogIntegrator
+
+    with pytest.raises(TypeError, match="non-separable"):
+        RiemannianManifoldHMC(
+            _integrator_arg_model(), metric_fn=_eye_metric,
+            step_size=0.1,
+            integrator=LeapfrogIntegrator(dtype=torch.float32),
+        )
+
+
+def test_rmhmc_solver_kwargs_deprecated_but_honored():
+    with pytest.warns(DeprecationWarning, match="solver_max_iter"):
+        sampler = RiemannianManifoldHMC(
+            _integrator_arg_model(), metric_fn=_eye_metric,
+            step_size=0.1, solver_max_iter=20,
+        )
+    assert sampler.integrator.solver_max_iter == 20
+    # Untouched solver options keep their integrator defaults.
+    assert sampler.integrator.solver_tol == 1e-6
+    assert sampler.integrator.solver_check_every == 0
+
+
+def test_rmhmc_solver_kwargs_conflict_with_integrator():
+    from torchebm.integrators import GeneralisedLeapfrogIntegrator
+
+    inst = GeneralisedLeapfrogIntegrator(dtype=torch.float32)
+    with pytest.raises(ValueError, match="not both"):
+        RiemannianManifoldHMC(
+            _integrator_arg_model(), metric_fn=_eye_metric,
+            step_size=0.1, solver_max_iter=20, integrator=inst,
+        )
+
+
+def test_rmhmc_integrator_instance_samples():
+    from torchebm.integrators import GeneralisedLeapfrogIntegrator
+
+    inst = GeneralisedLeapfrogIntegrator(
+        dtype=torch.float32, solver_max_iter=4
+    )
+    sampler = RiemannianManifoldHMC(
+        _integrator_arg_model(), metric_fn=_eye_metric,
+        step_size=0.1, n_leapfrog_steps=3, integrator=inst,
+    )
+    assert sampler.integrator is inst
+    samples = sampler.sample(n_samples=8, dim=2, n_steps=5)
+    assert samples.shape == (8, 2)
+    assert torch.isfinite(samples).all()
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

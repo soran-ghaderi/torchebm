@@ -55,7 +55,6 @@ dev = [
 eqm = [
     "timm>=0.9.0",
     "torchvision",
-    "torchdiffeq>=0.2.3",
     "diffusers>=0.25.0",
     "transformers>=4.35.0",
     "accelerate>=0.25.0",
