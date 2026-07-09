@@ -1,0 +1,14 @@
+name: "\U0001F9F0 Task"
+description: A concrete work item (roadmap, refactor, docs, release chore).
+labels: ["task"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs to be done?
+      description: Scope and done-criteria in a few lines.
+      placeholder: |
+        Add `integrator=` to LangevinDynamics (default Euler-Maruyama,
+        accept Heun). Done when: ctor arg + 2 tests.
+    validations:
+      required: true

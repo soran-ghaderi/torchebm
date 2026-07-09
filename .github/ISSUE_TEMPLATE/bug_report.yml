@@ -1,63 +1,24 @@
-name: 🐞 Report an Issue
-description: Report a bug, performance issue, or documentation gap.
-title: "[Issue]: "
-labels: ["bug", "subtask", "needs triage", "help wanted"]
-assignees: []
+name: "\U0001F41E Bug report"
+description: Something broken, slow, or wrong in the docs.
+labels: ["bug"]
 body:
-  - type: markdown
+  - type: textarea
+    id: what
     attributes:
-      value: |
-        Thanks for helping improve TorchEBM! Please provide the following information.
+      label: What happened?
+      description: >
+        Describe the problem. Paste code, tracebacks, or commands right here -
+        no separate fields needed.
+      placeholder: |
+        Sampling with LangevinDynamics returns NaN when ...
 
-  - type: dropdown
-    id: issue-type
-    attributes:
-      label: Type of Issue
-      description: What type of issue are you reporting?
-      options:
-        - "Bug Report"
-        - "Performance Issue"
-        - "Documentation Issue"
-        - "Other"
+        ```python
+        sampler = LangevinDynamics(model, step_size=0.01)
+        ```
     validations:
       required: true
-
-  - type: textarea
-    id: description
+  - type: input
+    id: env
     attributes:
-      label: Description
-      description: "A clear and concise description of the issue. For bugs, describe what happened and what you expected."
-    validations:
-      required: true
-
-  - type: textarea
-    id: reproduction
-    attributes:
-      label: Steps to Reproduce / Context
-      description: "For bugs, please provide steps to reproduce. For other issues, provide relevant context."
-      value: |
-        1.
-        2.
-        3.
-
-  - type: textarea
-    id: code-example
-    attributes:
-      label: Minimal Code Example (if applicable)
-      description: "Provide a self-contained, runnable code snippet that demonstrates the issue."
-      render: python
-      placeholder: |
-        import torch
-        import torchebm
-        # Your code here
-
-  - type: textarea
-    id: environment
-    attributes:
-      label: Environment
-      description: "Please provide your TorchEBM, PyTorch, and Python versions, and your OS."
-      placeholder: |
-        - TorchEBM version:
-        - PyTorch version:
-        - Python version:
-        - OS: (e.g., Linux, macOS, Windows)
+      label: Version / environment (optional)
+      placeholder: "torchebm 0.6.1, torch 2.12, cuda 13.0, linux"
