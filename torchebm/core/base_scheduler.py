@@ -852,3 +852,118 @@ class WarmupScheduler(BaseScheduler):
     def reset(self) -> None:
         super().reset()
         self.main_scheduler.reset()
+
+
+class TemperatureScheduler(BaseScheduler):
+    r"""
+    Piecewise-linear temperature schedule \(\epsilon(t)\) for two-regime sampling.
+
+    Implements the Energy Matching temperature profile (Balcerak et al., 2025,
+    arXiv:2504.10612): zero temperature during the transport regime, a linear
+    ramp near the data, and a constant Boltzmann temperature afterwards.
+
+    !!! info "Mathematical Formula"
+        $$\epsilon(t) = \begin{cases}
+        0, & \text{if } t < \tau^* \\
+        \epsilon_{max} \frac{t - \tau^*}{1 - \tau^*}, & \text{if } \tau^* \leq t < 1 \\
+        \epsilon_{max}, & \text{if } t \geq 1
+        \end{cases}$$
+
+        The scheduler maps its step count to virtual time
+        \(t = t_{start} + (t_{end} - t_{start}) \min(n, N)/N\) where \(N\) is
+        `n_steps`, then returns \(\sqrt{\epsilon(t)}\) (default) or \(\epsilon(t)\).
+
+    With `sqrt=True` the returned value is a drop-in `noise_scale` for
+    `LangevinDynamics`: the integrator noise is
+    `noise_scale * sqrt(2 * step_size)`, so the update noise becomes the
+    paper's \(\sqrt{2 \epsilon(t) \Delta t}\, \eta\). Use `sqrt=False` for the
+    raw temperature (e.g. as an interaction strength or for logging).
+
+    Args:
+        epsilon_max (float): Plateau temperature \(\epsilon_{max}\). Must be >= 0.
+        tau_star (float): Transport/diffusion switch time \(\tau^*\) in [0, 1).
+        n_steps (int): Steps to sweep from `t_start` to `t_end`; holds the
+            end value afterwards.
+        t_start (float): Virtual time at step 0.
+        t_end (float): Virtual time at step `n_steps`. May exceed 1 for
+            equilibration (e.g. inference with total time \(T > 1\)).
+        sqrt (bool): Return \(\sqrt{\epsilon(t)}\) if True (noise_scale
+            semantics), else \(\epsilon(t)\).
+
+    Raises:
+        ValueError: If `epsilon_max < 0`, `tau_star` not in [0, 1),
+            `n_steps <= 0`, or `t_end < t_start`.
+
+    !!! example "Energy Matching generation (one SDE pass)"
+        ```python
+        from torchebm.core import TemperatureScheduler
+        from torchebm.samplers import LangevinDynamics
+
+        # T = 3.25, dt = 0.01 -> 325 steps; noise-free below tau*, Langevin above
+        temp = TemperatureScheduler(
+            epsilon_max=0.15, tau_star=0.8, n_steps=325, t_end=3.25
+        )
+        sampler = LangevinDynamics(model=potential, step_size=0.01, noise_scale=temp)
+        samples = sampler.sample(x=torch.randn(1000, 2), n_steps=325)
+        ```
+    """
+
+    def __init__(
+        self,
+        epsilon_max: float,
+        tau_star: float = 0.8,
+        n_steps: int = 200,
+        t_start: float = 0.0,
+        t_end: float = 1.0,
+        sqrt: bool = True,
+    ):
+        r"""
+        Initialize the temperature scheduler.
+
+        Args:
+            epsilon_max (float): Plateau temperature. Must be >= 0.
+            tau_star (float): Switch time in [0, 1).
+            n_steps (int): Steps to sweep from `t_start` to `t_end`.
+            t_start (float): Virtual time at step 0.
+            t_end (float): Virtual time at step `n_steps`.
+            sqrt (bool): Return sqrt(epsilon) if True, else epsilon.
+
+        Raises:
+            ValueError: On invalid arguments (see class docstring).
+        """
+        if epsilon_max < 0:
+            raise ValueError(f"epsilon_max must be >= 0, got {epsilon_max}")
+        if not 0.0 <= tau_star < 1.0:
+            raise ValueError(f"tau_star must be in [0, 1), got {tau_star}")
+        if n_steps <= 0:
+            raise ValueError(f"n_steps must be positive, got {n_steps}")
+        if t_end < t_start:
+            raise ValueError(
+                f"t_end ({t_end}) must be >= t_start ({t_start})"
+            )
+
+        self.epsilon_max = float(epsilon_max)
+        self.tau_star = float(tau_star)
+        self.n_steps = int(n_steps)
+        self.t_start = float(t_start)
+        self.t_end = float(t_end)
+        self.sqrt = bool(sqrt)
+        super().__init__(self._value_at_time(self.t_start))
+
+    def epsilon_at(self, t: float) -> float:
+        r"""Evaluate the raw temperature \(\epsilon(t)\) at virtual time `t`."""
+        if t < self.tau_star:
+            return 0.0
+        if t < 1.0:
+            return self.epsilon_max * (t - self.tau_star) / (1.0 - self.tau_star)
+        return self.epsilon_max
+
+    def _value_at_time(self, t: float) -> float:
+        eps = self.epsilon_at(t)
+        return math.sqrt(eps) if self.sqrt else eps
+
+    def _compute_value(self) -> float:
+        r"""Map step count to virtual time and evaluate the profile."""
+        frac = min(self.step_count, self.n_steps) / self.n_steps
+        t = self.t_start + (self.t_end - self.t_start) * frac
+        return self._value_at_time(t)

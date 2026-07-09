@@ -4,10 +4,10 @@ from typing import Callable, Dict, Optional, Tuple, Union
 
 import torch
 
-from torchebm.core import BaseIntegrator
+from torchebm.core import BaseSymplecticIntegrator
 
 
-class LeapfrogIntegrator(BaseIntegrator):
+class LeapfrogIntegrator(BaseSymplecticIntegrator):
     r"""
     Symplectic leapfrog (Störmer–Verlet) integrator for Hamiltonian dynamics.
 
@@ -41,6 +41,8 @@ class LeapfrogIntegrator(BaseIntegrator):
         result = integrator.integrate(state, step_size=0.01, n_steps=10, drift=drift)
         ```
     """
+
+    separable = True
 
     def __init__(
         self,
@@ -81,18 +83,12 @@ class LeapfrogIntegrator(BaseIntegrator):
         Returns:
             Updated state dictionary with keys `"x"` and `"p"`.
         """
-        x = state["x"]
-        p = state["p"]
-
-        if not torch.is_tensor(step_size):
-            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
+        x, p, step_size, t = self._unpack_state(state, step_size)
         drift_fn = self._resolve_drift(drift)
-
-        t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
 
         force = drift_fn(x, t)
         if safe:
-            force.clamp_(min=-1e6, max=1e6)
+            self._safe_clamp_(force)
 
         p_half = p + 0.5 * step_size * force
 
@@ -110,15 +106,11 @@ class LeapfrogIntegrator(BaseIntegrator):
 
         force_new = drift_fn(x_new, t)
         if safe:
-            force_new.clamp_(min=-1e6, max=1e6)
+            self._safe_clamp_(force_new)
         p_new = p_half + 0.5 * step_size * force_new
 
         if safe:
-            # Unconditional `nan_to_num_` on freshly owned tensors avoids the
-            # CPU sync that `if isnan(x).any() or isnan(p).any()` would force
-            # every step (Python `or` materialises both 0-d bools to host).
-            x_new.nan_to_num_(nan=0.0)
-            p_new.nan_to_num_(nan=0.0)
+            self._sanitize_state_(x_new, p_new)
         return {"x": x_new, "p": p_new}
 
     def integrate(
@@ -152,8 +144,7 @@ class LeapfrogIntegrator(BaseIntegrator):
         Raises:
             ValueError: If `n_steps <= 0`.
         """
-        if n_steps <= 0:
-            raise ValueError("n_steps must be positive")
+        self._validate_n_steps(n_steps)
 
         if inference_mode:
             with torch.inference_mode():
@@ -164,19 +155,12 @@ class LeapfrogIntegrator(BaseIntegrator):
                 )
 
         drift_fn = self._resolve_drift(drift)
-
-        x = state["x"]
-        p = state["p"]
-
-        if not torch.is_tensor(step_size):
-            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
-
-        t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+        x, p, step_size, t = self._unpack_state(state, step_size)
 
         for _ in range(n_steps):
             force = drift_fn(x, t)
             if safe:
-                force.clamp_(min=-1e6, max=1e6)
+                self._safe_clamp_(force)
 
             p_half = p + 0.5 * step_size * force
 
@@ -194,15 +178,11 @@ class LeapfrogIntegrator(BaseIntegrator):
 
             force_new = drift_fn(x, t)
             if safe:
-                force_new.clamp_(min=-1e6, max=1e6)
+                self._safe_clamp_(force_new)
             p = p_half + 0.5 * step_size * force_new
 
             if safe:
-                # Unconditional in-place sanitization — idempotent on clean
-                # tensors and avoids the per-substep CPU sync caused by
-                # ``isnan(x).any() or isnan(p).any()``.
-                x.nan_to_num_(nan=0.0)
-                p.nan_to_num_(nan=0.0)
+                self._sanitize_state_(x, p)
 
         return {"x": x, "p": p}
 
@@ -212,7 +192,7 @@ HamiltonField = Callable[
 ]
 
 
-class GeneralisedLeapfrogIntegrator(BaseIntegrator):
+class GeneralisedLeapfrogIntegrator(BaseSymplecticIntegrator):
     r"""
     Generalised leapfrog (Störmer–Verlet) integrator for non-separable
     Hamiltonian dynamics.
@@ -304,6 +284,8 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
         ```
     """
 
+    separable = False
+
     def __init__(
         self,
         device: Optional[torch.device] = None,
@@ -387,14 +369,9 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
         Returns:
             Updated state dictionary with keys ``"x"`` and ``"p"``.
         """
-        x = state["x"]
-        p = state["p"]
-
-        if not torch.is_tensor(step_size):
-            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
+        x, p, step_size, t = self._unpack_state(state, step_size)
         force_fn, velocity_fn = self._resolve_hamilton_fields(force, velocity)
 
-        t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
         half = 0.5 * step_size
 
         # Stage 1: implicit half-step momentum at the current position.
@@ -404,7 +381,7 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
             update=lambda ph: torch.addcmul(p, half, force_fn(x, ph, t)),
         )
         if safe:
-            p_half.clamp_(min=-1e6, max=1e6)
+            self._safe_clamp_(p_half)
 
         # Stage 2: implicit position update (trapezoidal in velocity).
         #     x_new = x + (ε/2) * (velocity(x, p_half, t)
@@ -418,17 +395,20 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
             ),
         )
         if safe:
-            x_new.clamp_(min=-1e6, max=1e6)
+            self._safe_clamp_(x_new)
 
         # Stage 3: explicit half-step momentum at the new position.
         force_new = force_fn(x_new, p_half, t)
         if safe:
-            force_new = force_new.clamp(min=-1e6, max=1e6)
+            # Out-of-place on purpose: `force_new` may alias a tensor owned
+            # by the caller's `force_fn`.
+            force_new = force_new.clamp(
+                min=-self._SAFE_CLAMP, max=self._SAFE_CLAMP
+            )
         p_new = torch.addcmul(p_half, half, force_new)
 
         if safe:
-            x_new.nan_to_num_(nan=0.0)
-            p_new.nan_to_num_(nan=0.0)
+            self._sanitize_state_(x_new, p_new)
 
         return {"x": x_new, "p": p_new}
 
@@ -463,8 +443,7 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
             ValueError: If ``n_steps <= 0`` or the required callables are
                 missing.
         """
-        if n_steps <= 0:
-            raise ValueError("n_steps must be positive")
+        self._validate_n_steps(n_steps)
 
         if inference_mode:
             with torch.inference_mode():
@@ -474,14 +453,8 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
                 )
 
         force_fn, velocity_fn = self._resolve_hamilton_fields(force, velocity)
+        x, p, step_size, t = self._unpack_state(state, step_size)
 
-        x = state["x"]
-        p = state["p"]
-
-        if not torch.is_tensor(step_size):
-            step_size = torch.tensor(step_size, device=x.device, dtype=x.dtype)
-
-        t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
         half = 0.5 * step_size
 
         for _ in range(n_steps):
@@ -490,7 +463,7 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
                 update=lambda ph: torch.addcmul(p, half, force_fn(x, ph, t)),
             )
             if safe:
-                p_half.clamp_(min=-1e6, max=1e6)
+                self._safe_clamp_(p_half)
 
             v_at_x = velocity_fn(x, p_half, t)
             base_x = torch.addcmul(x, half, v_at_x)
@@ -501,16 +474,17 @@ class GeneralisedLeapfrogIntegrator(BaseIntegrator):
                 ),
             )
             if safe:
-                x_new.clamp_(min=-1e6, max=1e6)
+                self._safe_clamp_(x_new)
 
             force_new = force_fn(x_new, p_half, t)
             if safe:
-                force_new = force_new.clamp(min=-1e6, max=1e6)
+                force_new = force_new.clamp(
+                    min=-self._SAFE_CLAMP, max=self._SAFE_CLAMP
+                )
             p_new = torch.addcmul(p_half, half, force_new)
 
             if safe:
-                x_new.nan_to_num_(nan=0.0)
-                p_new.nan_to_num_(nan=0.0)
+                self._sanitize_state_(x_new, p_new)
 
             x, p = x_new, p_new
 
