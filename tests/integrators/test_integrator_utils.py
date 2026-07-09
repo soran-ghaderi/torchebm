@@ -350,3 +350,73 @@ def test_heun_uses_integrate_time_grid(device):
 
     assert result["x"].shape == x.shape
     assert torch.all(torch.isfinite(result["x"]))
+
+
+################################ String Registry Tests #############################################
+
+
+def test_get_integrator_resolves_all_names(device):
+    """Every registry name constructs the advertised class on the device."""
+    from torchebm.integrators.integrator_utils import (
+        _INTEGRATOR_NAMES,
+        get_integrator,
+    )
+
+    for name, cls_name in _INTEGRATOR_NAMES.items():
+        integ = get_integrator(name, device=device, dtype=torch.float32)
+        assert type(integ).__name__ == cls_name, name
+        assert integ.device.type == torch.device(device).type
+        assert integ.dtype == torch.float32
+
+
+def test_get_integrator_unknown_name_lists_valid_names():
+    from torchebm.integrators import get_integrator
+    from torchebm.integrators.integrator_utils import _INTEGRATOR_NAMES
+
+    with pytest.raises(ValueError, match="Unknown integrator") as excinfo:
+        get_integrator("nope")
+    for name in _INTEGRATOR_NAMES:
+        assert name in str(excinfo.value)
+
+
+def test_get_integrator_uses_class_defaults():
+    from torchebm.integrators import get_integrator
+
+    integ = get_integrator("generalised_leapfrog")
+    assert integ.solver_max_iter == 8
+    assert integ.solver_tol == 1e-6
+    assert integ.solver_check_every == 0
+
+    dopri = get_integrator("dopri5")
+    assert dopri.atol == 1e-6
+    assert dopri.rtol == 1e-3
+
+
+def test_resolve_integrator_paths(device):
+    """None/str/instance resolution and family/device validation."""
+    from torchebm.core import BaseSDERungeKuttaIntegrator
+    from torchebm.integrators import EulerMaruyamaIntegrator, LeapfrogIntegrator
+    from torchebm.integrators.integrator_utils import resolve_integrator
+
+    kwargs = dict(
+        default="euler_maruyama",
+        family=BaseSDERungeKuttaIntegrator,
+        owner="TestOwner",
+        device=torch.device(device),
+        dtype=torch.float32,
+    )
+    # None -> default
+    integ = resolve_integrator(None, **kwargs)
+    assert isinstance(integ, EulerMaruyamaIntegrator)
+    # str -> registry
+    assert type(resolve_integrator("heun", **kwargs)).__name__ == "HeunIntegrator"
+    # instance -> passthrough (same object, no copy)
+    inst = EulerMaruyamaIntegrator(device=device, dtype=torch.float32)
+    assert resolve_integrator(inst, **kwargs) is inst
+    # wrong family -> TypeError naming owner and family
+    with pytest.raises(TypeError, match="TestOwner.*BaseSDERungeKuttaIntegrator"):
+        resolve_integrator(LeapfrogIntegrator(device=device), **kwargs)
+    # dtype mismatch -> ValueError, no implicit .to()
+    mismatched = EulerMaruyamaIntegrator(device=device, dtype=torch.float64)
+    with pytest.raises(ValueError, match="device/dtype"):
+        resolve_integrator(mismatched, **kwargs)

@@ -222,8 +222,103 @@ class TestFlowSampler:
         """Test that invalid diffusion form raises error."""
         model = MockModel(mode="constant", val=0.0).to(device)
         sampler = FlowSampler(model, interpolant="linear", device=device, dtype=dtype)
-        
+
         z = torch.randn(4, 2, device=device, dtype=dtype)
         with pytest.raises(ValueError, match="Unknown diffusion form"):
             sampler.sample_sde(z, num_steps=5, diffusion_form="invalid_form")
+
+
+class TestFlowIntegratorArg:
+    """Constructor integrator= arg, deprecations, and torchdiffeq removal."""
+
+    def _sampler(self, device, dtype, **kwargs):
+        model = MockModel(mode="linear", val=1.0).to(device)
+        return FlowSampler(
+            model, interpolant="linear", prediction="velocity",
+            sample_eps=0.0, device=device, dtype=dtype, **kwargs,
+        )
+
+    def test_ctor_integrator_matches_deprecated_method(self, device, dtype):
+        """Fixed-step euler path is bitwise identical either way."""
+        z = torch.randn(8, 2, device=device, dtype=dtype)
+        new_api = self._sampler(device, dtype, integrator="euler")
+        out_new = new_api.sample_ode(z.clone(), num_steps=20)
+        old_api = self._sampler(device, dtype)
+        with pytest.warns(DeprecationWarning, match="method/atol/rtol"):
+            out_old = old_api.sample_ode(z.clone(), num_steps=20, method="euler")
+        assert torch.equal(out_new, out_old)
+
+    def test_default_integrator_is_adaptive_dopri5(self, device, dtype):
+        """Default sample_ode runs natively (dopri5) and matches euler closely."""
+        # dx/dt = x, x(0) = 1 -> x(1) = e
+        sampler = self._sampler(device, dtype)
+        z = torch.ones(1, 1, device=device, dtype=dtype)
+        samples = sampler.sample_ode(z, num_steps=50)
+        expected = torch.full_like(samples, np.exp(1.0))
+        assert_close(samples, expected, atol=1e-3, rtol=1e-3)
+
+    @pytest.mark.parametrize(
+        "name", ["bosh3", "dopri8", "adaptive_heun", "rk4", "heun"]
+    )
+    def test_registry_strings_run(self, device, dtype, name):
+        sampler = self._sampler(device, dtype, integrator=name)
+        z = torch.ones(4, 2, device=device, dtype=dtype)
+        samples = sampler.sample_ode(z, num_steps=20)
+        expected = torch.full_like(samples, np.exp(1.0))
+        assert_close(samples, expected, atol=0.15, rtol=0.05)
+
+    def test_reverse_with_adaptive_integrator(self, device, dtype):
+        """Adaptive reverse integration (decreasing grid reparameterized)."""
+        # dx/dt = 1: reverse integrates from t=1 to t=0, so x -> x - 1.
+        model = MockModel(mode="constant", val=1.0).to(device)
+        sampler = FlowSampler(
+            model, interpolant="linear", prediction="velocity",
+            sample_eps=0.0, device=device, dtype=dtype,
+        )
+        z = torch.zeros(4, 2, device=device, dtype=dtype)
+        samples = sampler.sample_ode(z, num_steps=10, reverse=True)
+        assert_close(samples, torch.full_like(samples, -1.0), atol=1e-4, rtol=1e-4)
+
+    def test_sample_forwards_deprecated_kwargs(self, device, dtype):
+        sampler = self._sampler(device, dtype)
+        with pytest.warns(DeprecationWarning, match="method/atol/rtol"):
+            samples = sampler.sample(
+                n_samples=4, dim=2, n_steps=10,
+                ode_method="euler", atol=1e-5, rtol=1e-3,
+            )
+        assert samples.shape == (4, 2)
+        assert torch.isfinite(samples).all()
+
+    def test_sde_requires_sde_integrator(self, device, dtype):
+        from torchebm.integrators import Dopri5Integrator
+
+        sampler = self._sampler(
+            device, dtype,
+            integrator=Dopri5Integrator(device=device, dtype=dtype),
+        )
+        z = torch.randn(4, 2, device=device, dtype=dtype)
+        with pytest.raises(TypeError, match="BaseSDERungeKuttaIntegrator"):
+            sampler.sample_sde(z, num_steps=5, diffusion_norm=0.0)
+
+    def test_sde_integrator_works_in_both_modes(self, device, dtype):
+        from torchebm.integrators import EulerMaruyamaIntegrator
+
+        sampler = self._sampler(
+            device, dtype,
+            integrator=EulerMaruyamaIntegrator(device=device, dtype=dtype),
+        )
+        z = torch.randn(4, 2, device=device, dtype=dtype)
+        ode_out = sampler.sample_ode(z, num_steps=10)
+        sde_out = sampler.sample_sde(z, num_steps=10, diffusion_norm=0.0)
+        assert torch.isfinite(ode_out).all()
+        assert torch.isfinite(sde_out).all()
+
+    def test_ctor_rejects_wrong_family(self, device, dtype):
+        from torchebm.integrators import LeapfrogIntegrator
+
+        with pytest.raises(TypeError, match="BaseRungeKuttaIntegrator"):
+            self._sampler(
+                device, dtype,
+                integrator=LeapfrogIntegrator(device=device, dtype=dtype),
+            )
 
