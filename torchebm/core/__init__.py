@@ -26,7 +26,12 @@ from .base_scheduler import (
 )
 from .schedulable import Schedulable
 from .base_sampler import BaseSampler
-from .base_coupling import BaseCoupling
+from .base_coupling import (
+    BaseCoupling,
+    BaseCostCoupling,
+    BaseModelCoupling,
+    CouplingResult,
+)
 
 from .base_loss import BaseLoss, BaseContrastiveDivergence, BaseScoreMatching
 
@@ -61,6 +66,9 @@ __all__ = [
     "BaseSymplecticIntegrator",
     "BaseInterpolant",
     "BaseCoupling",
+    "BaseCostCoupling",
+    "BaseModelCoupling",
+    "CouplingResult",
     "expand_t_like_x",
     # "Trainer",
     # "get_optimizer",
