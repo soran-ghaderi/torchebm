@@ -152,9 +152,23 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "FlowSampler": {
         "model_type": "velocity",
-        "init_kwargs": {"interpolant": "linear", "prediction": "velocity"},
         "bench_fn": "sample_ode",
-        "bench_kwargs": {"method": "euler"},
+        "variants": {
+            "flow_sampler_euler": {
+                "init_kwargs": {
+                    "interpolant": "linear",
+                    "prediction": "velocity",
+                    "integrator": "euler",
+                },
+            },
+            "flow_sampler_dopri5": {
+                "init_kwargs": {
+                    "interpolant": "linear",
+                    "prediction": "velocity",
+                    "integrator": "dopri5",
+                },
+            },
+        },
     },
     # ── Interpolants (defaults are fine — no overrides needed) ──
     "VariancePreservingInterpolant": {

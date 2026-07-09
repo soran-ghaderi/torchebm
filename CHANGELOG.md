@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- All samplers accept an `integrator` constructor argument: `None` (current default), a registry name (`"heun"`, `"rk4"`, `"dopri5"`, ...), or an integrator instance. Compatibility is enforced at construction (Langevin: SDE family; HMC: separable symplectic; RMHMC: non-separable symplectic; Flow: Runge-Kutta family). Passed instances must match the sampler's device/dtype (no implicit `.to()`); integrator hyperparameters (`atol`/`rtol`/solver iterations) are set on the instance, not via sampler kwargs
+- `BaseSymplecticIntegrator` (core): shared base for the leapfrog family with a `separable` contract flag; `LeapfrogIntegrator` and `GeneralisedLeapfrogIntegrator` now inherit from it
+- `get_integrator(name, device, dtype)` string registry in `torchebm.integrators`
+
+### Changed
+
+- `FlowSampler` adaptive ODE sampling (`dopri5`, `dopri8`, `bosh3`, `adaptive_heun`) now runs on native integrators; torchdiffeq is no longer used or required (removed from the `eqm` extra). Outputs are statistically equivalent but not bitwise identical to torchdiffeq (different step-size controller); the default `dopri5` path is ~3x faster on the sampler benchmark
+- `FlowSampler` reverse-time sampling works with adaptive integrators (decreasing time grids are reparameterized internally)
+
+### Deprecated
+
+- `FlowSampler` per-call `method`/`atol`/`rtol` (in `sample_ode`/`sample_sde`) and `ode_method`/`sde_method` (in `sample`): pass `integrator=` to the constructor instead
+- `RiemannianManifoldHMC` `solver_max_iter`/`solver_tol`/`solver_check_every`: construct `GeneralisedLeapfrogIntegrator(solver_max_iter=...)` and pass it as `integrator=`
+
+- `EnergyMatchingLoss`: Energy Matching (arXiv:2504.10612) — OT flow-matching warm-up plus contrastive-divergence sharpening on a single time-independent scalar potential, with split Langevin negatives, one-sided trimmed mean, and stability clamp
+- `BaseCoupling` (core) with `IndependentCoupling` and `OTCoupling`: torch-native minibatch optimal transport (exact via auction algorithm with epsilon scaling, entropic via log-domain Sinkhorn); no scipy/POT dependency
+- `TemperatureScheduler`: piecewise-linear temperature profile eps(t) for two-regime sampling; returns sqrt(eps) for direct use as `LangevinDynamics` `noise_scale`
+- `InteractionModel`: pairwise repulsive interaction wrapper with `Schedulable` strength for diverse sampling
+- `LangevinDynamics` optional per-step state `clamp=(min, max)` for image-space EBM stabilization
+- Loss utils: `get_coupling`, `trimmed_mean`, `compute_flow_weight`
+- `EnergyMatchingLoss` arbitrary-source transport: pass `x0=...` to `forward`/`training_losses` (the paper's 8-Gaussians-to-two-moons setup); source-initialized negatives follow
+- Examples: `examples/20-training/04-energy-matching/01-energy-matching-2d` (two moons, minimal) and `02-energy-matching-paper-2d` (paper suite: 8G-to-moons transport, trajectories, sample evolution, LID estimation, repulsive diverse sampling; live terminal progress)
+
 ## [0.6.0] - 2026-05-31
 
 ### Added
