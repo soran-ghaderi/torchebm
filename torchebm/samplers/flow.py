@@ -4,17 +4,25 @@ Supports both ODE (probability flow) and SDE (diffusion) sampling modes
 with various numerical integration methods.
 """
 
-from typing import Callable, Literal, Optional, Tuple, Union
 import enum
+import warnings
+from typing import Callable, Literal, Optional, Tuple, Union
 
 import torch
 from torch import nn
 import numpy as np
 
-from torchebm.core import BaseSampler, BaseInterpolant, BaseScheduler, expand_t_like_x
-from torchebm.integrators import (
-    EulerMaruyamaIntegrator,
-    HeunIntegrator,
+from torchebm.core import (
+    BaseInterpolant,
+    BaseRungeKuttaIntegrator,
+    BaseSampler,
+    BaseScheduler,
+    BaseSDERungeKuttaIntegrator,
+    expand_t_like_x,
+)
+from torchebm.integrators.integrator_utils import (
+    get_integrator,
+    resolve_integrator,
 )
 from torchebm.interpolants import (
     # BaseInterpolant,
@@ -24,13 +32,6 @@ from torchebm.interpolants import (
     # expand_t_like_x,
 )
 from torchebm.losses.loss_utils import get_interpolant
-
-try:
-    from torchdiffeq import odeint
-
-    HAS_TORCHDIFFEQ = True
-except ImportError:
-    HAS_TORCHDIFFEQ = False
 
 
 class PredictionType(enum.Enum):
@@ -60,6 +61,14 @@ class FlowSampler(BaseSampler):
             EqM models which learn (ε - x) direction; velocity is v = -f(x).
         dtype: Data type for computations.
         device: Device for computations.
+        integrator: Integrator used by `sample_ode`/`sample_sde`. `None`
+            (default) keeps the per-mode defaults (`Dopri5Integrator` for
+            ODE, `EulerMaruyamaIntegrator` for SDE); a registry name (e.g.
+            `"rk4"`) constructs that integrator with defaults; a
+            `BaseRungeKuttaIntegrator` instance is used as-is and must
+            match the sampler's device/dtype. SDE sampling additionally
+            requires a `BaseSDERungeKuttaIntegrator`; SDE integrators are
+            valid for ODE sampling (zero diffusion).
 
     Example:
         ```python
@@ -72,9 +81,10 @@ class FlowSampler(BaseSampler):
             model=model,
             interpolant="linear",
             prediction="velocity",
+            integrator="euler",
         )
         z = torch.randn(100, 2)
-        samples = sampler.sample_ode(z, num_steps=50, method="euler")
+        samples = sampler.sample_ode(z, num_steps=50)
         ```
     """
 
@@ -88,6 +98,7 @@ class FlowSampler(BaseSampler):
         negate_velocity: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
+        integrator: Union[str, BaseRungeKuttaIntegrator, None] = None,
         *args,
         **kwargs,
     ):
@@ -112,6 +123,88 @@ class FlowSampler(BaseSampler):
         }
         self.prediction_type = prediction_map[prediction]
         # Interpolants are stateless math objects (no device-bound tensors).
+
+        if integrator is None:
+            # Per-mode defaults; resolved by _integrator_for at call time.
+            self.integrator = None
+            self._ode_default = get_integrator(
+                "dopri5", device=self.device, dtype=self.dtype
+            )
+            self._sde_default = get_integrator(
+                "euler_maruyama", device=self.device, dtype=self.dtype
+            )
+        else:
+            self.integrator = resolve_integrator(
+                integrator,
+                default="dopri5",
+                family=BaseRungeKuttaIntegrator,
+                owner="FlowSampler",
+                device=self.device,
+                dtype=self.dtype,
+            )
+            self._ode_default = None
+            self._sde_default = None
+
+    def _integrator_for(
+        self,
+        mode: Literal["ode", "sde"],
+        integ: Optional[BaseRungeKuttaIntegrator] = None,
+    ) -> BaseRungeKuttaIntegrator:
+        r"""Return the integrator to use for ``mode``, validated.
+
+        Args:
+            mode: `"ode"` or `"sde"`.
+            integ: Pre-resolved integrator (deprecated per-call path).
+                `None` uses the constructor integrator or the mode default.
+
+        Raises:
+            TypeError: If SDE sampling is requested with an integrator that
+                cannot handle diffusion.
+        """
+        if integ is None:
+            integ = self.integrator
+        if integ is None:
+            integ = self._ode_default if mode == "ode" else self._sde_default
+        if mode == "sde" and not isinstance(integ, BaseSDERungeKuttaIntegrator):
+            raise TypeError(
+                "SDE sampling requires a BaseSDERungeKuttaIntegrator; got "
+                f"{type(integ).__name__}"
+            )
+        return integ
+
+    def _deprecated_call_integrator(
+        self,
+        mode: Literal["ode", "sde"],
+        method: Optional[str],
+        atol: Optional[float] = None,
+        rtol: Optional[float] = None,
+    ) -> Optional[BaseRungeKuttaIntegrator]:
+        r"""Resolve the deprecated per-call ``method``/``atol``/``rtol`` args.
+
+        Returns `None` when no deprecated argument was given.
+        """
+        if method is None and atol is None and rtol is None:
+            return None
+        warnings.warn(
+            "method/atol/rtol on FlowSampler sampling calls are deprecated; "
+            "pass integrator= to the FlowSampler constructor (atol/rtol are "
+            "set on the integrator instance).",
+            # 4 frames: helper -> sample_ode/sample_sde -> torch.no_grad
+            # wrapper -> caller.
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        default = "dopri5" if mode == "ode" else "euler_maruyama"
+        integ = get_integrator(
+            method if method is not None else default,
+            device=self.device,
+            dtype=self.dtype,
+        )
+        if atol is not None:
+            integ.atol = atol
+        if rtol is not None:
+            integ.rtol = rtol
+        return integ
 
     @property
     def train_eps(self) -> float:
@@ -143,11 +236,11 @@ class FlowSampler(BaseSampler):
         *,
         mode: Literal["ode", "sde"] = "ode",
         shape: Optional[Tuple[int, ...]] = None,
-        ode_method: str = "dopri5",
-        atol: float = 1e-6,
-        rtol: float = 1e-3,
+        ode_method: Optional[str] = None,
+        atol: Optional[float] = None,
+        rtol: Optional[float] = None,
         reverse: bool = False,
-        sde_method: str = "euler",
+        sde_method: Optional[str] = None,
         diffusion_form: str = "SBDM",
         diffusion_norm: float = 1.0,
         last_step: Optional[str] = "Mean",
@@ -157,8 +250,11 @@ class FlowSampler(BaseSampler):
         r"""Unified sampling entrypoint for flow/diffusion models.
 
         Conforms to the `BaseSampler.sample` contract for the common kwargs.
-        Flow-specific options (`mode`, ODE/SDE method, etc.) are keyword-only.
-        For full control, call `sample_ode` or `sample_sde` directly.
+        Flow-specific options (`mode`, `reverse`, diffusion settings) are
+        keyword-only. For full control, call `sample_ode` or `sample_sde`
+        directly. The integrator is set at construction via the
+        ``integrator`` argument; `ode_method`/`sde_method`/`atol`/`rtol`
+        are deprecated per-call overrides.
 
         ``thin``, ``return_trajectory``, and ``return_diagnostics`` are not
         supported by ODE/SDE solvers (they integrate continuously, not stepwise);
@@ -299,21 +395,24 @@ class FlowSampler(BaseSampler):
         self,
         z: torch.Tensor,
         num_steps: int = 50,
-        method: str = "dopri5",
-        atol: float = 1e-6,
-        rtol: float = 1e-3,
+        method: Optional[str] = None,
+        atol: Optional[float] = None,
+        rtol: Optional[float] = None,
         reverse: bool = False,
         **model_kwargs,
     ) -> torch.Tensor:
         r"""
         Sample using probability flow ODE.
 
+        The solver is the constructor ``integrator`` (default: adaptive
+        `Dopri5Integrator`).
+
         Args:
             z: Initial noise tensor of shape (batch_size, ...).
             num_steps: Number of discretization steps (for fixed-step methods).
-            method: ODE solver ('euler', 'heun', 'dopri5', 'dopri8').
-            atol: Absolute tolerance for adaptive solvers.
-            rtol: Relative tolerance for adaptive solvers.
+            method: Deprecated. Pass ``integrator=`` to the constructor.
+            atol: Deprecated. Set on the integrator instance.
+            rtol: Deprecated. Set on the integrator instance.
             reverse: If True, sample from data to noise.
             **model_kwargs: Additional arguments passed to the model.
 
@@ -321,6 +420,9 @@ class FlowSampler(BaseSampler):
             Generated samples tensor.
         """
         z = z.to(device=self.device, dtype=self.dtype)
+        integ = self._integrator_for(
+            "ode", self._deprecated_call_integrator("ode", method, atol, rtol)
+        )
         drift_fn = self._get_drift()
 
         t0, t1 = self._check_interval(sde=False, reverse=reverse)
@@ -335,46 +437,36 @@ class FlowSampler(BaseSampler):
         else:
             wrapped_drift = drift_fn
 
-        def ode_fn(t_val, x):
-            t_batch = (
-                torch.ones(x.size(0), device=self.device, dtype=self.dtype) * t_val
-            )
-            return wrapped_drift(x, t_batch, **model_kwargs)
-
         def fixed_step_drift(x, t_batch):
             return wrapped_drift(x, t_batch, **model_kwargs)
 
-        if method in ["dopri5", "dopri8", "bosh3", "adaptive_heun"]:
-            if not HAS_TORCHDIFFEQ:
-                raise ImportError("torchdiffeq required for adaptive solvers")
-            samples = odeint(ode_fn, z, t, method=method, atol=atol, rtol=rtol)
-            return samples[-1]
-        if method == "euler":
-            integrator = EulerMaruyamaIntegrator(device=self.device, dtype=self.dtype)
-            return integrator.integrate(
-                state={"x": z},
-                step_size=t[1] - t[0],
-                n_steps=num_steps,
-                drift=fixed_step_drift,
-                t=t,
-            )["x"]
-        if method == "heun":
-            integrator = HeunIntegrator(device=self.device, dtype=self.dtype)
-            return integrator.integrate(
-                state={"x": z},
-                step_size=t[1] - t[0],
-                n_steps=num_steps,
-                drift=fixed_step_drift,
-                t=t,
-            )["x"]
-        raise ValueError(f"Unknown ODE method: {method}")
+        drift = fixed_step_drift
+        if t1 < t0 and integ.error_weights is not None:
+            # Adaptive stepping assumes increasing time. Integrate the
+            # exact change of variables s = t0 - t on a forward grid;
+            # fixed-step integrators handle the raw decreasing grid.
+            def reversed_drift(x, s_batch):
+                return -fixed_step_drift(x, t0 - s_batch)
+
+            drift = reversed_drift
+            t = torch.linspace(
+                0.0, t0 - t1, num_steps + 1, device=self.device, dtype=self.dtype
+            )
+
+        return integ.integrate(
+            state={"x": z},
+            step_size=t[1] - t[0],
+            n_steps=num_steps,
+            drift=drift,
+            t=t,
+        )["x"]
 
     @torch.no_grad()
     def sample_sde(
         self,
         z: torch.Tensor,
         num_steps: int = 250,
-        method: str = "euler",
+        method: Optional[str] = None,
         diffusion_form: str = "SBDM",
         diffusion_norm: float = 1.0,
         last_step: Optional[str] = "Mean",
@@ -384,10 +476,14 @@ class FlowSampler(BaseSampler):
         r"""
         Sample using reverse-time SDE.
 
+        The solver is the constructor ``integrator`` (default:
+        `EulerMaruyamaIntegrator`) and must be a
+        `BaseSDERungeKuttaIntegrator`.
+
         Args:
             z: Initial noise tensor of shape (batch_size, ...).
             num_steps: Number of discretization steps.
-            method: SDE solver ('euler', 'heun').
+            method: Deprecated. Pass ``integrator=`` to the constructor.
             diffusion_form: Form of diffusion coefficient. Choices:
                 - 'constant': Constant diffusion
                 - 'SBDM': Score-based diffusion matching (default)
@@ -431,28 +527,17 @@ class FlowSampler(BaseSampler):
         def fixed_sde_drift(x, t_val):
             return sde_drift(x, t_val, **model_kwargs)
 
-        if method == "euler":
-            integrator = EulerMaruyamaIntegrator(device=self.device, dtype=self.dtype)
-            x = integrator.integrate(
-                state={"x": z},
-                step_size=t[1] - t[0],
-                n_steps=num_steps,
-                drift=fixed_sde_drift,
-                diffusion=diffusion_fn,
-                t=t,
-            )["x"]
-        elif method == "heun":
-            integrator = HeunIntegrator(device=self.device, dtype=self.dtype)
-            x = integrator.integrate(
-                state={"x": z},
-                step_size=t[1] - t[0],
-                n_steps=num_steps,
-                drift=fixed_sde_drift,
-                diffusion=diffusion_fn,
-                t=t,
-            )["x"]
-        else:
-            raise ValueError(f"Unknown SDE method: {method}")
+        integ = self._integrator_for(
+            "sde", self._deprecated_call_integrator("sde", method)
+        )
+        x = integ.integrate(
+            state={"x": z},
+            step_size=t[1] - t[0],
+            n_steps=num_steps,
+            drift=fixed_sde_drift,
+            diffusion=diffusion_fn,
+            t=t,
+        )["x"]
 
         # Apply last step
         if last_step is not None:
