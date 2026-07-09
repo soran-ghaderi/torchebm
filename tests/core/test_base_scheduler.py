@@ -9,6 +9,7 @@ from torchebm.core import (
     CosineScheduler,
     MultiStepScheduler,
     WarmupScheduler,
+    TemperatureScheduler,
 )
 from torchebm.samplers import LangevinDynamics
 
@@ -83,6 +84,27 @@ all_scheduler_configs = [
             "args": {"start_value": 10.0, "milestones": [2], "gamma": 0.5},
         },
         id="MultiStep_[2]_0.5",
+    ),
+    # TemperatureScheduler configs
+    pytest.param(
+        {
+            "class": TemperatureScheduler,
+            "args": {"epsilon_max": 0.15, "tau_star": 0.8, "n_steps": 10},
+        },
+        id="Temperature_0.15_0.8_10",
+    ),
+    pytest.param(
+        {
+            "class": TemperatureScheduler,
+            "args": {
+                "epsilon_max": 0.01,
+                "tau_star": 0.5,
+                "n_steps": 325,
+                "t_end": 3.25,
+                "sqrt": False,
+            },
+        },
+        id="Temperature_0.01_0.5_325_T3.25",
     ),
 ]
 
@@ -367,3 +389,116 @@ def test_invalid_multistep_milestones():
 def test_invalid_exponential_min_value():
     with pytest.raises(ValueError):
         ExponentialDecayScheduler(1.0, 0.9, -0.1)  # Negative min_value
+
+
+# TemperatureScheduler (Energy Matching epsilon(t) profile)
+# ==========================================================
+
+
+def test_temperature_scheduler_zero_before_tau_star():
+    """Value is exactly 0 for all steps with t < tau_star."""
+    scheduler = TemperatureScheduler(epsilon_max=0.15, tau_star=0.8, n_steps=10)
+    assert scheduler.get_value() == 0.0  # t = 0
+    for _ in range(7):  # t = 0.1 ... 0.7
+        assert scheduler.step() == 0.0
+
+
+def test_temperature_scheduler_ramp_and_plateau():
+    """sqrt(eps_max / 2) at ramp midpoint, sqrt(eps_max) at t = 1, hold after."""
+    eps_max = 0.15
+    scheduler = TemperatureScheduler(epsilon_max=eps_max, tau_star=0.8, n_steps=10)
+    for _ in range(9):  # advance to t = 0.9, the midpoint of [0.8, 1.0]
+        value = scheduler.step()
+    assert value == pytest.approx(np.sqrt(eps_max / 2))
+    value = scheduler.step()  # t = 1.0
+    assert value == pytest.approx(np.sqrt(eps_max))
+    for _ in range(5):  # beyond n_steps: hold the end value
+        assert scheduler.step() == pytest.approx(np.sqrt(eps_max))
+
+
+def test_temperature_scheduler_sqrt_false_returns_raw_epsilon():
+    """sqrt=False yields the raw temperature profile."""
+    eps_max = 0.15
+    scheduler = TemperatureScheduler(
+        epsilon_max=eps_max, tau_star=0.8, n_steps=10, sqrt=False
+    )
+    for _ in range(9):
+        value = scheduler.step()
+    assert value == pytest.approx(eps_max / 2)
+    assert scheduler.step() == pytest.approx(eps_max)
+
+
+def test_temperature_scheduler_extended_time():
+    """t_end > 1 clamps epsilon at eps_max for the equilibration tail."""
+    eps_max = 0.01
+    scheduler = TemperatureScheduler(
+        epsilon_max=eps_max, tau_star=0.8, n_steps=325, t_end=3.25, sqrt=False
+    )
+    for _ in range(100):  # t = 1.0
+        value = scheduler.step()
+    assert value == pytest.approx(eps_max)
+    for _ in range(225):  # t = 3.25
+        value = scheduler.step()
+    assert value == pytest.approx(eps_max)
+
+
+def test_temperature_scheduler_epsilon_at():
+    """Direct profile evaluation."""
+    scheduler = TemperatureScheduler(epsilon_max=0.2, tau_star=0.5, n_steps=10)
+    assert scheduler.epsilon_at(0.0) == 0.0
+    assert scheduler.epsilon_at(0.49) == 0.0
+    assert scheduler.epsilon_at(0.75) == pytest.approx(0.1)
+    assert scheduler.epsilon_at(1.0) == pytest.approx(0.2)
+    assert scheduler.epsilon_at(2.5) == pytest.approx(0.2)
+
+
+def test_temperature_scheduler_reset_and_state_dict():
+    """Reset returns to the start value; state round-trips."""
+    scheduler = TemperatureScheduler(epsilon_max=0.15, tau_star=0.5, n_steps=10)
+    for _ in range(8):
+        scheduler.step()
+    state = scheduler.state_dict()
+    assert scheduler.get_value() > 0.0
+
+    scheduler.reset()
+    assert scheduler.step_count == 0
+    assert scheduler.get_value() == 0.0
+
+    restored = TemperatureScheduler(epsilon_max=0.15, tau_star=0.5, n_steps=10)
+    restored.load_state_dict(state)
+    assert restored.step_count == 8
+    assert restored.get_value() == pytest.approx(state["current_value"])
+
+
+def test_temperature_scheduler_invalid_args():
+    with pytest.raises(ValueError):
+        TemperatureScheduler(epsilon_max=-0.1)
+    with pytest.raises(ValueError):
+        TemperatureScheduler(epsilon_max=0.1, tau_star=1.0)
+    with pytest.raises(ValueError):
+        TemperatureScheduler(epsilon_max=0.1, tau_star=-0.2)
+    with pytest.raises(ValueError):
+        TemperatureScheduler(epsilon_max=0.1, n_steps=0)
+    with pytest.raises(ValueError):
+        TemperatureScheduler(epsilon_max=0.1, t_start=1.0, t_end=0.5)
+
+
+def test_temperature_scheduler_langevin_integration():
+    """Below tau* the dynamics are noise-free (seed-independent), above they are not."""
+    from torchebm.core import HarmonicModel
+
+    model = HarmonicModel(k=1.0)
+    x_init = torch.linspace(-2, 2, 8).unsqueeze(-1).repeat(1, 2)
+
+    def run(seed, n_steps):
+        scheduler = TemperatureScheduler(epsilon_max=0.5, tau_star=0.5, n_steps=10)
+        sampler = LangevinDynamics(
+            model=model, step_size=0.1, noise_scale=scheduler
+        )
+        torch.manual_seed(seed)
+        return sampler.sample(x=x_init.clone(), n_steps=n_steps)
+
+    # 5 steps use t = 0.0 ... 0.4 < tau*: epsilon = 0, deterministic.
+    assert torch.allclose(run(0, n_steps=5), run(1, n_steps=5))
+    # 10 steps enter the ramp: noise kicks in, seeds diverge.
+    assert not torch.allclose(run(0, n_steps=10), run(1, n_steps=10))
