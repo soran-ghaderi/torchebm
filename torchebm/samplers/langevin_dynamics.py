@@ -8,8 +8,9 @@ from torchebm.core import (
     BaseModel,
     BaseSampler,
     BaseScheduler,
+    BaseSDERungeKuttaIntegrator,
 )
-from torchebm.integrators import EulerMaruyamaIntegrator
+from torchebm.integrators.integrator_utils import resolve_integrator
 
 
 class LangevinDynamics(BaseSampler):
@@ -27,8 +28,15 @@ class LangevinDynamics(BaseSampler):
         step_size: Step size for gradient descent. Float or `BaseScheduler`.
         noise_scale: Scale of Gaussian noise injection. Float or `BaseScheduler`.
         decay: Damping coefficient (not supported).
+        clamp: Optional (min, max) bounds applied to the state after every
+            step. Standard stabilization for image-space EBMs (e.g. [-1, 1]).
         dtype: Data type for computations.
         device: Device for computations.
+        integrator: SDE integrator used for the update. `None` (default)
+            uses `EulerMaruyamaIntegrator`; a registry name (e.g.
+            `"heun"`) constructs that integrator with defaults; a
+            `BaseSDERungeKuttaIntegrator` instance is used as-is and must
+            match the sampler's device/dtype.
 
     Example:
         ```python
@@ -48,8 +56,10 @@ class LangevinDynamics(BaseSampler):
         step_size: Union[float, BaseScheduler] = 1e-3,
         noise_scale: Union[float, BaseScheduler] = 1.0,
         decay: float = 0.0,
+        clamp: Optional[Tuple[float, float]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
+        integrator: Union[str, BaseSDERungeKuttaIntegrator, None] = None,
         *args,
         **kwargs,
     ):
@@ -58,8 +68,18 @@ class LangevinDynamics(BaseSampler):
         self._register_param("step_size", step_size, positive=True)
         self._register_param("noise_scale", noise_scale, positive=True)
 
+        if clamp is not None and clamp[0] >= clamp[1]:
+            raise ValueError(f"clamp min must be < max, got {clamp}")
+        self.clamp = clamp
         self.decay = decay
-        self.integrator = EulerMaruyamaIntegrator(device=self.device, dtype=self.dtype)
+        self.integrator = resolve_integrator(
+            integrator,
+            default="euler_maruyama",
+            family=BaseSDERungeKuttaIntegrator,
+            owner="LangevinDynamics",
+            device=self.device,
+            dtype=self.dtype,
+        )
 
     @torch.no_grad()
     def sample(
@@ -136,6 +156,8 @@ class LangevinDynamics(BaseSampler):
                     noise_scale=self.get_scheduled_value("noise_scale"),
                     drift=drift,
                 )["x"]
+                if self.clamp is not None:
+                    x = x.clamp_(*self.clamp)
                 self.step_schedulers()
 
                 if (i + 1) % thin == 0:

@@ -1,6 +1,7 @@
 r"""Hamiltonian Monte Carlo Sampler Module and Riemannian Manifold Hamiltonian Monte Carlo sampler."""
 
 import math
+import warnings
 from typing import Callable, Dict, Optional, Tuple, Union
 
 import torch
@@ -9,11 +10,10 @@ from torchebm.core import (
     BaseModel,
     BaseSampler,
     BaseScheduler,
+    BaseSymplecticIntegrator,
 )
-from torchebm.integrators import (
-    GeneralisedLeapfrogIntegrator,
-    LeapfrogIntegrator,
-)
+from torchebm.integrators import GeneralisedLeapfrogIntegrator
+from torchebm.integrators.integrator_utils import resolve_integrator
 
 
 class HamiltonianMonteCarlo(BaseSampler):
@@ -30,6 +30,11 @@ class HamiltonianMonteCarlo(BaseSampler):
         mass: Mass matrix (scalar or tensor).
         dtype: Data type for computations.
         device: Device for computations.
+        integrator: Separable symplectic integrator used for trajectories.
+            `None` (default) uses `LeapfrogIntegrator`; a registry name
+            (e.g. `"leapfrog"`) constructs that integrator with defaults;
+            a separable `BaseSymplecticIntegrator` instance is used as-is
+            and must match the sampler's device/dtype.
 
     Example:
         ```python
@@ -53,6 +58,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         mass: Optional[Union[float, torch.Tensor]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
+        integrator: Union[str, BaseSymplecticIntegrator, None] = None,
         *args,
         **kwargs,
     ):
@@ -68,7 +74,22 @@ class HamiltonianMonteCarlo(BaseSampler):
             if (mass is not None and not isinstance(mass, float))
             else mass
         )
-        self.integrator = LeapfrogIntegrator(device=self.device, dtype=self.dtype)
+        integ = resolve_integrator(
+            integrator,
+            default="leapfrog",
+            family=BaseSymplecticIntegrator,
+            owner="HamiltonianMonteCarlo",
+            device=self.device,
+            dtype=self.dtype,
+        )
+        if not integ.separable:
+            raise TypeError(
+                "HamiltonianMonteCarlo requires a separable symplectic "
+                "integrator (drift/mass contract); got non-separable "
+                f"{type(integ).__name__}. Use RiemannianManifoldHMC for "
+                "non-separable Hamiltonians."
+            )
+        self.integrator = integ
 
     def _initialize_momentum(self, shape: torch.Size) -> torch.Tensor:
         r"""
@@ -307,13 +328,19 @@ class RiemannianManifoldHMC(BaseSampler):
             force, so ``metric_fn`` must be differentiable w.r.t. ``x``.
         step_size: Step size for the generalised-leapfrog integrator.
         n_leapfrog_steps: Number of integrator steps per MH proposal.
-        solver_max_iter: Picard iterations per implicit stage in the GLI.
-        solver_tol: Residual tolerance for early termination (only
-            consulted when ``solver_check_every > 0``).
-        solver_check_every: When positive, check the Picard residual every
-            ``n`` iterations and exit early. Each check costs one CPU sync.
+        solver_max_iter: Deprecated. Construct a
+            `GeneralisedLeapfrogIntegrator` with the desired solver
+            settings and pass it as ``integrator`` instead.
+        solver_tol: Deprecated. See ``solver_max_iter``.
+        solver_check_every: Deprecated. See ``solver_max_iter``.
         dtype: Data type for computations.
         device: Device for computations.
+        integrator: Non-separable symplectic integrator used for
+            trajectories. `None` (default) uses
+            `GeneralisedLeapfrogIntegrator`; a registry name (e.g.
+            `"generalised_leapfrog"`) constructs that integrator with
+            defaults; a non-separable `BaseSymplecticIntegrator` instance
+            is used as-is and must match the sampler's device/dtype.
 
     Example:
         ```python
@@ -343,11 +370,12 @@ class RiemannianManifoldHMC(BaseSampler):
         metric_fn: Callable[[torch.Tensor], torch.Tensor],
         step_size: Union[float, BaseScheduler] = 1e-3,
         n_leapfrog_steps: int = 10,
-        solver_max_iter: int = 8,
-        solver_tol: float = 1e-6,
-        solver_check_every: int = 0,
+        solver_max_iter: Optional[int] = None,
+        solver_tol: Optional[float] = None,
+        solver_check_every: Optional[int] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
+        integrator: Union[str, BaseSymplecticIntegrator, None] = None,
         *args,
         **kwargs,
     ):
@@ -360,13 +388,56 @@ class RiemannianManifoldHMC(BaseSampler):
         self._register_param("step_size", step_size, positive=True)
         self.metric_fn = metric_fn
         self.n_leapfrog_steps = n_leapfrog_steps
-        self.integrator = GeneralisedLeapfrogIntegrator(
-            device=self.device,
-            dtype=self.dtype,
-            solver_max_iter=solver_max_iter,
-            solver_tol=solver_tol,
-            solver_check_every=solver_check_every,
+
+        solver_kwargs_given = not (
+            solver_max_iter is None
+            and solver_tol is None
+            and solver_check_every is None
         )
+        if solver_kwargs_given:
+            if integrator is not None:
+                raise ValueError(
+                    "Pass either integrator= or the deprecated solver_* "
+                    "arguments, not both. Set the solver options on the "
+                    "GeneralisedLeapfrogIntegrator instance instead."
+                )
+            warnings.warn(
+                "solver_max_iter/solver_tol/solver_check_every on "
+                "RiemannianManifoldHMC are deprecated; construct "
+                "GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) "
+                "and pass it as integrator=.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if integrator is None:
+            self.integrator = GeneralisedLeapfrogIntegrator(
+                device=self.device,
+                dtype=self.dtype,
+                solver_max_iter=(
+                    solver_max_iter if solver_max_iter is not None else 8
+                ),
+                solver_tol=solver_tol if solver_tol is not None else 1e-6,
+                solver_check_every=(
+                    solver_check_every if solver_check_every is not None else 0
+                ),
+            )
+        else:
+            integ = resolve_integrator(
+                integrator,
+                default="generalised_leapfrog",
+                family=BaseSymplecticIntegrator,
+                owner="RiemannianManifoldHMC",
+                device=self.device,
+                dtype=self.dtype,
+            )
+            if integ.separable:
+                raise TypeError(
+                    "RiemannianManifoldHMC requires a non-separable "
+                    "symplectic integrator (force/velocity contract); got "
+                    f"separable {type(integ).__name__}. Use "
+                    "HamiltonianMonteCarlo for separable Hamiltonians."
+                )
+            self.integrator = integ
 
     @staticmethod
     def _cholesky(G: torch.Tensor) -> torch.Tensor:
