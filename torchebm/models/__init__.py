@@ -12,6 +12,7 @@ This package therefore exposes *reusable building blocks* under
 __all__ = [
     "ConditionalTransformer2D",
     "LabelClassifierFreeGuidance",
+    "InteractionModel",
     "MLPTimestepEmbedder",
     "LabelEmbedder",
     "build_2d_sincos_pos_embed",
@@ -27,6 +28,7 @@ __all__ = [
 _LAZY_IMPORTS = {
     "ConditionalTransformer2D": ".conditional_transformer_2d",
     "LabelClassifierFreeGuidance": ".wrappers",
+    "InteractionModel": ".wrappers",
     "AdaLNZeroBlock": ".components",
     "AdaLNZeroPatchHead": ".components",
     "ConvPatchEmbed2d": ".components",
