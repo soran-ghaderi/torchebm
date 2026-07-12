@@ -16,6 +16,7 @@ _INTEGRATOR_NAMES = {
     "dopri8": "Dopri8Integrator",
     "rk4": "RK4Integrator",
     "rk438": "RK438Integrator",
+    "midpoint": "MidpointIntegrator",
     "leapfrog": "LeapfrogIntegrator",
     "generalised_leapfrog": "GeneralisedLeapfrogIntegrator",
     "generalized_leapfrog": "GeneralisedLeapfrogIntegrator",  # US alias
