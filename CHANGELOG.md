@@ -12,15 +12,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All samplers accept an `integrator` constructor argument: `None` (current default), a registry name (`"heun"`, `"rk4"`, `"dopri5"`, ...), or an integrator instance. Compatibility is enforced at construction (Langevin: SDE family; HMC: separable symplectic; RMHMC: non-separable symplectic; Flow: Runge-Kutta family). Passed instances must match the sampler's device/dtype (no implicit `.to()`); integrator hyperparameters (`atol`/`rtol`/solver iterations) are set on the instance, not via sampler kwargs
 - `BaseSymplecticIntegrator` (core): shared base for the leapfrog family with a `separable` contract flag; `LeapfrogIntegrator` and `GeneralisedLeapfrogIntegrator` now inherit from it
 - `get_integrator(name, device, dtype)` string registry in `torchebm.integrators`
+- `torchebm.interpolants.interpolant_utils`: `get_interpolant` moved here from `torchebm.losses.loss_utils` (still re-exported there) plus a new `resolve_interpolant(interpolant, default, owner)` helper mirroring `resolve_integrator`
+- `resolve_integrator` exported from `torchebm.integrators`
+- Cross-sampler API contract test (`tests/samplers/test_api_contract.py`) pinning the shared `sample()` signature, return types, trajectory/thin shapes, and constructor ordering for every sampler
 
 ### Changed
 
+- **BREAKING** `FlowSampler` is configured entirely at construction: `mode="ode"|"sde"` selects the process, and `reverse`, `diffusion_form`, `diffusion_norm`, `last_step`, `last_step_size` are constructor arguments (SDE-only options raise `ValueError` in ODE mode). `sample()` now follows the standard `BaseSampler` contract, including `thin`, `return_trajectory`, and `return_diagnostics` (keys `"mean"`, `"var"`, `"t"`) with fixed-step integrators; adaptive integrators return the final state only. `n_steps=None` resolves to 50 (ODE) / 250 (SDE). Fixed-step sampling now advances schedulers once per step
+- **BREAKING** `sample(x=None)` requires `dim=` (or model-based inference in the HMC family); the silent `dim=10` default is gone. `dim` accepts an int or a shape tuple, replacing `FlowSampler`'s `shape=` kwarg
+- Sampler constructors and `sample()` signatures no longer accept unused `*args, **kwargs`
+- `resolve_integrator` validates the integrator family for registry names too, not only instances (e.g. `FlowSampler(mode="sde", integrator="rk4")` now raises `TypeError` at construction)
+- `RiemannianManifoldHMC` resolves its default integrator through `resolve_integrator` like every other sampler
 - `FlowSampler` adaptive ODE sampling (`dopri5`, `dopri8`, `bosh3`, `adaptive_heun`) now runs on native integrators; torchdiffeq is no longer used or required (removed from the `eqm` extra). Outputs are statistically equivalent but not bitwise identical to torchdiffeq (different step-size controller); the default `dopri5` path is ~3x faster on the sampler benchmark
 - `FlowSampler` reverse-time sampling works with adaptive integrators (decreasing time grids are reparameterized internally)
 
+### Removed
+
+- **BREAKING** `FlowSampler.sample_ode` / `FlowSampler.sample_sde` and the per-call `method`/`atol`/`rtol`/`ode_method`/`sde_method`/`mode`/`shape` sampling kwargs (deprecated in 0.6.4). Passing a removed kwarg raises `TypeError` with a migration hint. Migration:
+
+  | old | new |
+  |---|---|
+  | `s.sample_ode(z, num_steps=50)` | `FlowSampler(model, ...).sample(x=z, n_steps=50)` |
+  | `s.sample_sde(z, num_steps=250, diffusion_form=..., last_step=...)` | `FlowSampler(model, mode="sde", diffusion_form=..., last_step=...).sample(x=z, n_steps=250)` |
+  | `s.sample(mode="sde", ...)` | constructor `mode="sde"` |
+  | `s.sample(shape=(n, C, H, W))` | `s.sample(n_samples=n, dim=(C, H, W))` |
+  | `sample_ode(..., method="rk4", atol=..., rtol=...)` | constructor `integrator="rk4"` or an instance with `atol`/`rtol` set |
+  | `sample_ode(..., reverse=True)` | constructor `reverse=True` |
+
 ### Deprecated
 
-- `FlowSampler` per-call `method`/`atol`/`rtol` (in `sample_ode`/`sample_sde`) and `ode_method`/`sde_method` (in `sample`): pass `integrator=` to the constructor instead
 - `RiemannianManifoldHMC` `solver_max_iter`/`solver_tol`/`solver_check_every`: construct `GeneralisedLeapfrogIntegrator(solver_max_iter=...)` and pass it as `integrator=`
 
 - `EnergyMatchingLoss`: Energy Matching (arXiv:2504.10612) — OT flow-matching warm-up plus contrastive-divergence sharpening on a single time-independent scalar potential, with split Langevin negatives, one-sided trimmed mean, and stability clamp
