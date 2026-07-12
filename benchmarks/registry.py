@@ -152,7 +152,6 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "FlowSampler": {
         "model_type": "velocity",
-        "bench_fn": "sample_ode",
         "variants": {
             "flow_sampler_euler": {
                 "init_kwargs": {
