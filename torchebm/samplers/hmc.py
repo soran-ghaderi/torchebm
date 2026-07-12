@@ -59,8 +59,6 @@ class HamiltonianMonteCarlo(BaseSampler):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         integrator: Union[str, BaseSymplecticIntegrator, None] = None,
-        *args,
-        **kwargs,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
         self._register_param("step_size", step_size, positive=True)
@@ -192,19 +190,16 @@ class HamiltonianMonteCarlo(BaseSampler):
         if reset_schedulers:
             self.reset_schedulers()
 
-        if x is None:
-            if dim is None:
-                if hasattr(self.model, "mean") and isinstance(
-                    self.model.mean, torch.Tensor
-                ):
-                    dim = self.model.mean.shape[0]
-                else:
-                    raise ValueError(
-                        "dim must be provided when x is None and cannot be inferred from model"
-                    )
-            x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
-        else:
-            x = x.to(device=self.device, dtype=self.dtype)
+        if x is None and dim is None:
+            if hasattr(self.model, "mean") and isinstance(
+                self.model.mean, torch.Tensor
+            ):
+                dim = self.model.mean.shape[0]
+            else:
+                raise ValueError(
+                    "dim must be provided when x is None and cannot be inferred from model"
+                )
+        x = self._init_state(x, dim, n_samples)
 
         dim = x.shape[1]
         batch_size = x.shape[0]
@@ -376,8 +371,6 @@ class RiemannianManifoldHMC(BaseSampler):
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         integrator: Union[str, BaseSymplecticIntegrator, None] = None,
-        *args,
-        **kwargs,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
         if not callable(metric_fn):
@@ -409,8 +402,10 @@ class RiemannianManifoldHMC(BaseSampler):
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if integrator is None:
-            self.integrator = GeneralisedLeapfrogIntegrator(
+        if solver_kwargs_given:
+            # Deprecated path (integrator= excluded above): thread the old
+            # solver options into a directly constructed integrator.
+            integ = GeneralisedLeapfrogIntegrator(
                 device=self.device,
                 dtype=self.dtype,
                 solver_max_iter=(
@@ -430,14 +425,14 @@ class RiemannianManifoldHMC(BaseSampler):
                 device=self.device,
                 dtype=self.dtype,
             )
-            if integ.separable:
-                raise TypeError(
-                    "RiemannianManifoldHMC requires a non-separable "
-                    "symplectic integrator (force/velocity contract); got "
-                    f"separable {type(integ).__name__}. Use "
-                    "HamiltonianMonteCarlo for separable Hamiltonians."
-                )
-            self.integrator = integ
+        if integ.separable:
+            raise TypeError(
+                "RiemannianManifoldHMC requires a non-separable "
+                "symplectic integrator (force/velocity contract); got "
+                f"separable {type(integ).__name__}. Use "
+                "HamiltonianMonteCarlo for separable Hamiltonians."
+            )
+        self.integrator = integ
 
     @staticmethod
     def _cholesky(G: torch.Tensor) -> torch.Tensor:
@@ -581,20 +576,17 @@ class RiemannianManifoldHMC(BaseSampler):
         if reset_schedulers:
             self.reset_schedulers()
 
-        if x is None:
-            if dim is None:
-                if hasattr(self.model, "mean") and isinstance(
-                    self.model.mean, torch.Tensor
-                ):
-                    dim = self.model.mean.shape[0]
-                else:
-                    raise ValueError(
-                        "dim must be provided when x is None and cannot be "
-                        "inferred from model"
-                    )
-            x = torch.randn(n_samples, dim, dtype=self.dtype, device=self.device)
-        else:
-            x = x.to(device=self.device, dtype=self.dtype)
+        if x is None and dim is None:
+            if hasattr(self.model, "mean") and isinstance(
+                self.model.mean, torch.Tensor
+            ):
+                dim = self.model.mean.shape[0]
+            else:
+                raise ValueError(
+                    "dim must be provided when x is None and cannot be "
+                    "inferred from model"
+                )
+        x = self._init_state(x, dim, n_samples)
 
         if x.ndim != 2:
             raise ValueError(

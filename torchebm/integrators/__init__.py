@@ -7,6 +7,7 @@ package import time.  Direct imports still work:
 
 __all__ = [
     "get_integrator",
+    "resolve_integrator",
     "EulerMaruyamaIntegrator",
     "BackwardEulerMaruyamaIntegrator",
     "HeunIntegrator",

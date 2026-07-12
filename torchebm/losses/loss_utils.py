@@ -2,12 +2,7 @@ r"""Utility functions for loss computations."""
 
 import torch
 
-from torchebm.core import BaseInterpolant
-from torchebm.interpolants import (
-    LinearInterpolant,
-    CosineInterpolant,
-    VariancePreservingInterpolant,
-)
+from torchebm.interpolants.interpolant_utils import get_interpolant
 
 
 def mean_flat(tensor: torch.Tensor) -> torch.Tensor:
@@ -20,31 +15,6 @@ def mean_flat(tensor: torch.Tensor) -> torch.Tensor:
         Tensor of shape (batch_size,) with mean over spatial dims.
     """
     return tensor.mean(dim=list(range(1, len(tensor.shape))))
-
-
-def get_interpolant(interpolant_type: str) -> BaseInterpolant:
-    r"""Get interpolant instance by name.
-
-    Args:
-        interpolant_type: One of 'linear', 'cosine', or 'vp'.
-
-    Returns:
-        Interpolant instance.
-
-    Raises:
-        ValueError: If interpolant_type is not recognized.
-    """
-    interpolants = {
-        "linear": LinearInterpolant,
-        "cosine": CosineInterpolant,
-        "vp": VariancePreservingInterpolant,
-    }
-    if interpolant_type not in interpolants:
-        raise ValueError(
-            f"Unknown interpolant: {interpolant_type}. "
-            f"Choose from {list(interpolants.keys())}"
-        )
-    return interpolants[interpolant_type]()
 
 
 def trimmed_mean(values: torch.Tensor, trim_fraction: float) -> torch.Tensor:

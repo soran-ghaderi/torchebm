@@ -9,12 +9,16 @@ __all__ = [
     "LinearInterpolant",
     "CosineInterpolant",
     "VariancePreservingInterpolant",
+    "get_interpolant",
+    "resolve_interpolant",
 ]
 
 _LAZY_IMPORTS = {
     "LinearInterpolant": ".linear",
     "CosineInterpolant": ".cosine",
     "VariancePreservingInterpolant": ".variance_preserving",
+    "get_interpolant": ".interpolant_utils",
+    "resolve_interpolant": ".interpolant_utils",
 }
 
 

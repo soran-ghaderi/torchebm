@@ -33,9 +33,9 @@ import torch
 from torch import nn
 
 from torchebm.core import BaseLoss, BaseInterpolant, BaseScheduler, expand_t_like_x
+from torchebm.interpolants import resolve_interpolant
 from torchebm.losses import (
     mean_flat,
-    get_interpolant,
     compute_eqm_ct,
     dispersive_loss,
 )
@@ -135,10 +135,9 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
         self.time_invariant = time_invariant
-        if isinstance(interpolant, str):
-            self.interpolant = get_interpolant(interpolant)
-        else:
-            self.interpolant = interpolant
+        self.interpolant = resolve_interpolant(
+            interpolant, default="linear", owner="EquilibriumMatchingLoss"
+        )
 
     @property
     def train_eps(self) -> float:
