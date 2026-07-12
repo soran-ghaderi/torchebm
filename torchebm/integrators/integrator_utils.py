@@ -45,9 +45,7 @@ def get_integrator(
         cls_name = _INTEGRATOR_NAMES[name]
     except (KeyError, TypeError):
         valid = ", ".join(sorted(_INTEGRATOR_NAMES))
-        raise ValueError(
-            f"Unknown integrator {name!r}. Valid names: {valid}"
-        ) from None
+        raise ValueError(f"Unknown integrator {name!r}. Valid names: {valid}") from None
     # Resolve through the package's lazy __getattr__ to avoid import cycles.
     cls = getattr(importlib.import_module("torchebm.integrators"), cls_name)
     return cls(device=device, dtype=dtype)
@@ -82,26 +80,34 @@ def resolve_integrator(
         A validated integrator instance.
 
     Raises:
-        TypeError: If an instance is not of the required ``family``.
+        TypeError: If the resolved integrator is not of the required
+            ``family`` (validated for names and instances alike).
         ValueError: If an instance's device/dtype mismatches the sampler's.
     """
-    if integrator is None:
-        return get_integrator(default, device=device, dtype=dtype)
-    if isinstance(integrator, str):
-        return get_integrator(integrator, device=device, dtype=dtype)
-    if not isinstance(integrator, family):
+    if isinstance(integrator, BaseIntegrator):
+        if not isinstance(integrator, family):
+            raise TypeError(
+                f"{owner} requires a {family.__name__}; got "
+                f"{type(integrator).__name__}"
+            )
+        if integrator.device != device or integrator.dtype != dtype:
+            raise ValueError(
+                f"{owner} device/dtype ({device}, {dtype}) does not match the "
+                f"integrator's ({integrator.device}, {integrator.dtype}). "
+                f"Construct the integrator with matching device/dtype; no "
+                f"implicit .to() is performed."
+            )
+        return integrator
+    resolved = get_integrator(
+        integrator if integrator is not None else default,
+        device=device,
+        dtype=dtype,
+    )
+    if not isinstance(resolved, family):
         raise TypeError(
-            f"{owner} requires a {family.__name__}; got "
-            f"{type(integrator).__name__}"
+            f"{owner} requires a {family.__name__}; got " f"{type(resolved).__name__}"
         )
-    if integrator.device != device or integrator.dtype != dtype:
-        raise ValueError(
-            f"{owner} device/dtype ({device}, {dtype}) does not match the "
-            f"integrator's ({integrator.device}, {integrator.dtype}). "
-            f"Construct the integrator with matching device/dtype; no "
-            f"implicit .to() is performed."
-        )
-    return integrator
+    return resolved
 
 
 def _integrate_time_grid(
