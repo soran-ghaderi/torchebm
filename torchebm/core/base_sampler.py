@@ -39,32 +39,57 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         model: nn.Module,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        *args,
-        **kwargs,
     ):
-        super().__init__(device=device, dtype=dtype, *args, **kwargs)
+        super().__init__(device=device, dtype=dtype)
         self.model = model
+
+    def _init_state(
+        self,
+        x: Optional[torch.Tensor],
+        dim: Optional[Union[int, Tuple[int, ...]]],
+        n_samples: int,
+    ) -> torch.Tensor:
+        r"""Coerce `x` to the sampler's device/dtype, or draw from `N(0, I)`.
+
+        Args:
+            x: Initial state, or `None` to synthesize one.
+            dim: State dimension (int) or shape (tuple), used when `x is None`.
+            n_samples: Number of parallel chains, used when `x is None`.
+
+        Returns:
+            State tensor of shape `[n_samples, *shape]`.
+
+        Raises:
+            ValueError: If both `x` and `dim` are `None`.
+        """
+        if x is not None:
+            return x.to(device=self.device, dtype=self.dtype)
+        if dim is None:
+            raise ValueError("dim must be provided when x is None")
+        shape = (dim,) if isinstance(dim, int) else tuple(dim)
+        return torch.randn(n_samples, *shape, dtype=self.dtype, device=self.device)
 
     @abstractmethod
     def sample(
         self,
         x: Optional[torch.Tensor] = None,
-        dim: int = 10,
+        dim: Optional[Union[int, Tuple[int, ...]]] = None,
         n_steps: int = 100,
         n_samples: int = 1,
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
-        *args,
-        **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""
         Run the sampling process.
 
         Args:
             x: Initial state. If `None`, samples from `N(0, I)`.
-            dim: Dimension of the state space (used when `x is None`).
+            dim: Dimension (int) or shape (tuple) of the state space, used when
+                `x is None`. Samplers that can infer it from the model (the HMC
+                family, via `model.mean`) accept `None`; otherwise a
+                `ValueError` is raised.
             n_steps: Number of MCMC steps.
             n_samples: Number of parallel chains/samples.
             thin: Keep every `thin`-th sample. Final stored length is
@@ -84,6 +109,7 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
             optionally paired with a diagnostics dict if `return_diagnostics=True`.
 
         Raises:
-            ValueError: If `thin < 1`.
+            ValueError: If `thin < 1`, or if `x` is `None` and `dim` is `None`
+                for samplers that cannot infer the state shape.
         """
         raise NotImplementedError

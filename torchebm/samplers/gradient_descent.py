@@ -50,8 +50,6 @@ class GradientDescentSampler(BaseSampler):
         step_size: Union[float, BaseScheduler] = 1e-3,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        *args,
-        **kwargs,
     ):
         super().__init__(
             model=model,
@@ -64,21 +62,19 @@ class GradientDescentSampler(BaseSampler):
     def sample(
         self,
         x: Optional[torch.Tensor] = None,
-        dim: int = 10,
+        dim: Optional[Union[int, Tuple[int, ...]]] = None,
         n_steps: int = 100,
         n_samples: int = 1,
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
-        *args,
-        **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via gradient descent optimization.
 
         Args:
             x: Initial state. If None, samples from N(0, I).
-            dim: Dimension of state space (used if x is None).
+            dim: State dimension (int) or shape (tuple), used when `x is None`.
             n_steps: Number of gradient descent steps.
             n_samples: Number of parallel chains/samples.
             thin: Keep every `thin`-th sample. Final length `n_steps // thin`.
@@ -89,17 +85,14 @@ class GradientDescentSampler(BaseSampler):
             reset_schedulers: If True (default), reset registered schedulers.
 
         Raises:
-            ValueError: If `thin < 1`.
+            ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
         """
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
 
-        if x is None:
-            x = torch.randn(n_samples, dim, device=self.device, dtype=self.dtype)
-        else:
-            x = x.to(device=self.device, dtype=self.dtype)
+        x = self._init_state(x, dim, n_samples)
 
         n_kept = n_steps // thin
         if return_trajectory:
@@ -176,8 +169,6 @@ class NesterovSampler(BaseSampler):
         momentum: float = 0.9,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
-        *args,
-        **kwargs,
     ):
         super().__init__(
             model=model,
@@ -194,21 +185,19 @@ class NesterovSampler(BaseSampler):
     def sample(
         self,
         x: Optional[torch.Tensor] = None,
-        dim: int = 10,
+        dim: Optional[Union[int, Tuple[int, ...]]] = None,
         n_steps: int = 100,
         n_samples: int = 1,
         thin: int = 1,
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
-        *args,
-        **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Nesterov accelerated gradient descent.
 
         Args:
             x: Initial state. If None, samples from N(0, I).
-            dim: Dimension of state space (used if x is None).
+            dim: State dimension (int) or shape (tuple), used when `x is None`.
             n_steps: Number of optimization steps.
             n_samples: Number of parallel chains/samples.
             thin: Keep every `thin`-th sample. Final length `n_steps // thin`.
@@ -219,17 +208,14 @@ class NesterovSampler(BaseSampler):
             reset_schedulers: If True (default), reset registered schedulers.
 
         Raises:
-            ValueError: If `thin < 1`.
+            ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
         """
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
 
-        if x is None:
-            x = torch.randn(n_samples, dim, device=self.device, dtype=self.dtype)
-        else:
-            x = x.to(device=self.device, dtype=self.dtype)
+        x = self._init_state(x, dim, n_samples)
 
         v = torch.zeros_like(x)
         n_kept = n_steps // thin
