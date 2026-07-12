@@ -61,9 +61,9 @@ from torchebm.core import (
     TemperatureScheduler,
 )
 from torchebm.couplings import resolve_coupling
+from torchebm.interpolants import resolve_interpolant
 from torchebm.losses.loss_utils import (
     compute_flow_weight,
-    get_interpolant,
     mean_flat,
     trimmed_mean,
 )
@@ -188,8 +188,8 @@ class EnergyMatchingLoss(BaseLoss):
         self.coupling = resolve_coupling(
             coupling, default="ot", owner="EnergyMatchingLoss"
         )
-        self.interpolant = (
-            get_interpolant(interpolant) if isinstance(interpolant, str) else interpolant
+        self.interpolant = resolve_interpolant(
+            interpolant, default="linear", owner="EnergyMatchingLoss"
         )
         self._register_param("sigma", sigma)
         self._register_param("lambda_cd", lambda_cd)
