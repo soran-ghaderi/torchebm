@@ -6,90 +6,83 @@ icon: material/folder-outline
 
 # Architecture
 
-TorchEBM is organised around a small set of base classes (`BaseModel`, `BaseSampler`, `BaseLoss`, `BaseIntegrator`, `BaseInterpolant`). Everything else is composition: a loss uses a sampler, a sampler uses an integrator, an integrator steps a field derived from a model.
-
----
+TorchEBM is organised around a small set of base classes (`BaseModel`,
+`BaseSampler`, `BaseLoss`, `BaseIntegrator`, `BaseInterpolant`,
+`BaseCoupling`). Everything else is composition: a loss uses a sampler or a
+coupling, a sampler uses an integrator, an integrator steps a field derived
+from a model. The user-facing statement of this design is
+[Design and Scope](../concepts/design.md); this page is the contributor view.
 
 ## Package layout
 
-```
-torchebm/
-├── core/          # Base classes + DeviceMixin
-├── losses/        # ContrastiveDivergence, ScoreMatching, EquilibriumMatching, …
-├── samplers/      # LangevinDynamics, HamiltonianMonteCarlo, FlowSampler, GradientDescent
-├── integrators/   # EulerMaruyama, Heun, Leapfrog, RK4, DOPRI5, …
-├── interpolants/  # Linear, Cosine, VariancePreserving (flow / diffusion paths)
-├── datasets/      # Synthetic data generators (gaussian mixture, 2D shapes, etc.)
-├── models/        # Neural architectures (MLPs, transformers) used as energies or fields
-├── cuda/          # Custom CUDA kernels (placeholder, see cuRBLAS)
-└── utils/         # Shared helpers
-```
+The tree below is generated from the installed package at build time (comments
+come from `docs/hooks/gen_diagrams.py`; new subpackages appear automatically):
+
+<!-- torchebm:tree packages -->
 
 Mirror this layout under `tests/` when adding tests.
 
----
-
 ## Core abstractions
 
-| Base class         | Contract                                          | Notable subclasses                    |
-|--------------------|---------------------------------------------------|---------------------------------------|
-| `BaseModel`        | `forward(x) -> energy` or score/velocity          | `GaussianEnergy`, `MLP2D`, transformers |
-| `BaseSampler`      | `sample(x=None, dim, n_steps, n_samples, …)`      | `LangevinDynamics`, `HMC`, `FlowSampler` |
-| `BaseIntegrator`   | One numerical step of an ODE/SDE                  | `Leapfrog`, `EulerMaruyama`, `DOPRI5` |
-| `BaseLoss`         | `forward(x, *args, **kw) -> scalar`               | `ScoreMatching`, `ContrastiveDivergence`, `EquilibriumMatching` |
-| `BaseInterpolant`  | `interpolate(x0, x1, t) -> (xt, ut)`              | `Linear`, `Cosine`, `VariancePreserving` |
-| `DeviceMixin`      | `self.device`, `self.dtype`, `autocast_context()` | used by everything above              |
+One contract per axis. The table is generated at build time from the root base
+classes exported by `torchebm.core` and the first line of their docstrings, so
+it tracks the code by construction:
 
-Every component exposed through `torchebm.*.__init__` is auto-discovered by the benchmark suite (see [Benchmarking](benchmarking.md)).
+<!-- torchebm:table contracts -->
 
----
+The current composition map and export counts, generated from the installed
+package at build time (see `docs/hooks/gen_diagrams.py`; per-family class
+trees render the same way on the Concepts pages):
+
+<!-- torchebm:diagram components -->
+
+String registries (`get_integrator`, `get_coupling`, `get_interpolant`) make
+each axis addressable by name; `resolve_*` helpers validate instances against
+the family a consumer requires. Every component exported through
+`torchebm.*.__init__` is auto-discovered by the benchmark suite (see
+[Performance and Benchmarking](performance.md)).
 
 ## How the pieces compose
 
-Training wiring depends on the loss family. Two patterns cover everything in the library:
+Training wiring depends on the loss family; two patterns cover the library.
 
-=== "Sampler-free (score / flow / EqM)"
-    ```mermaid
-    graph LR
-        data[x1] --> loss
-        noise["x0 ~ N(0,I)"] --> interp[interpolant]
-        data --> interp
-        interp -- xt, target --> loss
-        model --> loss
-        loss -- grad --> opt[optimizer]
-        opt --> model
-    ```
-    Score matching, equilibrium matching, and flow matching compute their target from data plus a noise / interpolation step. **No sampler runs during training.** Samplers are only used at generation time.
+### Sampler-free (score, flow, EqM, EM warm-up)
 
-=== "Sampler-based (CD family)"
-    ```mermaid
-    graph LR
-        data[data x] --> loss
-        model --> sampler
-        sampler -- negatives --> loss
-        loss -- grad --> opt[optimizer]
-        opt --> model
-    ```
-    Contrastive divergence and its variants draw negatives from the current model via a sampler (e.g. `LangevinDynamics`, `HMC`) every step.
+The loss computes its target from data plus a coupling and an interpolation
+step; no sampler runs during training. Each step is: couple the batch, draw
+\(t\), interpolate, regress. Samplers only appear at generation time.
 
-=== "Generation (all objectives)"
-    ```mermaid
-    graph LR
-        model2[trained model] --> sampler2[sampler]
-        sampler2 --> samples[x ~ p]
-    ```
-    A sampler drives a **field** derived from the trained model through an **integrator** to produce samples.
+### Sampler-based (CD family, EM joint phase)
 
-Swapping any one piece (e.g. replacing `EulerMaruyama` with `Heun` inside `LangevinDynamics`) does not require touching the others.
+Contrastive divergence draws negatives from the current model via a sampler
+every step:
 
----
+```mermaid
+graph LR
+    data[data x] --> loss
+    model --> sampler
+    sampler -- negatives --> loss
+    loss -- grad --> opt[optimizer]
+    opt --> model
+```
+
+### Generation (all objectives)
+
+A sampler drives a field derived from the trained model through an integrator:
+MCMC samplers step the energy's force, `FlowSampler` integrates the velocity
+(or converted score/noise prediction) as an ODE or SDE. Swapping any one piece
+(e.g. `integrator="heun"` for `"rk4"`) never requires touching the others.
 
 ## Time conditioning
 
-Not all objectives condition the model on \( t \). The distinction matters when wiring components:
+Not all objectives condition the model on \( t \):
 
-- **EquilibriumMatching**: time-invariant. The loss passes \( x_t \) only; the model receives **no** time input.
-- **FlowSampler / score-matching with diffusion**: time-conditional. The field is \( v(x, t) \); the sampler feeds \( t \) every step.
+- **EquilibriumMatching**: time-invariant; the model receives no time input,
+  and `FlowSampler(negate_velocity=True)` integrates it.
+- **FlowSampler with velocity/score models**: time-conditional; the field is
+  \( v(x, t) \) and the sampler feeds \( t \) every step.
+- **EnergyMatching**: the potential \(V(x)\) is time-independent; time lives
+  in the temperature schedule of the generation sweep.
 
-See `torchebm/losses/equilibrium_matching.py` and `torchebm/samplers/flow.py` for the reference patterns.
-
+See `torchebm/losses/equilibrium_matching.py` and
+`torchebm/samplers/flow.py` for the reference patterns.

@@ -5,12 +5,17 @@ with EquilibriumMatchingLoss, then FlowSampler integrates it from noise. EqM mod
 sample with negate_velocity=True (the learned field points data -> noise).
 """
 
+import os
+
 import torch
 from torch import nn
 
 from torchebm.datasets import TwoMoonsDataset
 from torchebm.losses import EquilibriumMatchingLoss
 from torchebm.samplers import FlowSampler
+
+SMOKE = os.getenv("TORCHEBM_SMOKE") == "1"
+N_STEPS = 20 if SMOKE else 3000
 
 
 class Field(nn.Module):               # f(x, t) -> R^2; EqM is time-invariant, so t is unused
@@ -32,7 +37,7 @@ model = Field()
 loss_fn = EquilibriumMatchingLoss(model=model, interpolant="linear", energy_type="dot")
 opt = torch.optim.Adam(model.parameters(), lr=3e-4)
 
-for step in range(3000):
+for step in range(N_STEPS):
     batch = data[torch.randint(len(data), (256,))]
     loss = loss_fn(batch)
     opt.zero_grad()
@@ -45,5 +50,5 @@ for step in range(3000):
 flow = FlowSampler(
     model=model, interpolant="linear", negate_velocity=True, integrator="euler"
 )
-samples = flow.sample_ode(torch.randn(4000, 2), num_steps=100)
+samples = flow.sample(x=torch.randn(4000, 2), n_steps=100)
 print("generated:", tuple(samples.shape))

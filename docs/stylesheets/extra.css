@@ -361,4 +361,117 @@ figcaption {
 
 .grid-item.grid-small img:hover {
   opacity: 1;
-} 
+}
+
+/* ---------------------------------------------------------------------------
+   Home page (docs/index.md)
+--------------------------------------------------------------------------- */
+.home-top {
+  text-align: center;
+  padding: 0 0 20px;
+  margin-bottom: 20px;
+}
+.home-nabla {
+  display: block;
+  margin: 0 auto 20px;
+  width: 220px;
+  height: 220px;
+  max-width: 60vw;
+}
+.home-title {
+  font-size: 3.2em;
+  font-weight: 700;
+  font-family: Raleway, sans-serif;
+  letter-spacing: 0.5px;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+.home-torch {
+  background: linear-gradient(90deg, #C7FF00, #C7FF4C);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000);
+}
+.home-ebm {
+  background: linear-gradient(90deg, #00c6ff, #0072ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000);
+}
+.home-tagline {
+  font-size: 1.2em;
+  max-width: 700px;
+  margin: 0 auto 24px;
+  line-height: 1.6;
+  color: var(--md-default-fg-color--light);
+}
+.home-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.home-badges {
+  text-align: center;
+  margin: 8px 0 0;
+  line-height: 2;
+}
+.home-badges a { text-decoration: none; }
+.home-badges img { vertical-align: middle; margin: 2px 1px; }
+.home-demos {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 24px 0 8px;
+}
+.home-demo {
+  text-align: center;
+  margin: 0;
+  flex: 1;
+  min-width: 280px;
+  max-width: 50%;
+}
+.home-demo img {
+  width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.home-demo figcaption {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: var(--md-default-fg-color--light);
+}
+.home-demo-caption {
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0;
+}
+.home-star-btn {
+  position: relative;
+}
+.home-star-count {
+  height: 20px;
+  vertical-align: middle;
+  margin-left: 6px;
+  opacity: 0.7;
+}
+.home-footer {
+  text-align: center;
+  font-size: 0.9em;
+  color: var(--md-default-fg-color--light);
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+@media (max-width: 600px) {
+  .home-nabla { width: 160px; height: 160px; }
+  .home-title { font-size: 2.4em; }
+  .home-tagline { font-size: 1em; padding: 0 16px; }
+  .home-demo { min-width: 100%; max-width: 100%; }
+}

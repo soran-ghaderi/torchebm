@@ -1,0 +1,6 @@
+title: "Scheduler Anatomy"
+summary: "Linear, cosine, and exponential schedules, and how a sampler advances a scheduled parameter per step."
+order: 250
+difficulty: intro
+tags: [scheduler, langevin, 2d-energy]
+entrypoint: main.py

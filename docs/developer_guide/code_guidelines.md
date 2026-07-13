@@ -62,12 +62,12 @@ These are non-negotiable for any code in `torchebm/`:
 
 - Vectorise. No Python loops over batch elements.
 - No `.item()`, `.cpu()`, or `.tolist()` inside a hot loop.
-- Use `self.device` / `self.dtype` from `DeviceMixin`. Never hard-code `"cuda"`.
+- Use `self.device` / `self.dtype` from `TorchEBMModule`. Never hard-code `"cuda"`.
 - Inputs moved to device in `BaseLoss.__call__`. subclass `forward()` must not re-do it.
 - Wrap grad-free regions with `torch.no_grad()`.
 - Use `self.autocast_context()` for mixed precision, not bare `torch.autocast`.
 
-See [Performance](performance.md) for patterns and [Profiling](profiling.md) for when to measure.
+See [Performance and Benchmarking](performance.md) for patterns and for when to measure.
 
 ---
 
@@ -87,7 +87,15 @@ pytest tests/losses -v           # one package
 pytest --cov=torchebm            # with coverage
 ```
 
-Benchmark and profile tests live under `benchmarks/` and are disabled by default. see [Benchmarking](benchmarking.md).
+Benchmark and profile tests live under `benchmarks/` and are disabled by default. see [Performance and Benchmarking](performance.md).
+
+### Examples
+
+Every example folder under `examples/` is smoke-tested in CI
+(`pytest -m examples tests/examples`, with `TORCHEBM_SMOKE=1` shrinking
+iteration counts). When adding or touching an example, follow the conventions
+in [`examples/index.md`](https://github.com/soran-ghaderi/torchebm/blob/master/examples/index.md)
+and run the smoke suite before the PR.
 
 ---
 

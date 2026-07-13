@@ -188,6 +188,13 @@ __pycache__/
 # docs/assets/images/loss_functions/*.png
 # docs/assets/images/training/*.png
 # docs/assets/images/visualization/*.png
+# Local outputs of example plot.py companions (never committed)
+examples/**/assets/
+# Generated artifacts of the interactive showcase (rebuild with compute.py)
+examples/90-showcase/03-integrator-story/data*.js
+examples/90-showcase/03-integrator-story/data.json
+examples/90-showcase/03-integrator-story/*.mp4
+examples/90-showcase/03-integrator-story/preview.png
 *.tar.gz
 .github/copilot-instructions.md
 data/

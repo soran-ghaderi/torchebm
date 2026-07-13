@@ -38,7 +38,7 @@ for _ in range(3000):
 flow = FlowSampler(
     model=model, interpolant="linear", negate_velocity=True, integrator="euler"
 )
-samples = flow.sample_ode(torch.randn(4000, 2), num_steps=100).numpy()
+samples = flow.sample(x=torch.randn(4000, 2), n_steps=100).numpy()
 d = data.numpy()
 
 fig, (a1, a2) = plt.subplots(1, 2, figsize=(8, 4), dpi=130)

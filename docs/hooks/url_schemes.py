@@ -74,6 +74,9 @@ def on_page_markdown(markdown: str, *, page: Page, config: MkDocsConfig, files: 
         url = f"https://github.com/{repo}/{link_type}/{number}{fragment}"
         return f"[{gh_icon} {title}]({url})"
 
-    markdown = relative_link.sub(replace_relative_link, markdown)
+    # Generated (in-memory) pages have no abs_src_path and already had their
+    # relative links resolved at generation time; only enrich GitHub links.
+    if page.file.abs_src_path is not None:
+        markdown = relative_link.sub(replace_relative_link, markdown)
     markdown = github_link.sub(replace_github_link, markdown)
     return markdown

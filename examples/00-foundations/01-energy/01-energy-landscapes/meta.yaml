@@ -1,0 +1,6 @@
+title: "Energy Landscapes"
+summary: "An energy E(x) defines a density p(x) proportional to exp(-E(x)); evaluate it and its force field -grad E."
+order: 100
+difficulty: intro
+tags: [energy, 2d-energy]
+entrypoint: main.py

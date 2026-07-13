@@ -1,0 +1,9 @@
+title: "Integrators vs. the Exact Solution"
+summary: "Race Euler, Heun, RK4 and the generalised leapfrog against ground truth on an ODE and a curved manifold."
+order: 1210
+difficulty: advanced
+tags: [integrators, leapfrog, ode, animation, showcase]
+entrypoint: main.py
+status: salvage
+ci:
+  skip: true

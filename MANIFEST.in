@@ -1,0 +1,20 @@
+# setuptools_scm adds every git-tracked file to the sdist by default. The docs,
+# examples, benchmarks, and tests are useful in the repository but have no place
+# in a `pip install` payload, so prune them explicitly.
+
+include LICENSE
+include README.md
+include CHANGELOG.md
+include requirements.txt
+
+prune docs
+prune examples
+prune benchmarks
+prune tests
+prune scripts
+prune .github
+prune site
+
+exclude mkdocs.yml
+exclude __init__.py
+global-exclude *.py[cod] __pycache__ *.so

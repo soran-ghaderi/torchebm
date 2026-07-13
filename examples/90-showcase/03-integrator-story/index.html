@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TorchEBM — Integrators in practice</title>
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<style>
+  :root{ --bg:#0b0b0f; --fg:#f5f5f7; --muted:#9aa0aa; --lime:#C7FF00; }
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);
+    font-family:"Helvetica Neue",Arial,system-ui,sans-serif;}
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px;}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+  #stagewrap{position:relative;width:1280px;height:720px;transform-origin:top center;}
+  #stage{position:absolute;inset:0;width:1280px;height:720px;background:var(--bg);
+    border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.55);}
+  .ov{position:absolute;pointer-events:none;color:var(--fg);}
+  #mtitle{left:62px;top:52px;font-size:21px;}
+  #mtitle .katex{color:var(--muted);}
+  #mcard{left:150px;right:150px;bottom:40px;padding:16px 24px;border-radius:14px;
+    background:rgba(18,18,26,.92);border-left:3px solid var(--lime);text-align:center;}
+  #mcard .katex{font-size:1.45em;color:var(--fg);}
+  #scrub{width:min(96vw,1280px);accent-color:var(--lime);}
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;}
+  button{background:#15151c;color:var(--fg);border:1px solid #2a2a35;border-radius:8px;
+    padding:8px 14px;font-size:14px;cursor:pointer;}
+  button:hover{border-color:var(--lime);}
+  button.on{border-color:#ff6b6b;color:#ff6b6b;}
+  .tab.on{border-color:var(--lime);color:var(--lime);}
+  .hint{color:var(--muted);font-size:12px;max-width:1280px;text-align:center;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab on" data-deck="story" onclick="setDeck('story')">Integrators</button>
+    <button class="tab" data-deck="sde" onclick="setDeck('sde')">SDE on a line</button>
+    <button class="tab" data-deck="ot" onclick="setDeck('ot')">Optimal transport</button>
+    <button class="tab" data-deck="fluid" onclick="setDeck('fluid')">Fluid</button>
+  </div>
+  <div id="stagewrap">
+    <canvas id="stage" width="1280" height="720"></canvas>
+    <div id="mtitle" class="ov"></div>
+    <div id="mcard" class="ov"></div>
+  </div>
+  <input id="scrub" type="range" min="0" max="1000" value="0" step="1">
+  <div class="controls">
+    <button id="play">⏸ Pause</button>
+    <button id="restart">⟲ Restart</button>
+    <button id="rec">● Record .webm</button>
+    <span id="status" class="hint"></span>
+  </div>
+  <div class="hint">TorchEBM computes every trajectory; this page renders them. Switch tabs for each build.</div>
+</div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var cap = q.has("capture"), dk = q.get("deck") || "story";
+  var data = { story: "data.js", sde: "data_sde.js", ot: "data_ot.js", fluid: "data_fluid.js" };
+  var files = ["vendor/katex/katex.min.js"];
+  if (!cap || dk === "story") files.push("vendor/three.min.js");
+  if (cap) files.push(data[dk] || data.story);
+  else files = files.concat(["data.js", "data_sde.js", "data_ot.js", "data_fluid.js"]);
+  files.forEach(function (f) { document.write('<scr' + 'ipt src="' + f + '"><\/scr' + 'ipt>'); });
+})();
+</script>
+<script src="app.js"></script>
+</body>
+</html>

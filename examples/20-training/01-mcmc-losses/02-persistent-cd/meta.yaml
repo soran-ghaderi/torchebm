@@ -1,0 +1,6 @@
+title: "Persistent CD"
+summary: "CD with a replay buffer: negatives resume across updates and explore beyond k Langevin steps."
+order: 850
+difficulty: intermediate
+tags: [cd, training, langevin, 2d-energy]
+entrypoint: main.py

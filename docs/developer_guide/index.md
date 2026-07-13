@@ -1,49 +1,95 @@
 ---
 title: Developer Guide
-description: Contributor hub for TorchEBM
+description: Contributor hub for TorchEBM, from fresh clone to merged PR
 icon: material/book-open-page-variant
 ---
 
 # Developer Guide
 
-Everything you need to contribute to TorchEBM. Pick the page that matches the task at hand.
+Everything you need to contribute to TorchEBM. This page takes you from a
+fresh clone to a merged pull request; the other three pages cover the code
+itself:
 
-<div class="grid cards" markdown>
+- [Architecture](architecture.md): package layout and how the core abstractions compose.
+- [Code Guidelines](code_guidelines.md): style, API design, performance rules, testing.
+- [Performance and Benchmarking](performance.md): writing fast code, and measuring it.
 
--   :material-rocket-launch:{ .lg .middle } __[Getting Started](getting_started.md)__
+## Setup
 
-    ---
+Requirements: Python 3.9+, Git, a GitHub account.
 
-    Clone, install, branch, commit (Conventional Commits), PR.
+```bash
+# Fork on GitHub, then:
+git clone https://github.com/<your-user>/torchebm.git
+cd torchebm
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+```
 
--   :material-code-braces:{ .lg .middle } __[Code Guidelines](code_guidelines.md)__
+For docs work, additionally:
 
-    ---
+```bash
+pip install -e ".[docs]"
+mkdocs serve                     # live preview at http://127.0.0.1:8000
+```
 
-    Style, API design, performance rules, testing conventions.
+## Workflow
 
--   :material-folder-outline:{ .lg .middle } __[Architecture](architecture.md)__
+1. **Branch** from `master` with a descriptive name.
+   ```bash
+   git checkout -b feat/adaptive-step-size
+   ```
+2. **Code**: follow the [Code Guidelines](code_guidelines.md). Mirror the package layout under `tests/`.
+3. **Test and format** before every commit.
+   ```bash
+   black torchebm/ tests/
+   isort torchebm/ tests/
+   pytest tests/ -v
+   ```
+4. **Commit** using Conventional Commits (below).
+5. **Push and open a PR** against `master`. Link any related issue.
 
-    ---
+## Commit conventions (mandatory)
 
-    Package layout and how the core abstractions compose.
+TorchEBM uses [Conventional Commits](https://www.conventionalcommits.org/):
 
--   :material-speedometer:{ .lg .middle } __[Performance](performance.md)__
+```
+<type>(<optional scope>): <summary>
+```
 
-    ---
+| Type       | Use for                                          |
+|------------|--------------------------------------------------|
+| `feat`     | A new user-facing feature                        |
+| `fix`      | A bug fix                                        |
+| `perf`     | A change that improves performance               |
+| `refactor` | Code change that is neither a feature nor a fix  |
+| `test`     | Adding or fixing tests                           |
+| `docs`     | Documentation only                               |
+| `style`    | Formatting, whitespace, no logic change          |
+| `build`    | Build system, packaging                          |
+| `ci`       | CI configuration                                 |
+| `chore`    | Other maintenance (deps, tooling)                |
 
-    Vectorisation, device / memory patterns, mixed precision, sampler tuning.
+**Examples**
 
--   :material-chart-timeline-variant:{ .lg .middle } __[Benchmarking](benchmarking.md)__
+```text
+feat(samplers): add adaptive step size to LangevinDynamics
+fix(losses): correct gradient sign in EquilibriumMatching
+perf(integrators): cache RK buffers on device once per integrate()
+```
 
-    ---
+Breaking changes add a `!` after the type and a `BREAKING CHANGE:` footer.
+Keep the summary under 72 chars, imperative mood, no trailing period.
 
-    `benchmarks/run.sh`. wall-time regression tracking and the dashboard.
+## Before opening the PR
 
--   :material-chart-line:{ .lg .middle } __[Profiling](profiling.md)__
+- [ ] Tests pass: `pytest tests/ -v`
+- [ ] Formatting applied: `black` and `isort`
+- [ ] Public API changes documented in the relevant docstring
+- [ ] If you touched an example: `pytest -m examples tests/examples` passes
+- [ ] If performance-sensitive: benchmarked per [Performance and Benchmarking](performance.md)
+- [ ] Commit messages follow Conventional Commits
 
-    ---
-
-    `benchmarks/profiler.py`. per-op CPU/CUDA drill-down and A/B diffs.
-
-</div>
+The PR description should say **what** changed and **why**, and reference any
+issue it closes (`Closes #123`).

@@ -1,0 +1,6 @@
+title: "Interpolant Anatomy"
+summary: "The path x_t = alpha(t) x1 + sigma(t) x0 and its conditional velocity, for the linear, cosine, and VP schedules."
+order: 300
+difficulty: intro
+tags: [interpolant, flow]
+entrypoint: main.py

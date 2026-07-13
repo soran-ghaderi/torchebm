@@ -27,21 +27,21 @@ Let's start with a simple example of sampling from a 2D Gaussian distribution:
 ```python title="Basic Langevin Dynamics Sampling" linenums="1"
 import torch
 import matplotlib.pyplot as plt
-from torchebm.core import GaussianEnergy
-from torchebm.samplers.langevin_dynamics import LangevinDynamics
+from torchebm.core import GaussianModel
+from torchebm.samplers import LangevinDynamics
 
-# Create energy function for a 2D Gaussian
+# Create an energy model for a 2D Gaussian
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dim = 2  # dimension of the state space
-n_steps = 100  # steps between samples
-n_samples = 1000  # num of samples
+n_steps = 100  # sampling steps
+n_samples = 1000  # number of parallel chains
 mean = torch.tensor([1.0, -1.0])
 cov = torch.tensor([[1.0, 0.5], [0.5, 2.0]])
-energy_fn = GaussianEnergy(mean, cov, device=device)
+model = GaussianModel(mean, cov, device=device)
 
 # Initialize sampler
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.01,
     noise_scale=0.1,
     device=device,
@@ -52,7 +52,6 @@ initial_state = torch.zeros(n_samples, dim, device=device)
 samples = sampler.sample(
     x=initial_state,
     n_steps=n_steps,
-    n_samples=n_samples,
 )
 
 # Plot results
@@ -70,21 +69,20 @@ plt.show()
 For a more interesting example, let's sample from a double well potential, which has two local minima:
 
 ```python title="Double Well Energy Sampling" linenums="1"
-from torchebm.core import DoubleWellEnergy
+from torchebm.core import DoubleWellModel
 
-# Create energy function and sampler
+# Create energy model and sampler
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-energy_fn = DoubleWellEnergy(barrier_height=2.0)
+model = DoubleWellModel(barrier_height=2.0)
 sampler = LangevinDynamics(
-    energy_function=energy_fn,
+    model=model,
     step_size=0.001,
     noise_scale=0.1,
-    decay=0.1,  # for stability
     device=device,
 )
 
-# Generate trajectory with diagnostics
-initial_state = torch.tensor([0.0], device=device)
+# Generate a trajectory with diagnostics (dict of per-step tensors)
+initial_state = torch.zeros(1, 2, device=device)
 trajectory, diagnostics = sampler.sample(
     x=initial_state,
     n_steps=1000,
@@ -95,14 +93,14 @@ trajectory, diagnostics = sampler.sample(
 # Plot results
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
 
-# Plot trajectory
+# Plot trajectory of the first chain's first coordinate
 ax1.plot(trajectory[0, :, 0].cpu().numpy())
 ax1.set_title("Single Chain Trajectory")
 ax1.set_xlabel("Step")
 ax1.set_ylabel("Position")
 
 # Plot energy over time
-ax2.plot(diagnostics[:, 2, 0, 0].cpu().numpy())
+ax2.plot(diagnostics["energy"].cpu().numpy())
 ax2.set_title("Energy Evolution")
 ax2.set_xlabel("Step")
 ax2.set_ylabel("Energy")
@@ -113,16 +111,15 @@ plt.show()
 
 ## Key Benefits of TorchEBM's Langevin Dynamics Implementation
 
-1. **GPU Acceleration** - Sampling is performed efficiently on GPUs when available
-2. **Flexible API** - Easy to use with various energy functions and initialization strategies
-3. **Diagnostic Tools** - Track energy, gradient norms, and acceptance rates during sampling
-4. **Configurable Parameters** - Fine-tune step size, noise scale, and decay for optimal performance
+1. **GPU Acceleration** - Sampling is performed efficiently on GPUs when available; chains are a batch dimension
+2. **Flexible API** - Easy to use with analytic models or custom neural energies
+3. **Diagnostic Tools** - Track mean, variance, and energy during sampling via `return_diagnostics=True`
+4. **Schedulable Parameters** - Step size and noise scale accept schedulers for annealed sampling
 
 ## Conclusion
 
 Langevin dynamics is a versatile sampling method for energy-based models, and TorchEBM makes it easy to use in your projects. Whether you're sampling from simple analytical distributions or complex neural network energy functions, the same API works seamlessly.
 
-Stay tuned for more tutorials on other samplers and energy functions!
-```
-
-```
+For a runnable version, see the
+[Langevin Dynamics 101 example](../../examples/10-sampling/01-mcmc/01-langevin-101.md);
+the theory lives in [Sampling and Integration](../../concepts/sampling.md).

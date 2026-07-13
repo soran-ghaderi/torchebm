@@ -1,0 +1,6 @@
+title: "CD-k on Two Moons"
+summary: "Train an energy network with Contrastive Divergence and Langevin negatives."
+order: 800
+difficulty: intermediate
+tags: [cd, training, 2d-energy, langevin]
+entrypoint: main.py

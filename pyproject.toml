@@ -47,6 +47,7 @@ dev = [
     "pytest>=6.0",
     "pytest-cov>=2.0",
     "pytest-benchmark>=5.0",
+    "pyyaml>=6.0",
     "mypy>=0.800",
     "black>=20.8b1",
     "isort>=5.0",
@@ -77,6 +78,7 @@ docs = [
     "mkdocs-autorefs",
     "mkdocs-minify-plugin>=0.3.0",
     "mkdocs-llmstxt>=0.5.0",
+    "mkdocs-redirects>=1.2.0",
     "Pillow>=9.0.0"
 ]
 
@@ -91,9 +93,13 @@ write_to = "torchebm/_version.py"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --benchmark-disable"
+addopts = '-ra -q --benchmark-disable -m "not examples"'
+pythonpath = ["."]
 testpaths = [
     "tests",
+]
+markers = [
+    "examples: smoke-runs the examples/ curriculum (deselected by default; run with -m examples)",
 ]
 
 [tool.coverage.run]
@@ -132,3 +138,4 @@ multi_line_output = 3
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["torchebm*"]

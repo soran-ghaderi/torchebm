@@ -1,0 +1,9 @@
+title: "Density Transport"
+summary: "Treat an image as a Boltzmann density and assemble it from noise with annealed Langevin dynamics."
+order: 1200
+difficulty: intermediate
+tags: [langevin, annealed, animation, showcase]
+entrypoint: main.py
+status: salvage
+ci:
+  skip: true

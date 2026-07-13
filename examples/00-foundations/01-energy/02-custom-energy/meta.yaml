@@ -1,0 +1,6 @@
+title: "Custom Energies"
+summary: "Subclass BaseModel with any differentiable map (N, d) -> (N,); gradients, sampling, and losses come for free."
+order: 120
+difficulty: intro
+tags: [energy, 2d-energy]
+entrypoint: main.py

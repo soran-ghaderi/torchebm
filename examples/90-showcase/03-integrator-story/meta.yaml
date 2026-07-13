@@ -1,0 +1,9 @@
+title: "Integrators in Practice: an Interactive Explainer"
+summary: "A narrated web animation comparing integrators on an ODE, an SDE, and a curved manifold; TorchEBM is the compute engine."
+order: 1220
+difficulty: advanced
+tags: [integrators, sde, riemannian, interactive, showcase]
+entrypoint: compute.py
+status: salvage
+ci:
+  skip: true
