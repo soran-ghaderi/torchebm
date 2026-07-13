@@ -1,0 +1,6 @@
+title: "Parallel Chains"
+summary: "10,000 vectorized Langevin chains in one call; population statistics without long single-chain runs."
+order: 500
+difficulty: intro
+tags: [langevin, sampling, mcmc, gpu, 2d-energy]
+entrypoint: main.py

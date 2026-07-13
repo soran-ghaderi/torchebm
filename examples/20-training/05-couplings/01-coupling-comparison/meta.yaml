@@ -1,0 +1,6 @@
+title: "Coupling Comparison"
+summary: "Independent, greedy, Sinkhorn, and exact OT pairings on the same batch; transport cost and per-pair weights."
+order: 1150
+difficulty: intermediate
+tags: [coupling, training, flow, comparison]
+entrypoint: main.py

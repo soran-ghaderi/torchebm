@@ -1,0 +1,6 @@
+title: "Energy Matching in 2D"
+summary: "Reproduce the paper's two-moons experiment: a scalar potential trained with OT flow warm-up plus contrastive sharpening, sampled in one temperature-scheduled SDE sweep."
+order: 1100
+difficulty: intermediate
+tags: [energy-matching, training, ot, langevin, 2d-energy]
+entrypoint: main.py

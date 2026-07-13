@@ -1,0 +1,6 @@
+title: "FlowSampler ODE 101"
+summary: "Integrate a closed-form velocity field from noise to a Gaussian target; study steps vs fidelity without training."
+order: 700
+difficulty: intermediate
+tags: [flow, sampling, integrator, interpolant]
+entrypoint: main.py

@@ -1,0 +1,6 @@
+title: "Integrator Comparison"
+summary: "Euler, Heun, and RK4 against the exact solution of a harmonic oscillator; measure order of accuracy directly."
+order: 600
+difficulty: intermediate
+tags: [integrator, ode, comparison]
+entrypoint: main.py

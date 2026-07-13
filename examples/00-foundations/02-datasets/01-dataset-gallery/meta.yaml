@@ -1,0 +1,6 @@
+title: "Dataset Gallery"
+summary: "The eight synthetic 2D targets: one constructor contract, standard benchmarks from the flow and EBM literature."
+order: 200
+difficulty: intro
+tags: [dataset, 2d-energy]
+entrypoint: main.py

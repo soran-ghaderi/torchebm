@@ -1,0 +1,6 @@
+title: "Langevin Dynamics 101"
+summary: "Sample a 2D energy with Langevin; trade step size against noise."
+order: 400
+difficulty: intro
+tags: [langevin, sampling, 2d-energy, mcmc]
+entrypoint: main.py

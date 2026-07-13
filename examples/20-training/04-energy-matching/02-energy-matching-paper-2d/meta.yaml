@@ -1,0 +1,6 @@
+title: "Energy Matching: the paper's 2D suite"
+summary: "Reproduce the paper's toy experiments end to end: 8 Gaussians transported onto two moons, with trajectories, sample evolution, LID estimation, and repulsive diverse sampling."
+order: 1110
+difficulty: advanced
+tags: [energy-matching, training, ot, langevin, lid, 2d-energy]
+entrypoint: main.py

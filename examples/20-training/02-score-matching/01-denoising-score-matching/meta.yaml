@@ -1,0 +1,6 @@
+title: "Denoising Score Matching"
+summary: "Train an energy on two moons with no MCMC: perturb, match the denoising score, then sample the result with Langevin."
+order: 900
+difficulty: intermediate
+tags: [score-matching, training, 2d-energy, langevin]
+entrypoint: main.py
