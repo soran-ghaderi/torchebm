@@ -94,6 +94,7 @@ write_to = "torchebm/_version.py"
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = '-ra -q --benchmark-disable -m "not examples"'
+pythonpath = ["."]
 testpaths = [
     "tests",
 ]
