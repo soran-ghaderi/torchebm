@@ -177,7 +177,7 @@ samples = rmhmc.sample(dim=2, n_samples=1000, n_steps=200)
 <a href="https://arxiv.org/abs/2510.02300">Equilibrium Matching: Generative Modeling with Implicit Energy-Based Models</a>, Wang & Du 2025. Drop time conditioning: learn one *equilibrium* gradient field instead of a family of time-varying ones, then sample by integrating it or by simply descending it.
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/165d353ec77cf232562165d26f212ae18b8ce2cf/2-Figure1-1.png" alt="Flow matching's field changes with t; equilibrium matching learns a single time-invariant field" width="820"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/equilibrium_matching_field.png" alt="Flow matching's field changes with t; equilibrium matching learns a single time-invariant field" width="820"/>
   <br>
   <em>Fig. 1 of <a href="https://arxiv.org/abs/2510.02300">Wang & Du (2025)</a>: flow matching needs a different field at every $t$ (left); EqM learns one time-invariant field whose minima are the data (right), so sampling becomes optimization.</em>
 </p>
@@ -219,7 +219,7 @@ modes = NesterovSampler(LearnedEnergy(field), step_size=0.01,
 <a href="https://arxiv.org/abs/2504.10612">Energy Matching: Unifying Flow Matching and Energy-Based Models</a>, Balcerak et al. 2025. One time-independent potential does both jobs: an optimal-transport flow warm-up shapes it far from the data, then a contrastive phase sharpens its Boltzmann density near the data. Generation is a single temperature-scheduled Langevin sweep.
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/8d6431627bc3e34ff27118b4f6efc399c9ce6225/2-Figure1-1.png" alt="Action matching, OT flow matching, EBM and energy matching transporting eight gaussians onto two moons" width="820"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/energy_matching_transport.png" alt="Action matching, OT flow matching, EBM and energy matching transporting eight gaussians onto two moons" width="820"/>
   <br>
   <em>Fig. 1 of <a href="https://arxiv.org/abs/2504.10612">Balcerak et al. (2025)</a>: a time-independent potential $V_\theta(x)$ (right) both transports and equilibrates, where flow matching needs $v_\theta(x, t)$ and a plain EBM needs long MCMC. Reproduced in <a href="https://github.com/soran-ghaderi/torchebm/tree/master/examples/20-training/04-energy-matching">the examples</a>.</em>
 </p>
@@ -250,7 +250,7 @@ samples = LangevinDynamics(model=potential, step_size=0.01,
 <a href="https://arxiv.org/abs/2210.02747">Flow Matching for Generative Modeling</a>, Lipman et al. 2023. Regress a velocity field onto the conditional velocity of a probability path. With TorchEBM's primitives, that is the loop itself.
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/af68f10ab5078bfc519caae377c90ee6d9c504e9/6-Figure2-1.png" alt="Diffusion path conditional score field versus optimal-transport path conditional vector field" width="820"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/flow_matching_diffusion_vs_ot.png" alt="Diffusion path conditional score field versus optimal-transport path conditional vector field" width="820"/>
   <br>
   <em>Fig. 2 of <a href="https://arxiv.org/abs/2210.02747">Lipman et al. (2023)</a>: the diffusion path's conditional score (left) against the OT path's conditional vector field (right). Choosing between them is choosing the <code>interpolant</code>.</em>
 </p>
@@ -275,7 +275,7 @@ samples = FlowSampler(model=field, interpolant="linear",
 Swap `interpolant="vp"` and `mode="sde"` and the same sampler runs score-based diffusion (<a href="https://arxiv.org/abs/2011.13456">Song et al. 2021</a>); `prediction=` selects whether the network emits velocity, score, or noise.
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/633e2fbfc0b21e959a244100937c5853afca4853/4-Figure2-1.png" alt="Forward SDE to a prior, reverse SDE and probability flow ODE back to data" width="820"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/score_sde_forward_reverse.png" alt="Forward SDE to a prior, reverse SDE and probability flow ODE back to data" width="820"/>
   <br>
   <em>Fig. 2 of <a href="https://arxiv.org/abs/2011.13456">Song et al. (2021)</a>: the reverse SDE and its probability-flow ODE are the two modes of one sampler (<code>mode="sde"</code> and <code>mode="ode"</code>).</em>
 </p>
@@ -290,7 +290,7 @@ samples = diffusion.sample(x=torch.randn(1000, 2), n_steps=250)
 <a href="https://arxiv.org/abs/2302.00482">Improving and generalizing flow-based generative models with minibatch optimal transport</a>, Tong et al. 2024. Pair each noise sample with the *right* datum and the paths straighten, so generation needs fewer steps.
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/5396c55bee2a2abf2207e1cc5e5ae72c9edef9fa/2-Figure1-1.png" alt="Flow matching, conditional flow matching and OT conditional flow matching probability paths" width="820"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/flow_matching_probability_paths.png" alt="Flow matching, conditional flow matching and OT conditional flow matching probability paths" width="820"/>
   <br>
   <em>Fig. 1 of <a href="https://arxiv.org/abs/2302.00482">Tong et al. (2024)</a>: an OT coupling turns crossing, curved transport into straight transport. Same objective, different <code>coupling=</code>.</em>
 </p>
@@ -307,7 +307,7 @@ x0, x1 = coupling(x0, x1)                       # re-paired, then interpolate as
 <a href="https://arxiv.org/abs/2209.03003">Flow Straight and Fast</a>, Liu et al. 2023. Retrain on the flow's own (noise, generation) pairs and the trajectories become straight enough for few-step sampling.
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/244054a4254a2147e43a3dad9c124b9b7eb4a04a/4-Figure2-1.png" alt="Linear interpolation crosses; the rectified flow induced by its own pairs is straight" width="820"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/rectified_flow_straightening.png" alt="Linear interpolation crosses; the rectified flow induced by its own pairs is straight" width="820"/>
   <br>
   <em>Fig. 2 of <a href="https://arxiv.org/abs/2209.03003">Liu et al. (2023)</a>: paths that cross (left) are rewired by the flow's own pairing into straight ones (right). That rewiring is <code>ReflowCoupling</code>.</em>
 </p>
@@ -325,7 +325,7 @@ x0, x1 = reflow(torch.randn(256, 2))            # x1 = Phi(x0), the model's own 
 <a href="https://www.cs.toronto.edu/~hinton/absps/tr00-004.pdf">Training products of experts by minimizing contrastive divergence</a>, Hinton 2002, with the deep-EBM recipe of <a href="https://arxiv.org/abs/1903.08689">Du & Mordatch 2019</a>. Push the energy down on data and up on short-run MCMC negatives.
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/489b58f695aa6ae0b04f20fa26b670581ff14add/2-Figure1-1.png" alt="Replay buffer, Langevin negatives, and the CD objective" width="520"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/contrastive_divergence_replay_buffer.png" alt="Replay buffer, Langevin negatives, and the CD objective" width="520"/>
   <br>
   <em>Fig. 1 of <a href="https://arxiv.org/abs/1903.08689">Du & Mordatch (2019)</a>: Langevin draws the negatives, the buffer persists the chains, the objective separates them from data. That is <code>ContrastiveDivergence(sampler=..., persistent=True)</code>.</em>
 </p>
@@ -383,7 +383,7 @@ loss = loss_fn(data[:256])                      # scalar; no sampler needed
 A DiT-style conditional transformer (<a href="https://arxiv.org/abs/2212.09748">Peebles & Xie 2023</a>) for energies and velocity fields on images, adaLN-Zero blocks included. `LabelClassifierFreeGuidance` wraps any label-conditioned model `base(x, t, y=...)` for classifier-free guidance (<a href="https://arxiv.org/abs/2207.12598">Ho & Salimans 2022</a>).
 
 <p align="center">
-  <img src="https://figures.semanticscholar.org/736973165f98105fec3729b7db414ae4d80fcbeb/3-Figure3-1.png" alt="The DiT architecture and its adaLN-Zero conditioning block" width="820"/>
+  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/dit_adaln_zero.png" alt="The DiT architecture and its adaLN-Zero conditioning block" width="820"/>
   <br>
   <em>Fig. 3 of <a href="https://arxiv.org/abs/2212.09748">Peebles & Xie (2023)</a>: the DiT block with adaLN-Zero conditioning, shipped as <code>ConditionalTransformer2D</code> and <code>AdaLNZeroBlock</code>.</em>
 </p>
