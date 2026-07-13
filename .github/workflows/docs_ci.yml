@@ -9,75 +9,19 @@ on:
       - master
       - main
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Performance Benchmarks"]
-    types: [completed]
-    branches: [master, main]
 permissions:
   contents: write
   actions: read
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref_name }}
+      group: ${{ github.workflow }}-${{ github.ref_name }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Download benchmark results (from triggering workflow)
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v4
-        with:
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          pattern: benchmark-gpu-*
-          path: benchmarks/results/
-          merge-multiple: true
-        continue-on-error: true
-      - name: Restore benchmark results from cache
-        if: github.event_name != 'workflow_run'
-        uses: actions/cache/restore@v4
-        with:
-          path: benchmarks/results/
-          key: benchmark-results-cuda-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            benchmark-results-cuda-${{ runner.os }}-
-      - name: Restore benchmark data from gh-pages (fallback)
-        run: |
-          # If cache/artifact restore didn't provide benchmark data,
-          # extract it from the previous gh-pages deployment where it
-          # was persisted in .benchmark-data/
-          COUNT=$(find benchmarks/results/ -name '*.json' -type f 2>/dev/null | wc -l)
-          if [ "$COUNT" -gt 0 ]; then
-            echo "Found $COUNT benchmark JSON files from cache/artifact"
-          else
-            echo "No benchmark data from cache — restoring from gh-pages"
-            git fetch origin gh-pages || true
-            # Try to restore persisted benchmark JSON from gh-pages
-            if git show origin/gh-pages:.benchmark-data/ > /dev/null 2>&1; then
-              mkdir -p benchmarks/results
-              git show origin/gh-pages:.benchmark-data/benchmark-results.tar.gz 2>/dev/null | \
-                tar xzf - -C benchmarks/results/ 2>/dev/null && \
-                echo "Restored benchmark data from gh-pages" || \
-                echo "Failed to restore benchmark data from gh-pages"
-            else
-              echo "No persisted benchmark data on gh-pages — dashboard will show placeholder"
-            fi
-          fi
-      - name: Show benchmark data status
-        run: |
-          if [ -d benchmarks/results ]; then
-            COUNT=$(find benchmarks/results/ -name '*.json' -type f 2>/dev/null | wc -l)
-            echo "Found $COUNT benchmark JSON files"
-            find benchmarks/results/ -name '*.json' -type f | head -10
-          else
-            echo "No benchmark results directory — benchmarks tab will show placeholder"
-          fi
       - name: Configure Git Credentials
         run: |
           git config user.name github-actions[bot]
@@ -207,29 +151,14 @@ jobs:
           mike set-default --push latest
 
           echo "Deployment completed successfully!"
-      - name: Persist benchmark data and robots.txt on gh-pages
+      - name: Persist robots.txt on gh-pages
         if: github.event_name != 'pull_request'
         run: |
-          # Save benchmark results before switching branches
-          BENCH_COUNT=$(find benchmarks/results/ -name '*.json' -type f 2>/dev/null | wc -l)
-          if [ "$BENCH_COUNT" -gt 0 ]; then
-            tar czf /tmp/benchmark-results.tar.gz -C benchmarks/results/ .
-            echo "Packed $BENCH_COUNT benchmark JSON files for persistence"
-          fi
-
           git stash --include-untracked || true
           git fetch origin gh-pages
           git checkout gh-pages
 
-          # 1) Persist benchmark data so it survives mike delete --all
-          if [ -f /tmp/benchmark-results.tar.gz ]; then
-            mkdir -p .benchmark-data
-            cp /tmp/benchmark-results.tar.gz .benchmark-data/
-            git add .benchmark-data/
-            echo "Benchmark data persisted to .benchmark-data/"
-          fi
-
-          # 2) Add robots.txt for SEO
+          # Add robots.txt for SEO
           cat > robots.txt << 'ROBOTS'
           User-agent: *
           Allow: /torchebm/latest/
@@ -239,7 +168,7 @@ jobs:
           sed -i 's/^          //' robots.txt
           git add robots.txt
 
-          git diff --cached --quiet || git commit -m "Persist benchmark data and robots.txt"
+          git diff --cached --quiet || git commit -m "Persist robots.txt"
           git push origin gh-pages
 
           git checkout -

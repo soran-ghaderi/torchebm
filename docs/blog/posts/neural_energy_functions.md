@@ -9,4 +9,5 @@ categories:
 
 # Neural Energy Functions
 
-Content coming soon.
+Content coming soon. Until then, the material lives in
+[The Energy-Based View](../../concepts/energy_view.md).

@@ -2,11 +2,11 @@
 
 site_name: TorchEBM
 site_url: https://soran-ghaderi.github.io/torchebm/
-site_description: Energy-Based Modeling library for PyTorch
+site_description: Composable primitives for energy-based generative modeling in PyTorch, spanning EBMs, diffusion, flow matching, and Schrödinger bridges.
 site_author: Soran Ghaderi
 repo_url: https://github.com/soran-ghaderi/torchebm
 repo_name: soran-ghaderi/torchebm
-edit_uri: edit/main/docs/
+edit_uri: edit/master/docs/
 copyright: Copyright © 2025 Soran Ghaderi. Licensed under the MIT License.
 
 theme:
@@ -69,73 +69,97 @@ theme:
 
 nav:
   - Home: index.md
-  - Tutorials:
-    - tutorials/index.md
-    - Getting Started: tutorials/getting_started.md
-    - Samplers: tutorials/samplers.md
-    - Loss Functions: tutorials/loss_functions.md
-    - Training EBMs: tutorials/training.md
-    - Visualization: tutorials/visualization.md
-    - Advanced:
-      - Custom Neural Networks: tutorials/custom_neural_networks.md
-      - Parallel Sampling: tutorials/parallel_sampling.md
+  - Getting Started:
+    - getting_started/index.md
+    - Concepts:
+      - concepts/index.md
+      - Design and Scope: concepts/design.md
+      - The Energy-Based View: concepts/energy_view.md
+      - Sampling and Integration: concepts/sampling.md
+      - Learning Objectives: concepts/objectives.md
+      - Interpolants and Couplings: concepts/transport.md
   - API Reference:
     - api/index.md
   - Examples:
     - Overview: examples/index.md
-    - Datasets: examples/datasets/index.md
-    - Samplers: examples/samplers/index.md
-    - Training EBMs: examples/training/index.md
-    - Visualization: examples/visualization/index.md
+    - Foundations: examples/00-foundations/index.md
+    - Sampling: examples/10-sampling/index.md
+    - Training: examples/20-training/index.md
+    - Showcase: examples/90-showcase/index.md
   - Developer Guide:
     - Overview: developer_guide/index.md
-    - Getting Started: developer_guide/getting_started.md
-    - Code Guidelines: developer_guide/code_guidelines.md
     - Architecture: developer_guide/architecture.md
-    - Performance: developer_guide/performance.md
-    - Profiling: developer_guide/profiling.md
-    - Benchmarking: developer_guide/benchmarking.md
-  - Benchmarks:
-    - benchmarks/index.md
+    - Code Guidelines: developer_guide/code_guidelines.md
+    - Performance and Benchmarking: developer_guide/performance.md
+  - Benchmarks: https://soran-ghaderi.github.io/torchebm-benchmarks/
   - Blog: blog/index.md
-  - FAQ: faq.md
+  - FAQ: faq/index.md
 
 hooks:
   - docs/hooks/socialmedia.py
   - docs/hooks/gen_examples.py
+  - docs/hooks/gen_diagrams.py
   - docs/hooks/url_schemes.py
 
 plugins:
   - search
   - literate-nav:
       nav_file: SUMMARY.md
+  - redirects:
+      redirect_maps:
+        benchmarks/index.md: https://soran-ghaderi.github.io/torchebm-benchmarks/
+        tutorials/index.md: concepts/index.md
+        tutorials/getting_started.md: getting_started/index.md
+        tutorials/samplers.md: concepts/sampling.md
+        tutorials/loss_functions.md: concepts/objectives.md
+        tutorials/training.md: concepts/objectives.md
+        tutorials/visualization.md: examples/index.md
+        tutorials/custom_neural_networks.md: concepts/energy_view.md
+        tutorials/parallel_sampling.md: concepts/sampling.md
+        examples/datasets/index.md: examples/index.md
+        examples/samplers/index.md: examples/index.md
+        examples/training/index.md: examples/index.md
+        examples/visualization/index.md: examples/index.md
+        examples/models/index.md: concepts/energy_view.md
+        developer_guide/getting_started.md: developer_guide/index.md
+        developer_guide/profiling.md: developer_guide/performance.md
+        developer_guide/benchmarking.md: developer_guide/performance.md
   - llmstxt:
       markdown_description: |
-        TorchEBM is an Energy-Based Modeling library for PyTorch that provides tools for 
-        sampling, inference, and learning in complex distributions. It supports classical 
-        EBMs via MCMC sampling and modern flow/diffusion-based generative models.
-        
+        Energy-based models define probability distributions through a scalar energy
+        function, with lower energy meaning higher probability. This formulation is
+        general enough that much of modern generative modeling, from MCMC sampling and
+        score matching to diffusion, flow matching, and Schrödinger bridges, factors
+        into the same components: a field, a probability path, a coupling, an
+        objective, and an integrator. TorchEBM implements these components as
+        composable PyTorch primitives, so EBM training and interpolant-based
+        generation are configurations of one library rather than separate codebases.
+
         Key components:
-        - Samplers: LangevinDynamics, HamiltonianMonteCarlo, FlowSampler, GradientDescentSampler
-        - Losses: ContrastiveDivergence, ScoreMatching, EquilibriumMatchingLoss
+        - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, FlowSampler
+        - Losses: ContrastiveDivergence, ScoreMatching, EquilibriumMatchingLoss, EnergyMatchingLoss
         - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
-        - Integrators: EulerMaruyama, Heun, Leapfrog
+        - Couplings: IndependentCoupling, SinkhornCoupling, ExactOTCoupling, ReflowCoupling
+        - Integrators: EulerMaruyama, Heun, RK4, Dopri5, Leapfrog, GeneralisedLeapfrog
         - Models: ConditionalTransformer2D, neural network components
-        - Datasets: TwoMoons, EightGaussians, SwissRoll, and more synthetic datasets
+        - Datasets: TwoMoons, EightGaussians, SwissRoll, and more synthetic benchmarks
       full_output: llms-full.txt
       sections:
         Getting Started:
           - index.md: Main documentation page for TorchEBM
-          - tutorials/getting_started.md: Quick start tutorial
-        Core Concepts:
-          - tutorials/samplers.md: Guide to MCMC samplers
-          - tutorials/loss_functions.md: Loss functions for EBM training
-          - tutorials/training.md: Training energy-based models
+          - getting_started/index.md: Installation and first workflows
+        Concepts:
+          - concepts/design.md: The unifying abstraction and method taxonomy
+          - concepts/energy_view.md: Energies, scores, and the model contract
+          - concepts/sampling.md: MCMC, flow sampling, and integrators
+          - concepts/objectives.md: Training objectives from CD to energy matching
+          - concepts/transport.md: Interpolants and couplings
         API Reference:
           - api/torchebm/core/index.md: Core base classes
           - api/torchebm/samplers/index.md: Sampling algorithms
           - api/torchebm/losses/index.md: Training objectives
           - api/torchebm/interpolants/index.md: Interpolation schemes
+          - api/torchebm/couplings/index.md: Couplings
           - api/torchebm/integrators/index.md: Numerical integrators
           - api/torchebm/models/index.md: Neural network architectures
           - api/torchebm/datasets/index.md: Data generators
@@ -152,8 +176,7 @@ plugins:
       height: auto
       zoomable: true
       draggable: true
-  - tags:
-      tags_file: tags.md
+  - tags
   - git-revision-date-localized:
       type: date
       enable_creation_date: true
@@ -180,9 +203,7 @@ plugins:
       pagination_format: "$link_first $link_previous $page/$page_count $link_next  $link_last"
       pagination_if_single_page: false
       pagination_keep_content: true
-  - literate-nav:
-      nav_file: SUMMARY.md
-  - autorefs
+  - mkdocstrings
   - api-autonav:
       modules: ["torchebm"]
       on_implicit_namespace_package: skip
@@ -272,7 +293,6 @@ extra_css:
   - stylesheets/extra.css
 
 extra_javascript:
-  - javascripts/mathjax.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
   - javascripts/cards-clickable.js
 
