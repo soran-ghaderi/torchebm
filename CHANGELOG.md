@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `torchebm.interpolants.interpolant_utils`: `get_interpolant` moved here from `torchebm.losses.loss_utils` (still re-exported there) plus a new `resolve_interpolant(interpolant, default, owner)` helper mirroring `resolve_integrator`
 - `resolve_integrator` exported from `torchebm.integrators`
 - Cross-sampler API contract test (`tests/samplers/test_api_contract.py`) pinning the shared `sample()` signature, return types, trajectory/thin shapes, and constructor ordering for every sampler
+- Tiered, runnable examples curriculum under `examples/` (foundations, sampling, training, showcase), smoke-tested in CI: `pytest -m examples tests/examples` executes every example on CPU with `TORCHEBM_SMOKE=1` shrinking iteration counts, so an API change that breaks an example fails the build
+- Documentation: a Concepts section (design and scope, the energy-based view, sampling and integration, learning objectives, interpolants and couplings) replacing the tutorials; component cards, class diagrams, the package tree, and the base-class contract table are now generated from the installed package at build time (`docs/hooks/gen_diagrams.py`), so they cannot drift from the code
 
 ### Changed
 
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RiemannianManifoldHMC` resolves its default integrator through `resolve_integrator` like every other sampler
 - `FlowSampler` adaptive ODE sampling (`dopri5`, `dopri8`, `bosh3`, `adaptive_heun`) now runs on native integrators; torchdiffeq is no longer used or required (removed from the `eqm` extra). Outputs are statistically equivalent but not bitwise identical to torchdiffeq (different step-size controller); the default `dopri5` path is ~3x faster on the sampler benchmark
 - `FlowSampler` reverse-time sampling works with adaptive integrators (decreasing time grids are reparameterized internally)
+- Packaging: the source distribution no longer ships `docs/`, `examples/`, `benchmarks/`, or `tests/` (new `MANIFEST.in`; `setuptools_scm` had been adding every git-tracked file), cutting the sdist from tens of megabytes to ~150 KB. README image and link URLs are absolute so they render on PyPI
 
 ### Removed
 
