@@ -20,9 +20,33 @@ class MidpointIntegrator(BaseRungeKuttaIntegrator):
     x_{n+1} = x_n + h k_2
     \]
 
+    The Butcher tableau:
+
+    \[
+    \begin{array}{c|cc}
+    0 \\
+    \tfrac{1}{2} & \tfrac{1}{2} \\
+    \hline
+    & 0 & 1
+    \end{array}
+    \]
+
     Args:
         device: Device for computations.
         dtype: Data type for computations.
+
+    Example:
+        ```python
+        from torchebm.integrators import MidpointIntegrator
+        import torch
+
+        integrator = MidpointIntegrator()
+        state = {"x": torch.randn(100, 2)}
+        drift = lambda x, t: -x
+        result = integrator.integrate(
+            state, step_size=0.01, n_steps=100, drift=drift,
+        )
+        ```
     """
 
     @property
