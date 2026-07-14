@@ -24,15 +24,14 @@
     });
   }
 
-  // Run on initial load
-  if (document.readyState === 'loading') {
+  // document$ (Material) emits on initial load and after every instant navigation
+  if (window.document$) {
+    document$.subscribe(function () { enhanceCards(document); });
+  } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { enhanceCards(document); });
   } else {
     enhanceCards(document);
   }
-
-  // Run again on navigation (Material SPA behavior)
-  document.addEventListener('DOMContentSwitch', function () { enhanceCards(document); });
 })();
 
 
