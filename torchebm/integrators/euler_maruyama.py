@@ -86,16 +86,21 @@ class BackwardEulerMaruyamaIntegrator(BaseSDERungeKuttaIntegrator):
     \]
 
     The implicit equation is solved by fixed-point (Picard) iteration,
-    seeded with an explicit Euler predictor.  Iteration stops when the
-    max-abs change falls below ``atol`` or after ``max_iter`` iterations.
+    seeded with an explicit Euler predictor.  By default it runs for
+    ``solver_max_iter`` iterations.  When ``solver_check_every`` is positive,
+    it checks the RMS residual and stops once it is below ``solver_tol``.
     Picard converges only when ``step_size`` times the drift Lipschitz
     constant is below 1; for stiffer regimes choose a smaller ``step_size``.
 
     Args:
         device: Device for computations.
         dtype: Data type for computations.
-        max_iter: Maximum fixed-point iterations per step.
-        atol: Absolute tolerance for the fixed-point solve and adaptive stepping.
+        solver_max_iter: Total Picard iterations per implicit stage.
+        solver_tol: RMS residual threshold for early termination. Only
+            consulted when ``solver_check_every > 0``.
+        solver_check_every: When positive, check the residual every ``n``
+            iterations and exit early once below ``solver_tol``.
+        atol: Absolute tolerance for adaptive stepping.
         rtol: Relative tolerance for adaptive stepping.
         max_steps: Maximum number of steps before raising ``RuntimeError``.
         safety: Safety factor for step-size adjustment (< 1).
