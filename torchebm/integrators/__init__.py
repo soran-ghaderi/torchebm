@@ -17,6 +17,7 @@ __all__ = [
     "Dopri8Integrator",
     "RK4Integrator",
     "RK438Integrator",
+    "MidpointIntegrator",
     "AdaptiveHeunIntegrator",
     "Bosh3Integrator",
     "_integrate_time_grid",
@@ -35,6 +36,7 @@ _LAZY_IMPORTS = {
     "Dopri8Integrator": ".dopri",
     "RK4Integrator": ".rk4",
     "RK438Integrator": ".rk4",
+    "MidpointIntegrator": ".midpoint",
     "AdaptiveHeunIntegrator": ".adaptive_heun",
     "Bosh3Integrator": ".bosh3",
 }
