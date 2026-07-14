@@ -420,7 +420,7 @@ python examples/10-sampling/01-mcmc/01-langevin-101/main.py
 
 ## Contributing
 
-Contributions are welcome. The [Developer Guide](https://soran-ghaderi.github.io/torchebm/latest/developer_guide/) covers setup, architecture, and the PR workflow; adding an example is a good first contribution. Check the [issues](https://github.com/soran-ghaderi/torchebm/issues) for open tasks, several labelled `good first issue`.
+Contributions are welcome. Please read the [CONTRIBUTING.md](CONTRIBUTING.md) guide before getting started. The [Developer Guide](https://soran-ghaderi.github.io/torchebm/latest/developer_guide/) covers setup, architecture, and the PR workflow; adding an example is a good first contribution. Check the [issues](https://github.com/soran-ghaderi/torchebm/issues) for open tasks, several labelled `good first issue`.
 
 ## Show your support for ∇ TorchEBM 🍓
 
