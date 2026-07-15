@@ -2,7 +2,7 @@ r"""Hamiltonian Monte Carlo Sampler Module and Riemannian Manifold Hamiltonian M
 
 import math
 import warnings
-from typing import Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
 
@@ -166,6 +166,8 @@ class HamiltonianMonteCarlo(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Hamiltonian Monte Carlo.
 
@@ -181,6 +183,10 @@ class HamiltonianMonteCarlo(BaseSampler):
                 ``"mean"`` (`[n_kept, dim]`), ``"var"`` (`[n_kept, dim]`),
                 ``"energy"`` (`[n_kept]`), and ``"acceptance_rate"`` (`[n_kept]`).
             reset_schedulers: If True (default), reset registered schedulers.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model for both the leapfrog force and the MH-ratio energies.
+                Normalized to the sampler device once at entry; ``None`` (default)
+                is the exact unconditional path.
 
         Raises:
             ValueError: If `thin < 1`.
@@ -189,6 +195,8 @@ class HamiltonianMonteCarlo(BaseSampler):
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
+
+        model_kwargs = self._prepare_model_kwargs(model_kwargs)
 
         if x is None and dim is None:
             if hasattr(self.model, "mean") and isinstance(
@@ -229,7 +237,9 @@ class HamiltonianMonteCarlo(BaseSampler):
             for i in range(n_steps):
                 current_momentum = self._initialize_momentum(x.shape)
 
-                current_energy = self.model(x).clamp_(min=-1e10, max=1e10)
+                current_energy = self._model_energy(x, model_kwargs).clamp_(
+                    min=-1e10, max=1e10
+                )
                 current_kinetic = self._compute_kinetic_energy(
                     current_momentum
                 ).clamp_(min=0.0, max=1e10)
@@ -237,7 +247,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                 current_hamiltonian = current_energy + current_kinetic
 
                 state = {"x": x, "p": current_momentum}
-                drift = lambda x_, t_: -self.model.gradient(x_)
+                drift = lambda x_, t_: -self._model_gradient(x_, model_kwargs)
                 proposed = self.integrator.integrate(
                     state,
                     step_size=self.get_scheduled_value("step_size"),
@@ -248,9 +258,9 @@ class HamiltonianMonteCarlo(BaseSampler):
                 )
                 proposed_position, proposed_momentum = proposed["x"], proposed["p"]
 
-                proposed_energy = self.model(proposed_position).clamp_(
-                    min=-1e10, max=1e10
-                )
+                proposed_energy = self._model_energy(
+                    proposed_position, model_kwargs
+                ).clamp_(min=-1e10, max=1e10)
                 proposed_kinetic = self._compute_kinetic_energy(
                     proposed_momentum
                 ).clamp_(min=0.0, max=1e10)
@@ -283,7 +293,9 @@ class HamiltonianMonteCarlo(BaseSampler):
                             else torch.zeros(dim, dtype=self.dtype, device=self.device)
                         )
                         diagnostics["energy"][keep_idx] = (
-                            self.model(x).clamp_(min=-1e10, max=1e10).mean()
+                            self._model_energy(x, model_kwargs)
+                            .clamp_(min=-1e10, max=1e10)
+                            .mean()
                         )
                         diagnostics["acceptance_rate"][keep_idx] = accepted.float().mean()
                     keep_idx += 1
@@ -533,9 +545,14 @@ class RiemannianManifoldHMC(BaseSampler):
         autograd graph.
         """
         p_detached = p.detach()
+        # Conditioning is delivered via a transient attribute (set at sample()
+        # entry) because the integrator pins _force to a fixed (x, p, t)
+        # signature. The dict holds already-detached, device-resident tensors,
+        # so it never enters this force's autograd graph.
+        model_kwargs = getattr(self, "_active_model_kwargs", None)
         with torch.enable_grad():
             x_grad = x.detach().requires_grad_(True)
-            U = self.model(x_grad)
+            U = self._model_energy(x_grad, model_kwargs)
             K = self._kinetic_energy(x_grad, p_detached)
             H = (U + K).sum()
             (dH_dx,) = torch.autograd.grad(H, x_grad)
@@ -552,6 +569,8 @@ class RiemannianManifoldHMC(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Riemannian-manifold HMC.
 
@@ -567,6 +586,10 @@ class RiemannianManifoldHMC(BaseSampler):
             return_diagnostics: If True, also return a dict with keys
                 ``"mean"``, ``"var"``, ``"energy"``, and ``"acceptance_rate"``.
             reset_schedulers: If True, reset registered schedulers.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model for both the leapfrog force and the MH-ratio energies.
+                Normalized to the sampler device once at entry; ``None`` (default)
+                is the exact unconditional path.
 
         Raises:
             ValueError: If ``thin < 1`` or ``x`` is not 2-D.
@@ -575,6 +598,11 @@ class RiemannianManifoldHMC(BaseSampler):
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
+
+        # `_force` reads conditioning from this attribute (fixed integrator
+        # signature). Set every call, so no stale conditioning can leak in.
+        self._active_model_kwargs = self._prepare_model_kwargs(model_kwargs)
+        model_kwargs = self._active_model_kwargs
 
         if x is None and dim is None:
             if hasattr(self.model, "mean") and isinstance(
@@ -622,7 +650,9 @@ class RiemannianManifoldHMC(BaseSampler):
                 L = self._metric_chol(x)
                 p = self._initialize_momentum(x, L=L)
 
-                current_U = self.model(x).clamp_(min=-1e10, max=1e10)
+                current_U = self._model_energy(x, model_kwargs).clamp_(
+                    min=-1e10, max=1e10
+                )
                 current_K = self._kinetic_energy(x, p, L=L).clamp_(
                     min=-1e10, max=1e10
                 )
@@ -638,7 +668,9 @@ class RiemannianManifoldHMC(BaseSampler):
                 )
                 x_prop, p_prop = proposed["x"], proposed["p"]
 
-                proposed_U = self.model(x_prop).clamp_(min=-1e10, max=1e10)
+                proposed_U = self._model_energy(x_prop, model_kwargs).clamp_(
+                    min=-1e10, max=1e10
+                )
                 proposed_K = self._kinetic_energy(
                     x_prop, p_prop, L=self._metric_chol(x_prop)
                 ).clamp_(min=-1e10, max=1e10)
@@ -674,7 +706,9 @@ class RiemannianManifoldHMC(BaseSampler):
                             )
                         )
                         diagnostics["energy"][keep_idx] = (
-                            self.model(x).clamp_(min=-1e10, max=1e10).mean()
+                            self._model_energy(x, model_kwargs)
+                            .clamp_(min=-1e10, max=1e10)
+                            .mean()
                         )
                         diagnostics["acceptance_rate"][keep_idx] = (
                             accepted.float().mean()

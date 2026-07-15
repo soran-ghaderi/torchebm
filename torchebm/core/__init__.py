@@ -2,7 +2,7 @@
 Core functionality for energy-based models, including energy functions, base sampler class, and training utilities.
 """
 
-from .base_module import TorchEBMModule
+from .base_module import TorchEBMModule, warn_once
 
 from .base_model import (
     BaseModel,
@@ -48,6 +48,7 @@ from .base_interpolant import BaseInterpolant, expand_t_like_x
 __all__ = [
     # Energy functions
     "TorchEBMModule",
+    "warn_once",
     "BaseModel",
     "DoubleWellModel",
     "GaussianModel",

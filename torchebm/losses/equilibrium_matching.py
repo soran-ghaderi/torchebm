@@ -196,14 +196,24 @@ class EquilibriumMatchingLoss(BaseLoss):
 
         return grad, energy
 
-    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Compute EqM loss (nn.Module interface).
 
         Args:
             x: Data samples of shape (batch_size, ...).
             *args: Additional positional arguments.
-            **kwargs: Additional model arguments.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model. ``None`` (default) is the unconditional path.
+            **kwargs: Deprecated. Bare keyword arguments are still forwarded to
+                the model for one release but emit a ``DeprecationWarning``; pass
+                ``model_kwargs={...}`` instead.
 
         Returns:
             Scalar loss value.
@@ -212,23 +222,33 @@ class EquilibriumMatchingLoss(BaseLoss):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, **kwargs)
+            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
 
         return loss
 
-    def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def compute_loss(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Compute the equilibrium matching loss.
 
         Args:
             x: Data samples of shape (batch_size, ...).
             *args: Additional positional arguments.
-            **kwargs: Additional model arguments passed to the network.
+            model_kwargs: Conditioning arguments forwarded to the model.
+            **kwargs: Deprecated bare model kwargs (see `forward`).
 
         Returns:
             Scalar loss value.
         """
-        terms = self.training_losses(x, model_kwargs=kwargs)
+        mk = self._resolve_model_kwargs(
+            model_kwargs, kwargs, warn_key="eqm-bare-model-kwargs"
+        )
+        terms = self.training_losses(x, model_kwargs=mk)
         return terms["loss"].mean()
 
     def training_losses(

@@ -7,6 +7,7 @@ from torch import nn
 from abc import abstractmethod
 
 from torchebm.core import BaseContrastiveDivergence
+from torchebm.core.base_module import warn_once
 
 
 class ContrastiveDivergence(BaseContrastiveDivergence):
@@ -52,6 +53,8 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         init_steps=100,
         new_sample_ratio=0.05,
         energy_reg_weight=0.001,
+        add_noise_to_real=False,
+        noise_scale=1e-4,
         dtype=torch.float32,
         device=torch.device("cpu"),
         *args,
@@ -71,9 +74,19 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             **kwargs,
         )
         self.energy_reg_weight = energy_reg_weight
+        # Promoted from per-call kwargs to constructor params (the kwargs path is
+        # deprecated). Kept as attributes so compute_loss reads them by default.
+        self.add_noise_to_real = add_noise_to_real
+        self.noise_scale = noise_scale
+
+    _CD_OPTION_KEYS = ("energy_reg_weight", "add_noise_to_real", "noise_scale")
 
     def forward(
-        self, x: torch.Tensor, *args, **kwargs
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Computes the Contrastive Divergence loss and generates negative samples.
@@ -81,13 +94,28 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         Args:
             x (torch.Tensor): A batch of real data samples (positive samples).
             *args: Additional positional arguments.
-            **kwargs: Additional keyword arguments.
+            model_kwargs (Optional[dict]): Conditioning arguments (e.g. class
+                labels) forwarded to the model on both the positive energy calls
+                and the negative-sampling MCMC chains, so the negatives come from
+                the same conditional energy as the positives.
+            **kwargs: Deprecated. The loss options ``energy_reg_weight``,
+                ``add_noise_to_real`` and ``noise_scale`` are now constructor
+                parameters; passing them here still works for one release but
+                emits a ``DeprecationWarning``.
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
                 - The scalar CD loss value.
                 - The generated negative samples.
         """
+        model_kwargs = self._prepare_model_kwargs(model_kwargs)
+        if any(key in kwargs for key in self._CD_OPTION_KEYS):
+            warn_once(
+                "cd-option-kwargs",
+                "Passing energy_reg_weight/add_noise_to_real/noise_scale to "
+                "ContrastiveDivergence.__call__ is deprecated; set them on the "
+                "constructor instead.",
+            )
 
         batch_size = x.shape[0]
         data_shape = x.shape[1:]
@@ -95,10 +123,11 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         # Get starting points for chains (either from buffer or data)
         start_points = self.get_start_points(x)
 
-        # Run MCMC chains to get negative samples
+        # Run MCMC chains to get negative samples (conditional if model_kwargs)
         pred_samples = self.sampler.sample(
             x=start_points,
             n_steps=self.k_steps,
+            model_kwargs=model_kwargs,
         )
 
         # Update persistent buffer if using PCD
@@ -106,18 +135,25 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             with torch.no_grad():
                 self.update_buffer(pred_samples)
 
-        # Add energy regularization to kwargs for compute_loss
-        kwargs["energy_reg_weight"] = kwargs.get(
-            "energy_reg_weight", self.energy_reg_weight
-        )
+        # Loss options default to the constructor values (deprecated kwargs win).
+        kwargs.setdefault("energy_reg_weight", self.energy_reg_weight)
+        kwargs.setdefault("add_noise_to_real", self.add_noise_to_real)
+        kwargs.setdefault("noise_scale", self.noise_scale)
 
         # Compute contrastive divergence loss
-        loss = self.compute_loss(x, pred_samples, *args, **kwargs)
+        loss = self.compute_loss(
+            x, pred_samples, *args, model_kwargs=model_kwargs, **kwargs
+        )
 
         return loss, pred_samples
 
     def compute_loss(
-        self, x: torch.Tensor, pred_x: torch.Tensor, *args, **kwargs
+        self,
+        x: torch.Tensor,
+        pred_x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
     ) -> torch.Tensor:
         """
         Computes the Contrastive Divergence loss from positive and negative samples.
@@ -138,17 +174,19 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         x = x.to(self.device, self.dtype)
         pred_x = pred_x.to(self.device, self.dtype)
 
+        mk = model_kwargs or {}
+
         # Compute energy of real and generated samples
         with torch.set_grad_enabled(True):
             # Add small noise to real data for stability (optional)
-            if kwargs.get("add_noise_to_real", False):
-                noise_scale = kwargs.get("noise_scale", 1e-4)
+            if kwargs.get("add_noise_to_real", self.add_noise_to_real):
+                noise_scale = kwargs.get("noise_scale", self.noise_scale)
                 x_noisy = x + noise_scale * torch.randn_like(x)
-                x_energy = self.model(x_noisy)
+                x_energy = self.model(x_noisy, **mk)
             else:
-                x_energy = self.model(x)
+                x_energy = self.model(x, **mk)
 
-            pred_x_energy = self.model(pred_x)
+            pred_x_energy = self.model(pred_x, **mk)
 
         # Compute mean energies with improved numerical stability
         mean_x_energy = torch.mean(x_energy)
@@ -159,7 +197,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
         # Optional: Regularization to prevent energies from becoming too large
         # This helps with stability especially in the early phases of training
-        energy_reg_weight = kwargs.get("energy_reg_weight", 0.001)
+        energy_reg_weight = kwargs.get("energy_reg_weight", self.energy_reg_weight)
         if energy_reg_weight > 0:
             energy_reg = energy_reg_weight * (
                 torch.mean(x_energy**2) + torch.mean(pred_x_energy**2)
