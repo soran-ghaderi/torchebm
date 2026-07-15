@@ -140,14 +140,19 @@ class InteractionModel(Schedulable, BaseModel):
     def strength(self, value: Union[float, BaseScheduler]) -> None:
         self._register_param("strength", value)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""Compute the interacting energy \(V(x_i) - W_i\) per sample."""
+    def forward(self, x: torch.Tensor, **model_kwargs) -> torch.Tensor:
+        r"""Compute the interacting energy \(V(x_i) - W_i\) per sample.
+
+        Any ``model_kwargs`` (e.g. class labels) are forwarded to the wrapped
+        potential, so conditional diverse sampling works: samplers reach this
+        through `BaseModel.gradient(x, model_kwargs=...)`.
+        """
         batch = x.shape[0]
         flat = x.reshape(batch, -1)
         sq_norms = flat.square().sum(dim=1)
         pair_sq = batch * sq_norms + sq_norms.sum() - 2.0 * flat @ flat.sum(dim=0)
         w = 0.5 * (self.strength / self.sigma_w**2) * pair_sq
-        return self.model(x) - w
+        return self.model(x, **model_kwargs) - w
 
     def __repr__(self) -> str:
         return (

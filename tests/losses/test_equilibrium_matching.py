@@ -228,8 +228,8 @@ def test_dispersive_loss_integration():
     )
     
     x = torch.randn(10, 5)
-    loss = loss_fn(x, return_act=True)
-    
+    loss = loss_fn(x, model_kwargs={"return_act": True})
+
     assert torch.isfinite(loss)
     
     # Also test without dispersion
@@ -237,7 +237,7 @@ def test_dispersive_loss_integration():
         model=model,
         apply_dispersion=False,   
     )
-    loss_pure = loss_fn_pure(x, return_act=True)
+    loss_pure = loss_fn_pure(x, model_kwargs={"return_act": True})
     assert torch.isfinite(loss_pure)
 
 

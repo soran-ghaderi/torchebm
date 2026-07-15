@@ -90,12 +90,34 @@ class ConditionalTransformer2D(nn.Module):
             out_channels=self.out_channels,
         )
 
-    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        cond: Optional[torch.Tensor] = None,
+        *,
+        t: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        r"""Run the backbone with a single conditioning vector.
+
+        The conditioning signal may be passed positionally (``forward(x, cond)``,
+        the original contract) or by keyword as ``cond=`` or ``t=``, so the model
+        is drivable through the library's ``model(x, t, ...)`` calling
+        convention. Unknown conditioning keys are intentionally not swallowed: an
+        unexpected keyword raises, surfacing a conditioning mismatch rather than
+        dropping it silently. Fold time and labels into a single ``cond`` vector
+        (or wrap this backbone) when both are needed.
+        """
+        c = cond if cond is not None else t
+        if c is None:
+            raise ValueError(
+                "ConditionalTransformer2D.forward requires a conditioning tensor "
+                "via `cond` (positional) or the `cond=`/`t=` keyword."
+            )
         tokens = self.patch_embed(x)  # (B,N,D)
         if self.pos_embed is not None:
             tokens = tokens + self.pos_embed.to(device=tokens.device, dtype=tokens.dtype)
 
         for block in self.blocks:
-            tokens = block(tokens, cond)
+            tokens = block(tokens, c)
 
-        return self.head(tokens, cond)
+        return self.head(tokens, c)
