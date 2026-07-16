@@ -38,8 +38,6 @@ classifiers = [
 
 dependencies = [
     "torch>=2.0",
-    "numpy",
-    "matplotlib"
 ]
 
 [project.optional-dependencies]
@@ -52,6 +50,8 @@ dev = [
     "black>=20.8b1",
     "isort>=5.0",
     "tomli>=2.0.0; python_version < '3.11'",
+    "numpy",       # tests and scripts only; torchebm/ itself is torch-only
+    "matplotlib",  # examples and scripts only; never imported by torchebm/
 ]
 eqm = [
     "timm>=0.9.0",
