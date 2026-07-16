@@ -341,6 +341,9 @@ class GeneralisedLeapfrogIntegrator(BaseSymplecticIntegrator):
             if it % self.solver_check_every == 0:
                 resid = (y_next - y).square().mean().sqrt()
                 y = y_next
+                # Inherent host sync for the data-dependent convergence check;
+                # bounded to one every `solver_check_every` iterations (explicit
+                # integrators avoid it). See the GPU-first contract in the docs.
                 if resid.item() < self.solver_tol:
                     break
             else:
