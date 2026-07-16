@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -158,4 +158,122 @@ class InteractionModel(Schedulable, BaseModel):
         return (
             f"{self.__class__.__name__}("
             f"model={type(self.model).__name__}, sigma_w={self.sigma_w})"
+        )
+
+
+class EqMEnergy(BaseModel):
+    r"""Scalar-energy adapter for sampling Equilibrium Matching fields.
+
+    Equilibrium Matching trains a vector field \(f(x, t)\)
+    (`EquilibriumMatchingLoss`), but the gradient-based samplers
+    (`GradientDescentSampler`, `NesterovSampler`, `LangevinDynamics`,
+    `HamiltonianMonteCarlo`) and `InteractionModel` consume a scalar
+    `BaseModel`. This wrapper turns the field into that scalar energy
+    \(g(x)\) so an EqM model samples through any of them with no user code.
+
+    The energy is time-invariant: the field is always evaluated at \(t = 0\).
+    The formulas mirror `EquilibriumMatchingLoss` exactly:
+
+    - ``"dot"`` / ``"mean"``: \(g(x) = x \cdot f(x)\)
+    - ``"l2"``: \(g(x) = -\tfrac{1}{2}\|f(x)\|^2\)
+    - ``"implicit"``: `gradient(x)` returns \(f(x)\) directly (the paper's
+      implicit gradient-descent field, matching `energy_type="none"` training);
+      `forward` returns the \(x \cdot f\) surrogate for diagnostics / OOD scoring.
+
+    Direction: EqM's field points **data -> noise**, so descending the energy
+    (\(x \leftarrow x - \eta\,\nabla g\), or \(-f\) in the implicit case)
+    transports **noise -> data** - the same direction as
+    ``FlowSampler(negate_velocity=True)``.
+
+    Note:
+        `InteractionModel` differentiates a summed scalar energy, so it must
+        wrap an explicit mode (``"dot"``/``"mean"``/``"l2"``). Wrapping the
+        ``"implicit"`` adapter would differentiate the surrogate rather than use
+        the field, giving the wrong drift; use an explicit mode for repulsive /
+        diverse sampling.
+
+    Args:
+        field: Vector field called as ``field(x, t, **model_kwargs)`` returning
+            shape ``(batch_size, *data_shape)`` (a plain tuple ``(out, act)`` is
+            unwrapped). Typically the `model` of an `EquilibriumMatchingLoss`.
+        energy_type: Scalar-energy formulation, one of ``"dot"``, ``"mean"``,
+            ``"l2"``, ``"implicit"``.
+
+    Example:
+        ```python
+        from torchebm.models import EqMEnergy
+        from torchebm.samplers import GradientDescentSampler
+
+        energy = EqMEnergy(field, energy_type="dot")
+        sampler = GradientDescentSampler(energy, step_size=0.01)
+        samples = sampler.sample(x=torch.randn(512, 2), n_steps=200)
+        ```
+    """
+
+    def __init__(
+        self,
+        field: nn.Module,
+        energy_type: Literal["dot", "mean", "l2", "implicit"] = "dot",
+    ):
+        super().__init__()
+        valid = {"dot", "mean", "l2", "implicit"}
+        if energy_type not in valid:
+            raise ValueError(
+                f"energy_type must be one of {sorted(valid)}, got {energy_type!r}"
+            )
+        self.field = field
+        self.energy_type = energy_type
+
+    @classmethod
+    def from_loss(cls, loss) -> "EqMEnergy":
+        r"""Build the adapter matching a loss's ``energy_type``.
+
+        Maps the loss's implicit formulation (``energy_type="none"``) to the
+        adapter's ``"implicit"`` mode and passes explicit modes through, so the
+        sampled energy always matches what was trained.
+        """
+        energy_type = "implicit" if loss.energy_type == "none" else loss.energy_type
+        return cls(loss.model, energy_type=energy_type)
+
+    def _reduce_dims(self, ndim: int) -> tuple:
+        cache = getattr(self, "_reduce_dims_cache", None)
+        if cache is None or cache[0] != ndim:
+            self._reduce_dims_cache = (ndim, tuple(range(1, ndim)))
+        return self._reduce_dims_cache[1]
+
+    def _field(self, x: torch.Tensor, **model_kwargs) -> torch.Tensor:
+        r"""Evaluate the time-invariant field f(x, 0), unwrapping activations."""
+        t0 = torch.zeros(x.shape[0], device=x.device, dtype=x.dtype)
+        out = self.field(x, t0, **model_kwargs)
+        if isinstance(out, tuple):
+            out = out[0]
+        return out
+
+    def forward(self, x: torch.Tensor, **model_kwargs) -> torch.Tensor:
+        r"""Scalar energy g(x) of shape (batch_size,)."""
+        f = self._field(x, **model_kwargs)
+        dims = self._reduce_dims(x.ndim)
+        if self.energy_type == "l2":
+            return -0.5 * f.square().sum(dim=dims)
+        # dot / mean / implicit surrogate
+        return (x * f).sum(dim=dims)
+
+    def gradient(
+        self, x: torch.Tensor, model_kwargs: Optional[dict] = None
+    ) -> torch.Tensor:
+        r"""Energy gradient consumed by the samplers.
+
+        For explicit modes this is the autograd gradient of `forward` (the true
+        \(\nabla g\), including the Jacobian term the ``"dot"`` loss trains). For
+        ``"implicit"`` it is the field \(f(x, 0)\) itself (the trained gradient
+        field), returned without the training-time \(c(t)\) scaling.
+        """
+        if self.energy_type == "implicit":
+            return self._field(x, **(model_kwargs or {}))
+        return super().gradient(x, model_kwargs=model_kwargs)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"field={type(self.field).__name__}, energy_type={self.energy_type!r})"
         )
