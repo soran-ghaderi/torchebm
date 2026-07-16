@@ -73,14 +73,23 @@ class ScoreMatching(BaseScoreMatching):
             )
             self.hessian_method = "exact"
 
-    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Computes the score matching loss for a batch of data.
 
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional positional arguments.
-            **kwargs: Additional keyword arguments.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model. Supported for ``hessian_method="approx"``; the exact
+                Hessian path raises if conditioning is passed (see below).
+            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar score matching loss.
@@ -89,32 +98,47 @@ class ScoreMatching(BaseScoreMatching):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, **kwargs)
+            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            loss = self.add_regularization(loss, x)
+            mk = self._resolve_model_kwargs(
+                model_kwargs, kwargs, warn_key="sm-bare-model-kwargs"
+            )
+            loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
 
-    def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def compute_loss(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Computes the score matching loss using the specified Hessian computation method.
 
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional arguments.
-            **kwargs: Additional keyword arguments.
+            model_kwargs: Conditioning arguments forwarded to the model
+                (``hessian_method="approx"`` only).
+            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar score matching loss.
         """
-
+        mk = self._resolve_model_kwargs(
+            model_kwargs, kwargs, warn_key="sm-bare-model-kwargs"
+        )
         if self.hessian_method == "approx":
-            return self._approx_score_matching(x)
+            return self._approx_score_matching(x, model_kwargs=mk)
         else:
-            return self._exact_score_matching(x)
+            return self._exact_score_matching(x, model_kwargs=mk)
 
-    def _exact_score_matching(self, x: torch.Tensor) -> torch.Tensor:
+    def _exact_score_matching(
+        self, x: torch.Tensor, model_kwargs: Optional[dict] = None
+    ) -> torch.Tensor:
         r"""
         Computes score matching loss with an exact Hessian trace.
 
@@ -122,10 +146,20 @@ class ScoreMatching(BaseScoreMatching):
 
         Args:
             x (torch.Tensor): Input data tensor.
+            model_kwargs: Conditioning is not supported here: the exact Hessian
+                trace uses ``vmap`` over single samples, so per-sample
+                conditioning cannot be batched. A non-empty mapping raises.
 
         Returns:
             torch.Tensor: The score matching loss.
         """
+        if model_kwargs:
+            raise NotImplementedError(
+                "Conditional exact score matching is not supported (the vmap "
+                "Hessian trace cannot batch per-sample conditioning). Use "
+                "hessian_method='approx' or DenoisingScoreMatching for "
+                "conditional training."
+            )
         batch_size = x.shape[0]
         x_flat = x.view(batch_size, -1).detach().requires_grad_(True)
 
@@ -144,7 +178,9 @@ class ScoreMatching(BaseScoreMatching):
         term1 = 0.5 * score.square().sum(dim=-1)
         return (term1 + laplacian).mean()
 
-    def _approx_score_matching(self, x: torch.Tensor) -> torch.Tensor:
+    def _approx_score_matching(
+        self, x: torch.Tensor, model_kwargs: Optional[dict] = None
+    ) -> torch.Tensor:
         r"""
         Computes score matching loss using a finite-difference approximation for the Hessian trace.
 
@@ -161,7 +197,7 @@ class ScoreMatching(BaseScoreMatching):
         x_detached = x.detach()
         x_detached.requires_grad_(True)
 
-        score = self.compute_score(x_detached)
+        score = self.compute_score(x_detached, model_kwargs=model_kwargs)
         score_square_term = (
             0.5 * torch.sum(score.square(), dim=list(range(1, len(x.shape)))).mean()
         )
@@ -169,8 +205,8 @@ class ScoreMatching(BaseScoreMatching):
         epsilon = 1e-5
         x_noise = x_detached + epsilon * torch.randn_like(x_detached)
 
-        score_x = self.compute_score(x_detached)
-        score_x_noise = self.compute_score(x_noise)
+        score_x = self.compute_score(x_detached, model_kwargs=model_kwargs)
+        score_x_noise = self.compute_score(x_noise, model_kwargs=model_kwargs)
 
         hessian_trace = torch.sum(
             (score_x_noise - score_x) * (x_noise - x_detached),
@@ -233,14 +269,22 @@ class DenoisingScoreMatching(BaseScoreMatching):
             **kwargs,
         )
 
-    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Computes the denoising score matching loss for a batch of data.
 
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional positional arguments.
-            **kwargs: Additional keyword arguments.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model. ``None`` (default) is the unconditional path.
+            **kwargs: Deprecated bare model kwargs (see `model_kwargs`).
 
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
@@ -249,28 +293,41 @@ class DenoisingScoreMatching(BaseScoreMatching):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, **kwargs)
+            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            loss = self.add_regularization(loss, x)
+            mk = self._resolve_model_kwargs(
+                model_kwargs, kwargs, warn_key="dsm-bare-model-kwargs"
+            )
+            loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
 
-    def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def compute_loss(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Computes the denoising score matching loss.
 
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional arguments.
-            **kwargs: Additional keyword arguments.
+            model_kwargs: Conditioning arguments forwarded to the model.
+            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
         """
+        mk = self._resolve_model_kwargs(
+            model_kwargs, kwargs, warn_key="dsm-bare-model-kwargs"
+        )
         x_perturbed, noise = self.perturb_data(x)
 
-        score = self.compute_score(x_perturbed)
+        score = self.compute_score(x_perturbed, model_kwargs=mk)
 
         target_score = -noise / (self.noise_scale**2)
 
@@ -369,14 +426,23 @@ class SlicedScoreMatching(BaseScoreMatching):
         else:
             return vectors
 
-    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Computes the sliced score matching loss for a batch of data.
 
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional positional arguments.
-            **kwargs: Additional keyword arguments.
+            model_kwargs: Conditioning is not supported (the projection tiling
+                expands the batch, so per-sample conditioning cannot be aligned);
+                a non-empty mapping raises in `compute_loss`.
+            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
@@ -385,25 +451,42 @@ class SlicedScoreMatching(BaseScoreMatching):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, **kwargs)
+            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
 
         return loss
 
-    def compute_loss(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def compute_loss(
+        self,
+        x: torch.Tensor,
+        *args,
+        model_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         r"""
         Computes the sliced score matching loss using random projections.
 
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional arguments.
-            **kwargs: Additional keyword arguments.
+            model_kwargs: Not supported; a non-empty mapping raises.
+            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
         """
+        mk = self._resolve_model_kwargs(
+            model_kwargs, kwargs, warn_key="ssm-bare-model-kwargs"
+        )
+        if mk:
+            raise NotImplementedError(
+                "Conditional sliced score matching is not supported (random "
+                "projections expand the batch, so per-sample conditioning "
+                "cannot be aligned). Use DenoisingScoreMatching for conditional "
+                "training."
+            )
 
         dup_x = (
             x.unsqueeze(0)

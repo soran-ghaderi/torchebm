@@ -15,6 +15,7 @@ from torchebm.core import BaseSampler
 from torchebm.core import BaseScheduler
 from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
+from torchebm.core.base_module import warn_once
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,32 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         """Initialize the base loss class."""
         super().__init__(device=device, dtype=dtype, *args, **kwargs)
 
+    def _resolve_model_kwargs(
+        self,
+        model_kwargs: Optional[dict],
+        legacy_kwargs: Optional[dict] = None,
+        *,
+        warn_key: str,
+    ) -> dict:
+        r"""Merge explicit `model_kwargs` with deprecated bare ``**kwargs``.
+
+        Shared shim for losses whose bare ``**kwargs`` historically meant *model*
+        conditioning (EqM, EM, score matching). The explicit dict wins on key
+        conflicts; a non-empty legacy mapping triggers a one-time
+        ``DeprecationWarning`` keyed by `warn_key`. The result is device-
+        normalized once (see `_prepare_model_kwargs`) and is a fresh dict, so it
+        never aliases the caller's mapping.
+        """
+        if legacy_kwargs:
+            warn_once(
+                warn_key,
+                "Passing model conditioning as bare keyword arguments is "
+                "deprecated; pass model_kwargs={...} instead.",
+            )
+            merged = {**legacy_kwargs, **(model_kwargs or {})}
+        else:
+            merged = model_kwargs
+        return self._prepare_model_kwargs(merged)
 
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
@@ -415,14 +442,21 @@ class BaseScoreMatching(BaseLoss):
         self._register_param("regularization_strength", value)
 
     def compute_score(
-        self, x: torch.Tensor, noise: Optional[torch.Tensor] = None
+        self,
+        x: torch.Tensor,
+        noise: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[dict] = None,
     ) -> torch.Tensor:
-        """
+        r"""
         Computes the score function, \(\nabla_x E(x)\).
 
         Args:
             x (torch.Tensor): The input data tensor.
             noise (Optional[torch.Tensor]): Optional noise tensor for perturbed variants.
+            model_kwargs (Optional[dict]): Conditioning arguments forwarded to the
+                model (e.g. class labels). This is the single funnel every
+                score-matching variant routes its model call through, so passing
+                it here conditions all variants.
 
         Returns:
             torch.Tensor: The score function evaluated at `x` or `x + noise`.
@@ -440,7 +474,7 @@ class BaseScoreMatching(BaseLoss):
             x_perturbed.requires_grad_(True)
 
         with self.autocast_context():
-            energy = self.model(x_perturbed)
+            energy = self.model(x_perturbed, **(model_kwargs or {}))
 
         if self.use_autograd:
             score = torch.autograd.grad(energy.sum(), x_perturbed, create_graph=True)[0]
@@ -508,6 +542,7 @@ class BaseScoreMatching(BaseLoss):
         x: torch.Tensor,
         custom_reg_fn: Optional[Callable] = None,
         reg_strength: Optional[float] = None,
+        model_kwargs: Optional[dict] = None,
     ) -> torch.Tensor:
         """
         Adds regularization terms to the loss.
@@ -535,7 +570,7 @@ class BaseScoreMatching(BaseLoss):
             reg_term = self.custom_regularization(x, self.model)
         # default: L2 norm of score
         else:
-            score = self.compute_score(x)
+            score = self.compute_score(x, model_kwargs=model_kwargs)
             reg_term = score.square().sum(dim=list(range(1, len(x.shape)))).mean()
 
         return loss + strength * reg_term

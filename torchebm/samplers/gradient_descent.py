@@ -6,7 +6,7 @@ minimizing the energy function through gradient descent.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 
@@ -69,6 +69,8 @@ class GradientDescentSampler(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via gradient descent optimization.
 
@@ -83,6 +85,9 @@ class GradientDescentSampler(BaseSampler):
             return_diagnostics: If True, also return a dict with key
                 ``"energy"`` (`[n_kept]`).
             reset_schedulers: If True (default), reset registered schedulers.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model at every step. Normalized to the sampler device once at
+                entry; ``None`` (default) is the exact unconditional path.
 
         Raises:
             ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
@@ -93,6 +98,7 @@ class GradientDescentSampler(BaseSampler):
             self.reset_schedulers()
 
         x = self._init_state(x, dim, n_samples)
+        model_kwargs = self._prepare_model_kwargs(model_kwargs)
 
         n_kept = n_steps // thin
         if return_trajectory:
@@ -110,14 +116,16 @@ class GradientDescentSampler(BaseSampler):
         with self.autocast_context():
             for i in range(n_steps):
                 eta = self.get_scheduled_value("step_size")
-                grad = self.model.gradient(x)
+                grad = self._model_gradient(x, model_kwargs)
                 x = torch.sub(x, grad, alpha=eta)
 
                 if (i + 1) % thin == 0:
                     if return_trajectory:
                         trajectory[:, keep_idx] = x
                     if return_diagnostics:
-                        diagnostics["energy"][keep_idx] = self.model(x).mean()
+                        diagnostics["energy"][keep_idx] = self._model_energy(
+                            x, model_kwargs
+                        ).mean()
                     keep_idx += 1
 
                 self.step_schedulers()
@@ -192,6 +200,8 @@ class NesterovSampler(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Nesterov accelerated gradient descent.
 
@@ -206,6 +216,9 @@ class NesterovSampler(BaseSampler):
             return_diagnostics: If True, also return a dict with key
                 ``"energy"`` (`[n_kept]`).
             reset_schedulers: If True (default), reset registered schedulers.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model at every step. Normalized to the sampler device once at
+                entry; ``None`` (default) is the exact unconditional path.
 
         Raises:
             ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
@@ -216,6 +229,7 @@ class NesterovSampler(BaseSampler):
             self.reset_schedulers()
 
         x = self._init_state(x, dim, n_samples)
+        model_kwargs = self._prepare_model_kwargs(model_kwargs)
 
         v = torch.zeros_like(x)
         n_kept = n_steps // thin
@@ -236,7 +250,7 @@ class NesterovSampler(BaseSampler):
             for i in range(n_steps):
                 eta = self.get_scheduled_value("step_size")
                 lookahead = torch.add(x, v, alpha=mu)
-                grad = self.model.gradient(lookahead)
+                grad = self._model_gradient(lookahead, model_kwargs)
                 v.mul_(mu).sub_(grad, alpha=eta)
                 x = x + v
 
@@ -244,7 +258,9 @@ class NesterovSampler(BaseSampler):
                     if return_trajectory:
                         trajectory[:, keep_idx] = x
                     if return_diagnostics:
-                        diagnostics["energy"][keep_idx] = self.model(x).mean()
+                        diagnostics["energy"][keep_idx] = self._model_energy(
+                            x, model_kwargs
+                        ).mean()
                     keep_idx += 1
 
                 self.step_schedulers()

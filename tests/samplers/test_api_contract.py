@@ -153,11 +153,26 @@ class TestSignatures:
         assert not any(
             kind is inspect.Parameter.VAR_POSITIONAL for kind in kinds.values()
         ), f"{sampler_cls.__name__}.sample must not take *args"
+
+        # Conditioning contract: every sampler exposes an explicit keyword-only
+        # `model_kwargs` dict param (default None), never bare **kwargs.
+        assert "model_kwargs" in kinds, (
+            f"{sampler_cls.__name__}.sample must accept model_kwargs"
+        )
+        assert (
+            kinds["model_kwargs"] is inspect.Parameter.KEYWORD_ONLY
+        ), f"{sampler_cls.__name__}.sample model_kwargs must be keyword-only"
+        model_kwargs_default = {p.name: p.default for p in params}["model_kwargs"]
+        assert model_kwargs_default is None
+
         var_keyword = [
             p.name for p in params if p.kind is inspect.Parameter.VAR_KEYWORD
         ]
         if case.allows_var_keyword:
-            assert var_keyword == ["model_kwargs"]
+            # FlowSampler keeps a var-keyword for one deprecation cycle: bare
+            # conditioning kwargs still work but warn (see the explicit
+            # model_kwargs param above). Renamed to make the legacy status clear.
+            assert var_keyword == ["legacy_model_kwargs"]
         else:
             assert (
                 not var_keyword

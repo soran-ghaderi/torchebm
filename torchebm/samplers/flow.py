@@ -6,7 +6,7 @@ construction and executed through the standard `BaseSampler.sample` contract.
 
 import enum
 import math
-from typing import Callable, Dict, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Literal, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -18,6 +18,7 @@ from torchebm.core import (
     BaseScheduler,
     BaseSDERungeKuttaIntegrator,
     expand_t_like_x,
+    warn_once,
 )
 from torchebm.integrators.integrator_utils import resolve_integrator
 from torchebm.interpolants import (
@@ -372,7 +373,9 @@ class FlowSampler(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
-        **model_kwargs,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        **legacy_model_kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Sample by integrating the configured ODE or SDE.
 
@@ -400,8 +403,13 @@ class FlowSampler(BaseSampler):
                 Fixed-step sampling advances schedulers once per step;
                 adaptive integrators do not step them (the actual step count
                 is controller-dependent).
-            **model_kwargs (Any): Additional conditioning arguments forwarded
-                to the model.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model at every step. Normalized to the sampler device once at
+                entry; ``None`` (default) is the exact unconditional path.
+            **legacy_model_kwargs: Deprecated. Passing conditioning as bare
+                keyword arguments still works for one release but emits a
+                ``DeprecationWarning``; pass ``model_kwargs={...}`` instead. When
+                both are given, keys in the explicit dict win.
 
         Returns:
             Sample tensor (or trajectory if `return_trajectory=True`),
@@ -414,7 +422,7 @@ class FlowSampler(BaseSampler):
                 with an adaptive integrator.
             TypeError: If a removed legacy sampling kwarg is passed.
         """
-        removed = _REMOVED_SAMPLE_KWARGS.intersection(model_kwargs)
+        removed = _REMOVED_SAMPLE_KWARGS.intersection(legacy_model_kwargs)
         if removed:
             raise TypeError(
                 f"{', '.join(sorted(removed))}: removed from "
@@ -423,6 +431,15 @@ class FlowSampler(BaseSampler):
                 "constructor; use x/n_steps instead of z/num_steps and "
                 "dim=(...) instead of shape."
             )
+        if legacy_model_kwargs:
+            warn_once(
+                "flowsampler-bare-model-kwargs",
+                "Passing conditioning to FlowSampler.sample() as bare keyword "
+                "arguments is deprecated; pass model_kwargs={...} instead.",
+            )
+        model_kwargs = self._prepare_model_kwargs(
+            {**legacy_model_kwargs, **(model_kwargs or {})}
+        )
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if n_steps is None:

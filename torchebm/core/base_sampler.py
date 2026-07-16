@@ -69,6 +69,34 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         shape = (dim,) if isinstance(dim, int) else tuple(dim)
         return torch.randn(n_samples, *shape, dtype=self.dtype, device=self.device)
 
+    def _model_gradient(
+        self, x: torch.Tensor, model_kwargs: Dict[str, object]
+    ) -> torch.Tensor:
+        r"""Route a gradient call through the conditioning convention.
+
+        This is the single back-compat chokepoint: when `model_kwargs` is empty
+        the model is called exactly as before (``model.gradient(x)``), so
+        analytic `gradient(self, x)` overrides with no `model_kwargs` parameter
+        keep working. Pass an already-normalized dict (see
+        `_prepare_model_kwargs`); it is reused per step with no re-normalization.
+        """
+        if model_kwargs:
+            return self.model.gradient(x, model_kwargs=model_kwargs)
+        return self.model.gradient(x)
+
+    def _model_energy(
+        self, x: torch.Tensor, model_kwargs: Dict[str, object]
+    ) -> torch.Tensor:
+        r"""Route an energy call through the conditioning convention.
+
+        Mirrors `_model_gradient`: unconditional call when `model_kwargs` is
+        empty, so unconditional scalar models (``forward(self, x)``) are
+        untouched.
+        """
+        if model_kwargs:
+            return self.model(x, **model_kwargs)
+        return self.model(x)
+
     @abstractmethod
     def sample(
         self,

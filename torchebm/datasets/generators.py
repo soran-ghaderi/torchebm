@@ -1,27 +1,13 @@
 r"""Dataset Generators Module."""
 
+import math
+import sys
 import warnings
 
 import torch
-import numpy as np
 from torch.utils.data import Dataset
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Tuple
-
-# --- Utility Function --- (Keep as is or move if desired)
-
-
-def _to_tensor(
-    data: np.ndarray,
-    dtype: torch.dtype = torch.float32,
-    device: Optional[Union[str, torch.device]] = None,
-) -> torch.Tensor:
-    """Converts a NumPy array to a PyTorch tensor."""
-    tensor = torch.from_numpy(data).to(dtype)
-    if device:
-        tensor = tensor.to(torch.device(device))
-    return tensor
-
 
 # --- Base Class ---
 
@@ -55,10 +41,14 @@ class BaseSyntheticDataset(Dataset, ABC):
         self._generate()  # Generate data upon initialization
 
     def _seed_generators(self):
-        """Sets the random seeds for numpy and torch if a seed is provided."""
+        """Sets the random seeds for torch if a seed is provided."""
         if self.seed is not None:
-            np.random.seed(self.seed)
             torch.manual_seed(self.seed)
+            # Seed NumPy only if already imported, so subclasses returning NumPy
+            # arrays stay reproducible without torchebm depending on numpy.
+            numpy = sys.modules.get("numpy")
+            if numpy is not None:
+                numpy.random.seed(self.seed)
             # If using CUDA, also seed the CUDA generator
             if torch.cuda.is_available() and (
                 isinstance(self.device, torch.device)
@@ -81,16 +71,17 @@ class BaseSyntheticDataset(Dataset, ABC):
         generated_output = self._generate_data()
 
         # Ensure it's a tensor and on the correct device/dtype
-        if isinstance(generated_output, np.ndarray):
-            self.data = _to_tensor(
-                generated_output, dtype=self.dtype, device=self.device
-            )
-        elif isinstance(generated_output, torch.Tensor):
+        if isinstance(generated_output, torch.Tensor):
             self.data = generated_output.to(dtype=self.dtype, device=self.device)
         else:
-            raise TypeError(
-                f"_generate_data must return a NumPy array or PyTorch Tensor, got {type(generated_output)}"
-            )
+            try:
+                self.data = torch.as_tensor(
+                    generated_output, dtype=self.dtype, device=self.device
+                )
+            except (TypeError, RuntimeError) as exc:
+                raise TypeError(
+                    f"_generate_data must return a NumPy array or PyTorch Tensor, got {type(generated_output)}"
+                ) from exc
 
         # Verify batch_shape
         if self.data.shape[0] != self.n_samples:
@@ -184,13 +175,13 @@ class GaussianMixtureDataset(BaseSyntheticDataset):
 
     def _generate_data(self) -> torch.Tensor:
         # Logic from make_gaussian_mixture
-        thetas = np.linspace(0, 2 * np.pi, self.n_components, endpoint=False)
-        centers = np.array(
-            [(self.radius * np.cos(t), self.radius * np.sin(t)) for t in thetas],
-            dtype=np.float32,
+        # The trailing point is dropped because it duplicates theta=0.
+        thetas = torch.linspace(
+            0, 2 * math.pi, self.n_components + 1, device=self.device, dtype=self.dtype
+        )[:-1]
+        centers = torch.stack(
+            (self.radius * torch.cos(thetas), self.radius * torch.sin(thetas)), dim=1
         )
-        # Use torch directly for efficiency and device handling
-        centers_torch = torch.from_numpy(centers)  # Keep on CPU for indexing efficiency
 
         data = torch.empty(self.n_samples, 2, device=self.device, dtype=self.dtype)
         samples_per_component = self.n_samples // self.n_components
@@ -202,17 +193,13 @@ class GaussianMixtureDataset(BaseSyntheticDataset):
             if num == 0:
                 continue
             end_idx = current_idx + num
-            # Generate noise directly on target device if possible
             noise = torch.randn(num, 2, device=self.device, dtype=self.dtype) * self.std
-            component_center = centers_torch[i].to(device=self.device, dtype=self.dtype)
-            data[current_idx:end_idx] = component_center + noise
+            data[current_idx:end_idx] = centers[i] + noise
             current_idx = end_idx
 
         # Shuffle the data to mix components
-        data = data[
-            torch.randperm(self.n_samples, device=self.device)
-        ]  # Use device-aware permutation
-        return data  # Return tensor directly
+        data = data[torch.randperm(self.n_samples, device=self.device)]
+        return data
 
 
 class EightGaussiansDataset(BaseSyntheticDataset):
@@ -240,23 +227,23 @@ class EightGaussiansDataset(BaseSyntheticDataset):
         self.std = std
         self.scale = scale
         # Define the specific 8 centers
-        centers_np = (
-            np.array(
+        diag = 1.0 / math.sqrt(2)
+        self.centers_torch = (
+            torch.tensor(
                 [
                     (1, 0),
                     (-1, 0),
                     (0, 1),
                     (0, -1),
-                    (1.0 / np.sqrt(2), 1.0 / np.sqrt(2)),
-                    (1.0 / np.sqrt(2), -1.0 / np.sqrt(2)),
-                    (-1.0 / np.sqrt(2), 1.0 / np.sqrt(2)),
-                    (-1.0 / np.sqrt(2), -1.0 / np.sqrt(2)),
+                    (diag, diag),
+                    (diag, -diag),
+                    (-diag, diag),
+                    (-diag, -diag),
                 ],
-                dtype=np.float32,
+                dtype=torch.float32,
             )
             * self.scale
         )
-        self.centers_torch = torch.from_numpy(centers_np)
         self.n_components = 8
         super().__init__(n_samples=n_samples, device=device, dtype=dtype, seed=seed)
 
@@ -305,35 +292,27 @@ class TwoMoonsDataset(BaseSyntheticDataset):
         self.noise = noise
         super().__init__(n_samples=n_samples, device=device, dtype=dtype, seed=seed)
 
-    def _generate_data(self) -> np.ndarray:
-        # Logic from make_two_moons (using numpy initially is fine here)
+    def _generate_data(self) -> torch.Tensor:
         n_samples_out = self.n_samples // 2
         n_samples_in = self.n_samples - n_samples_out
 
-        outer_circ_x = np.cos(np.linspace(0, np.pi, n_samples_out))
-        outer_circ_y = np.sin(np.linspace(0, np.pi, n_samples_out))
-        inner_circ_x = 1 - np.cos(np.linspace(0, np.pi, n_samples_in))
-        inner_circ_y = 1 - np.sin(np.linspace(0, np.pi, n_samples_in)) - 0.5
+        outer = torch.linspace(
+            0, math.pi, n_samples_out, device=self.device, dtype=self.dtype
+        )
+        inner = torch.linspace(
+            0, math.pi, n_samples_in, device=self.device, dtype=self.dtype
+        )
 
-        X = np.vstack(
-            [
-                np.append(outer_circ_x, inner_circ_x),
-                np.append(outer_circ_y, inner_circ_y),
-            ]
-        ).T.astype(np.float32)
+        data = torch.stack(
+            (
+                torch.cat((torch.cos(outer), 1 - torch.cos(inner))),
+                torch.cat((torch.sin(outer), 1 - torch.sin(inner) - 0.5)),
+            ),
+            dim=1,
+        )
+        data += torch.randn_like(data) * self.noise
 
-        # Add noise using torch AFTER converting base batch_shape to tensor
-        tensor_data = torch.from_numpy(X)  # Keep on CPU initially for noise addition
-        noise_val = torch.randn_like(tensor_data) * self.noise
-        tensor_data += noise_val
-
-        # Base class __init__ will handle final _to_tensor conversion for device/dtype
-        # Alternatively, add noise directly on the target device:
-        # tensor_data = torch.from_numpy(X).to(device=self.device, dtype=self.dtype)
-        # tensor_data += torch.randn_like(tensor_data) * self.noise
-        # return tensor_data # Return tensor directly if handled here
-
-        return tensor_data  # Return tensor, base class handles device/dtype
+        return data
 
 
 class SwissRollDataset(BaseSyntheticDataset):
@@ -364,21 +343,18 @@ class SwissRollDataset(BaseSyntheticDataset):
 
     def _generate_data(self) -> torch.Tensor:
         # Logic from make_swiss_roll
-        t = self.arclength * np.pi * (1 + 2 * np.random.rand(self.n_samples))
-        x = t * np.cos(t)
-        y = t * np.sin(t)
-        X = np.vstack((x, y)).T.astype(np.float32)
-
-        tensor_data = torch.from_numpy(X)  # CPU tensor initially
-        tensor_data += torch.randn_like(tensor_data) * self.noise
+        u = torch.rand(self.n_samples, device=self.device, dtype=self.dtype)
+        t = self.arclength * math.pi * (1 + 2 * u)
+        data = torch.stack((t * torch.cos(t), t * torch.sin(t)), dim=1)
+        data += torch.randn_like(data) * self.noise
 
         # Center and scale slightly (optional, can be done outside)
-        tensor_data = (tensor_data - tensor_data.mean(dim=0)) / (
-            tensor_data.std(dim=0).mean()
+        data = (data - data.mean(dim=0)) / (
+            data.std(dim=0).mean()
             * 2.0  # Be careful with division by zero if std is ~0
         )
 
-        return tensor_data  # Return tensor, base class handles device/dtype
+        return data
 
 
 class CircleDataset(BaseSyntheticDataset):
@@ -409,15 +385,14 @@ class CircleDataset(BaseSyntheticDataset):
 
     def _generate_data(self) -> torch.Tensor:
         # Logic from make_circle
-        angles = 2 * np.pi * np.random.rand(self.n_samples)
-        x = self.radius * np.cos(angles)
-        y = self.radius * np.sin(angles)
-        X = np.vstack((x, y)).T.astype(np.float32)
+        u = torch.rand(self.n_samples, device=self.device, dtype=self.dtype)
+        angles = 2 * math.pi * u
+        data = torch.stack(
+            (self.radius * torch.cos(angles), self.radius * torch.sin(angles)), dim=1
+        )
+        data += torch.randn_like(data) * self.noise
 
-        tensor_data = torch.from_numpy(X)
-        tensor_data += torch.randn_like(tensor_data) * self.noise
-
-        return tensor_data
+        return data
 
 
 class CheckerboardDataset(BaseSyntheticDataset):
@@ -448,28 +423,27 @@ class CheckerboardDataset(BaseSyntheticDataset):
 
     def _generate_data(self) -> torch.Tensor:
         # Logic from make_checkerboard
-        collected_samples = []
         target = self.n_samples
         # Estimate batch size needed (density is ~0.5)
         batch_size = max(1000, int(target * 2.5))  # Generate more than needed per batch
 
-        while len(collected_samples) < target:
-            x = np.random.uniform(-self.range_limit, self.range_limit, size=batch_size)
-            y = np.random.uniform(-self.range_limit, self.range_limit, size=batch_size)
+        collected_samples = []
+        n_collected = 0
+        while n_collected < target:
+            xy = (
+                torch.rand(batch_size, 2, device=self.device, dtype=self.dtype) * 2 - 1
+            ) * self.range_limit
 
-            keep = (np.floor(x) + np.floor(y)) % 2 != 0
-            valid_points = np.vstack((x[keep], y[keep])).T.astype(np.float32)
+            keep = (torch.floor(xy[:, 0]) + torch.floor(xy[:, 1])) % 2 != 0
+            valid_points = xy[keep][: target - n_collected]
 
-            needed = target - len(collected_samples)
-            collected_samples.extend(valid_points[:needed])  # Add only needed points
+            collected_samples.append(valid_points)
+            n_collected += valid_points.shape[0]
 
-        X = np.array(
-            collected_samples[:target], dtype=np.float32
-        )  # Ensure exact n_samples
-        tensor_data = torch.from_numpy(X)
-        tensor_data += torch.randn_like(tensor_data) * self.noise
+        data = torch.cat(collected_samples, dim=0)
+        data += torch.randn_like(data) * self.noise
 
-        return tensor_data
+        return data
 
 
 class PinwheelDataset(BaseSyntheticDataset):
@@ -511,7 +485,7 @@ class PinwheelDataset(BaseSyntheticDataset):
 
     def _generate_data(self) -> torch.Tensor:
         # Logic from make_pinwheel
-        all_points_np = []
+        all_points = []
         samples_per_class = self.n_samples // self.n_classes
         remainder = self.n_samples % self.n_classes
 
@@ -520,26 +494,31 @@ class PinwheelDataset(BaseSyntheticDataset):
             if n_class_samples == 0:
                 continue
 
-            t = np.sqrt(np.random.rand(n_class_samples))  # Radial density control
+            t = torch.sqrt(
+                torch.rand(n_class_samples, device=self.device, dtype=self.dtype)
+            )
             radii = t * self.radial_scale
-            base_angle = class_idx * (2 * np.pi / self.n_classes)
+            base_angle = class_idx * (2 * math.pi / self.n_classes)
             spiral_angle = self.spiral_scale * t
-            angle_noise = np.random.randn(n_class_samples) * self.angular_scale
+            angle_noise = (
+                torch.randn(n_class_samples, device=self.device, dtype=self.dtype)
+                * self.angular_scale
+            )
             thetas = base_angle + spiral_angle + angle_noise
 
-            x = radii * np.cos(thetas)
-            y = radii * np.sin(thetas)
-            all_points_np.append(np.stack([x, y], axis=1))
+            all_points.append(
+                torch.stack(
+                    (radii * torch.cos(thetas), radii * torch.sin(thetas)), dim=1
+                )
+            )
 
-        data_np = np.concatenate(all_points_np, axis=0).astype(np.float32)
-        np.random.shuffle(data_np)  # Shuffle before converting to tensor
-
-        tensor_data = torch.from_numpy(data_np)
+        data = torch.cat(all_points, dim=0)
+        data = data[torch.randperm(data.shape[0], device=self.device)]
 
         if self.noise > 0:
-            tensor_data += torch.randn_like(tensor_data) * self.noise
+            data += torch.randn_like(data) * self.noise
 
-        return tensor_data
+        return data
 
 
 # class GridDataset(BaseSyntheticDataset):
@@ -628,34 +607,23 @@ class GridDataset(BaseSyntheticDataset):
 
     def _generate_data(self) -> torch.Tensor:
         # Create a more uniform grid spacing
-        x_coords = torch.linspace(
-            -self.range_limit, self.range_limit, self.n_samples_per_dim
-        )
-        y_coords = torch.linspace(
-            -self.range_limit, self.range_limit, self.n_samples_per_dim
+        coords = torch.linspace(
+            -self.range_limit,
+            self.range_limit,
+            self.n_samples_per_dim,
+            device=self.device,
+            dtype=self.dtype,
         )
 
         # Create the grid points
-        grid_x, grid_y = torch.meshgrid(x_coords, y_coords, indexing="ij")
+        grid_x, grid_y = torch.meshgrid(coords, coords, indexing="ij")
 
         # Stack the coordinates to form the 2D points
         points = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
 
         # Apply noise if specified
         if self.noise > 0:
-            # Set the random seed if provided
-            if hasattr(self, "rng"):
-                # Use the RNG from the base class
-                noise = torch.tensor(
-                    self.rng.normal(0, self.noise, size=points.shape),
-                    dtype=points.dtype,
-                    device=points.device,
-                )
-            else:
-                # Fall back to torch's random generator
-                noise = torch.randn_like(points) * self.noise
-
-            points = points + noise
+            points = points + torch.randn_like(points) * self.noise
 
         return points
 

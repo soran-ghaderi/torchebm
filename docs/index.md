@@ -1,5 +1,5 @@
 ---
-title: TorchEBM - Energy-Based Generative Modeling in PyTorch
+title: Simulation-Free Generative Modeling in PyTorch
 social:
   cards_layout_options:
     title: Documentation
@@ -25,7 +25,7 @@ icon: octicons/home-fill-16
   </div>
 
   <p class="home-tagline">
-    A high-performance PyTorch library for generative modeling<br>Composable primitives for <b>EBMs</b>,<b> diffusion</b>, <b>flow matching</b>, and <b>Schrödinger</b> bridges.
+    Simulation-free, GPU-first generative modeling in PyTorch<br>Composable primitives for scalable, stable training of modern <b>EBMs</b>, <b>diffusion</b>, <b>flow matching</b>, and <b>Schrödinger bridges</b>.
   </p>
 
   <div class="home-actions">
@@ -203,13 +203,15 @@ icon: octicons/home-fill-16
 
 ## Overview
 
-Energy-based models define probability distributions through a scalar energy
-function, with lower energy meaning higher probability. This formulation is
-general enough that much of modern generative modeling, from MCMC sampling and
-score matching to diffusion, flow matching, and Schrödinger bridges, factors
-into the same components: a field, a probability path, a coupling, an
-objective, and an integrator. TorchEBM implements these components as
-composable PyTorch primitives.
+TorchEBM is a PyTorch library for simulation-free, GPU-first generative
+modeling: scalable, stable training of modern energy-based models, diffusion,
+flow matching, and Schrödinger bridges. Energy-based models define probability
+distributions through a scalar energy function, and the formulation is general
+enough that much of modern generative modeling, from MCMC sampling and score
+matching to simulation-free transport along probability paths, factors into
+the same components, i.e. fields, probability paths, couplings, objectives,
+and integrators. TorchEBM implements these components as composable,
+high-throughput PyTorch primitives.
 
 The [Design and Scope](concepts/design.md) page states this framing precisely
 and places each method family within it.
@@ -326,7 +328,7 @@ If TorchEBM is useful in your research, please cite it:
 ```bibtex
 @misc{torchebm_library_2025,
   author       = {Ghaderi, Soran and Contributors},
-  title        = {TorchEBM: A PyTorch Library for Training Energy-Based Models},
+  title        = {{TorchEBM}: Simulation-Free, {GPU}-First Generative Modeling in {PyTorch}},
   year         = {2025},
   url          = {https://github.com/soran-ghaderi/torchebm},
 }

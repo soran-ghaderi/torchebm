@@ -230,6 +230,7 @@ class EnergyMatchingLoss(BaseLoss):
         x: torch.Tensor,
         *args,
         x0: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""Compute the Energy Matching loss (nn.Module interface).
@@ -240,7 +241,12 @@ class EnergyMatchingLoss(BaseLoss):
             x0: Optional source samples of shape (batch_size, ...). Defaults
                 to standard Gaussian noise; pass a batch from any source
                 distribution for arbitrary source-to-target transport.
-            **kwargs: Additional model arguments.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the potential on both the positive and negative (Langevin) paths.
+                ``None`` (default) is the unconditional path.
+            **kwargs: Deprecated. Bare keyword arguments are still forwarded to
+                the model for one release but emit a ``DeprecationWarning``; pass
+                ``model_kwargs={...}`` instead.
 
         Returns:
             Scalar loss value.
@@ -248,13 +254,16 @@ class EnergyMatchingLoss(BaseLoss):
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 
-        return self.compute_loss(x, *args, x0=x0, **kwargs)
+        return self.compute_loss(
+            x, *args, x0=x0, model_kwargs=model_kwargs, **kwargs
+        )
 
     def compute_loss(
         self,
         x: torch.Tensor,
         *args,
         x0: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""Compute the Energy Matching loss.
@@ -263,16 +272,23 @@ class EnergyMatchingLoss(BaseLoss):
             x: Data samples of shape (batch_size, ...).
             *args: Additional positional arguments.
             x0: Optional source samples (see `forward`).
-            **kwargs: Additional model arguments passed to the potential.
+            model_kwargs: Conditioning arguments forwarded to the potential.
+            **kwargs: Deprecated bare model kwargs (see `forward`).
 
         Returns:
             Scalar loss value.
         """
-        terms = self.training_losses(x, model_kwargs=kwargs, x0=x0)
+        mk = self._resolve_model_kwargs(
+            model_kwargs, kwargs, warn_key="em-bare-model-kwargs"
+        )
+        terms = self.training_losses(x, model_kwargs=mk, x0=x0)
         return terms["loss"]
 
     def _sample_negatives(
-        self, x1: torch.Tensor, x0: Optional[torch.Tensor] = None
+        self,
+        x1: torch.Tensor,
+        x0: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
         r"""Generate negatives via temperature-scheduled Langevin chains.
 
@@ -284,15 +300,28 @@ class EnergyMatchingLoss(BaseLoss):
             x1: Data batch of shape (batch_size, ...).
             x0: Optional source batch; source-initialized chains start from
                 it (standard Gaussian noise when None).
+            model_kwargs: Conditioning forwarded to the Langevin sampler so the
+                negatives come from the same conditional energy as the
+                positives (else the contrastive term is silently mismatched).
 
         Returns:
             Detached negative samples of shape (batch_size, ...).
         """
+        model_kwargs = model_kwargs or {}
         batch = x1.shape[0]
         n_noise = int(round(batch * self.noise_fraction))
         negatives = []
+        neg_kwargs_parts = []
+
+        def _slice(mk, index):
+            return {
+                k: (v[index] if torch.is_tensor(v) and v.shape[0] == batch else v)
+                for k, v in mk.items()
+            }
 
         if n_noise > 0:
+            # Noise-init labels are arbitrary but must match the neg-energy scoring.
+            mk_noise = _slice(model_kwargs, slice(0, n_noise))
             if x0 is None:
                 init = torch.randn_like(x1[:n_noise])
             else:
@@ -302,17 +331,31 @@ class EnergyMatchingLoss(BaseLoss):
                 self.sampler.sample(
                     x=init.detach(),
                     n_steps=self.n_langevin_steps,
+                    model_kwargs=mk_noise,
                 )
             )
+            neg_kwargs_parts.append(mk_noise)
         if batch - n_noise > 0:
             idx = torch.randperm(batch, device=x1.device)[: batch - n_noise]
+            mk_data = _slice(model_kwargs, idx)
             self.sampler.register_scheduler("noise_scale", self._noise_const)
             negatives.append(
                 self.sampler.sample(
                     x=x1[idx].detach(),
                     n_steps=self.n_langevin_steps,
+                    model_kwargs=mk_data,
                 )
             )
+            neg_kwargs_parts.append(mk_data)
+
+        self._neg_model_kwargs = {
+            k: (
+                torch.cat([part[k] for part in neg_kwargs_parts], dim=0)
+                if torch.is_tensor(v) and v.shape[0] == batch
+                else v
+            )
+            for k, v in model_kwargs.items()
+        }
         return torch.cat(negatives, dim=0).detach()
 
     def training_losses(
@@ -350,7 +393,7 @@ class EnergyMatchingLoss(BaseLoss):
                 raise ValueError(
                     f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
                 )
-        coupled = self.coupling(x0, x1)
+        coupled = self.coupling(x0, x1, **model_kwargs)
         x0, x1c = coupled
         t = torch.rand(batch, device=self.device, dtype=self.dtype)
         xt, ut = self.interpolant.interpolate(x0, x1c, t)
@@ -382,10 +425,14 @@ class EnergyMatchingLoss(BaseLoss):
         # Contrastive term: sharpen the Boltzmann density near the data.
         lambda_cd = self.lambda_cd
         if lambda_cd > 0:
-            negatives = self._sample_negatives(x1, x0=x0)
+            # _sample_negatives overwrites this with conditioning aligned to the
+            # negatives; the assignment here is the fallback when it does not.
+            self._neg_model_kwargs = model_kwargs
+            negatives = self._sample_negatives(x1, x0=x0, model_kwargs=model_kwargs)
+            neg_model_kwargs = self._neg_model_kwargs
             with self.autocast_context():
                 pos_energy = self.model(x1, **model_kwargs)
-                neg_energy = self.model(negatives, **model_kwargs)
+                neg_energy = self.model(negatives, **neg_model_kwargs)
             cd_value = pos_energy.mean() - trimmed_mean(
                 neg_energy, self.cd_trim_fraction
             )

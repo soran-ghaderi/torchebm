@@ -27,6 +27,28 @@ def _normalize(device: torch.device) -> torch.device:
     return device
 
 
+_WARNED_ONCE: set = set()
+
+
+def warn_once(
+    key: str,
+    message: str,
+    category: type = DeprecationWarning,
+    stacklevel: int = 3,
+) -> None:
+    r"""Emit a warning at most once per process, keyed by `key`.
+
+    Deprecation paths on hot code (per-step sampler loops, per-batch losses)
+    must not call `warnings.warn` every iteration: even when the filter shows a
+    warning only once, the per-call filter processing adds avoidable overhead.
+    This guard skips the call entirely after the first hit.
+    """
+    if key in _WARNED_ONCE:
+        return
+    _WARNED_ONCE.add(key)
+    warnings.warn(message, category, stacklevel=stacklevel)
+
+
 class TorchEBMModule(nn.Module):
     r"""Base `nn.Module` with cached, parameter-derived device/dtype access."""
 
@@ -79,6 +101,44 @@ class TorchEBMModule(nn.Module):
         self._cached_device = None
         self._cached_dtype = None
         return result
+
+    def _prepare_model_kwargs(
+        self, model_kwargs: Optional[dict]
+    ) -> dict:
+        r"""Normalize conditioning `model_kwargs` once at a call boundary.
+
+        The single entry point for the library-wide conditioning convention:
+        every ``sample()``/``forward()`` that forwards conditioning to the model
+        calls this once, then reuses the returned dict (e.g. captured by a
+        per-step drift closure) without re-normalizing.
+
+        GPU-first: tensor values are moved to `self.device` a single time with
+        ``non_blocking=True`` and are **not** dtype-cast (integer class labels /
+        token ids must stay integral for embedding lookups). Non-tensor values
+        pass through untouched. A fresh dict is always returned, so callers may
+        mutate it without aliasing the caller's mapping.
+
+        Args:
+            model_kwargs: Conditioning mapping forwarded to the model, or None.
+
+        Returns:
+            A new dict with tensor values on `self.device`; ``{}`` when
+            `model_kwargs` is None or empty.
+
+        Raises:
+            TypeError: If `model_kwargs` is neither None nor a mapping.
+        """
+        if not model_kwargs:
+            return {}
+        if not isinstance(model_kwargs, dict):
+            raise TypeError(
+                f"model_kwargs must be a dict, got {type(model_kwargs).__name__}"
+            )
+        device = self.device
+        return {
+            k: (v.to(device, non_blocking=True) if torch.is_tensor(v) else v)
+            for k, v in model_kwargs.items()
+        }
 
     def setup_mixed_precision(
         self,

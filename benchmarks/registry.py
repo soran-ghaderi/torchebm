@@ -128,6 +128,12 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
             "interpolant": "linear",
         },
     },
+    "EnergyMatchingLoss": {
+        "model_type": "ebm",
+        # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
+        # the expensive Langevin negative-sampling chains.
+        "init_kwargs": {"lambda_cd": 0.0},
+    },
     # Stubs — skip
     "PersistentContrastiveDivergence": {"skip": True},
     "ParallelTemperingCD": {"skip": True},

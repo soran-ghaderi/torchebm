@@ -228,8 +228,8 @@ def test_dispersive_loss_integration():
     )
     
     x = torch.randn(10, 5)
-    loss = loss_fn(x, return_act=True)
-    
+    loss = loss_fn(x, model_kwargs={"return_act": True})
+
     assert torch.isfinite(loss)
     
     # Also test without dispersion
@@ -237,7 +237,7 @@ def test_dispersive_loss_integration():
         model=model,
         apply_dispersion=False,   
     )
-    loss_pure = loss_fn_pure(x, return_act=True)
+    loss_pure = loss_fn_pure(x, model_kwargs={"return_act": True})
     assert torch.isfinite(loss_pure)
 
 
@@ -501,9 +501,78 @@ def test_velocity_prediction_with_energy_type():
     assert torch.isfinite(terms["loss"]).all()
 
 
+# --------------------------------------------------------------------------- #
+# x0 + coupling support (#238)
+# --------------------------------------------------------------------------- #
+class _Field(nn.Module):
+    def __init__(self, dim=2):
+        super().__init__()
+        self.lin = nn.Linear(dim, dim)
+
+    def forward(self, x, t=None, **kwargs):
+        return self.lin(x)
+
+
+def test_x0_override_used_and_shape_mismatch_raises():
+    loss_fn = EquilibriumMatchingLoss(model=_Field(), energy_type="none")
+    x = torch.randn(8, 2)
+    # A provided x0 is accepted and produces a finite loss.
+    assert torch.isfinite(loss_fn(x, x0=torch.zeros(8, 2)))
+    with pytest.raises(ValueError, match="x0 shape"):
+        loss_fn(x, x0=torch.zeros(4, 2))
+
+
+@pytest.mark.parametrize("coupling", ["independent", "sinkhorn", "exact_ot"])
+def test_coupling_registry_runs(coupling):
+    loss_fn = EquilibriumMatchingLoss(
+        model=_Field(), energy_type="none", coupling=coupling
+    )
+    assert torch.isfinite(loss_fn(torch.randn(8, 2)))
+
+
+def test_default_matches_explicit_independent():
+    x = torch.randn(16, 2)
+    torch.manual_seed(0)
+    a = EquilibriumMatchingLoss(model=_Field(), energy_type="none")
+    torch.manual_seed(0)
+    b = EquilibriumMatchingLoss(
+        model=_Field(), energy_type="none", coupling="independent"
+    )
+    torch.manual_seed(1)
+    la = a(x)
+    torch.manual_seed(1)
+    lb = b(x)
+    assert torch.allclose(la, lb)
+
+
+def test_weighted_coupling_weights_the_loss():
+    from torchebm.core import BaseCoupling, CouplingResult
+
+    class _WeightedStub(BaseCoupling):
+        # Identity pairing, but attaches strongly non-uniform per-pair weights.
+        def couple(self, x0, x1=None, **kwargs):
+            w = torch.arange(1, x0.shape[0] + 1, dtype=x0.dtype, device=x0.device)
+            return CouplingResult(x0, x1, weights=w)
+
+    field = _Field()
+    x = torch.randn(8, 2)
+    weighted = EquilibriumMatchingLoss(
+        model=field, energy_type="none", coupling=_WeightedStub()
+    )
+    plain = EquilibriumMatchingLoss(model=field, energy_type="none")
+
+    torch.manual_seed(3)
+    lw = weighted(x)
+    torch.manual_seed(3)
+    lp = plain(x)
+    # Same seed => same per-sample losses; the weighted reduction must differ
+    # from the uniform mean, proving CouplingResult.weights is honored.
+    assert not torch.allclose(lw, lp)
+
+
 # Fixture for device testing
 @pytest.fixture(params=["cpu", "cuda"])
 def device(request):
     if request.param == "cuda" and not torch.cuda.is_available():
-        return torch.device("cpu") 
+        return torch.device("cpu")
     return torch.device(request.param)

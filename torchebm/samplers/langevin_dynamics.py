@@ -1,6 +1,6 @@
 r"""Langevin Dynamics Sampler Module."""
 
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 
@@ -90,6 +90,8 @@ class LangevinDynamics(BaseSampler):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Langevin dynamics.
 
@@ -106,6 +108,9 @@ class LangevinDynamics(BaseSampler):
                 ``"mean"`` (`[n_kept, *data_shape]`), ``"var"``
                 (`[n_kept, *data_shape]`), and ``"energy"`` (`[n_kept]`).
             reset_schedulers: If True (default), reset registered schedulers.
+            model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
+                the model at every step. Normalized to the sampler device once at
+                entry; ``None`` (default) is the exact unconditional path.
 
         Returns:
             Sample tensor (or trajectory if `return_trajectory=True`),
@@ -120,6 +125,7 @@ class LangevinDynamics(BaseSampler):
             self.reset_schedulers()
 
         x = self._init_state(x, dim, n_samples)
+        model_kwargs = self._prepare_model_kwargs(model_kwargs)
         n_samples = x.shape[0]
         data_shape = x.shape[1:]
 
@@ -142,7 +148,7 @@ class LangevinDynamics(BaseSampler):
                 "energy": torch.empty(n_kept, dtype=self.dtype, device=self.device),
             }
 
-        drift = lambda x_, t_: -self.model.gradient(x_)
+        drift = lambda x_, t_: -self._model_gradient(x_, model_kwargs)
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
@@ -169,7 +175,9 @@ class LangevinDynamics(BaseSampler):
                         else:
                             diagnostics["mean"][keep_idx] = x.squeeze(0)
                             diagnostics["var"][keep_idx].zero_()
-                        diagnostics["energy"][keep_idx] = self.model(x).mean()
+                        diagnostics["energy"][keep_idx] = self._model_energy(
+                            x, model_kwargs
+                        ).mean()
                     keep_idx += 1
 
         output = trajectory if return_trajectory else x

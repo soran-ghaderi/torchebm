@@ -341,6 +341,8 @@ class GeneralisedLeapfrogIntegrator(BaseSymplecticIntegrator):
             if it % self.solver_check_every == 0:
                 resid = (y_next - y).square().mean().sqrt()
                 y = y_next
+                # Inherent host sync: the convergence check is data-dependent;
+                # bounded to one per `solver_check_every` iterations.
                 if resid.item() < self.solver_tol:
                     break
             else:

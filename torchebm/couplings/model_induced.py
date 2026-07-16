@@ -62,7 +62,7 @@ class ReflowCoupling(BaseModelCoupling):
 
         if isinstance(self.model, FlowSampler):
             return self.model.sample(x=x0, n_steps=self.n_steps, **kwargs)
-        return self.model(x0)
+        return self.model(x0, **kwargs)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(n_steps={self.n_steps})"

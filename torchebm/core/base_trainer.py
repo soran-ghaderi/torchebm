@@ -2,7 +2,7 @@ import logging
 import warnings
 from contextlib import nullcontext
 import torch
-from typing import Dict, Optional, Union, Any, List, Callable
+from typing import Dict, Optional, Tuple, Union, Any, List, Callable
 from torch.utils.data import DataLoader
 
 from .base_model import BaseModel
@@ -112,7 +112,44 @@ class BaseTrainer:
             return autocast()
         return nullcontext()
 
-    def train_step(self, batch: torch.Tensor) -> Dict[str, Any]:
+    def _split_batch(self, batch: Any) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        """Split a dataloader batch into ``(data, model_kwargs)``.
+
+        Accepts a bare ``Tensor`` (unconditional), a ``(data, cond)`` pair, or a
+        ``dict`` (``x``/``data`` key holds the samples; the rest is conditioning).
+        A bare conditioning tensor is exposed to the loss as ``model_kwargs={"y":
+        cond}`` (matching the label convention of the conditional models). Data is
+        moved to the trainer device+dtype; conditioning tensors are moved
+        device-only so integer labels stay integral.
+        """
+        to_dev = lambda v: v.to(self.device) if torch.is_tensor(v) else v
+        if isinstance(batch, torch.Tensor):
+            return batch.to(device=self.device, dtype=self.dtype), {}
+        if isinstance(batch, dict):
+            rest = dict(batch)
+            data = rest.pop("x", None)
+            if data is None:
+                data = rest.pop("data")
+            data = data.to(device=self.device, dtype=self.dtype)
+            return data, {k: to_dev(v) for k, v in rest.items()}
+        if isinstance(batch, (tuple, list)):
+            data = batch[0].to(device=self.device, dtype=self.dtype)
+            cond = batch[1] if len(batch) > 1 else None
+            if cond is None:
+                model_kwargs: Dict[str, Any] = {}
+            elif isinstance(cond, dict):
+                model_kwargs = {k: to_dev(v) for k, v in cond.items()}
+            else:
+                model_kwargs = {"y": to_dev(cond)}
+            return data, model_kwargs
+        raise TypeError(
+            f"Unsupported batch type {type(batch).__name__}; expected Tensor, "
+            "(data, cond) pair, or dict."
+        )
+
+    def train_step(
+        self, batch: Any, model_kwargs: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Perform a single training step.
 
@@ -122,23 +159,28 @@ class BaseTrainer:
         step at the larger effective batch size.
 
         Args:
-            batch: Batch of training data
+            batch: Batch of training data. A bare ``Tensor``, a ``(data, cond)``
+                pair, or a ``dict`` (see `_split_batch`) for conditional training.
+            model_kwargs: Optional conditioning merged over anything unpacked
+                from ``batch`` (explicit keys win). Forwarded to the loss.
 
         Returns:
             Dictionary containing metrics from this step
         """
-        batch = batch.to(device=self.device, dtype=self.dtype)
+        batch, batch_kwargs = self._split_batch(batch)
+        if model_kwargs:
+            batch_kwargs = {**batch_kwargs, **model_kwargs}
 
         if self._accum_step_count == 0:
             self.optimizer.zero_grad(set_to_none=True)
 
         if self.use_mixed_precision and self.autocast_available:
             with self.autocast_context():
-                loss = self.loss_fn(batch)
+                loss = self.loss_fn(batch, model_kwargs=batch_kwargs)
             scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
             self.grad_scaler.scale(scaled).backward()
         else:
-            loss = self.loss_fn(batch)
+            loss = self.loss_fn(batch, model_kwargs=batch_kwargs)
             scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
             scaled.backward()
 
@@ -151,7 +193,8 @@ class BaseTrainer:
                 self.optimizer.step()
             self._accum_step_count = 0
 
-        return {"loss": loss.item()}
+        # Metrics stay device-resident; .item() here syncs the host every step.
+        return {"loss": loss.detach()}
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:
         """
@@ -167,7 +210,7 @@ class BaseTrainer:
         self.model.train()
 
         # Initialize metrics for this epoch
-        epoch_metrics: Dict[str, List[float]] = {"loss": []}
+        epoch_metrics: Dict[str, List[torch.Tensor]] = {"loss": []}
 
         # Iterate through batches
         for batch in dataloader:
@@ -192,7 +235,8 @@ class BaseTrainer:
 
         # Calculate average metrics
         avg_metrics = {
-            key: sum(values) / len(values) for key, values in epoch_metrics.items()
+            key: (torch.stack(values).mean().item() if values else 0.0)
+            for key, values in epoch_metrics.items()
         }
 
         return avg_metrics
@@ -369,30 +413,38 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
 
         self.sampler = sampler
 
-    def train_step(self, batch: torch.Tensor) -> Dict[str, Any]:
+    def train_step(
+        self, batch: Any, model_kwargs: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Perform a single contrastive divergence training step.
 
         Honors ``grad_accum_steps`` in the same way as ``BaseTrainer.train_step``.
 
         Args:
-            batch: Batch of real data samples
+            batch: Batch of real data samples (bare ``Tensor``, ``(data, cond)``
+                pair, or ``dict``; see `BaseTrainer._split_batch`).
+            model_kwargs: Optional conditioning merged over anything unpacked from
+                ``batch`` (explicit keys win). Forwarded to the CD loss so the
+                negatives share the positives' conditional energy.
 
         Returns:
             Dictionary containing metrics from this step
         """
-        batch = batch.to(device=self.device, dtype=self.dtype)
+        batch, batch_kwargs = self._split_batch(batch)
+        if model_kwargs:
+            batch_kwargs = {**batch_kwargs, **model_kwargs}
 
         if self._accum_step_count == 0:
             self.optimizer.zero_grad(set_to_none=True)
 
         if self.use_mixed_precision and self.autocast_available:
             with self.autocast_context():
-                loss, neg_samples = self.loss_fn(batch)
+                loss, neg_samples = self.loss_fn(batch, model_kwargs=batch_kwargs)
             scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
             self.grad_scaler.scale(scaled).backward()
         else:
-            loss, neg_samples = self.loss_fn(batch)
+            loss, neg_samples = self.loss_fn(batch, model_kwargs=batch_kwargs)
             scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
             scaled.backward()
 
@@ -405,8 +457,10 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
                 self.optimizer.step()
             self._accum_step_count = 0
 
-        return {
-            "loss": loss.item(),
-            "pos_energy": self.model(batch).mean().item(),
-            "neg_energy": self.model(neg_samples).mean().item(),
-        }
+        with torch.no_grad():
+            metrics = {
+                "loss": loss.detach(),
+                "pos_energy": self.model(batch, **batch_kwargs).mean(),
+                "neg_energy": self.model(neg_samples, **batch_kwargs).mean(),
+            }
+        return metrics

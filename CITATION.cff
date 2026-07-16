@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If TorchEBM is useful in your research, please cite it as below."
+type: software
+title: "TorchEBM: Simulation-Free, GPU-First Generative Modeling in PyTorch"
+abstract: >-
+  Simulation-free, GPU-first generative modeling in PyTorch: composable
+  primitives for scalable, stable training of modern energy-based models,
+  diffusion, flow matching, and Schrödinger bridges.
+authors:
+  - family-names: Ghaderi
+    given-names: Soran
+    email: soran.gdr.cs@gmail.com
+repository-code: "https://github.com/soran-ghaderi/torchebm"
+url: "https://soran-ghaderi.github.io/torchebm/"
+license: MIT
+keywords:
+  - simulation-free
+  - energy-based-models
+  - diffusion-models
+  - flow-matching
+  - schrodinger-bridge
+  - optimal-transport
+  - generative-models
+  - pytorch

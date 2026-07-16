@@ -198,14 +198,15 @@ def _greedy_assignment(cost: torch.Tensor) -> torch.Tensor:
     if n == 1:
         return torch.zeros(1, dtype=torch.long, device=device)
 
-    order = torch.argsort(cost.reshape(-1))
-    rows = torch.div(order, n, rounding_mode="floor").tolist()
-    cols = (order % n).tolist()
+    # Greedy nearest-free-pair is inherently sequential: the scan must run on the
+    # host, so the sorted order crosses the device boundary in a single transfer.
+    order = torch.argsort(cost.reshape(-1)).cpu().tolist()
     perm = [0] * n
     row_used = bytearray(n)
     col_used = bytearray(n)
     filled = 0
-    for i, j in zip(rows, cols):
+    for v in order:
+        i, j = divmod(v, n)
         if not row_used[i] and not col_used[j]:
             perm[i] = j
             row_used[i] = col_used[j] = 1
