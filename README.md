@@ -27,8 +27,8 @@
     </a>
 </p>
 
-<p align="center">⚡ A high-performance PyTorch library for generative modeling <br>
-Composable primitives for EBMs, diffusion, flow matching, and Schrödinger bridges.</p>
+<h1 align="center">⚡ TorchEBM: simulation-free, GPU-first generative modeling in PyTorch</h1>
+<h3 align="center">Composable primitives for scalable, stable training of modern EBMs, diffusion, flow matching, and Schrödinger bridges.</h3>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/animations/ebm_training_animation.gif" alt="An energy landscape being learned from data"/>
@@ -37,6 +37,8 @@ Composable primitives for EBMs, diffusion, flow matching, and Schrödinger bridg
 </p>
 
 ## What is ∇ TorchEBM 🍓?
+
+TorchEBM is a PyTorch library for simulation-free, GPU-first generative modeling: scalable, stable training of modern energy-based models, diffusion, flow matching, and Schrödinger bridges. Simulation-free objectives (flow matching, equilibrium matching, denoising score matching) fit the model with no sampler in the training loop, so training scales like supervised learning; sampling-based objectives (contrastive divergence) stay available where a calibrated energy is worth the MCMC. One set of composable primitives covers both.
 
 TorchEBM takes the statistical-mechanics view of generative modeling. A system is described by a scalar potential $E_\theta(x)$, which induces a Boltzmann measure
 
@@ -69,7 +71,7 @@ Compose them one way and you have flow matching with optimal-transport couplings
 
 ### Training objectives (`torchebm.losses`)
 
-Sampling-based objectives buy a calibrated energy at the cost of MCMC in the loop; transport-based objectives replace that inner loop with regression along a path.
+Sampling-based objectives buy a calibrated energy at the cost of MCMC in the loop; transport-based objectives are simulation-free, replacing that inner loop with regression along a path so training scales like supervised learning.
 
 | Objective | Idea | Inner sampling |
 |---|---|---|
@@ -125,52 +127,7 @@ pip install torchebm
 
 ## Usage
 
-Each block below is one method, as published, in as few lines as it takes. Every snippet runs as-is. Annotated, full-scale versions of all of them live in the [examples gallery](https://soran-ghaderi.github.io/torchebm/latest/examples/), which is executed in CI.
-
-### Sampling an energy
-
-Langevin dynamics: descend the energy, add noise, repeat. Chains are a batch dimension, so 10,000 of them cost one integer.
-
-```python
-import torch
-from torchebm.core import GaussianModel
-from torchebm.samplers import LangevinDynamics
-
-model = GaussianModel(mean=torch.zeros(2), cov=torch.tensor([[1., .8], [.8, 1.]]))
-sampler = LangevinDynamics(model=model, step_size=0.02, noise_scale=1.0)
-
-samples = sampler.sample(dim=2, n_samples=10_000, n_steps=500)  # (10000, 2)
-```
-
-### Hamiltonian Monte Carlo
-
-<a href="https://arxiv.org/abs/1206.1901">MCMC using Hamiltonian dynamics</a>, Neal 2011. Momentum plus a symplectic integrator buys long, decorrelated proposals.
-
-```python
-from torchebm.samplers import HamiltonianMonteCarlo
-
-hmc = HamiltonianMonteCarlo(model=model, step_size=0.1, n_leapfrog_steps=10)
-
-samples, diagnostics = hmc.sample(dim=2, n_samples=1000, n_steps=500,
-                                  return_diagnostics=True)
-diagnostics["acceptance_rate"].mean()   # scalar
-```
-
-### Riemannian manifold HMC
-
-<a href="https://rss.onlinelibrary.wiley.com/doi/10.1111/j.1467-9868.2010.00765.x">Riemann manifold Langevin and Hamiltonian Monte Carlo</a>, Girolami & Calderhead 2011. A position-dependent metric makes the geometry local; the non-separable Hamiltonian is solved by an implicit generalised leapfrog.
-
-```python
-from torchebm.samplers import RiemannianManifoldHMC
-
-def metric_fn(x):                                   # (b, d) -> (b, d, d), SPD
-    scale = 1.0 + x.pow(2).sum(-1)[:, None, None]
-    return torch.eye(2).expand(x.shape[0], 2, 2) * scale
-
-rmhmc = RiemannianManifoldHMC(model=model, metric_fn=metric_fn,
-                              step_size=0.05, n_leapfrog_steps=5)
-samples = rmhmc.sample(dim=2, n_samples=1000, n_steps=200)
-```
+Each block below is one method, as published, in as few lines as it takes. Every snippet runs as-is. Annotated, full-scale versions of all of them live in the [examples gallery](https://soran-ghaderi.github.io/torchebm/latest/examples/), which is executed in CI. Simulation-free training comes first, sampling-based training after it, and the MCMC samplers that power both close the section.
 
 ### Equilibrium matching
 
@@ -378,6 +335,51 @@ loss_fn = SlicedScoreMatching(model=energy, n_projections=5)
 loss = loss_fn(data[:256])                      # scalar; no sampler needed
 ```
 
+### Sampling an energy
+
+Langevin dynamics: descend the energy, add noise, repeat. Chains are a batch dimension, so 10,000 of them cost one integer. The same samplers that generate from a trained energy also draw the negatives inside `ContrastiveDivergence`.
+
+```python
+import torch
+from torchebm.core import GaussianModel
+from torchebm.samplers import LangevinDynamics
+
+model = GaussianModel(mean=torch.zeros(2), cov=torch.tensor([[1., .8], [.8, 1.]]))
+sampler = LangevinDynamics(model=model, step_size=0.02, noise_scale=1.0)
+
+samples = sampler.sample(dim=2, n_samples=10_000, n_steps=500)  # (10000, 2)
+```
+
+### Hamiltonian Monte Carlo
+
+<a href="https://arxiv.org/abs/1206.1901">MCMC using Hamiltonian dynamics</a>, Neal 2011. Momentum plus a symplectic integrator buys long, decorrelated proposals.
+
+```python
+from torchebm.samplers import HamiltonianMonteCarlo
+
+hmc = HamiltonianMonteCarlo(model=model, step_size=0.1, n_leapfrog_steps=10)
+
+samples, diagnostics = hmc.sample(dim=2, n_samples=1000, n_steps=500,
+                                  return_diagnostics=True)
+diagnostics["acceptance_rate"].mean()   # scalar
+```
+
+### Riemannian manifold HMC
+
+<a href="https://rss.onlinelibrary.wiley.com/doi/10.1111/j.1467-9868.2010.00765.x">Riemann manifold Langevin and Hamiltonian Monte Carlo</a>, Girolami & Calderhead 2011. A position-dependent metric makes the geometry local; the non-separable Hamiltonian is solved by an implicit generalised leapfrog.
+
+```python
+from torchebm.samplers import RiemannianManifoldHMC
+
+def metric_fn(x):                                   # (b, d) -> (b, d, d), SPD
+    scale = 1.0 + x.pow(2).sum(-1)[:, None, None]
+    return torch.eye(2).expand(x.shape[0], 2, 2) * scale
+
+rmhmc = RiemannianManifoldHMC(model=model, metric_fn=metric_fn,
+                              step_size=0.05, n_leapfrog_steps=5)
+samples = rmhmc.sample(dim=2, n_samples=1000, n_steps=200)
+```
+
 ### Image-scale backbones
 
 A DiT-style conditional transformer (<a href="https://arxiv.org/abs/2212.09748">Peebles & Xie 2023</a>) for energies and velocity fields on images, adaLN-Zero blocks included. `LabelClassifierFreeGuidance` wraps any label-conditioned model `base(x, t, y=...)` for classifier-free guidance (<a href="https://arxiv.org/abs/2207.12598">Ho & Salimans 2022</a>).
@@ -433,7 +435,7 @@ If TorchEBM is useful in your research, please cite it:
 ```bibtex
 @misc{torchebm_library_2025,
   author       = {Ghaderi, Soran and Contributors},
-  title        = {{TorchEBM}: A PyTorch Library for Training Energy-Based Models},
+  title        = {{TorchEBM}: Simulation-Free, {GPU}-First Generative Modeling in {PyTorch}},
   year         = {2025},
   url          = {https://github.com/soran-ghaderi/torchebm},
 }

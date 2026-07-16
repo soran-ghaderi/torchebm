@@ -2,7 +2,7 @@
 
 site_name: TorchEBM
 site_url: https://soran-ghaderi.github.io/torchebm/
-site_description: Composable primitives for energy-based generative modeling in PyTorch, spanning EBMs, diffusion, flow matching, and Schrödinger bridges.
+site_description: "Simulation-free, GPU-first generative modeling in PyTorch: composable primitives for scalable, stable training of modern energy-based models, diffusion, flow matching, and Schrödinger bridges."
 site_author: Soran Ghaderi
 repo_url: https://github.com/soran-ghaderi/torchebm
 repo_name: soran-ghaderi/torchebm
@@ -128,14 +128,18 @@ plugins:
         developer_guide/benchmarking.md: developer_guide/performance.md
   - llmstxt:
       markdown_description: |
-        Energy-based models define probability distributions through a scalar energy
-        function, with lower energy meaning higher probability. This formulation is
-        general enough that much of modern generative modeling, from MCMC sampling and
-        score matching to diffusion, flow matching, and Schrödinger bridges, factors
-        into the same components: a field, a probability path, a coupling, an
-        objective, and an integrator. TorchEBM implements these components as
-        composable PyTorch primitives, so EBM training and interpolant-based
-        generation are configurations of one library rather than separate codebases.
+        TorchEBM is a PyTorch library for simulation-free, GPU-first generative
+        modeling: scalable, stable training of modern energy-based models, diffusion,
+        flow matching, and Schrödinger bridges. Energy-based models define probability
+        distributions through a scalar energy function, with lower energy meaning
+        higher probability. This formulation is general enough that much of modern
+        generative modeling, from MCMC sampling and score matching to simulation-free
+        transport along probability paths, factors into the same components: a field,
+        a probability path, a coupling, an objective, and an integrator. TorchEBM
+        implements these components as composable, high-throughput PyTorch primitives,
+        so simulation-free objectives (flow matching, equilibrium matching, denoising
+        score matching) and sampling-based objectives (contrastive divergence with
+        Langevin or HMC negatives) are unified under one library.
 
         Key components:
         - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, FlowSampler

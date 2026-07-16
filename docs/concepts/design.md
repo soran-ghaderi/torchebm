@@ -1,6 +1,6 @@
 ---
 title: Design and Scope
-description: The unifying abstraction behind TorchEBM, and where EBMs, diffusion, flow matching, stochastic interpolants, and Schrödinger bridges sit in it.
+description: The unifying abstraction behind TorchEBM, the simulation-free and simulation-based training regimes, and where EBMs, diffusion, flow matching, stochastic interpolants, and Schrödinger bridges sit in it.
 icon: material/compass-outline
 ---
 
@@ -14,6 +14,14 @@ EBMs, denoising diffusion, flow matching, stochastic interpolants, Schrödinger
 bridges, and their hybrids, are compositions of the same small set of
 components. The library implements the components once and lets the
 compositions be configuration rather than code.
+
+The consequential split among those compositions is the training regime.
+Simulation-free objectives (flow matching, equilibrium matching, denoising
+score matching) fit the model by regression along a probability path, with no
+sampler inside the loss; simulation-based objectives (contrastive divergence)
+run MCMC in the loop. TorchEBM implements both and leans simulation-free: that
+is what lets modern energy-parameterized models train stably at scales where
+classical EBM training could not.
 
 ## The unifying object
 
@@ -65,24 +73,24 @@ installed package at build time:
 
 The method families then read as rows of one table:
 
-| Family | Field | Path | Coupling | Objective | Sampling |
-| --- | --- | --- | --- | --- | --- |
-| MCMC-trained EBMs[^hinton][^du] | energy | none | none | contrastive family (e.g. CD, persistent CD) | MCMC |
-| Score-based EBMs[^hyvarinen][^vincent][^song-ermon] | energy | fixed or annealed noise | none | score matching family | annealed Langevin |
-| Denoising diffusion[^ho][^song-sde] | score or noise | variance-preserving schedules | independent | denoising regression over \(t\) | reverse SDE or probability-flow ODE |
-| Flow matching[^lipman][^tong][^liu] | velocity | simple paths (e.g. linear) | independent or OT-based (e.g. minibatch OT, reflow) | conditional path regression | ODE |
-| Stochastic interpolants[^albergo] | velocity (+ score) | any \(\alpha, \sigma\) | any | interpolant regression | ODE or SDE |
-| Energy-parameterized transport (e.g. equilibrium matching[^eqm], energy matching[^em]) | time-independent energy or field | any | any, including weighted OT | path regression, optionally with contrastive refinement | few-step ODE or a single annealed Langevin sweep |
-| Schrödinger bridges[^debortoli] | forward and backward drifts | diffusion bridge | iterative proportional fitting | bridge matching | SDE (roadmap) |
+| Family | Field | Path | Coupling | Objective | Training | Sampling |
+| --- | --- | --- | --- | --- | --- | --- |
+| MCMC-trained EBMs[^hinton][^du] | energy | none | none | contrastive family (e.g. CD, persistent CD) | simulation-based (MCMC in the loss) | MCMC |
+| Score-based EBMs[^hyvarinen][^vincent][^song-ermon] | energy | fixed or annealed noise | none | score matching family | simulation-free | annealed Langevin |
+| Denoising diffusion[^ho][^song-sde] | score or noise | variance-preserving schedules | independent | denoising regression over \(t\) | simulation-free | reverse SDE or probability-flow ODE |
+| Flow matching[^lipman][^tong][^liu] | velocity | simple paths (e.g. linear) | independent or OT-based (e.g. minibatch OT, reflow) | conditional path regression | simulation-free | ODE |
+| Stochastic interpolants[^albergo] | velocity (+ score) | any \(\alpha, \sigma\) | any | interpolant regression | simulation-free | ODE or SDE |
+| Energy-parameterized transport (e.g. equilibrium matching[^eqm], energy matching[^em]) | time-independent energy or field | any | any, including weighted OT | path regression, optionally with contrastive refinement | simulation-free, optional contrastive phase | few-step ODE or a single annealed Langevin sweep |
+| Schrödinger bridges[^debortoli] | forward and backward drifts | diffusion bridge | iterative proportional fitting | bridge matching | simulation-free (bridge matching) | SDE (roadmap) |
 
 The last row is deliberate: bridges are on the roadmap precisely because the
 components they need (couplings, interpolants, SDE integrators, dual
 parameterizations) are the ones the library already maintains.
 
 The bottleneck of MCMC-trained EBMs is long-run sampling inside the loss;
-transport-based families replace it with regression along a path, and the
-hybrid families keep the energy parameterization while inheriting that
-training cost. Moving between rows is a configuration change, not a rewrite,
+the simulation-free families replace it with regression along a path, and the
+hybrid families keep the energy parameterization while inheriting the
+simulation-free training cost. Moving between rows is a configuration change, not a rewrite,
 and the same holds for families the field has not named yet: anything
 expressible as a field, a path, a pairing, an objective, and a numerical
 scheme composes here without new abstractions.

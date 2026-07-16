@@ -1,6 +1,6 @@
 ---
 title: Learning Objectives
-description: Contrastive divergence, score matching, and the transport-based objectives, and how to choose among them.
+description: Contrastive divergence, score matching, and the simulation-free transport objectives, and how to choose among them.
 icon: material/target
 ---
 
@@ -39,7 +39,7 @@ swaps them, for multimodal targets where single-temperature chains get stuck.
 CD trains slowly per step (an inner MCMC loop) but yields a genuine energy
 with meaningful level sets.
 
-## Sampling-free: score matching
+## Simulation-free: score matching
 
 Score matching sidesteps model samples entirely by fitting the score[^2].
 The exact objective needs the Hessian trace; the practical members are
@@ -56,8 +56,9 @@ diffusion[^4].
 
 ## Transport-based: equilibrium and energy matching
 
-The modern objectives replace the inner sampling loop with regression along an
-interpolant path (see [Interpolants and Couplings](transport.md)).
+The modern objectives are simulation-free: they replace the inner sampling
+loop with regression along an interpolant path (see
+[Interpolants and Couplings](transport.md)).
 
 **Equilibrium matching** trains a time-invariant field `f(x)` toward the noise
 direction along the path (`f` points data -> noise), so every route transports
