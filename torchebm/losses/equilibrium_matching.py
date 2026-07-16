@@ -32,7 +32,14 @@ from typing import Dict, Literal, Optional, Any, Union
 import torch
 from torch import nn
 
-from torchebm.core import BaseLoss, BaseInterpolant, BaseScheduler, expand_t_like_x
+from torchebm.core import (
+    BaseCoupling,
+    BaseLoss,
+    BaseInterpolant,
+    BaseScheduler,
+    expand_t_like_x,
+)
+from torchebm.couplings import resolve_coupling
 from torchebm.interpolants import resolve_interpolant
 from torchebm.losses import (
     mean_flat,
@@ -65,6 +72,9 @@ class EquilibriumMatchingLoss(BaseLoss):
             - 'l2': $g(x) = -\frac{1}{2}\|f(x)\|^2$ (experimental)
             - 'mean': Same as dot (alias)
         interpolant: Interpolant name (e.g. 'linear', 'cosine', 'vp') or BaseInterpolant instance.
+        coupling: Minibatch coupling: a name ('independent' (default, identity),
+            'ot'/'exact_ot', 'sinkhorn', ...) or a BaseCoupling instance. Pairs
+            the source and target batches before interpolation.
         loss_weight: Loss weighting scheme ('velocity', 'likelihood', or None).
         train_eps: Epsilon for training time interval stability.
         ct_threshold: Decay threshold $a$ for $c(t)$. Decay starts after $t > a$. Default: 0.8.
@@ -107,6 +117,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         prediction: Literal["velocity", "score", "noise"] = "velocity",
         energy_type: Literal["none", "dot", "l2", "mean"] = "none",
         interpolant: Union[str, BaseInterpolant] = "linear",
+        coupling: Union[str, BaseCoupling, None] = None,
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
         train_eps: Union[float, BaseScheduler] = 0.0,
         ct_threshold: float = 0.8,
@@ -137,6 +148,11 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.time_invariant = time_invariant
         self.interpolant = resolve_interpolant(
             interpolant, default="linear", owner="EquilibriumMatchingLoss"
+        )
+        # "independent" is identity, so the default reproduces the plain
+        # (noise, data) pairing; "ot"/"sinkhorn"/... enable OT-coupled transport.
+        self.coupling = resolve_coupling(
+            coupling, default="independent", owner="EquilibriumMatchingLoss"
         )
 
     @property
@@ -200,6 +216,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         self,
         x: torch.Tensor,
         *args,
+        x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -209,6 +226,9 @@ class EquilibriumMatchingLoss(BaseLoss):
         Args:
             x: Data samples of shape (batch_size, ...).
             *args: Additional positional arguments.
+            x0: Optional source samples of shape (batch_size, ...). Defaults to
+                standard Gaussian noise; pass a batch from any source
+                distribution for arbitrary source-to-target transport.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. ``None`` (default) is the unconditional path.
             **kwargs: Deprecated. Bare keyword arguments are still forwarded to
@@ -222,7 +242,9 @@ class EquilibriumMatchingLoss(BaseLoss):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
+            loss = self.compute_loss(
+                x, *args, x0=x0, model_kwargs=model_kwargs, **kwargs
+            )
 
         return loss
 
@@ -230,6 +252,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         self,
         x: torch.Tensor,
         *args,
+        x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -239,6 +262,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         Args:
             x: Data samples of shape (batch_size, ...).
             *args: Additional positional arguments.
+            x0: Optional source samples (see `forward`).
             model_kwargs: Conditioning arguments forwarded to the model.
             **kwargs: Deprecated bare model kwargs (see `forward`).
 
@@ -248,13 +272,20 @@ class EquilibriumMatchingLoss(BaseLoss):
         mk = self._resolve_model_kwargs(
             model_kwargs, kwargs, warn_key="eqm-bare-model-kwargs"
         )
-        terms = self.training_losses(x, model_kwargs=mk)
-        return terms["loss"].mean()
+        terms = self.training_losses(x, model_kwargs=mk, x0=x0)
+        loss = terms["loss"]
+        weights = terms.get("weights")
+        if weights is not None:
+            # Weighted couplings (unbalanced/reweighted OT) carry per-pair
+            # importance weights; uniform weights reduce this to the plain mean.
+            return (weights * loss).sum() / weights.sum().clamp_min(1e-12)
+        return loss.mean()
 
     def training_losses(
         self,
         x1: torch.Tensor,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        x0: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         r"""Compute training losses with detailed outputs.
 
@@ -265,9 +296,13 @@ class EquilibriumMatchingLoss(BaseLoss):
         Args:
             x1: Data samples of shape (batch_size, ...).
             model_kwargs: Additional model arguments.
+            x0: Optional source samples of shape (batch_size, ...); standard
+                Gaussian noise when None. Paired against ``x1`` by the configured
+                coupling before interpolation.
 
         Returns:
-            Dictionary with 'loss' (per-sample), 'pred', and optionally 'energy'.
+            Dictionary with 'loss' (per-sample), 'pred', 'weights' (per-pair
+            coupling weights or None), and optionally 'energy'.
         """
         if model_kwargs is None:
             model_kwargs = {}
@@ -275,8 +310,20 @@ class EquilibriumMatchingLoss(BaseLoss):
         x1 = x1.to(device=self.device, dtype=self.dtype)
         batch = x1.shape[0]
 
-        # Sample noise and time
-        x0 = torch.randn_like(x1)
+        # Source: Gaussian noise by default, or a user-provided batch.
+        if x0 is None:
+            x0 = torch.randn_like(x1)
+        else:
+            x0 = x0.to(device=self.device, dtype=self.dtype)
+            if x0.shape != x1.shape:
+                raise ValueError(
+                    f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
+                )
+
+        # Couple source and target before interpolation (identity by default).
+        coupled = self.coupling(x0, x1, **model_kwargs)
+        x0, x1 = coupled
+
         t0, t1 = self._check_interval()
         t = torch.rand(batch, device=self.device, dtype=self.dtype) * (t1 - t0) + t0
 
@@ -314,7 +361,7 @@ class EquilibriumMatchingLoss(BaseLoss):
             else:
                 disp_loss = dispersive_loss(act)
 
-        terms = {"pred": model_output}
+        terms = {"pred": model_output, "weights": coupled.weights}
 
         # Compute loss based on prediction type
         if self.prediction == "velocity":
@@ -359,7 +406,8 @@ class EquilibriumMatchingLoss(BaseLoss):
             f"{self.__class__.__name__}("
             f"prediction={self.prediction!r}, "
             f"energy_type={self.energy_type!r}, "
-            f"interpolant={type(self.interpolant).__name__})"
+            f"interpolant={type(self.interpolant).__name__}, "
+            f"coupling={type(self.coupling).__name__})"
         )
 
 
