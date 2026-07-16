@@ -193,7 +193,9 @@ class BaseTrainer:
                 self.optimizer.step()
             self._accum_step_count = 0
 
-        return {"loss": loss.item()}
+        # GPU-first: return a device-resident scalar; train_epoch syncs once per
+        # epoch instead of once per step.
+        return {"loss": loss.detach()}
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:
         """
@@ -208,8 +210,9 @@ class BaseTrainer:
         # Set model to training mode
         self.model.train()
 
-        # Initialize metrics for this epoch
-        epoch_metrics: Dict[str, List[float]] = {"loss": []}
+        # Initialize metrics for this epoch. Step metrics are device tensors
+        # (see train_step); they are stacked and synced once at the epoch end.
+        epoch_metrics: Dict[str, List[torch.Tensor]] = {"loss": []}
 
         # Iterate through batches
         for batch in dataloader:
@@ -232,9 +235,10 @@ class BaseTrainer:
                 if hasattr(callback, "on_batch_end"):
                     callback.on_batch_end(self, batch, step_metrics)
 
-        # Calculate average metrics
+        # Average and sync once per epoch (single host transfer per metric).
         avg_metrics = {
-            key: sum(values) / len(values) for key, values in epoch_metrics.items()
+            key: (torch.stack(values).mean().item() if values else 0.0)
+            for key, values in epoch_metrics.items()
         }
 
         return avg_metrics
@@ -455,8 +459,12 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
                 self.optimizer.step()
             self._accum_step_count = 0
 
-        return {
-            "loss": loss.item(),
-            "pos_energy": self.model(batch, **batch_kwargs).mean().item(),
-            "neg_energy": self.model(neg_samples, **batch_kwargs).mean().item(),
-        }
+        # GPU-first: device-resident scalars, no per-step host sync. The
+        # logging-only energy passes run under no_grad (no graph to discard).
+        with torch.no_grad():
+            metrics = {
+                "loss": loss.detach(),
+                "pos_energy": self.model(batch, **batch_kwargs).mean(),
+                "neg_energy": self.model(neg_samples, **batch_kwargs).mean(),
+            }
+        return metrics

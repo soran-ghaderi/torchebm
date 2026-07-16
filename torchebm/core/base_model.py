@@ -18,6 +18,14 @@ class BaseModel(TorchEBMModule, ABC):
     Subclasses must implement the `forward(x)` method and can optionally
     override the `gradient(x)` method for analytical gradients.
     """
+
+    #: When True, the default autograd `gradient` computes in float32 regardless
+    #: of the input dtype (the historical behavior). Default False respects the
+    #: input dtype - byte-identical for float32, no fp64 downcast, no bf16/fp16
+    #: round-trip. Set per instance for fp32-precision gradients under low
+    #: precision: ``model.force_fp32_gradient = True``.
+    force_fp32_gradient: bool = False
+
     def __init__(
         self,
         dtype: torch.dtype = torch.float32,
@@ -80,9 +88,14 @@ class BaseModel(TorchEBMModule, ABC):
             x = x.to(self.device)
             device = self.device
 
-        with torch.enable_grad():  # todo: consider removing conversion to fp32 and uncessary device change
+        # GPU-first: compute in the input dtype (no forced fp32 round-trip). The
+        # result is cast back to `original_dtype` below either way, so float32
+        # inputs are unaffected; opt into fp32 with `force_fp32_gradient`.
+        grad_dtype = torch.float32 if self.force_fp32_gradient else original_dtype
+
+        with torch.enable_grad():
             x_for_grad = (
-                x.detach().to(dtype=torch.float32, device=device).requires_grad_(True)
+                x.detach().to(dtype=grad_dtype, device=device).requires_grad_(True)
             )
 
             with self.autocast_context():
@@ -95,10 +108,11 @@ class BaseModel(TorchEBMModule, ABC):
 
             if not energy.grad_fn:
                 raise RuntimeError(
-                    "Cannot compute gradient: `forward` method did not use the input `x` (as float32) in a differentiable way."
+                    "Cannot compute gradient: `forward` method did not use the "
+                    "input `x` in a differentiable way."
                 )
 
-            gradient_float32 = torch.autograd.grad(
+            grad = torch.autograd.grad(
                 outputs=energy,
                 inputs=x_for_grad,
                 grad_outputs=torch.ones_like(energy, device=energy.device),
@@ -106,12 +120,12 @@ class BaseModel(TorchEBMModule, ABC):
                 retain_graph=None,  # since create_graph=False, let PyTorch decide
             )[0]
 
-        if gradient_float32 is None:  # for triple checking!
+        if grad is None:  # for triple checking!
             raise RuntimeError(
                 "Gradient computation failed unexpectedly. Check the forward pass implementation."
             )
 
-        gradient = gradient_float32.to(original_dtype)
+        gradient = grad.to(original_dtype)
 
         return gradient.detach()
 
