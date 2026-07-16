@@ -198,10 +198,8 @@ def _greedy_assignment(cost: torch.Tensor) -> torch.Tensor:
     if n == 1:
         return torch.zeros(1, dtype=torch.long, device=device)
 
-    # Greedy nearest-free-pair is inherently sequential, so the scan runs on the
-    # host; move the sorted order across in a single transfer (unravel to
-    # (row, col) with divmod locally) rather than two device->host `.tolist()`s.
-    # Sinkhorn is the sync-free coupling for the training loop.
+    # Greedy nearest-free-pair is inherently sequential: the scan must run on the
+    # host, so the sorted order crosses the device boundary in a single transfer.
     order = torch.argsort(cost.reshape(-1)).cpu().tolist()
     perm = [0] * n
     row_used = bytearray(n)

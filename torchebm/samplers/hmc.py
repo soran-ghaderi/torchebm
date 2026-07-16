@@ -545,10 +545,8 @@ class RiemannianManifoldHMC(BaseSampler):
         autograd graph.
         """
         p_detached = p.detach()
-        # Conditioning is delivered via a transient attribute (set at sample()
-        # entry) because the integrator pins _force to a fixed (x, p, t)
-        # signature. The dict holds already-detached, device-resident tensors,
-        # so it never enters this force's autograd graph.
+        # Conditioning arrives via a transient attribute, not an argument: the
+        # integrator pins _force to a fixed (x, p, t) signature.
         model_kwargs = getattr(self, "_active_model_kwargs", None)
         with torch.enable_grad():
             x_grad = x.detach().requires_grad_(True)
@@ -599,8 +597,8 @@ class RiemannianManifoldHMC(BaseSampler):
         if reset_schedulers:
             self.reset_schedulers()
 
-        # `_force` reads conditioning from this attribute (fixed integrator
-        # signature). Set every call, so no stale conditioning can leak in.
+        # `_force` reads conditioning from this attribute; set it every call so
+        # stale conditioning cannot leak in.
         self._active_model_kwargs = self._prepare_model_kwargs(model_kwargs)
         model_kwargs = self._active_model_kwargs
 

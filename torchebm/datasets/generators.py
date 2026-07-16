@@ -44,10 +44,8 @@ class BaseSyntheticDataset(Dataset, ABC):
         """Sets the random seeds for torch if a seed is provided."""
         if self.seed is not None:
             torch.manual_seed(self.seed)
-            # Generation is pure torch, but `_generate_data` may return a NumPy
-            # array from a user subclass. Seed NumPy too when it is already
-            # imported, so those subclasses stay reproducible without torchebm
-            # depending on numpy.
+            # Seed NumPy only if already imported, so subclasses returning NumPy
+            # arrays stay reproducible without torchebm depending on numpy.
             numpy = sys.modules.get("numpy")
             if numpy is not None:
                 numpy.random.seed(self.seed)
@@ -76,8 +74,6 @@ class BaseSyntheticDataset(Dataset, ABC):
         if isinstance(generated_output, torch.Tensor):
             self.data = generated_output.to(dtype=self.dtype, device=self.device)
         else:
-            # `as_tensor` accepts NumPy arrays and any object exposing
-            # __array__, so subclasses may keep returning them.
             try:
                 self.data = torch.as_tensor(
                     generated_output, dtype=self.dtype, device=self.device
@@ -297,7 +293,6 @@ class TwoMoonsDataset(BaseSyntheticDataset):
         super().__init__(n_samples=n_samples, device=device, dtype=dtype, seed=seed)
 
     def _generate_data(self) -> torch.Tensor:
-        # Logic from make_two_moons
         n_samples_out = self.n_samples // 2
         n_samples_in = self.n_samples - n_samples_out
 
@@ -440,7 +435,7 @@ class CheckerboardDataset(BaseSyntheticDataset):
             ) * self.range_limit
 
             keep = (torch.floor(xy[:, 0]) + torch.floor(xy[:, 1])) % 2 != 0
-            valid_points = xy[keep][: target - n_collected]  # Add only needed points
+            valid_points = xy[keep][: target - n_collected]
 
             collected_samples.append(valid_points)
             n_collected += valid_points.shape[0]
@@ -501,7 +496,7 @@ class PinwheelDataset(BaseSyntheticDataset):
 
             t = torch.sqrt(
                 torch.rand(n_class_samples, device=self.device, dtype=self.dtype)
-            )  # Radial density control
+            )
             radii = t * self.radial_scale
             base_angle = class_idx * (2 * math.pi / self.n_classes)
             spiral_angle = self.spiral_scale * t
@@ -518,7 +513,7 @@ class PinwheelDataset(BaseSyntheticDataset):
             )
 
         data = torch.cat(all_points, dim=0)
-        data = data[torch.randperm(data.shape[0], device=self.device)]  # Mix classes
+        data = data[torch.randperm(data.shape[0], device=self.device)]
 
         if self.noise > 0:
             data += torch.randn_like(data) * self.noise

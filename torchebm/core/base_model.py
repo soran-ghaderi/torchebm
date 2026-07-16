@@ -88,9 +88,6 @@ class BaseModel(TorchEBMModule, ABC):
             x = x.to(self.device)
             device = self.device
 
-        # GPU-first: compute in the input dtype (no forced fp32 round-trip). The
-        # result is cast back to `original_dtype` below either way, so float32
-        # inputs are unaffected; opt into fp32 with `force_fp32_gradient`.
         grad_dtype = torch.float32 if self.force_fp32_gradient else original_dtype
 
         with torch.enable_grad():
@@ -120,7 +117,7 @@ class BaseModel(TorchEBMModule, ABC):
                 retain_graph=None,  # since create_graph=False, let PyTorch decide
             )[0]
 
-        if grad is None:  # for triple checking!
+        if grad is None:
             raise RuntimeError(
                 "Gradient computation failed unexpectedly. Check the forward pass implementation."
             )

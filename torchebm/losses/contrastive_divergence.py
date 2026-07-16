@@ -74,8 +74,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             **kwargs,
         )
         self.energy_reg_weight = energy_reg_weight
-        # Promoted from per-call kwargs to constructor params (the kwargs path is
-        # deprecated). Kept as attributes so compute_loss reads them by default.
         self.add_noise_to_real = add_noise_to_real
         self.noise_scale = noise_scale
 
@@ -123,7 +121,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         # Get starting points for chains (either from buffer or data)
         start_points = self.get_start_points(x)
 
-        # Run MCMC chains to get negative samples (conditional if model_kwargs)
         pred_samples = self.sampler.sample(
             x=start_points,
             n_steps=self.k_steps,
@@ -135,7 +132,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             with torch.no_grad():
                 self.update_buffer(pred_samples)
 
-        # Loss options default to the constructor values (deprecated kwargs win).
         kwargs.setdefault("energy_reg_weight", self.energy_reg_weight)
         kwargs.setdefault("add_noise_to_real", self.add_noise_to_real)
         kwargs.setdefault("noise_scale", self.noise_scale)

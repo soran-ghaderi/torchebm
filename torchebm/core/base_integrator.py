@@ -376,10 +376,8 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             if it % self.solver_check_every == 0:
                 resid = (k_next - k).square().mean().sqrt()
                 k = k_next
-                # Inherent host sync: this convergence branch is data-dependent,
-                # so the residual must reach the host. Bounded to one sync every
-                # `solver_check_every` iterations; fixed-step integrators avoid
-                # it entirely. See the developer guide's GPU-first contract.
+                # Unavoidable host sync: the convergence branch is data-dependent,
+                # bounded to one per `solver_check_every` iterations.
                 if resid.item() < self.solver_tol:
                     break
             else:
@@ -480,10 +478,8 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
             )
 
             scale = self.atol + self.rtol * torch.max(x.abs(), y_new.abs())
-            # Inherent host sync: adaptive step control accepts/rejects the step
-            # and resizes `h` from this scalar error ratio, so it must reach the
-            # host - one bounded sync per attempted step. Fixed-step integrators
-            # are the sync-free path. See the GPU-first contract in the docs.
+            # Unavoidable host sync: step accept/reject and the resize of `h` are
+            # data-dependent on this ratio. One per attempted step.
             err_ratio = norm_fn(err_vec / scale).item()
 
             if err_ratio <= 1.0:
@@ -709,10 +705,6 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             Updated state dict ``{"x": x_new}``.
         """
         x = state["x"]
-        # GPU-first: keep a scalar step_size as a Python float and let it
-        # broadcast in the arithmetic below. Wrapping it in a device tensor
-        # (`torch.tensor(step_size, device=cuda)`) forces a host->device sync
-        # every step; a float multiply against a device tensor does not.
         if t is None:
             t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
 
@@ -726,8 +718,8 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
         if diffusion_val is not None:
             if noise is None:
                 noise = torch.randn_like(x, device=self.device, dtype=self.dtype)
-            # ** 0.5 works for a float (host scalar, no sync) and a tensor
-            # alike, unlike torch.sqrt which requires a tensor.
+            # step_size/diffusion_val stay Python floats to avoid a per-step host
+            # sync; ** 0.5 accepts floats and tensors, torch.sqrt would not.
             dw = noise * (step_size**0.5)
             x_new = x_new + (2.0 * diffusion_val) ** 0.5 * dw
 

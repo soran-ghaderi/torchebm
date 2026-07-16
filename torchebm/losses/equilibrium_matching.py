@@ -149,8 +149,6 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.interpolant = resolve_interpolant(
             interpolant, default="linear", owner="EquilibriumMatchingLoss"
         )
-        # "independent" is identity, so the default reproduces the plain
-        # (noise, data) pairing; "ot"/"sinkhorn"/... enable OT-coupled transport.
         self.coupling = resolve_coupling(
             coupling, default="independent", owner="EquilibriumMatchingLoss"
         )
@@ -276,8 +274,6 @@ class EquilibriumMatchingLoss(BaseLoss):
         loss = terms["loss"]
         weights = terms.get("weights")
         if weights is not None:
-            # Weighted couplings (unbalanced/reweighted OT) carry per-pair
-            # importance weights; uniform weights reduce this to the plain mean.
             return (weights * loss).sum() / weights.sum().clamp_min(1e-12)
         return loss.mean()
 
@@ -310,7 +306,6 @@ class EquilibriumMatchingLoss(BaseLoss):
         x1 = x1.to(device=self.device, dtype=self.dtype)
         batch = x1.shape[0]
 
-        # Source: Gaussian noise by default, or a user-provided batch.
         if x0 is None:
             x0 = torch.randn_like(x1)
         else:
@@ -320,7 +315,6 @@ class EquilibriumMatchingLoss(BaseLoss):
                     f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
                 )
 
-        # Couple source and target before interpolation (identity by default).
         coupled = self.coupling(x0, x1, **model_kwargs)
         x0, x1 = coupled
 

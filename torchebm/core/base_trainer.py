@@ -193,8 +193,7 @@ class BaseTrainer:
                 self.optimizer.step()
             self._accum_step_count = 0
 
-        # GPU-first: return a device-resident scalar; train_epoch syncs once per
-        # epoch instead of once per step.
+        # Metrics stay device-resident; .item() here syncs the host every step.
         return {"loss": loss.detach()}
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:
@@ -210,8 +209,7 @@ class BaseTrainer:
         # Set model to training mode
         self.model.train()
 
-        # Initialize metrics for this epoch. Step metrics are device tensors
-        # (see train_step); they are stacked and synced once at the epoch end.
+        # Initialize metrics for this epoch
         epoch_metrics: Dict[str, List[torch.Tensor]] = {"loss": []}
 
         # Iterate through batches
@@ -235,7 +233,7 @@ class BaseTrainer:
                 if hasattr(callback, "on_batch_end"):
                     callback.on_batch_end(self, batch, step_metrics)
 
-        # Average and sync once per epoch (single host transfer per metric).
+        # Calculate average metrics
         avg_metrics = {
             key: (torch.stack(values).mean().item() if values else 0.0)
             for key, values in epoch_metrics.items()
@@ -459,8 +457,6 @@ class ContrastiveDivergenceTrainer(BaseTrainer):
                 self.optimizer.step()
             self._accum_step_count = 0
 
-        # GPU-first: device-resident scalars, no per-step host sync. The
-        # logging-only energy passes run under no_grad (no graph to discard).
         with torch.no_grad():
             metrics = {
                 "loss": loss.detach(),

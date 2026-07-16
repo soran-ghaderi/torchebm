@@ -437,7 +437,6 @@ class FlowSampler(BaseSampler):
                 "Passing conditioning to FlowSampler.sample() as bare keyword "
                 "arguments is deprecated; pass model_kwargs={...} instead.",
             )
-        # Explicit dict wins over the deprecated bare kwargs; normalize once.
         model_kwargs = self._prepare_model_kwargs(
             {**legacy_model_kwargs, **(model_kwargs or {})}
         )

@@ -314,16 +314,13 @@ class EnergyMatchingLoss(BaseLoss):
         neg_kwargs_parts = []
 
         def _slice(mk, index):
-            # Slice per-sample conditioning tensors (leading dim == batch) to the
-            # chain subset; pass scalars/broadcastable values through untouched.
             return {
                 k: (v[index] if torch.is_tensor(v) and v.shape[0] == batch else v)
                 for k, v in mk.items()
             }
 
         if n_noise > 0:
-            # Noise-init chains carry the first n_noise labels: arbitrary but
-            # kept consistent between generation and the neg-energy scoring.
+            # Noise-init labels are arbitrary but must match the neg-energy scoring.
             mk_noise = _slice(model_kwargs, slice(0, n_noise))
             if x0 is None:
                 init = torch.randn_like(x1[:n_noise])
@@ -351,8 +348,6 @@ class EnergyMatchingLoss(BaseLoss):
             )
             neg_kwargs_parts.append(mk_data)
 
-        # Reassemble conditioning aligned to the concatenated negatives so the
-        # neg-energy scoring uses the same labels the chains were generated with.
         self._neg_model_kwargs = {
             k: (
                 torch.cat([part[k] for part in neg_kwargs_parts], dim=0)
@@ -430,8 +425,8 @@ class EnergyMatchingLoss(BaseLoss):
         # Contrastive term: sharpen the Boltzmann density near the data.
         lambda_cd = self.lambda_cd
         if lambda_cd > 0:
-            # Reset then call: _sample_negatives sets the aligned neg conditioning;
-            # if it is patched out (tests) the fallback keeps the plain kwargs.
+            # _sample_negatives overwrites this with conditioning aligned to the
+            # negatives; the assignment here is the fallback when it does not.
             self._neg_model_kwargs = model_kwargs
             negatives = self._sample_negatives(x1, x0=x0, model_kwargs=model_kwargs)
             neg_model_kwargs = self._neg_model_kwargs

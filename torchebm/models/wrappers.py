@@ -255,7 +255,6 @@ class EqMEnergy(BaseModel):
         dims = self._reduce_dims(x.ndim)
         if self.energy_type == "l2":
             return -0.5 * f.square().sum(dim=dims)
-        # dot / mean / implicit surrogate
         return (x * f).sum(dim=dims)
 
     def gradient(
