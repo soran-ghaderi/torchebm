@@ -59,14 +59,31 @@ diffusion[^4].
 The modern objectives replace the inner sampling loop with regression along an
 interpolant path (see [Interpolants and Couplings](transport.md)).
 
-**Equilibrium matching** trains a time-invariant field toward the noise
-direction along the path; generation integrates the field from noise with
-`FlowSampler(negate_velocity=True)`, or descends it as an energy:
+**Equilibrium matching** trains a time-invariant field `f(x)` toward the noise
+direction along the path (`f` points data -> noise), so every route transports
+noise -> data by moving along `-f`. With the implicit formulation
+(`energy_type="none"`) `f` *is* the gradient field: integrate it with
+`FlowSampler(negate_velocity=True)`, or descend it with the `EqMEnergy` adapter,
+which turns the field into the scalar `BaseModel` the gradient-based samplers and
+`InteractionModel` consume. The explicit formulation (`energy_type="dot"`) trains
+the scalar energy `g(x) = x . f(x)` for gradient-descent sampling and OOD scoring.
+It also accepts a `coupling=` (default identity) and, like energy matching,
+honors per-pair coupling weights.
 
 ```python
 from torchebm.losses import EquilibriumMatchingLoss
-eqm = EquilibriumMatchingLoss(model=field, interpolant="linear", energy_type="dot")
+from torchebm.models import EqMEnergy
+from torchebm.samplers import FlowSampler, GradientDescentSampler
+
+eqm = EquilibriumMatchingLoss(model=field, interpolant="linear", energy_type="none")
+# ... train ...
+ode = FlowSampler(field, negate_velocity=True, integrator="euler")   # integrate -f
+gd = GradientDescentSampler(EqMEnergy.from_loss(eqm))                 # descend the energy
 ```
+
+`EqMEnergy.from_loss` picks the adapter mode matching the trained `energy_type`
+(implicit vs dot/l2), so the sampled energy always matches what was trained.
+`InteractionModel` must wrap an explicit energy, never the implicit adapter.
 
 **Energy matching** (arXiv:2504.10612) keeps a single time-independent scalar
 potential: an OT flow-matching warm-up shapes it as transport, then a
@@ -88,7 +105,7 @@ em = EnergyMatchingLoss(model=potential, coupling=SinkhornCoupling(reg=0.01),
 | CD / PCD / PT-CD | yes (k MCMC steps) | energy | MCMC | you need a calibrated energy and can afford MCMC per step |
 | Exact / sliced SM | no (Hessian term) | energy | Langevin | low dimension, no noise tolerance |
 | Denoising SM | no | energy (smoothed) | annealed Langevin | fast sampling-free training, noise scale acceptable |
-| Equilibrium matching | no | field or energy | `FlowSampler` ODE | generative quality with few integration steps |
+| Equilibrium matching | no | field or energy | `FlowSampler` ODE or `EqMEnergy` + gradient descent | generative quality with few integration steps |
 | Energy matching | phase 2 only | energy | one Langevin sweep | one potential for both transport and Boltzmann sampling |
 
 The rule of thumb embedded in the table: objectives with inner sampling buy
