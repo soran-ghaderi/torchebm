@@ -20,6 +20,14 @@ from torchebm.core.base_module import warn_once
 logger = logging.getLogger(__name__)
 
 
+def _dtensor_type():
+    try:
+        from torch.distributed.tensor import DTensor
+    except ImportError:
+        return None
+    return DTensor
+
+
 class BaseLoss(Schedulable, TorchEBMModule, ABC):
     """
     Abstract base class for loss functions used in energy-based models.
@@ -401,9 +409,22 @@ class BaseScoreMatching(BaseLoss):
         model (BaseModel): The energy-based model to be trained.
         noise_scale (float): The scale of noise for perturbation in denoising variants.
         regularization_strength (float): The coefficient for regularization terms.
-        use_autograd (bool): Whether to use `torch.autograd` for computing derivatives.
+        use_autograd (bool): If True, compute the score by differentiating
+            `model` in place. If False, use the functional path:
+            `torch.func.functional_call` on a hook-free module with the model's
+            current parameters. The functional path is required when the model's
+            parameters are sharded DTensors (e.g. FSDP2 `fully_shard`), whose
+            forward/backward hooks cannot run the second-order backward score
+            matching needs.
         hutchinson_samples (int): The number of random samples for Hutchinson's trick.
         custom_regularization (Optional[Callable]): An optional function for custom regularization.
+        functional_model (Optional[nn.Module]): Hook-free module used by the
+            functional path in place of `model` for `functional_call`. Required
+            when `model` holds FSDP-managed submodules (their hooks fire even
+            under `functional_call`); pass an unwrapped instance of the same
+            architecture. Ignored by the autograd path. Held as a structural
+            template only: not registered as a submodule, its own parameters are
+            never used.
     """
 
     def __init__(
@@ -414,6 +435,7 @@ class BaseScoreMatching(BaseLoss):
         use_autograd: bool = True,
         hutchinson_samples: int = 1,
         custom_regularization: Optional[Callable] = None,
+        functional_model: Optional[nn.Module] = None,
         *args,
         **kwargs,
     ):
@@ -424,6 +446,145 @@ class BaseScoreMatching(BaseLoss):
         self.use_autograd = use_autograd
         self.hutchinson_samples = hutchinson_samples
         self.custom_regularization = custom_regularization
+        object.__setattr__(self, "_functional_model", functional_model)
+
+    @property
+    def functional_model(self) -> Optional[nn.Module]:
+        r"""Template module for the functional score path (never trained)."""
+        return self._functional_model
+
+    def _functional_state(self) -> Tuple[dict, dict, Optional[object]]:
+        r"""Collect the model's parameters/buffers and their mesh, if sharded.
+
+        Returns:
+            `(params, buffers, mesh)` where `mesh` is the 1-D device mesh of
+            the DTensor parameters, or None for plain tensors.
+        """
+        params = dict(self.model.named_parameters())
+        buffers = dict(self.model.named_buffers())
+        dtensor = _dtensor_type()
+        mesh = None
+        if dtensor is not None:
+            for p in params.values():
+                if isinstance(p, dtensor):
+                    mesh = p.device_mesh
+                    break
+        if mesh is not None and mesh.ndim != 1:
+            raise NotImplementedError(
+                f"The functional score path supports 1-D device meshes only, "
+                f"got a {mesh.ndim}-D mesh."
+            )
+        return params, buffers, mesh
+
+    def _functional_leaf(self, x: torch.Tensor, mesh) -> torch.Tensor:
+        r"""Detached grad-leaf for the functional path, batch-sharded on `mesh`."""
+        if mesh is None:
+            return x.detach().requires_grad_(True)
+        from torch.distributed.tensor import DTensor, Shard
+
+        leaf = DTensor.from_local(x.detach(), mesh, [Shard(0)], run_check=False)
+        leaf.requires_grad_(True)
+        return leaf
+
+    def _functional_energy(
+        self,
+        leaf: torch.Tensor,
+        params: dict,
+        buffers: dict,
+        mesh,
+        model_kwargs: Optional[dict] = None,
+    ) -> torch.Tensor:
+        r"""Energy via `functional_call` on the hook-free template module.
+
+        On a mesh, plain buffers are wrapped as Replicate DTensors and tensor
+        `model_kwargs` are wrapped Shard(0) when batch-aligned, Replicate
+        otherwise, so no operator mixes DTensor and plain operands.
+        """
+        module = self._functional_model
+        kwargs = dict(model_kwargs or {})
+        if mesh is None:
+            module = module if module is not None else self.model
+        else:
+            if module is None:
+                raise RuntimeError(
+                    "functional_model is required when the model's parameters "
+                    "are sharded DTensors: FSDP hooks fire even under "
+                    "functional_call. Pass an unwrapped instance of the model "
+                    "architecture at construction."
+                )
+            from torch.distributed.tensor import DTensor, Replicate, Shard
+
+            local_batch = leaf.to_local().shape[0]
+            buffers = {
+                n: (
+                    b
+                    if isinstance(b, DTensor)
+                    else DTensor.from_local(b, mesh, [Replicate()], run_check=False)
+                )
+                for n, b in buffers.items()
+            }
+            for k, v in kwargs.items():
+                if torch.is_tensor(v) and not isinstance(v, DTensor):
+                    placement = (
+                        Shard(0)
+                        if v.ndim > 0 and v.shape[0] == local_batch
+                        else Replicate()
+                    )
+                    kwargs[k] = DTensor.from_local(
+                        v, mesh, [placement], run_check=False
+                    )
+        return torch.func.functional_call(
+            module, {**params, **buffers}, (leaf,), kwargs=kwargs
+        )
+
+    def _functional_localize(self, t: torch.Tensor, mesh) -> torch.Tensor:
+        r"""Convert a Shard(0) result to its local shard with averaged gradients.
+
+        `to_local` alone would leave parameter gradients as the cross-rank sum
+        (the backward of the parameter all-gather is a summing reduce-scatter);
+        the identity-forward rescale below divides them by the world size, so a
+        local-mean loss yields global-batch-mean gradients, matching the
+        convention of gradient-averaging data parallelism.
+        """
+        if mesh is None:
+            return t
+        from torch.distributed.tensor import Shard
+
+        if t.placements != (Shard(0),):
+            t = t.redistribute(mesh, [Shard(0)])
+        local = t.to_local()
+        c = 1.0 / mesh.size()
+        return local * c + local.detach() * (1.0 - c)
+
+    def _functional_score(
+        self, x_perturbed: torch.Tensor, model_kwargs: Optional[dict] = None
+    ) -> torch.Tensor:
+        r"""Score \(\nabla_x E(x)\) via the functional path.
+
+        The input is treated as a constant: the returned score is
+        differentiable with respect to the model parameters (`create_graph`),
+        not with respect to the caller's tensor.
+        """
+        params, buffers, mesh = self._functional_state()
+        leaf = self._functional_leaf(x_perturbed, mesh)
+        with self.autocast_context():
+            energy = self._functional_energy(leaf, params, buffers, mesh, model_kwargs)
+        score = torch.autograd.grad(energy.sum(), leaf, create_graph=True)[0]
+        return self._functional_localize(score, mesh)
+
+    def _require_autograd_safe_params(self) -> None:
+        r"""Reject the in-place autograd path when parameters are sharded."""
+        dtensor = _dtensor_type()
+        if dtensor is not None and isinstance(
+            next(self.model.parameters(), None), dtensor
+        ):
+            raise RuntimeError(
+                "The autograd score path cannot run with FSDP-managed "
+                "(DTensor) parameters: resharding hooks free storage the "
+                "second-order backward still references. Construct the loss "
+                "with use_autograd=False and functional_model=<unwrapped "
+                "instance of the model architecture>."
+            )
 
     @property
     def noise_scale(self) -> float:
@@ -470,18 +631,17 @@ class BaseScoreMatching(BaseLoss):
         else:
             x_perturbed = x
 
+        if not self.use_autograd:
+            return self._functional_score(x_perturbed, model_kwargs=model_kwargs)
+
+        self._require_autograd_safe_params()
         if not x_perturbed.requires_grad:
             x_perturbed.requires_grad_(True)
 
         with self.autocast_context():
             energy = self.model(x_perturbed, **(model_kwargs or {}))
 
-        if self.use_autograd:
-            score = torch.autograd.grad(energy.sum(), x_perturbed, create_graph=True)[0]
-        else:
-            raise NotImplementedError(
-                "Custom gradient computation must be implemented in subclasses"
-            )
+        score = torch.autograd.grad(energy.sum(), x_perturbed, create_graph=True)[0]
 
         return score
 
