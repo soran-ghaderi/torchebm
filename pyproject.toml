@@ -113,6 +113,7 @@ testpaths = [
 ]
 markers = [
     "examples: smoke-runs the examples/ curriculum (deselected by default; run with -m examples)",
+    "distributed: multi-process torch.distributed tests (2-process gloo on CPU)",
 ]
 
 [tool.coverage.run]
