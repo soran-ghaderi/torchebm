@@ -1,5 +1,5 @@
 // MathJax config for pymdownx.arithmatex (generic mode).
-// Must execute before the deferred MathJax bundle loads.
+// Must be set before the MathJax bundle loads.
 window.MathJax = {
   tex: {
     inlineMath: [["\\(", "\\)"]],
@@ -13,12 +13,21 @@ window.MathJax = {
   },
 };
 
-// Re-typeset after each instant-navigation page swap. On the very first
-// emission MathJax may not be ready yet; its own startup typesets that page.
+// MathJax is injected on the first page that actually contains math, never
+// globally. Its own startup typesets that page; later instant-navigation
+// swaps re-typeset here.
+var mathjaxRequested = false;
 document$.subscribe(function () {
-  if (!window.MathJax || !MathJax.typesetPromise) return;
-  MathJax.startup.output.clearCache();
-  MathJax.typesetClear();
-  MathJax.texReset();
-  MathJax.typesetPromise();
+  if (!document.querySelector(".arithmatex")) return;
+  if (window.MathJax.typesetPromise) {
+    MathJax.startup.output.clearCache();
+    MathJax.typesetClear();
+    MathJax.texReset();
+    MathJax.typesetPromise();
+  } else if (!mathjaxRequested) {
+    mathjaxRequested = true;
+    var script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js";
+    document.head.appendChild(script);
+  }
 });

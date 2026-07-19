@@ -27,6 +27,15 @@ import re
 logger = logging.getLogger("mkdocs")
 
 MARKER = re.compile(r"<!--\s*torchebm:diagram\s+([a-z_]+)\s*-->")
+
+# Pinned mermaid shipped with diagram pages only. Defining ``window.mermaid``
+# before DOMContentLoaded makes the theme skip its hardcoded runtime fetch of
+# unversioned mermaid@11 from unpkg.com.
+MERMAID_JS = (
+    '<script defer '
+    'src="https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js" '
+    'onload="mermaid.initialize({startOnLoad:false})"></script>'
+)
 CARDS_MARKER = re.compile(r"<!--\s*torchebm:cards\s+components\s*-->")
 TREE_MARKER = re.compile(r"<!--\s*torchebm:tree\s+packages\s*-->")
 CONTRACTS_MARKER = re.compile(r"<!--\s*torchebm:table\s+contracts\s*-->")
@@ -293,3 +302,9 @@ def on_page_markdown(markdown: str, page, config, files) -> str:
                 block = ""
             markdown = marker.sub(lambda _: block, markdown)
     return markdown
+
+
+def on_page_content(html: str, page, config, files) -> str:
+    if 'class="mermaid"' in html:
+        html += "\n" + MERMAID_JS
+    return html
