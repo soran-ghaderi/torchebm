@@ -290,9 +290,6 @@ extra:
   version:
     provider: mike
     alias: true
-  analytics:
-    provider: google
-    property: !ENV GOOGLE_ANALYTICS_KEY
   generator: false
 
 extra_css:
