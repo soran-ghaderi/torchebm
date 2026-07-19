@@ -25,7 +25,7 @@ icon: octicons/home-fill-16
   </div>
 
   <p class="home-tagline">
-    Simulation-free, GPU-first generative modeling in PyTorch<br>Composable primitives for scalable, stable training of modern <b>EBMs</b>, <b>diffusion</b>, <b>flow matching</b>, and <b>Schrödinger bridges</b>.
+    TorchEBM: Simulation-free, GPU-first generative modeling in PyTorch<br>Composable primitives for scalable, stable training of modern <b>EBMs</b>, <b>diffusion</b>, <b>flow matching</b>, and <b>Schrödinger bridges</b>.
   </p>
 
   <div class="home-actions">
@@ -35,7 +35,7 @@ icon: octicons/home-fill-16
     <a href="https://github.com/soran-ghaderi/torchebm" class="md-button home-star-btn" target="_blank" rel="noopener">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="vertical-align: -3px; margin-right: 4px;"><path d="M12 .587l3.668 7.568L24 9.306l-6 5.848 1.416 8.259L12 19.446l-7.416 3.967L6 15.154 0 9.306l8.332-1.151z"/></svg>
       Star on GitHub
-      <img src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social&label=" alt="" class="home-star-count">
+      <img src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social&label=" alt="" class="home-star-count" loading="lazy">
     </a>
   </div>
     <style>
@@ -188,14 +188,14 @@ icon: octicons/home-fill-16
 
 
 <div class="home-badges">
-  <a href="https://pypi.org/project/torchebm/"><img alt="PyPI" src="https://img.shields.io/pypi/v/torchebm?style=flat-square&color=blue"></a>
-  <a href="https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/soran-ghaderi/torchebm?style=flat-square&color=brightgreen"></a>
-  <a href="https://github.com/soran-ghaderi/torchebm"><img alt="Stars" src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social"></a>
-  <a href="https://deepwiki.com/soran-ghaderi/torchebm"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
-  <a href="https://github.com/soran-ghaderi/torchebm/actions"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/tag-release.yml?branch=master&style=flat-square&label=build"></a>
-  <a href="https://github.com/soran-ghaderi/torchebm/actions"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/docs_ci.yml?branch=master&style=flat-square&label=docs"></a>
-  <a href="https://pepy.tech/project/torchebm"><img alt="Downloads" src="https://static.pepy.tech/badge/torchebm?style=flat-square"></a>
-  <a href="https://pypi.org/project/torchebm/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/torchebm?style=flat-square"></a>
+  <a href="https://pypi.org/project/torchebm/"><img alt="PyPI" src="https://img.shields.io/pypi/v/torchebm?style=flat-square&color=blue" loading="lazy"></a>
+  <a href="https://github.com/soran-ghaderi/torchebm/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/soran-ghaderi/torchebm?style=flat-square&color=brightgreen" loading="lazy"></a>
+  <a href="https://github.com/soran-ghaderi/torchebm"><img alt="Stars" src="https://img.shields.io/github/stars/soran-ghaderi/torchebm?style=social" loading="lazy"></a>
+  <a href="https://deepwiki.com/soran-ghaderi/torchebm"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" loading="lazy"></a>
+  <a href="https://github.com/soran-ghaderi/torchebm/actions"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/tag-release.yml?branch=master&style=flat-square&label=build" loading="lazy"></a>
+  <a href="https://github.com/soran-ghaderi/torchebm/actions"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/soran-ghaderi/torchebm/docs_ci.yml?branch=master&style=flat-square&label=docs" loading="lazy"></a>
+  <a href="https://pepy.tech/project/torchebm"><img alt="Downloads" src="https://static.pepy.tech/badge/torchebm?style=flat-square" loading="lazy"></a>
+  <a href="https://pypi.org/project/torchebm/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/torchebm?style=flat-square" loading="lazy"></a>
 </div>
 
 
