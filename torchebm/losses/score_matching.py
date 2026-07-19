@@ -5,6 +5,7 @@ import warnings
 from typing import Optional, Union, Dict, Tuple, Any, Callable
 
 import torch
+from torch import nn
 from torch.func import grad as func_grad, vmap, jacrev
 
 
@@ -47,6 +48,8 @@ class ScoreMatching(BaseScoreMatching):
         hessian_method: str = "exact",
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
+        use_autograd: bool = True,
+        functional_model: Optional[nn.Module] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -55,8 +58,9 @@ class ScoreMatching(BaseScoreMatching):
         super().__init__(
             model=model,
             regularization_strength=regularization_strength,
-            use_autograd=True,
+            use_autograd=use_autograd,
             custom_regularization=custom_regularization,
+            functional_model=functional_model,
             dtype=dtype,
             device=device,
             *args,
@@ -160,6 +164,12 @@ class ScoreMatching(BaseScoreMatching):
                 "hessian_method='approx' or DenoisingScoreMatching for "
                 "conditional training."
             )
+        if self._functional_state()[2] is not None:
+            raise NotImplementedError(
+                "Exact score matching computes per-sample Hessians with vmap, "
+                "which does not support DTensor parameters. Use "
+                "hessian_method='approx' or DenoisingScoreMatching."
+            )
         batch_size = x.shape[0]
         x_flat = x.view(batch_size, -1).detach().requires_grad_(True)
 
@@ -252,6 +262,8 @@ class DenoisingScoreMatching(BaseScoreMatching):
         noise_scale: float = 0.01,
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
+        use_autograd: bool = True,
+        functional_model: Optional[nn.Module] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -261,8 +273,9 @@ class DenoisingScoreMatching(BaseScoreMatching):
             model=model,
             noise_scale=noise_scale,
             regularization_strength=regularization_strength,
-            use_autograd=True,
+            use_autograd=use_autograd,
             custom_regularization=custom_regularization,
+            functional_model=functional_model,
             dtype=dtype,
             device=device,
             *args,
@@ -377,6 +390,8 @@ class SlicedScoreMatching(BaseScoreMatching):
         projection_type: str = "rademacher",
         regularization_strength: float = 0.0,
         custom_regularization: Optional[Callable] = None,
+        use_autograd: bool = True,
+        functional_model: Optional[nn.Module] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -385,8 +400,9 @@ class SlicedScoreMatching(BaseScoreMatching):
         super().__init__(
             model=model,
             regularization_strength=regularization_strength,
-            use_autograd=True,
+            use_autograd=use_autograd,
             custom_regularization=custom_regularization,
+            functional_model=functional_model,
             dtype=dtype,
             device=device,
             *args,
@@ -493,11 +509,14 @@ class SlicedScoreMatching(BaseScoreMatching):
             .expand(self.n_projections, *x.shape)
             .contiguous()
             .view(-1, *x.shape[1:])
-        ).requires_grad_(
-            True
         )  # final shape: (n_particles * batch_size, d). tracing the shape: (batch_size, d) -> (1, batch_size, d)
         # -> (n_particles, batch_size, d) -> (n_particles, batch_size, d) -> (n_particles * batch_size, d)
 
+        if not self.use_autograd:
+            return self._functional_sliced_loss(dup_x)
+
+        self._require_autograd_safe_params()
+        dup_x = dup_x.requires_grad_(True)
         n_vectors = self._get_random_projections(dup_x)
 
         logp = (-self.model(dup_x)).sum()
@@ -514,5 +533,40 @@ class SlicedScoreMatching(BaseScoreMatching):
         loss = term2 + term1
 
         return loss.mean()
+
+    def _functional_sliced_loss(self, dup_x: torch.Tensor) -> torch.Tensor:
+        r"""Sliced loss via the functional path (see `BaseScoreMatching`).
+
+        Projections are drawn locally and, on a mesh, wrapped batch-sharded so
+        both second-order gradients run through differentiable DTensor
+        collectives instead of module hooks.
+
+        Args:
+            dup_x (torch.Tensor): Projection-tiled batch of shape
+                `(n_projections * batch_size, d)`.
+
+        Returns:
+            torch.Tensor: The scalar sliced score matching loss.
+        """
+        params, buffers, mesh = self._functional_state()
+        n_vectors = self._get_random_projections(dup_x)
+        leaf = self._functional_leaf(dup_x, mesh)
+        if mesh is not None:
+            from torch.distributed.tensor import DTensor, Shard
+
+            n_vectors = DTensor.from_local(
+                n_vectors, mesh, [Shard(0)], run_check=False
+            )
+        energy = self._functional_energy(leaf, params, buffers, mesh)
+        grad1 = torch.autograd.grad((-energy).sum(), leaf, create_graph=True)[0]
+        v_score = torch.sum(grad1 * n_vectors, dim=-1)
+        grad_v = torch.autograd.grad(v_score.sum(), leaf, create_graph=True)[0]
+        term2 = torch.sum(n_vectors * grad_v, dim=-1)
+
+        v_score = self._functional_localize(v_score, mesh)
+        term2 = self._functional_localize(term2, mesh)
+        term1 = (0.5 * v_score.square()).view(self.n_projections, -1).mean(dim=0)
+        term2 = term2.view(self.n_projections, -1).mean(dim=0)
+        return (term1 + term2).mean()
 
     

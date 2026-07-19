@@ -1,16 +1,14 @@
 r"""Spawn harness for the 2-process gloo/CPU distributed suite.
 
-Lessons this harness hard-codes (learned from the design spikes):
+Children hide CUDA, and meshes are created explicitly on cpu via `cpu_mesh`:
+the DeviceMesh device heuristic selects cuda whenever a GPU is visible, and
+multiple gloo CPU processes driving one device crash inside functional
+collectives. Children also run faulthandler into per-rank crash logs so a
+SIGSEGV produces a stack trace instead of a bare ProcessExitedException.
 
-- The DeviceMesh device heuristic silently picks cuda when a GPU is visible,
-  and two gloo CPU processes then drive one GPU and segfault inside functional
-  collectives. Children therefore hide CUDA, and meshes are created explicitly
-  on cpu via `cpu_mesh`.
-- Children run faulthandler into per-rank crash logs so a SIGSEGV still
-  produces a stack instead of a bare ProcessExitedException.
-
-Worker functions must be top-level in their test module (spawn pickles them by
-reference; children inherit sys.path, so pytest-imported test modules resolve).
+Worker functions must be top-level in their test module: spawn pickles them by
+reference, and children inherit sys.path, so pytest-imported test modules
+resolve.
 """
 
 import faulthandler

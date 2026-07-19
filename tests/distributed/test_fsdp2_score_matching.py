@@ -1,14 +1,16 @@
-r"""Pins the FSDP2 facts the distributed score-matching contract is built on.
+r"""FSDP2 facts that score-matching support relies on.
 
 1. The hook path (`fully_shard` wrappers) cannot run the double backward that
    score matching needs: the post-backward hook reshards parameter storage the
    second-order graph still references, independent of `reshard_after_forward`.
-   If torch ever lifts this, the failure test breaks loudly and the
+   If a torch release lifts this, the failure test here breaks loudly and the
    functional-path requirement can be revisited.
-2. The functional path (`functional_call` on a hook-free skeleton with the
+2. The functional path (`functional_call` on an unwrapped module with the
    sharded DTensor params and a batch-sharded input) runs the double backward
-   through differentiable DTensor collectives and reproduces the gradients of
-   an unsharded reference with global-batch-mean semantics.
+   through differentiable DTensor collectives; `DenoisingScoreMatching` with
+   `use_autograd=False` reproduces the gradients of an unsharded reference
+   with global-batch-mean semantics.
+3. The autograd path fails fast with an actionable error under DTensor params.
 """
 
 import copy
@@ -18,6 +20,8 @@ import pytest
 import torch
 import torch.distributed as dist
 from torch import nn
+
+from torchebm.core import BaseModel
 
 from dist_harness import cpu_mesh, save_result, spawn_dist
 
@@ -35,35 +39,35 @@ BATCH = 8
 NOISE = 0.1
 
 
-def _make_net():
-    return nn.Sequential(
-        nn.Linear(DIM, 16), nn.SiLU(), nn.Linear(16, 16), nn.SiLU(), nn.Linear(16, 1)
-    )
+class MLPEnergy(BaseModel):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(DIM, 16), nn.SiLU(), nn.Linear(16, 16), nn.SiLU(), nn.Linear(16, 1)
+        )
+
+    def forward(self, x):
+        return self.net(x).squeeze(-1)
 
 
-def _hook_path_worker(rank, world_size, tmpdir):
-    from torchebm.core import BaseModel
-    from torchebm.losses import DenoisingScoreMatching
-
-    class MLPEnergy(BaseModel):
-        def __init__(self):
-            super().__init__()
-            self.net = _make_net()
-
-        def forward(self, x):
-            return self.net(x).squeeze(-1)
-
-    torch.manual_seed(0)
-    model = MLPEnergy()
+def _shard(model, world_size):
     mesh = cpu_mesh(world_size)
     for m in model.net:
         if isinstance(m, nn.Linear):
             fsdp.fully_shard(m, mesh=mesh)
     fsdp.fully_shard(model.net, mesh=mesh)
+    return model
+
+
+def _hook_path_worker(rank, world_size, tmpdir):
+    torch.manual_seed(0)
+    model = _shard(MLPEnergy(), world_size)
 
     torch.manual_seed(100 + rank)
-    x = torch.randn(BATCH, DIM)
-    loss = DenoisingScoreMatching(model=model, noise_scale=NOISE)(x)
+    x = torch.randn(BATCH, DIM).requires_grad_(True)
+    energy = model(x)
+    score = torch.autograd.grad(energy.sum(), x, create_graph=True)[0]
+    loss = 0.5 * score.square().sum(dim=1).mean()
     try:
         loss.backward()
         raised = None
@@ -76,65 +80,82 @@ def test_hook_path_double_backward_still_unsupported():
     results = spawn_dist(_hook_path_worker)
     for res in results:
         assert res["raised"] is not None, (
-            "The FSDP2 hook path ran a score-matching double backward. The "
-            "upstream limitation this suite is designed around has been lifted;"
-            " revisit the functional-path requirement."
+            "The FSDP2 hook path ran a score-matching double backward; this "
+            "upstream limitation appears lifted. Revisit the functional-path "
+            "requirement for score matching under fully_shard."
         )
 
 
-def _functional_worker(rank, world_size, tmpdir):
-    from torch.distributed.tensor import DTensor, Shard
-    from torch.func import functional_call
+def _functional_dsm_worker(rank, world_size, tmpdir):
+    from torchebm.losses import DenoisingScoreMatching
 
     torch.manual_seed(0)
-    net = _make_net()
-    ref = copy.deepcopy(net)
-    mesh = cpu_mesh(world_size)
-    fsdp.fully_shard(net, mesh=mesh)
-    params = dict(net.named_parameters())
+    model = MLPEnergy()
+    ref_model = copy.deepcopy(model)
+    model = _shard(model, world_size)
+
+    loss_fn = DenoisingScoreMatching(
+        model=model,
+        noise_scale=NOISE,
+        use_autograd=False,
+        functional_model=MLPEnergy(),
+    )
+    ref_loss_fn = DenoisingScoreMatching(model=ref_model, noise_scale=NOISE)
 
     torch.manual_seed(100 + rank)
     x = torch.randn(BATCH, DIM)
-    noise = torch.randn_like(x) * NOISE
-    x_pert = (x + noise).detach()
-    target = -noise / (NOISE**2)
-
-    x_dt = DTensor.from_local(x_pert, mesh, [Shard(0)], run_check=False)
-    x_dt.requires_grad_(True)
-    energy = functional_call(ref, params, (x_dt,)).squeeze(-1)
-    score = torch.autograd.grad(energy.sum(), x_dt, create_graph=True)[0]
-    target_dt = DTensor.from_local(target, mesh, [Shard(0)], run_check=False)
-    loss = 0.5 * (score - target_dt).square().sum(dim=1).mean()
+    torch.manual_seed(7 + rank)
+    loss = loss_fn(x)
     loss.backward()
-    loss_val = loss.detach()
-    if isinstance(loss_val, DTensor):
-        loss_val = loss_val.full_tensor()
+    torch.manual_seed(7 + rank)
+    ref_loss = ref_loss_fn(x)
+    ref_loss.backward()
 
-    x_ref = x_pert.clone().requires_grad_(True)
-    e_ref = ref(x_ref).squeeze(-1)
-    score_ref = torch.autograd.grad(e_ref.sum(), x_ref, create_graph=True)[0]
-    loss_ref = 0.5 * (score_ref - target).square().sum(dim=1).mean()
-    loss_ref.backward()
-
-    ref_grads = {n: p.grad for n, p in ref.named_parameters()}
+    ref_grads = {n: p.grad for n, p in ref_model.named_parameters()}
     max_err = 0.0
-    for n, p in params.items():
+    for n, p in model.named_parameters():
         if p.grad is None:
-            # score-independent params (a final-layer bias is a constant
-            # energy offset) legitimately get no grad; the reference agrees
             assert ref_grads[n] is None, f"missing sharded grad for {n}"
             continue
-        full = p.grad.full_tensor() if isinstance(p.grad, DTensor) else p.grad
+        full = p.grad.full_tensor() if hasattr(p.grad, "full_tensor") else p.grad
         mean = ref_grads[n].detach().clone()
         dist.all_reduce(mean)
         mean /= world_size
         max_err = max(max_err, (full - mean).abs().max().item())
-    save_result(tmpdir, rank, {"max_err": max_err, "loss": float(loss_val)})
+    save_result(
+        tmpdir,
+        rank,
+        {
+            "max_err": max_err,
+            "loss_matches_local_ref": bool(
+                torch.allclose(loss.detach(), ref_loss.detach(), atol=1e-6)
+            ),
+        },
+    )
 
 
-def test_functional_score_path_matches_reference():
-    results = spawn_dist(_functional_worker)
-    losses = {round(r["loss"], 6) for r in results}
-    assert len(losses) == 1, f"global loss differs across ranks: {losses}"
+def test_functional_dsm_matches_unsharded_reference():
+    results = spawn_dist(_functional_dsm_worker)
     for res in results:
+        assert res["loss_matches_local_ref"], res
         assert res["max_err"] < 1e-5, res
+
+
+def _autograd_fail_fast_worker(rank, world_size, tmpdir):
+    from torchebm.losses import DenoisingScoreMatching
+
+    torch.manual_seed(0)
+    model = _shard(MLPEnergy(), world_size)
+    loss_fn = DenoisingScoreMatching(model=model, noise_scale=NOISE)
+    try:
+        loss_fn(torch.randn(BATCH, DIM))
+        msg = None
+    except RuntimeError as e:
+        msg = str(e)
+    save_result(tmpdir, rank, {"msg": msg})
+
+
+def test_autograd_path_fails_fast_with_dtensor_params():
+    results = spawn_dist(_autograd_fail_fast_worker)
+    for res in results:
+        assert res["msg"] is not None and "use_autograd=False" in res["msg"], res
