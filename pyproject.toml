@@ -14,7 +14,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 #license = "MIT"
 authors = [{ name = "Soran Ghaderi", email = "soran.gdr.cs@gmail.com" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = [
     "simulation-free",
     "energy-based-models",
@@ -35,7 +35,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -50,7 +49,7 @@ classifiers = [
 #packages = ["torchebm"]
 
 dependencies = [
-    "torch>=2.0",
+    "torch>=2.10",
 ]
 
 [project.optional-dependencies]
