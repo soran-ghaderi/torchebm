@@ -682,6 +682,7 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
         noise: Optional[torch.Tensor] = None,
         noise_scale: Optional[torch.Tensor] = None,
         t: Optional[torch.Tensor] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> Dict[str, torch.Tensor]:
         r"""Advance the state by one RK step with optional SDE noise.
 
@@ -700,6 +701,8 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             noise_scale: Scalar whose square is used as \(D\) when
                 ``diffusion`` is not given.
             t: Current time tensor (batch,).
+            generator: RNG for the internally generated Wiener noise; the
+                global RNG when ``None``. Ignored when ``noise`` is supplied.
 
         Returns:
             Updated state dict ``{"x": x_new}``.
@@ -717,7 +720,9 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
 
         if diffusion_val is not None:
             if noise is None:
-                noise = torch.randn_like(x, device=self.device, dtype=self.dtype)
+                noise = torch.randn_like(
+                    x, device=self.device, dtype=self.dtype, generator=generator
+                )
             # step_size/diffusion_val stay Python floats to avoid a per-step host
             # sync; ** 0.5 accepts floats and tensors, torch.sqrt would not.
             dw = noise * (step_size**0.5)
@@ -741,6 +746,7 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
         t: Optional[torch.Tensor] = None,
         adaptive: Optional[bool] = None,
         inference_mode: bool = False,
+        generator: Optional[torch.Generator] = None,
     ) -> Dict[str, torch.Tensor]:
         r"""Integrate the state over a time interval (ODE or SDE).
 
@@ -761,6 +767,8 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             inference_mode: When ``True``, wraps computation in
                 ``torch.inference_mode()`` for faster execution without
                 gradient tracking.
+            generator: RNG for the Wiener noise on the SDE path; the global
+                RNG when ``None``.
 
         Returns:
             Updated state dict ``{"x": x_final}``.
@@ -771,6 +779,7 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
                     state, step_size, n_steps,
                     drift=drift, diffusion=diffusion,
                     noise_scale=noise_scale, t=t, adaptive=adaptive,
+                    generator=generator,
                 )
 
         if adaptive is None:
@@ -803,7 +812,8 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             diff_val = diffusion(x, t_batch) if has_diffusion_fn else ns_const
             x = self._deterministic_step(x, dt, drift_fn, t_batch)
             if diff_val is not None:
-                x = x + torch.sqrt(2.0 * diff_val) * torch.randn_like(x) * torch.sqrt(dt)
+                noise = torch.randn_like(x, generator=generator)
+                x = x + (2.0 * diff_val) ** 0.5 * noise * torch.sqrt(dt)
         return {"x": x}
 
 

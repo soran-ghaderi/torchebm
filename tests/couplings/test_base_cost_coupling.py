@@ -9,7 +9,7 @@ from torchebm.core import BaseCostCoupling
 class IdentitySolveCoupling(BaseCostCoupling):
     """Minimal concrete: pair each source with the same-index target."""
 
-    def _solve(self, cost):
+    def _solve(self, cost, generator=None):
         return torch.arange(cost.shape[0], device=cost.device)
 
 
@@ -23,7 +23,7 @@ class CaptureCostCoupling(BaseCostCoupling):
         self.seen_kwargs = kwargs
         return super().compute_cost(x0, x1, **kwargs)
 
-    def _solve(self, cost):
+    def _solve(self, cost, generator=None):
         return torch.arange(cost.shape[0], device=cost.device)
 
 

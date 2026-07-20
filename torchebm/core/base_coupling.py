@@ -85,7 +85,12 @@ class BaseCoupling(ABC):
 
     @abstractmethod
     def couple(
-        self, x0: torch.Tensor, x1: Optional[torch.Tensor] = None, **kwargs: Any
+        self,
+        x0: torch.Tensor,
+        x1: Optional[torch.Tensor] = None,
+        *,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
     ) -> CouplingResult:
         r"""
         Pair source and target samples.
@@ -96,6 +101,9 @@ class BaseCoupling(ABC):
                 level: generate-family couplings produce the target from the
                 source and ignore (or do not need) an incoming batch;
                 pairing families require it via `_require_x1`.
+            generator: RNG for stochastic couplings (entropic plans draw a
+                target index per source); the global RNG when `None`.
+                Deterministic families ignore it.
             **kwargs: Optional conditioning forwarded by the caller; ignored
                 by unconditional couplings.
 
@@ -122,9 +130,14 @@ class BaseCoupling(ABC):
         return x1
 
     def __call__(
-        self, x0: torch.Tensor, x1: Optional[torch.Tensor] = None, **kwargs: Any
+        self,
+        x0: torch.Tensor,
+        x1: Optional[torch.Tensor] = None,
+        *,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
     ) -> CouplingResult:
-        return self.couple(x0, x1, **kwargs)
+        return self.couple(x0, x1, generator=generator, **kwargs)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
@@ -153,14 +166,19 @@ class BaseCostCoupling(BaseCoupling):
 
     @torch.no_grad()
     def couple(
-        self, x0: torch.Tensor, x1: Optional[torch.Tensor] = None, **kwargs: Any
+        self,
+        x0: torch.Tensor,
+        x1: Optional[torch.Tensor] = None,
+        *,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
     ) -> CouplingResult:
         x1 = self._require_x1(x1)
         self._check_batch(x0, x1)
         if x0.shape[0] == 1:
             return CouplingResult(x0, x1)
         cost = self.compute_cost(x0, x1, **kwargs)
-        idx = self._solve(cost)
+        idx = self._solve(cost, generator=generator)
         return CouplingResult(x0, x1[idx])
 
     def compute_cost(
@@ -189,12 +207,17 @@ class BaseCostCoupling(BaseCoupling):
         return cost / cost.max().clamp(min=1e-12)
 
     @abstractmethod
-    def _solve(self, cost: torch.Tensor) -> torch.Tensor:
+    def _solve(
+        self, cost: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         r"""
         Solve the pairing problem on a square cost matrix.
 
         Args:
             cost: Cost matrix of shape (n, n).
+            generator: RNG for entropic solvers that draw row-conditionally;
+                the global RNG when `None`. Assignment solvers are
+                deterministic and ignore it.
 
         Returns:
             Long tensor `idx` of shape (n,) pairing `x0[i]` with `x1[idx[i]]`.
@@ -224,18 +247,30 @@ class BaseModelCoupling(BaseCoupling):
 
     @torch.no_grad()
     def couple(
-        self, x0: torch.Tensor, x1: Optional[torch.Tensor] = None, **kwargs: Any
+        self,
+        x0: torch.Tensor,
+        x1: Optional[torch.Tensor] = None,
+        *,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
     ) -> CouplingResult:
         # x1 (if any) is ignored: the target is generated as Phi(x0).
-        return CouplingResult(x0, self._generate(x0, **kwargs))
+        return CouplingResult(x0, self._generate(x0, generator=generator, **kwargs))
 
     @abstractmethod
-    def _generate(self, x0: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+    def _generate(
+        self,
+        x0: torch.Tensor,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
+    ) -> torch.Tensor:
         r"""
         Generate the target batch from the source batch.
 
         Args:
             x0: Source samples of shape (batch_size, ...).
+            generator: RNG for the map evaluation when it is stochastic; the
+                global RNG when `None`.
             **kwargs: Optional conditioning forwarded from `couple`.
 
         Returns:

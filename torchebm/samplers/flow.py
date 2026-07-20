@@ -375,6 +375,7 @@ class FlowSampler(BaseSampler):
         reset_schedulers: bool = True,
         *,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
         **legacy_model_kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Sample by integrating the configured ODE or SDE.
@@ -406,6 +407,9 @@ class FlowSampler(BaseSampler):
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model at every step. Normalized to the sampler device once at
                 entry; ``None`` (default) is the exact unconditional path.
+            generator: RNG for the initial state and, in SDE mode, the per-step
+                diffusion noise; the global RNG when ``None``. ODE mode is
+                deterministic once the initial state is fixed.
             **legacy_model_kwargs: Deprecated. Passing conditioning as bare
                 keyword arguments still works for one release but emits a
                 ``DeprecationWarning``; pass ``model_kwargs={...}`` instead. When
@@ -457,7 +461,7 @@ class FlowSampler(BaseSampler):
         if reset_schedulers:
             self.reset_schedulers()
 
-        x = self._init_state(x, dim, n_samples)
+        x = self._init_state(x, dim, n_samples, generator)
         n_samples = x.shape[0]
         data_shape = x.shape[1:]
 
@@ -519,6 +523,7 @@ class FlowSampler(BaseSampler):
                         drift=drift,
                         diffusion=diff_val,
                         t=t_batch,
+                        generator=generator,
                     )["x"]
                 else:
                     x = self.integrator.step(

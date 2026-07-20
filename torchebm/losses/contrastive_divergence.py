@@ -84,6 +84,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -96,6 +97,10 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
                 labels) forwarded to the model on both the positive energy calls
                 and the negative-sampling MCMC chains, so the negatives come from
                 the same conditional energy as the positives.
+            generator: RNG for the chain start points, the MCMC chains and the
+                optional real-data noise; the global RNG when ``None``. In
+                distributed runs, a per-rank generator keeps the negative chains
+                of each rank independent.
             **kwargs: Deprecated. The loss options ``energy_reg_weight``,
                 ``add_noise_to_real`` and ``noise_scale`` are now constructor
                 parameters; passing them here still works for one release but
@@ -119,12 +124,13 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         data_shape = x.shape[1:]
 
         # Get starting points for chains (either from buffer or data)
-        start_points = self.get_start_points(x)
+        start_points = self.get_start_points(x, generator=generator)
 
         pred_samples = self.sampler.sample(
             x=start_points,
             n_steps=self.k_steps,
             model_kwargs=model_kwargs,
+            generator=generator,
         )
 
         # Update persistent buffer if using PCD
@@ -138,7 +144,12 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
         # Compute contrastive divergence loss
         loss = self.compute_loss(
-            x, pred_samples, *args, model_kwargs=model_kwargs, **kwargs
+            x,
+            pred_samples,
+            *args,
+            model_kwargs=model_kwargs,
+            generator=generator,
+            **kwargs,
         )
 
         return loss, pred_samples
@@ -149,6 +160,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         pred_x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -161,6 +173,8 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             x (torch.Tensor): Real data samples (positive samples).
             pred_x (torch.Tensor): Generated negative samples.
             *args: Additional positional arguments.
+            generator: RNG for the optional real-data noise; the global RNG
+                when `None`.
             **kwargs: Additional keyword arguments.
 
         Returns:
@@ -177,7 +191,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             # Add small noise to real data for stability (optional)
             if kwargs.get("add_noise_to_real", self.add_noise_to_real):
                 noise_scale = kwargs.get("noise_scale", self.noise_scale)
-                x_noisy = x + noise_scale * torch.randn_like(x)
+                x_noisy = x + noise_scale * torch.randn_like(x, generator=generator)
                 x_energy = self.model(x_noisy, **mk)
             else:
                 x_energy = self.model(x, **mk)

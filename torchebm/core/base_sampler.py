@@ -48,6 +48,7 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         x: Optional[torch.Tensor],
         dim: Optional[Union[int, Tuple[int, ...]]],
         n_samples: int,
+        generator: Optional[torch.Generator] = None,
     ) -> torch.Tensor:
         r"""Coerce `x` to the sampler's device/dtype, or draw from `N(0, I)`.
 
@@ -55,6 +56,7 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
             x: Initial state, or `None` to synthesize one.
             dim: State dimension (int) or shape (tuple), used when `x is None`.
             n_samples: Number of parallel chains, used when `x is None`.
+            generator: RNG for the `N(0, I)` draw; the global RNG when `None`.
 
         Returns:
             State tensor of shape `[n_samples, *shape]`.
@@ -67,7 +69,9 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         if dim is None:
             raise ValueError("dim must be provided when x is None")
         shape = (dim,) if isinstance(dim, int) else tuple(dim)
-        return torch.randn(n_samples, *shape, dtype=self.dtype, device=self.device)
+        return torch.randn(
+            n_samples, *shape, dtype=self.dtype, device=self.device, generator=generator
+        )
 
     def _model_gradient(
         self, x: torch.Tensor, model_kwargs: Dict[str, object]
@@ -108,6 +112,8 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         return_trajectory: bool = False,
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
+        *,
+        generator: Optional[torch.Generator] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""
         Run the sampling process.
@@ -130,6 +136,12 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
             reset_schedulers: If True (default), reset registered schedulers
                 before sampling so each call starts from step 0. Pass False for
                 lifetime schedules driven by an outer training loop.
+            generator: RNG for every draw this call makes (initial state, MCMC
+                noise, accept/reject). ``None`` (default) uses the global RNG,
+                reproducing the pre-existing behavior exactly. A generator is
+                bound to the device it was created for, so it must match the
+                sampler's device. In distributed runs, seed one generator per
+                rank (e.g. ``base_seed + rank``) to decorrelate chains.
 
         Returns:
             Either a tensor of samples (or trajectory) of shape
