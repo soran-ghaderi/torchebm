@@ -154,6 +154,7 @@ class BaseContrastiveDivergence(BaseLoss):
         data_shape_no_batch: Tuple[int, ...],
         buffer_chunk_size: int = 1024,
         init_noise_scale: float = 0.01,
+        generator: Optional[torch.Generator] = None,
     ) -> torch.Tensor:
         """
         Initializes the replay buffer with random noise for PCD.
@@ -162,6 +163,8 @@ class BaseContrastiveDivergence(BaseLoss):
             data_shape_no_batch (Tuple[int, ...]): The shape of the data excluding the batch dimension.
             buffer_chunk_size (int): The size of chunks to process during initialization.
             init_noise_scale (float): The scale of the initial noise.
+            generator: RNG for the noise and the warm-up chains; the global RNG
+                when `None`.
 
         Returns:
             torch.Tensor: The initialized replay buffer.
@@ -180,7 +183,12 @@ class BaseContrastiveDivergence(BaseLoss):
         logger.info("Initializing replay buffer with shape %s...", buffer_shape)
 
         self.replay_buffer = (
-            torch.randn(buffer_shape, dtype=self.dtype, device=self.device)
+            torch.randn(
+                buffer_shape,
+                dtype=self.dtype,
+                device=self.device,
+                generator=generator,
+            )
             * init_noise_scale
         )
 
@@ -194,7 +202,9 @@ class BaseContrastiveDivergence(BaseLoss):
                     try:
                         with self.autocast_context():
                             updated_chunk = self.sampler.sample(
-                                x=current_chunk, n_steps=self.init_steps
+                                x=current_chunk,
+                                n_steps=self.init_steps,
+                                generator=generator,
                             ).detach()
 
                         if updated_chunk.shape == current_chunk.shape:
@@ -215,7 +225,9 @@ class BaseContrastiveDivergence(BaseLoss):
 
         return self.replay_buffer
 
-    def get_start_points(self, x: torch.Tensor) -> torch.Tensor:
+    def get_start_points(
+        self, x: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         """
         Gets the starting points for the MCMC sampler.
 
@@ -223,6 +235,8 @@ class BaseContrastiveDivergence(BaseLoss):
 
         Args:
             x (torch.Tensor): The input data batch.
+            generator: RNG for buffer index draws and exploration noise (PCD
+                only); the global RNG when `None`.
 
         Returns:
             torch.Tensor: The tensor of starting points for the sampler.
@@ -234,7 +248,7 @@ class BaseContrastiveDivergence(BaseLoss):
 
         if self.persistent:
             if not self.buffer_initialized:
-                self.initialize_buffer(data_shape_no_batch)
+                self.initialize_buffer(data_shape_no_batch, generator=generator)
                 if not self.buffer_initialized:
                     raise RuntimeError("Buffer initialization failed.")
 
@@ -244,13 +258,19 @@ class BaseContrastiveDivergence(BaseLoss):
                     UserWarning,
                 )
                 indices = torch.randint(
-                    0, self.buffer_size, (batch_size,), device=self.device
+                    0,
+                    self.buffer_size,
+                    (batch_size,),
+                    device=self.device,
+                    generator=generator,
                 )
             else:
                 # stratified sampling for better buffer coverage
                 stride = self.buffer_size // batch_size
                 base_indices = torch.arange(0, batch_size, device=self.device) * stride
-                offset = torch.randint(0, stride, (batch_size,), device=self.device)
+                offset = torch.randint(
+                    0, stride, (batch_size,), device=self.device, generator=generator
+                )
                 indices = (base_indices + offset) % self.buffer_size
 
             start_points = self.replay_buffer[indices]
@@ -258,7 +278,9 @@ class BaseContrastiveDivergence(BaseLoss):
             # add some noise for exploration
             if self.new_sample_ratio > 0.0:
                 n_new = max(1, int(batch_size * self.new_sample_ratio))
-                noise_indices = torch.randperm(batch_size, device=self.device)[:n_new]
+                noise_indices = torch.randperm(
+                    batch_size, device=self.device, generator=generator
+                )[:n_new]
                 noise_scale = 0.01
                 start_points[noise_indices] = (
                     start_points[noise_indices]
@@ -266,6 +288,7 @@ class BaseContrastiveDivergence(BaseLoss):
                         start_points[noise_indices],
                         device=self.device,
                         dtype=self.dtype,
+                        generator=generator,
                     )
                     * noise_scale
                 )
@@ -275,7 +298,9 @@ class BaseContrastiveDivergence(BaseLoss):
 
         return start_points
 
-    def get_negative_samples(self, x, batch_size, data_shape) -> torch.Tensor:
+    def get_negative_samples(
+        self, x, batch_size, data_shape, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         """
         Gets negative samples using the replay buffer strategy.
 
@@ -283,6 +308,8 @@ class BaseContrastiveDivergence(BaseLoss):
             x: (Unused) The input data tensor.
             batch_size (int): The number of samples to generate.
             data_shape (Tuple[int, ...]): The shape of the data samples (excluding batch size).
+            generator: RNG for the noise and buffer index draws; the global RNG
+                when `None`.
 
         Returns:
             torch.Tensor: Negative samples.
@@ -290,7 +317,10 @@ class BaseContrastiveDivergence(BaseLoss):
         if not self.persistent or not self.buffer_initialized:
             # For non-persistent CD, just return random noise
             return torch.randn(
-                (batch_size,) + data_shape, dtype=self.dtype, device=self.device
+                (batch_size,) + data_shape,
+                dtype=self.dtype,
+                device=self.device,
+                generator=generator,
             )
 
         n_new = max(1, int(batch_size * self.new_sample_ratio))
@@ -303,13 +333,18 @@ class BaseContrastiveDivergence(BaseLoss):
         # new random samples
         if n_new > 0:
             all_samples[:n_new] = torch.randn(
-                (n_new,) + data_shape, dtype=self.dtype, device=self.device
+                (n_new,) + data_shape,
+                dtype=self.dtype,
+                device=self.device,
+                generator=generator,
             )
 
         # samples from buffer
         if n_old > 0:
 
-            indices = torch.randint(0, self.buffer_size, (n_old,), device=self.device)
+            indices = torch.randint(
+                0, self.buffer_size, (n_old,), device=self.device, generator=generator
+            )
             all_samples[n_new:] = self.replay_buffer[indices]
 
         return all_samples
@@ -646,13 +681,14 @@ class BaseScoreMatching(BaseLoss):
         return score
 
     def perturb_data(
-        self, x: torch.Tensor
+        self, x: torch.Tensor, generator: Optional[torch.Generator] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:  # todo: add more noise types
         """
         Perturbs the input data with Gaussian noise for denoising variants.
 
         Args:
             x (torch.Tensor): Input data tensor.
+            generator: RNG for the Gaussian noise; the global RNG when `None`.
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: A tuple containing the perturbed data
@@ -661,7 +697,10 @@ class BaseScoreMatching(BaseLoss):
 
         x = x.to(device=self.device, dtype=self.dtype)
         noise = (
-            torch.randn_like(x, device=self.device, dtype=self.dtype) * self.noise_scale
+            torch.randn_like(
+                x, device=self.device, dtype=self.dtype, generator=generator
+            )
+            * self.noise_scale
         )
         x_perturbed = x + noise
         return x_perturbed, noise

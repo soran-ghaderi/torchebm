@@ -27,7 +27,12 @@ class IndependentCoupling(BaseCoupling):
     """
 
     def couple(
-        self, x0: torch.Tensor, x1: Optional[torch.Tensor] = None, **kwargs: Any
+        self,
+        x0: torch.Tensor,
+        x1: Optional[torch.Tensor] = None,
+        *,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
     ) -> CouplingResult:
         x1 = self._require_x1(x1)
         self._check_batch(x0, x1)

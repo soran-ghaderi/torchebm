@@ -216,6 +216,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         *args,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -241,7 +242,7 @@ class EquilibriumMatchingLoss(BaseLoss):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, x0=x0, model_kwargs=model_kwargs, **kwargs
+                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
             )
 
         return loss
@@ -252,6 +253,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         *args,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -270,7 +272,9 @@ class EquilibriumMatchingLoss(BaseLoss):
         mk = self._resolve_model_kwargs(
             model_kwargs, kwargs, warn_key="eqm-bare-model-kwargs"
         )
-        terms = self.training_losses(x, model_kwargs=mk, x0=x0)
+        terms = self.training_losses(
+            x, model_kwargs=mk, x0=x0, generator=generator
+        )
         loss = terms["loss"]
         weights = terms.get("weights")
         if weights is not None:
@@ -282,6 +286,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         x1: torch.Tensor,
         model_kwargs: Optional[Dict[str, Any]] = None,
         x0: Optional[torch.Tensor] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> Dict[str, torch.Tensor]:
         r"""Compute training losses with detailed outputs.
 
@@ -295,6 +300,8 @@ class EquilibriumMatchingLoss(BaseLoss):
             x0: Optional source samples of shape (batch_size, ...); standard
                 Gaussian noise when None. Paired against ``x1`` by the configured
                 coupling before interpolation.
+            generator: RNG for the source draw, the coupling and the time
+                sampling; the global RNG when ``None``.
 
         Returns:
             Dictionary with 'loss' (per-sample), 'pred', 'weights' (per-pair
@@ -307,7 +314,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         batch = x1.shape[0]
 
         if x0 is None:
-            x0 = torch.randn_like(x1)
+            x0 = torch.randn_like(x1, generator=generator)
         else:
             x0 = x0.to(device=self.device, dtype=self.dtype)
             if x0.shape != x1.shape:
@@ -315,11 +322,17 @@ class EquilibriumMatchingLoss(BaseLoss):
                     f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
                 )
 
-        coupled = self.coupling(x0, x1, **model_kwargs)
+        coupled = self.coupling(x0, x1, generator=generator, **model_kwargs)
         x0, x1 = coupled
 
         t0, t1 = self._check_interval()
-        t = torch.rand(batch, device=self.device, dtype=self.dtype) * (t1 - t0) + t0
+        t = (
+            torch.rand(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+            * (t1 - t0)
+            + t0
+        )
 
         # Interpolate: xt between x0 (noise) and x1 (data)
         xt, ut = self.interpolant.interpolate(x0, x1, t)

@@ -16,7 +16,7 @@ Pass instances directly; `resolve_coupling` accepts them.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Union
+from typing import Any, Callable, Optional, Union
 
 import torch
 
@@ -57,11 +57,18 @@ class ReflowCoupling(BaseModelCoupling):
             raise ValueError(f"n_steps must be positive, got {n_steps}")
         self.n_steps = n_steps
 
-    def _generate(self, x0: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+    def _generate(
+        self,
+        x0: torch.Tensor,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
+    ) -> torch.Tensor:
         from torchebm.samplers.flow import FlowSampler  # local: avoid cycle
 
         if isinstance(self.model, FlowSampler):
-            return self.model.sample(x=x0, n_steps=self.n_steps, **kwargs)
+            return self.model.sample(
+                x=x0, n_steps=self.n_steps, generator=generator, **kwargs
+            )
         return self.model(x0, **kwargs)
 
     def __repr__(self) -> str:

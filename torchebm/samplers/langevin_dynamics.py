@@ -92,6 +92,7 @@ class LangevinDynamics(BaseSampler):
         reset_schedulers: bool = True,
         *,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Langevin dynamics.
 
@@ -111,6 +112,8 @@ class LangevinDynamics(BaseSampler):
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model at every step. Normalized to the sampler device once at
                 entry; ``None`` (default) is the exact unconditional path.
+            generator: RNG for the initial state and the per-step Langevin
+                noise; the global RNG when ``None``.
 
         Returns:
             Sample tensor (or trajectory if `return_trajectory=True`),
@@ -124,7 +127,7 @@ class LangevinDynamics(BaseSampler):
         if reset_schedulers:
             self.reset_schedulers()
 
-        x = self._init_state(x, dim, n_samples)
+        x = self._init_state(x, dim, n_samples, generator)
         model_kwargs = self._prepare_model_kwargs(model_kwargs)
         n_samples = x.shape[0]
         data_shape = x.shape[1:]
@@ -158,6 +161,7 @@ class LangevinDynamics(BaseSampler):
                     step_size=self.get_scheduled_value("step_size"),
                     noise_scale=self.get_scheduled_value("noise_scale"),
                     drift=drift,
+                    generator=generator,
                 )["x"]
                 if self.clamp is not None:
                     x = x.clamp_(*self.clamp)

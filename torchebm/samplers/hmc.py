@@ -89,7 +89,9 @@ class HamiltonianMonteCarlo(BaseSampler):
             )
         self.integrator = integ
 
-    def _initialize_momentum(self, shape: torch.Size) -> torch.Tensor:
+    def _initialize_momentum(
+        self, shape: torch.Size, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         r"""
         Initializes momentum variables from a Gaussian distribution.
 
@@ -98,6 +100,7 @@ class HamiltonianMonteCarlo(BaseSampler):
 
         Args:
             shape (torch.Size): The shape of the momentum tensor to generate.
+            generator: RNG for the Gaussian draw; the global RNG when `None`.
 
         Returns:
             torch.Tensor: The initialized momentum tensor.
@@ -111,7 +114,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         ):
             buf = torch.empty(shape, dtype=self.dtype, device=self.device)
             self._momentum_buf = buf
-        p = buf.normal_()
+        p = buf.normal_(generator=generator)
 
         if self.mass is not None:
             # Apply mass matrix (equivalent to sampling from N(0, M))
@@ -168,6 +171,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         reset_schedulers: bool = True,
         *,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Hamiltonian Monte Carlo.
 
@@ -187,6 +191,9 @@ class HamiltonianMonteCarlo(BaseSampler):
                 the model for both the leapfrog force and the MH-ratio energies.
                 Normalized to the sampler device once at entry; ``None`` (default)
                 is the exact unconditional path.
+            generator: RNG for the initial state, the per-step momentum draw and
+                the Metropolis accept/reject uniforms; the global RNG when
+                ``None``.
 
         Raises:
             ValueError: If `thin < 1`.
@@ -207,7 +214,7 @@ class HamiltonianMonteCarlo(BaseSampler):
                 raise ValueError(
                     "dim must be provided when x is None and cannot be inferred from model"
                 )
-        x = self._init_state(x, dim, n_samples)
+        x = self._init_state(x, dim, n_samples, generator)
 
         dim = x.shape[1]
         batch_size = x.shape[0]
@@ -235,7 +242,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
-                current_momentum = self._initialize_momentum(x.shape)
+                current_momentum = self._initialize_momentum(x.shape, generator)
 
                 current_energy = self._model_energy(x, model_kwargs).clamp_(
                     min=-1e10, max=1e10
@@ -275,7 +282,9 @@ class HamiltonianMonteCarlo(BaseSampler):
                 # the freshly allocated `exp` result (no `ones` tensor allocation).
                 acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
 
-                random_uniform = torch.rand(batch_size, device=self.device)
+                random_uniform = torch.rand(
+                    batch_size, device=self.device, generator=generator
+                )
                 accepted = random_uniform < acceptance_prob
                 # `torch.where` on the broadcast accept mask: single fused kernel,
                 # no `mask*proposed + (1-mask)*x` quartet of temporaries.
@@ -503,6 +512,7 @@ class RiemannianManifoldHMC(BaseSampler):
         x: torch.Tensor,
         *,
         L: Optional[torch.Tensor] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> torch.Tensor:
         r"""Sample \(p \sim \mathcal{N}(0, G(x))\) via \(p = L z,\; z \sim \mathcal{N}(0, I)\).
 
@@ -519,7 +529,7 @@ class RiemannianManifoldHMC(BaseSampler):
         ):
             buf = torch.empty_like(x)
             self._z_buf = buf
-        z = buf.normal_()
+        z = buf.normal_(generator=generator)
         return torch.einsum("bij,bj->bi", L, z)
 
     def _velocity(
@@ -569,6 +579,7 @@ class RiemannianManifoldHMC(BaseSampler):
         reset_schedulers: bool = True,
         *,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Generate samples via Riemannian-manifold HMC.
 
@@ -588,6 +599,9 @@ class RiemannianManifoldHMC(BaseSampler):
                 the model for both the leapfrog force and the MH-ratio energies.
                 Normalized to the sampler device once at entry; ``None`` (default)
                 is the exact unconditional path.
+            generator: RNG for the initial state, the per-step momentum draw and
+                the Metropolis accept/reject uniforms; the global RNG when
+                ``None``.
 
         Raises:
             ValueError: If ``thin < 1`` or ``x`` is not 2-D.
@@ -612,7 +626,7 @@ class RiemannianManifoldHMC(BaseSampler):
                     "dim must be provided when x is None and cannot be "
                     "inferred from model"
                 )
-        x = self._init_state(x, dim, n_samples)
+        x = self._init_state(x, dim, n_samples, generator)
 
         if x.ndim != 2:
             raise ValueError(
@@ -646,7 +660,7 @@ class RiemannianManifoldHMC(BaseSampler):
         with self.autocast_context():
             for i in range(n_steps):
                 L = self._metric_chol(x)
-                p = self._initialize_momentum(x, L=L)
+                p = self._initialize_momentum(x, L=L, generator=generator)
 
                 current_U = self._model_energy(x, model_kwargs).clamp_(
                     min=-1e10, max=1e10
@@ -687,7 +701,10 @@ class RiemannianManifoldHMC(BaseSampler):
                     finite_proposal, acceptance_prob, torch.zeros_like(acceptance_prob)
                 )
 
-                accepted = torch.rand(batch_size, device=self.device) < acceptance_prob
+                accepted = (
+                    torch.rand(batch_size, device=self.device, generator=generator)
+                    < acceptance_prob
+                )
                 accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
                 x = torch.where(accept_view, x_prop, x)
 

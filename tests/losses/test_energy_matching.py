@@ -453,6 +453,12 @@ class _StubWeightedCoupling(BaseCoupling):
         return CouplingResult(x0, x1, weights=self._weights.to(x0.device))
 
 
+def _const_rand(*args, **kwargs):
+    """Deterministic stand-in for torch.rand that tolerates generator=."""
+    kwargs.pop("generator", None)
+    return torch.full(args, 0.5, **kwargs)
+
+
 def test_em_flow_loss_consumes_coupling_weights():
     """With half-zero weights, the flow loss equals the weighted mean."""
     torch.manual_seed(0)
@@ -469,8 +475,10 @@ def test_em_flow_loss_consumes_coupling_weights():
     uniform = make_loss(model=model, coupling="independent", lambda_cd=0.0)
 
     with unittest.mock.patch(
-        "torch.rand", side_effect=lambda *a, **k: torch.full(a, 0.5, **k)
-    ), unittest.mock.patch("torch.randn_like", side_effect=lambda x: torch.zeros_like(x)):
+        "torch.rand", side_effect=_const_rand
+    ), unittest.mock.patch(
+        "torch.randn_like", side_effect=lambda x, **k: torch.zeros_like(x)
+    ):
         lw = weighted.training_losses(x1, x0=x0)["flow_loss"]
         lu_terms = []
         for i in range(4):  # weighted mean over the first half only
@@ -493,8 +501,10 @@ def test_em_uniform_weights_match_plain_mean():
     plain = make_loss(model=model, coupling="independent", lambda_cd=0.0)
 
     with unittest.mock.patch(
-        "torch.rand", side_effect=lambda *a, **k: torch.full(a, 0.5, **k)
-    ), unittest.mock.patch("torch.randn_like", side_effect=lambda x: torch.zeros_like(x)):
+        "torch.rand", side_effect=_const_rand
+    ), unittest.mock.patch(
+        "torch.randn_like", side_effect=lambda x, **k: torch.zeros_like(x)
+    ):
         lw = ones.training_losses(x1, x0=x0)["flow_loss"]
         lp = plain.training_losses(x1, x0=x0)["flow_loss"]
     assert lw.item() == pytest.approx(lp.item(), rel=1e-6)

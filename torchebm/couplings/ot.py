@@ -22,6 +22,7 @@ which straightens interpolation paths (OT-CFM, Energy Matching warm-up).
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import torch
 
@@ -243,7 +244,9 @@ class ExactOTCoupling(BaseCostCoupling):
     def __init__(self, tol: float = 1e-4):
         self.tol = tol
 
-    def _solve(self, cost: torch.Tensor) -> torch.Tensor:
+    def _solve(
+        self, cost: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         return _auction_assignment(cost, tol=self.tol)
 
     def __repr__(self) -> str:
@@ -281,9 +284,13 @@ class SinkhornCoupling(BaseCostCoupling):
         self.reg = reg
         self.n_iters = n_iters
 
-    def _solve(self, cost: torch.Tensor) -> torch.Tensor:
+    def _solve(
+        self, cost: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         plan = _sinkhorn_log(cost, reg=self.reg, n_iters=self.n_iters)
-        return torch.multinomial(plan.clamp(min=0), 1).squeeze(-1)
+        return torch.multinomial(
+            plan.clamp(min=0), 1, generator=generator
+        ).squeeze(-1)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(reg={self.reg}, n_iters={self.n_iters})"
@@ -331,7 +338,7 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
         self.n_iters = n_iters
 
     @torch.no_grad()
-    def couple(self, x0, x1=None, **kwargs):
+    def couple(self, x0, x1=None, *, generator=None, **kwargs):
         x1 = self._require_x1(x1)
         self._check_batch(x0, x1)
         if x0.shape[0] == 1:
@@ -342,10 +349,14 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
         )
         mass = plan.sum(dim=1)
         weights = mass / mass.mean().clamp(min=1e-12)
-        idx = torch.multinomial(plan.clamp(min=1e-30), 1).squeeze(-1)
+        idx = torch.multinomial(
+            plan.clamp(min=1e-30), 1, generator=generator
+        ).squeeze(-1)
         return CouplingResult(x0, x1[idx], weights=weights)
 
-    def _solve(self, cost: torch.Tensor) -> torch.Tensor:  # pragma: no cover
+    def _solve(
+        self, cost: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:  # pragma: no cover
         raise NotImplementedError(
             "UnbalancedSinkhornCoupling overrides couple() to attach weights"
         )
@@ -377,7 +388,9 @@ class GreedyCoupling(BaseCostCoupling):
         ```
     """
 
-    def _solve(self, cost: torch.Tensor) -> torch.Tensor:
+    def _solve(
+        self, cost: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         return _greedy_assignment(cost)
 
 

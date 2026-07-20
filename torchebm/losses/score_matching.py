@@ -82,6 +82,7 @@ class ScoreMatching(BaseScoreMatching):
         x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -102,7 +103,9 @@ class ScoreMatching(BaseScoreMatching):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
+            loss = self.compute_loss(
+                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+            )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             mk = self._resolve_model_kwargs(
@@ -117,6 +120,7 @@ class ScoreMatching(BaseScoreMatching):
         x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -136,7 +140,7 @@ class ScoreMatching(BaseScoreMatching):
             model_kwargs, kwargs, warn_key="sm-bare-model-kwargs"
         )
         if self.hessian_method == "approx":
-            return self._approx_score_matching(x, model_kwargs=mk)
+            return self._approx_score_matching(x, model_kwargs=mk, generator=generator)
         else:
             return self._exact_score_matching(x, model_kwargs=mk)
 
@@ -189,13 +193,19 @@ class ScoreMatching(BaseScoreMatching):
         return (term1 + laplacian).mean()
 
     def _approx_score_matching(
-        self, x: torch.Tensor, model_kwargs: Optional[dict] = None
+        self,
+        x: torch.Tensor,
+        model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> torch.Tensor:
         r"""
         Computes score matching loss using a finite-difference approximation for the Hessian trace.
 
         Args:
             x (torch.Tensor): Input data tensor.
+            model_kwargs: Conditioning arguments forwarded to the model.
+            generator: RNG for the finite-difference probe noise; the global RNG
+                when `None`.
 
         Returns:
             torch.Tensor: The score matching loss.
@@ -213,7 +223,9 @@ class ScoreMatching(BaseScoreMatching):
         )
 
         epsilon = 1e-5
-        x_noise = x_detached + epsilon * torch.randn_like(x_detached)
+        x_noise = x_detached + epsilon * torch.randn_like(
+            x_detached, generator=generator
+        )
 
         score_x = self.compute_score(x_detached, model_kwargs=model_kwargs)
         score_x_noise = self.compute_score(x_noise, model_kwargs=model_kwargs)
@@ -287,6 +299,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -306,7 +319,9 @@ class DenoisingScoreMatching(BaseScoreMatching):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
+            loss = self.compute_loss(
+                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+            )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             mk = self._resolve_model_kwargs(
@@ -321,6 +336,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -338,7 +354,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         mk = self._resolve_model_kwargs(
             model_kwargs, kwargs, warn_key="dsm-bare-model-kwargs"
         )
-        x_perturbed, noise = self.perturb_data(x)
+        x_perturbed, noise = self.perturb_data(x, generator=generator)
 
         score = self.compute_score(x_perturbed, model_kwargs=mk)
 
@@ -422,17 +438,21 @@ class SlicedScoreMatching(BaseScoreMatching):
             )
             self.projection_type = "rademacher"
 
-    def _get_random_projections(self, shape: torch.Size) -> torch.Tensor:
+    def _get_random_projections(
+        self, shape: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         r"""
         Generates random vectors for projections.
 
         Args:
-            shape (torch.Size): The shape of the vectors to generate.
+            shape (torch.Tensor): Tensor whose shape, dtype and device the
+                projection vectors match.
+            generator: RNG for the projection draw; the global RNG when `None`.
 
         Returns:
             torch.Tensor: A tensor of random projection vectors.
         """
-        vectors = torch.randn_like(shape)
+        vectors = torch.randn_like(shape, generator=generator)
         if self.projection_type == "rademacher":
             return vectors.sign()
         elif self.projection_type == "sphere":
@@ -447,6 +467,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -467,7 +488,9 @@ class SlicedScoreMatching(BaseScoreMatching):
             x = x.to(device=self.device, dtype=self.dtype)
 
         with self.autocast_context():
-            loss = self.compute_loss(x, *args, model_kwargs=model_kwargs, **kwargs)
+            loss = self.compute_loss(
+                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+            )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
             loss = self.add_regularization(loss, x)
@@ -479,6 +502,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         x: torch.Tensor,
         *args,
         model_kwargs: Optional[dict] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -513,11 +537,11 @@ class SlicedScoreMatching(BaseScoreMatching):
         # -> (n_particles, batch_size, d) -> (n_particles, batch_size, d) -> (n_particles * batch_size, d)
 
         if not self.use_autograd:
-            return self._functional_sliced_loss(dup_x)
+            return self._functional_sliced_loss(dup_x, generator=generator)
 
         self._require_autograd_safe_params()
         dup_x = dup_x.requires_grad_(True)
-        n_vectors = self._get_random_projections(dup_x)
+        n_vectors = self._get_random_projections(dup_x, generator=generator)
 
         logp = (-self.model(dup_x)).sum()
         grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
@@ -534,7 +558,9 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         return loss.mean()
 
-    def _functional_sliced_loss(self, dup_x: torch.Tensor) -> torch.Tensor:
+    def _functional_sliced_loss(
+        self, dup_x: torch.Tensor, generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
         r"""Sliced loss via the functional path (see `BaseScoreMatching`).
 
         Projections are drawn locally and, on a mesh, wrapped batch-sharded so
@@ -544,12 +570,13 @@ class SlicedScoreMatching(BaseScoreMatching):
         Args:
             dup_x (torch.Tensor): Projection-tiled batch of shape
                 `(n_projections * batch_size, d)`.
+            generator: RNG for the projection draw; the global RNG when `None`.
 
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
         """
         params, buffers, mesh = self._functional_state()
-        n_vectors = self._get_random_projections(dup_x)
+        n_vectors = self._get_random_projections(dup_x, generator=generator)
         leaf = self._functional_leaf(dup_x, mesh)
         if mesh is not None:
             from torch.distributed.tensor import DTensor, Shard

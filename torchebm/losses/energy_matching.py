@@ -231,6 +231,7 @@ class EnergyMatchingLoss(BaseLoss):
         *args,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""Compute the Energy Matching loss (nn.Module interface).
@@ -255,7 +256,7 @@ class EnergyMatchingLoss(BaseLoss):
             x = x.to(device=self.device, dtype=self.dtype)
 
         return self.compute_loss(
-            x, *args, x0=x0, model_kwargs=model_kwargs, **kwargs
+            x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
         )
 
     def compute_loss(
@@ -264,6 +265,7 @@ class EnergyMatchingLoss(BaseLoss):
         *args,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""Compute the Energy Matching loss.
@@ -281,7 +283,9 @@ class EnergyMatchingLoss(BaseLoss):
         mk = self._resolve_model_kwargs(
             model_kwargs, kwargs, warn_key="em-bare-model-kwargs"
         )
-        terms = self.training_losses(x, model_kwargs=mk, x0=x0)
+        terms = self.training_losses(
+            x, model_kwargs=mk, x0=x0, generator=generator
+        )
         return terms["loss"]
 
     def _sample_negatives(
@@ -289,6 +293,7 @@ class EnergyMatchingLoss(BaseLoss):
         x1: torch.Tensor,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> torch.Tensor:
         r"""Generate negatives via temperature-scheduled Langevin chains.
 
@@ -303,6 +308,8 @@ class EnergyMatchingLoss(BaseLoss):
             model_kwargs: Conditioning forwarded to the Langevin sampler so the
                 negatives come from the same conditional energy as the
                 positives (else the contrastive term is silently mismatched).
+            generator: RNG for the chain initializations and the Langevin
+                chains themselves; the global RNG when ``None``.
 
         Returns:
             Detached negative samples of shape (batch_size, ...).
@@ -323,20 +330,27 @@ class EnergyMatchingLoss(BaseLoss):
             # Noise-init labels are arbitrary but must match the neg-energy scoring.
             mk_noise = _slice(model_kwargs, slice(0, n_noise))
             if x0 is None:
-                init = torch.randn_like(x1[:n_noise])
+                init = torch.randn_like(x1[:n_noise], generator=generator)
             else:
-                init = x0[torch.randperm(x0.shape[0], device=x0.device)[:n_noise]]
+                init = x0[
+                    torch.randperm(
+                        x0.shape[0], device=x0.device, generator=generator
+                    )[:n_noise]
+                ]
             self.sampler.register_scheduler("noise_scale", self._noise_sweep)
             negatives.append(
                 self.sampler.sample(
                     x=init.detach(),
                     n_steps=self.n_langevin_steps,
                     model_kwargs=mk_noise,
+                    generator=generator,
                 )
             )
             neg_kwargs_parts.append(mk_noise)
         if batch - n_noise > 0:
-            idx = torch.randperm(batch, device=x1.device)[: batch - n_noise]
+            idx = torch.randperm(batch, device=x1.device, generator=generator)[
+                : batch - n_noise
+            ]
             mk_data = _slice(model_kwargs, idx)
             self.sampler.register_scheduler("noise_scale", self._noise_const)
             negatives.append(
@@ -344,6 +358,7 @@ class EnergyMatchingLoss(BaseLoss):
                     x=x1[idx].detach(),
                     n_steps=self.n_langevin_steps,
                     model_kwargs=mk_data,
+                    generator=generator,
                 )
             )
             neg_kwargs_parts.append(mk_data)
@@ -363,6 +378,7 @@ class EnergyMatchingLoss(BaseLoss):
         x1: torch.Tensor,
         model_kwargs: Optional[Dict[str, Any]] = None,
         x0: Optional[torch.Tensor] = None,
+        generator: Optional[torch.Generator] = None,
     ) -> Dict[str, torch.Tensor]:
         r"""Compute training losses with detailed outputs.
 
@@ -373,6 +389,9 @@ class EnergyMatchingLoss(BaseLoss):
                 Gaussian noise when None. Enables arbitrary source-to-target
                 transport (the paper's 2D experiment maps 8 Gaussians to
                 two moons).
+            generator: RNG for the source draw, the coupling, the time sampling,
+                the smoothing noise and the Langevin negatives; the global RNG
+                when ``None``.
 
         Returns:
             Dictionary with 'loss' (scalar), 'flow_loss', 'cd_loss', and,
@@ -386,21 +405,23 @@ class EnergyMatchingLoss(BaseLoss):
 
         # Flow term: regress -grad V onto the OT-coupled displacement.
         if x0 is None:
-            x0 = torch.randn_like(x1)
+            x0 = torch.randn_like(x1, generator=generator)
         else:
             x0 = x0.to(device=self.device, dtype=self.dtype)
             if x0.shape != x1.shape:
                 raise ValueError(
                     f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
                 )
-        coupled = self.coupling(x0, x1, **model_kwargs)
+        coupled = self.coupling(x0, x1, generator=generator, **model_kwargs)
         x0, x1c = coupled
-        t = torch.rand(batch, device=self.device, dtype=self.dtype)
+        t = torch.rand(
+            batch, device=self.device, dtype=self.dtype, generator=generator
+        )
         xt, ut = self.interpolant.interpolate(x0, x1c, t)
 
         sigma = self.sigma
         if sigma > 0:
-            xt = xt + sigma * torch.randn_like(xt)
+            xt = xt + sigma * torch.randn_like(xt, generator=generator)
         xt = xt.detach().requires_grad_(True)
 
         with self.autocast_context():
@@ -428,7 +449,9 @@ class EnergyMatchingLoss(BaseLoss):
             # _sample_negatives overwrites this with conditioning aligned to the
             # negatives; the assignment here is the fallback when it does not.
             self._neg_model_kwargs = model_kwargs
-            negatives = self._sample_negatives(x1, x0=x0, model_kwargs=model_kwargs)
+            negatives = self._sample_negatives(
+                x1, x0=x0, model_kwargs=model_kwargs, generator=generator
+            )
             neg_model_kwargs = self._neg_model_kwargs
             with self.autocast_context():
                 pos_energy = self.model(x1, **model_kwargs)
