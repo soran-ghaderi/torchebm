@@ -28,9 +28,24 @@ def _dtensor_type():
     return DTensor
 
 
+def _has_dtensor_params(module: nn.Module) -> bool:
+    r"""Whether the module's parameters are sharded DTensors (e.g. FSDP2)."""
+    dtensor = _dtensor_type()
+    return dtensor is not None and isinstance(
+        next(module.parameters(), None), dtensor
+    )
+
+
 class BaseLoss(Schedulable, TorchEBMModule, ABC):
-    """
+    r"""
     Abstract base class for loss functions used in energy-based models.
+
+    Distributed reduction semantics: losses reduce with means over the local
+    batch. Combined with the gradient averaging of data-parallel wrappers
+    (DDP, FSDP), parameter gradients equal the global-batch mean exactly when
+    per-rank batch sizes are equal; with unequal batches the smaller ranks
+    are over-weighted. Batch-global statistics (couplings, trimmed means)
+    stay rank-local unless a component takes an explicit ``process_group``.
 
     Args:
         dtype (torch.dtype): Data type for computations.
@@ -128,8 +143,13 @@ class BaseContrastiveDivergence(BaseLoss):
     the same world size. Do not put this state into a
     `torch.distributed.checkpoint` state dict; its planner deduplicates
     non-sharded tensors as replicated, which silently keeps rank 0's chains
-    only. Re-initializing from noise instead of restoring is an acceptable
-    fallback; chains re-warm within a few hundred steps.
+    only. When the loss's `model` is itself sharded, the full
+    `loss.state_dict()` contains its DTensor parameters: save those through
+    `torch.distributed.checkpoint` on the model instead, and keep only the
+    buffer entries (`replay_buffer`, `buffer_ptr`) in the rank-local file,
+    restoring them with `load_state_dict(..., strict=False)` after
+    `initialize_buffer`. Re-initializing from noise instead of restoring is
+    an acceptable fallback; chains re-warm within a few hundred steps.
     """
 
     def __init__(
@@ -682,10 +702,7 @@ class BaseScoreMatching(BaseLoss):
 
     def _require_autograd_safe_params(self) -> None:
         r"""Reject the in-place autograd path when parameters are sharded."""
-        dtensor = _dtensor_type()
-        if dtensor is not None and isinstance(
-            next(self.model.parameters(), None), dtensor
-        ):
+        if _has_dtensor_params(self.model):
             raise RuntimeError(
                 "The autograd score path cannot run with FSDP-managed "
                 "(DTensor) parameters: resharding hooks free storage the "

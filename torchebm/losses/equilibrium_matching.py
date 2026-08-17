@@ -39,6 +39,7 @@ from torchebm.core import (
     BaseScheduler,
     expand_t_like_x,
 )
+from torchebm.core.base_loss import _has_dtensor_params
 from torchebm.couplings import resolve_coupling
 from torchebm.interpolants import resolve_interpolant
 from torchebm.losses import (
@@ -309,6 +310,20 @@ class EquilibriumMatchingLoss(BaseLoss):
         """
         if model_kwargs is None:
             model_kwargs = {}
+
+        if (
+            self.energy_type != "none"
+            and self.model.training
+            and _has_dtensor_params(self.model)
+        ):
+            raise RuntimeError(
+                "Explicit EqM energies (energy_type != 'none') backpropagate "
+                "through the energy's input-gradient (a second-order "
+                "backward), which cannot run with FSDP-managed (DTensor) "
+                "parameters: resharding hooks free storage the second-order "
+                "backward still references. Use energy_type='none' (implicit "
+                "EqM) or train with DDP or unsharded parameters."
+            )
 
         x1 = x1.to(device=self.device, dtype=self.dtype)
         batch = x1.shape[0]

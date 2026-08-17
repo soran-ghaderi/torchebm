@@ -60,6 +60,7 @@ from torchebm.core import (
     ConstantScheduler,
     TemperatureScheduler,
 )
+from torchebm.core.base_loss import _has_dtensor_params
 from torchebm.couplings import resolve_coupling
 from torchebm.interpolants import resolve_interpolant
 from torchebm.losses.loss_utils import (
@@ -399,6 +400,15 @@ class EnergyMatchingLoss(BaseLoss):
         """
         if model_kwargs is None:
             model_kwargs = {}
+
+        if self.model.training and _has_dtensor_params(self.model):
+            raise RuntimeError(
+                "The Energy Matching flow term backpropagates through the "
+                "potential's input-gradient (a second-order backward), which "
+                "cannot run with FSDP-managed (DTensor) parameters: "
+                "resharding hooks free storage the second-order backward "
+                "still references. Train with DDP or unsharded parameters."
+            )
 
         x1 = x1.to(device=self.device, dtype=self.dtype)
         batch = x1.shape[0]
