@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block outdated %}
+  {% if page.meta.git_revision_date_localized %}
+    You're not viewing the latest version.
+    <a href="{{ '../' ~ base_url }}">
+      <strong>Click here to go to latest.</strong>
+    </a>
+  {% endif %}
+{% endblock %}
