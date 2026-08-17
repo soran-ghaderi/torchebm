@@ -20,6 +20,7 @@ __all__ = [
     "get_world_size",
     "all_gather_cat",
     "broadcast_object",
+    "broadcast_tensor",
     "unsharded",
 ]
 
@@ -76,6 +77,10 @@ def broadcast_object(
 ) -> Any:
     r"""Broadcast a picklable object from rank `src`; identity when not distributed.
 
+    Requires numpy: `torch.distributed`'s object collectives deserialize
+    through numpy buffers. For tensors of a shape known on every rank, use
+    `broadcast_tensor`, which needs neither pickle nor numpy.
+
     Args:
         obj: Object to broadcast (significant on `src` only).
         src: Source rank.
@@ -89,6 +94,35 @@ def broadcast_object(
     buf = [obj if get_rank(group) == src else None]
     dist.broadcast_object_list(buf, src=src, group=group)
     return buf[0]
+
+
+def broadcast_tensor(
+    t: torch.Tensor,
+    src: int = 0,
+    group: Optional["dist.ProcessGroup"] = None,
+) -> torch.Tensor:
+    r"""Broadcast a tensor from rank `src`; identity when not distributed.
+
+    The shape and dtype must match on every rank (no pickling, so this works
+    without numpy). Under a CUDA backend a CPU tensor round-trips through the
+    current device and is returned on its original device.
+
+    Args:
+        t: Tensor to broadcast (values significant on `src` only).
+        src: Source rank.
+        group: Process group; the default group when None.
+
+    Returns:
+        The tensor from rank `src` on every rank, on `t`'s device.
+    """
+    if get_world_size(group) == 1:
+        return t
+    device = t.device
+    if "nccl" in dist.get_backend(group) and not t.is_cuda:
+        t = t.cuda()
+    t = t.contiguous()
+    dist.broadcast(t, src=src, group=group)
+    return t.to(device)
 
 
 @contextmanager

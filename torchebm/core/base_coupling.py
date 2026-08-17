@@ -235,7 +235,7 @@ class BaseCostCoupling(BaseCoupling):
             )
         from torchebm.distributed import (
             all_gather_cat,
-            broadcast_object,
+            broadcast_tensor,
             get_rank,
         )
 
@@ -245,7 +245,7 @@ class BaseCostCoupling(BaseCoupling):
             return CouplingResult(x0, x1)
         cost = self.compute_cost(g0, g1)
         idx = self._solve(cost, generator=generator)
-        idx = broadcast_object(idx.cpu(), src=0, group=self.process_group)
+        idx = broadcast_tensor(idx, src=0, group=self.process_group)
         start = get_rank(self.process_group) * x0.shape[0]
         return CouplingResult(x0, g1[idx[start : start + x0.shape[0]]])
 

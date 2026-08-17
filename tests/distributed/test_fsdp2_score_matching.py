@@ -23,7 +23,7 @@ from torch import nn
 
 from torchebm.core import BaseModel
 
-from dist_harness import cpu_mesh, save_result, spawn_dist
+from dist_harness import dist_device, dist_mesh, save_result, spawn_dist
 
 fsdp = pytest.importorskip("torch.distributed.fsdp")
 
@@ -51,7 +51,7 @@ class MLPEnergy(BaseModel):
 
 
 def _shard(model, world_size):
-    mesh = cpu_mesh(world_size)
+    mesh = dist_mesh(world_size)
     for m in model.net:
         if isinstance(m, nn.Linear):
             fsdp.fully_shard(m, mesh=mesh)
@@ -61,10 +61,10 @@ def _shard(model, world_size):
 
 def _hook_path_worker(rank, world_size, tmpdir):
     torch.manual_seed(0)
-    model = _shard(MLPEnergy(), world_size)
+    model = _shard(MLPEnergy().to(dist_device()), world_size)
 
     torch.manual_seed(100 + rank)
-    x = torch.randn(BATCH, DIM).requires_grad_(True)
+    x = torch.randn(BATCH, DIM).to(dist_device()).requires_grad_(True)
     energy = model(x)
     score = torch.autograd.grad(energy.sum(), x, create_graph=True)[0]
     loss = 0.5 * score.square().sum(dim=1).mean()
@@ -90,7 +90,7 @@ def _functional_dsm_worker(rank, world_size, tmpdir):
     from torchebm.losses import DenoisingScoreMatching
 
     torch.manual_seed(0)
-    model = MLPEnergy()
+    model = MLPEnergy().to(dist_device())
     ref_model = copy.deepcopy(model)
     model = _shard(model, world_size)
 
@@ -103,7 +103,7 @@ def _functional_dsm_worker(rank, world_size, tmpdir):
     ref_loss_fn = DenoisingScoreMatching(model=ref_model, noise_scale=NOISE)
 
     torch.manual_seed(100 + rank)
-    x = torch.randn(BATCH, DIM)
+    x = torch.randn(BATCH, DIM).to(dist_device())
     torch.manual_seed(7 + rank)
     loss = loss_fn(x)
     loss.backward()
@@ -122,11 +122,26 @@ def _functional_dsm_worker(rank, world_size, tmpdir):
         dist.all_reduce(mean)
         mean /= world_size
         max_err = max(max_err, (full - mean).abs().max().item())
+
+    # optimizer contract: grads must carry the parameter's placement (the
+    # post-accumulate hook reduce-scatters the Partial contributions)
+    placements_match = all(
+        tuple(p.grad.placements) == tuple(p.placements)
+        for p in model.parameters()
+        if p.grad is not None and hasattr(p.grad, "placements")
+    )
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+    opt.step()
+    stepped_finite = all(
+        bool(torch.isfinite(p.full_tensor()).all()) for p in model.parameters()
+    )
     save_result(
         tmpdir,
         rank,
         {
             "max_err": max_err,
+            "placements_match": placements_match,
+            "stepped_finite": stepped_finite,
             "loss_matches_local_ref": bool(
                 torch.allclose(loss.detach(), ref_loss.detach(), atol=1e-6)
             ),
@@ -139,16 +154,18 @@ def test_functional_dsm_matches_unsharded_reference():
     for res in results:
         assert res["loss_matches_local_ref"], res
         assert res["max_err"] < 1e-5, res
+        assert res["placements_match"], res
+        assert res["stepped_finite"], res
 
 
 def _autograd_fail_fast_worker(rank, world_size, tmpdir):
     from torchebm.losses import DenoisingScoreMatching
 
     torch.manual_seed(0)
-    model = _shard(MLPEnergy(), world_size)
+    model = _shard(MLPEnergy().to(dist_device()), world_size)
     loss_fn = DenoisingScoreMatching(model=model, noise_scale=NOISE)
     try:
-        loss_fn(torch.randn(BATCH, DIM))
+        loss_fn(torch.randn(BATCH, DIM, device=dist_device()))
         msg = None
     except RuntimeError as e:
         msg = str(e)

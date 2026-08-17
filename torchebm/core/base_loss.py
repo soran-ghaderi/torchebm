@@ -467,7 +467,7 @@ class BaseContrastiveDivergence(BaseLoss):
             )
         from torchebm.distributed import (
             all_gather_cat,
-            broadcast_object,
+            broadcast_tensor,
             get_rank,
             get_world_size,
         )
@@ -476,7 +476,7 @@ class BaseContrastiveDivergence(BaseLoss):
             return
         gathered = all_gather_cat(self.replay_buffer, group=process_group)
         perm = torch.randperm(gathered.shape[0], generator=generator)
-        perm = broadcast_object(perm, src=0, group=process_group)
+        perm = broadcast_tensor(perm, src=0, group=process_group)
         start = get_rank(process_group) * self.buffer_size
         self.replay_buffer.copy_(gathered[perm[start : start + self.buffer_size]])
 
@@ -575,6 +575,36 @@ class BaseScoreMatching(BaseLoss):
         self.hutchinson_samples = hutchinson_samples
         self.custom_regularization = custom_regularization
         object.__setattr__(self, "_functional_model", functional_model)
+        if not use_autograd:
+            self._register_functional_grad_hooks()
+
+    def _register_functional_grad_hooks(self) -> None:
+        r"""Restore parameter-gradient placements after functional backwards.
+
+        The functional path bypasses FSDP's hooks, so the backward leaves
+        DTensor parameter gradients with `Partial` placement (unreduced
+        per-rank contributions); optimizers require gradients that match the
+        parameter's placement. This hook redistributes each gradient to the
+        parameter's placements at accumulation time, performing the same
+        reduce-scatter the hook path would have run. No-op for plain tensors
+        and already-matching placements, so it is safe when the same model is
+        also trained through hook-path losses.
+        """
+        dtensor = _dtensor_type()
+        if dtensor is None:
+            return
+
+        def _restore_placement(param: torch.Tensor) -> None:
+            grad = param.grad
+            if isinstance(grad, dtensor) and tuple(grad.placements) != tuple(
+                param.placements
+            ):
+                param.grad = grad.redistribute(
+                    param.device_mesh, param.placements
+                )
+
+        for p in self.model.parameters():
+            p.register_post_accumulate_grad_hook(_restore_placement)
 
     @property
     def functional_model(self) -> Optional[nn.Module]:
