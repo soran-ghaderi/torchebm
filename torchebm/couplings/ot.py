@@ -227,6 +227,10 @@ class ExactOTCoupling(BaseCostCoupling):
     (batch 128) to 0.5 s (batch 256) per call on CPU or GPU; prefer
     `SinkhornCoupling` inside training loops.
 
+    Rejects `process_group` at construction: the assignment problem on the
+    pooled global batch is quadratic in `world_size * batch`; use
+    `SinkhornCoupling` for global-batch coupling.
+
     Args:
         tol: Optimality tolerance, relative to the normalized cost scale.
 
@@ -241,7 +245,8 @@ class ExactOTCoupling(BaseCostCoupling):
         ```
     """
 
-    def __init__(self, tol: float = 1e-4):
+    def __init__(self, tol: float = 1e-4, process_group=None):
+        super().__init__(process_group=process_group)
         self.tol = tol
 
     def _solve(
@@ -266,6 +271,18 @@ class SinkhornCoupling(BaseCostCoupling):
     Args:
         reg: Entropic regularization strength.
         n_iters: Number of Sinkhorn iterations.
+        process_group: When set, couple globally over the pooled batches of
+            every rank in the group: both batches are all_gathered, every
+            rank solves the identical pooled problem, the row-conditional
+            draw is broadcast from rank 0 (per-rank generators cannot
+            desynchronize it), and each rank keeps its own rows, paired
+            against targets from any rank. This shrinks the minibatch-OT
+            bias at fixed per-rank batch size, at the price of a
+            \((\text{world\_size} \times \text{batch})^2\) cost matrix
+            materialized on every rank. Requires equal batch sizes per rank,
+            and `couple` becomes a collective every rank must enter
+            together. Pass `torch.distributed.group.WORLD` for the default
+            group; `None` (the default) never issues a collective.
 
     Example:
         ```python
@@ -276,7 +293,10 @@ class SinkhornCoupling(BaseCostCoupling):
         ```
     """
 
-    def __init__(self, reg: float = 0.05, n_iters: int = 100):
+    _supports_process_group = True
+
+    def __init__(self, reg: float = 0.05, n_iters: int = 100, process_group=None):
+        super().__init__(process_group=process_group)
         if reg <= 0:
             raise ValueError(f"reg must be positive, got {reg}")
         if n_iters <= 0:
@@ -326,7 +346,14 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
         ```
     """
 
-    def __init__(self, reg: float = 0.05, reg_marginal: float = 1.0, n_iters: int = 100):
+    def __init__(
+        self,
+        reg: float = 0.05,
+        reg_marginal: float = 1.0,
+        n_iters: int = 100,
+        process_group=None,
+    ):
+        super().__init__(process_group=process_group)
         if reg <= 0:
             raise ValueError(f"reg must be positive, got {reg}")
         if reg_marginal <= 0:
@@ -378,6 +405,9 @@ class GreedyCoupling(BaseCostCoupling):
     non-optimal approximation to the assignment problem, useful when the
     exact auction solver (~0.5 s per call at batch 256) is too slow and the
     stochasticity of `SinkhornCoupling` is unwanted.
+
+    Rejects `process_group` at construction; use `SinkhornCoupling` for
+    global-batch coupling.
 
     Example:
         ```python
