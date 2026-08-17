@@ -18,7 +18,7 @@ from torchebm.core import BaseModel
 from torchebm.losses import ContrastiveDivergence
 from torchebm.samplers import LangevinDynamics
 
-from dist_harness import save_result, spawn_dist
+from dist_harness import dist_device, make_generator, save_result, spawn_dist
 
 pytestmark = [
     pytest.mark.distributed,
@@ -40,7 +40,7 @@ class QuadraticEnergy(BaseModel):
 
 
 def _make_loss():
-    model = QuadraticEnergy()
+    model = QuadraticEnergy().to(dist_device())
     return ContrastiveDivergence(
         model=model,
         sampler=LangevinDynamics(model=model, step_size=1e-2),
@@ -49,6 +49,7 @@ def _make_loss():
         buffer_size=BUFFER,
         init_steps=0,
         new_sample_ratio=0.0,
+        device=dist_device(),
     )
 
 
@@ -59,8 +60,8 @@ def _rows(t: torch.Tensor):
 def _mix_worker(rank, world_size, tmpdir):
     loss_a = _make_loss()
     loss_b = _make_loss()
-    loss_a.initialize_buffer((DIM,), generator=torch.Generator().manual_seed(100 + rank))
-    loss_b.initialize_buffer((DIM,), generator=torch.Generator().manual_seed(100 + rank))
+    loss_a.initialize_buffer((DIM,), generator=make_generator(100 + rank))
+    loss_b.initialize_buffer((DIM,), generator=make_generator(100 + rank))
     pre = loss_a.replay_buffer.clone()
     # rank-offset seeds: only rank 0's generator may influence the permutation
     loss_a.mix_buffer_across_ranks(generator=torch.Generator().manual_seed(500 + rank))
@@ -122,7 +123,7 @@ def test_mix_requires_initialized_buffer():
 
 def test_mix_is_noop_single_process():
     loss = _make_loss()
-    loss.initialize_buffer((DIM,), generator=torch.Generator().manual_seed(0))
+    loss.initialize_buffer((DIM,), generator=make_generator(0))
     before = loss.replay_buffer.clone()
     loss.mix_buffer_across_ranks()
     assert torch.equal(loss.replay_buffer, before)
@@ -130,7 +131,7 @@ def test_mix_is_noop_single_process():
 
 def test_buffer_checkpoint_roundtrip_requires_init():
     loss = _make_loss()
-    loss.initialize_buffer((DIM,), generator=torch.Generator().manual_seed(1))
+    loss.initialize_buffer((DIM,), generator=make_generator(1))
     loss.update_buffer(torch.randn(4, DIM))
     state = loss.state_dict()
 
@@ -138,7 +139,7 @@ def test_buffer_checkpoint_roundtrip_requires_init():
     with pytest.raises(RuntimeError, match="replay_buffer"):
         fresh.load_state_dict(state)
 
-    fresh.initialize_buffer((DIM,), generator=torch.Generator().manual_seed(2))
+    fresh.initialize_buffer((DIM,), generator=make_generator(2))
     fresh.load_state_dict(state)
     assert torch.equal(fresh.replay_buffer, loss.replay_buffer)
     assert fresh._buffer_ptr_int == 4

@@ -22,7 +22,14 @@ from torchebm.core import BaseModel
 from torchebm.distributed import unsharded
 from torchebm.samplers import HamiltonianMonteCarlo, LangevinDynamics
 
-from dist_harness import cpu_mesh, save_result, spawn_dist
+from dist_harness import (
+    DEVICE_KIND,
+    dist_device,
+    dist_mesh,
+    make_generator,
+    save_result,
+    spawn_dist,
+)
 
 fsdp = pytest.importorskip("torch.distributed.fsdp")
 
@@ -56,7 +63,7 @@ class MLPEnergy(BaseModel):
 
 
 def _shard(model, world_size, **kwargs):
-    mesh = cpu_mesh(world_size)
+    mesh = dist_mesh(world_size)
     for m in model.net:
         if isinstance(m, nn.Linear):
             fsdp.fully_shard(m, mesh=mesh, **kwargs)
@@ -67,14 +74,14 @@ def _shard(model, world_size, **kwargs):
 def _pair(rank, world_size, **kwargs):
     r"""A sharded model and an unsharded replica of the same initialization."""
     torch.manual_seed(0)
-    model = MLPEnergy()
+    model = MLPEnergy().to(dist_device())
     ref = copy.deepcopy(model)
     return _shard(model, world_size, **kwargs), ref
 
 
 def _local_batch(rank):
     torch.manual_seed(100 + rank)
-    return torch.randn(BATCH, DIM)
+    return torch.randn(BATCH, DIM).to(dist_device())
 
 
 def _gradient_worker(rank, world_size, tmpdir):
@@ -102,9 +109,9 @@ def _sampler_worker(rank, world_size, tmpdir):
             ),
         ),
     ):
-        g = torch.Generator().manual_seed(1234)
+        g = make_generator(1234)
         out = build(model).sample(x=x, n_steps=STEPS, generator=g)
-        g = torch.Generator().manual_seed(1234)
+        g = make_generator(1234)
         ref_out = build(ref).sample(x=x, n_steps=STEPS, generator=g)
         errs[name] = (out - ref_out).abs().max().item()
     save_result(tmpdir, rank, errs)
@@ -121,16 +128,16 @@ def _unsharded_context_worker(rank, world_size, tmpdir):
     x = _local_batch(rank)
     sampler = LangevinDynamics(model=model, step_size=0.01)
 
-    g = torch.Generator().manual_seed(1234)
+    g = make_generator(1234)
     with unsharded(model.net):
         out = sampler.sample(x=x, n_steps=STEPS, generator=g)
 
-    g = torch.Generator().manual_seed(1234)
+    g = make_generator(1234)
     ref_out = LangevinDynamics(model=ref, step_size=0.01).sample(
         x=x, n_steps=STEPS, generator=g
     )
 
-    g = torch.Generator().manual_seed(1234)
+    g = make_generator(1234)
     after = sampler.sample(x=x, n_steps=STEPS, generator=g)
 
     save_result(
@@ -167,7 +174,7 @@ def _device_dtype_worker(rank, world_size, tmpdir):
 def test_device_and_dtype_resolve_through_dtensor_parameters():
     for res in spawn_dist(_device_dtype_worker):
         assert res["is_dtensor"], res
-        assert res["device"] == "cpu", res
+        assert res["device"].startswith(DEVICE_KIND), res
         assert res["dtype"] == "torch.float32", res
 
 
@@ -175,7 +182,7 @@ def _meta_init_worker(rank, world_size, tmpdir):
     with torch.device("meta"):
         model = MLPEnergy()
     model = _shard(model, world_size)
-    model.to_empty(device="cpu")
+    model.to_empty(device=dist_device())
     torch.manual_seed(0)
     for m in model.net:
         if isinstance(m, nn.Linear):
@@ -225,7 +232,7 @@ def test_bf16_policy_and_force_fp32_gradient():
 
 def _ddp_worker(rank, world_size, tmpdir):
     torch.manual_seed(0)
-    model = MLPEnergy()
+    model = MLPEnergy().to(dist_device())
     ref = copy.deepcopy(model)
     model.net = nn.parallel.DistributedDataParallel(model.net)
 

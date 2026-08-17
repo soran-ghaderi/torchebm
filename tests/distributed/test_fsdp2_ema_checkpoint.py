@@ -23,7 +23,7 @@ from torchebm.losses import ContrastiveDivergence
 from torchebm.samplers import LangevinDynamics
 from torchebm.utils.training import update_ema
 
-from dist_harness import cpu_mesh, save_result, spawn_dist
+from dist_harness import dist_device, dist_mesh, make_generator, save_result, spawn_dist
 
 fsdp = pytest.importorskip("torch.distributed.fsdp")
 
@@ -53,7 +53,7 @@ class MLPEnergy(BaseModel):
 
 
 def _shard_net(model, world_size):
-    mesh = cpu_mesh(world_size)
+    mesh = dist_mesh(world_size)
     for m in model.net:
         if isinstance(m, nn.Linear):
             fsdp.fully_shard(m, mesh=mesh)
@@ -69,7 +69,7 @@ def _full(param):
 
 def _ema_worker(rank, world_size, tmpdir):
     torch.manual_seed(0)
-    model = MLPEnergy()
+    model = MLPEnergy().to(dist_device())
     ema = copy.deepcopy(model)
     model_ref = copy.deepcopy(model)
     ema_ref = copy.deepcopy(model)
@@ -80,7 +80,9 @@ def _ema_worker(rank, world_size, tmpdir):
     opt_ref = torch.optim.SGD(model_ref.parameters(), lr=0.05)
     for step in range(4):
         # identical batch on every rank: sharded (averaged) grads == ref grads
-        x = torch.randn(BATCH, DIM, generator=torch.Generator().manual_seed(50 + step))
+        x = torch.randn(
+            BATCH, DIM, generator=torch.Generator().manual_seed(50 + step)
+        ).to(dist_device())
         for m, o in ((model, opt), (model_ref, opt_ref)):
             o.zero_grad()
             m(x).sum().backward()
@@ -109,15 +111,16 @@ def _dcp_worker(rank, world_size, tmpdir):
     )
 
     torch.manual_seed(0)
-    model = _shard_net(MLPEnergy(), world_size)
+    model = _shard_net(MLPEnergy().to(dist_device()), world_size)
     loss = ContrastiveDivergence(
         model=model,
         sampler=LangevinDynamics(model=model, step_size=0.01),
         persistent=True,
         buffer_size=BUFFER,
         init_steps=0,
+        device=dist_device(),
     )
-    loss.initialize_buffer((DIM,), generator=torch.Generator().manual_seed(100 + rank))
+    loss.initialize_buffer((DIM,), generator=make_generator(100 + rank))
     loss.update_buffer(torch.randn(4, DIM))
 
     saved_params = {n: _full(p).clone() for n, p in model.named_parameters()}

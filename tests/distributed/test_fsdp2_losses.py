@@ -30,7 +30,7 @@ from torchebm.losses import (
 )
 from torchebm.samplers import LangevinDynamics
 
-from dist_harness import cpu_mesh, save_result, spawn_dist
+from dist_harness import dist_device, dist_mesh, make_generator, save_result, spawn_dist
 
 fsdp = pytest.importorskip("torch.distributed.fsdp")
 
@@ -70,7 +70,7 @@ class FieldNet(nn.Module):
 
 
 def _shard_net(model, world_size):
-    mesh = cpu_mesh(world_size)
+    mesh = dist_mesh(world_size)
     for m in model.net:
         if isinstance(m, nn.Linear):
             fsdp.fully_shard(m, mesh=mesh)
@@ -80,14 +80,14 @@ def _shard_net(model, world_size):
 
 def _pair(cls, world_size):
     torch.manual_seed(0)
-    model = cls()
+    model = cls().to(dist_device())
     ref = copy.deepcopy(model)
     return _shard_net(model, world_size), ref
 
 
 def _local_batch(rank):
     torch.manual_seed(100 + rank)
-    return torch.randn(BATCH, DIM)
+    return torch.randn(BATCH, DIM).to(dist_device())
 
 
 def _grad_err(model, ref, world_size):
@@ -113,15 +113,16 @@ def _cd_loss(model):
         sampler=LangevinDynamics(model=model, step_size=0.01),
         k_steps=3,
         persistent=False,
+        device=dist_device(),
     )
 
 
 def _cd_worker(rank, world_size, tmpdir):
     model, ref = _pair(MLPEnergy, world_size)
     x = _local_batch(rank)
-    loss, _ = _cd_loss(model)(x, generator=torch.Generator().manual_seed(9))
+    loss, _ = _cd_loss(model)(x, generator=make_generator(9))
     loss.backward()
-    ref_loss, _ = _cd_loss(ref)(x, generator=torch.Generator().manual_seed(9))
+    ref_loss, _ = _cd_loss(ref)(x, generator=make_generator(9))
     ref_loss.backward()
     save_result(
         tmpdir,
@@ -143,11 +144,11 @@ def _eqm_worker(rank, world_size, tmpdir):
     model, ref = _pair(FieldNet, world_size)
     x = _local_batch(rank)
     loss = EquilibriumMatchingLoss(model=model)(
-        x, generator=torch.Generator().manual_seed(9)
+        x, generator=make_generator(9)
     )
     loss.backward()
     ref_loss = EquilibriumMatchingLoss(model=ref)(
-        x, generator=torch.Generator().manual_seed(9)
+        x, generator=make_generator(9)
     )
     ref_loss.backward()
     save_result(
@@ -173,7 +174,7 @@ def _em_worker(rank, world_size, tmpdir):
 
     em = EnergyMatchingLoss(model=model, lambda_cd=0.0, n_langevin_steps=2)
     try:
-        em(x, generator=torch.Generator().manual_seed(5))
+        em(x, generator=make_generator(5))
         out["train_error"] = ""
     except RuntimeError as e:
         out["train_error"] = str(e)
@@ -181,8 +182,8 @@ def _em_worker(rank, world_size, tmpdir):
     model.eval()
     ref.eval()
     em_ref = EnergyMatchingLoss(model=ref, lambda_cd=0.0, n_langevin_steps=2)
-    val = em(x, generator=torch.Generator().manual_seed(5))
-    ref_val = em_ref(x, generator=torch.Generator().manual_seed(5))
+    val = em(x, generator=make_generator(5))
+    ref_val = em_ref(x, generator=make_generator(5))
     out["eval_err"] = abs(val.item() - ref_val.item())
     save_result(tmpdir, rank, out)
 
@@ -200,7 +201,7 @@ def _eqm_explicit_worker(rank, world_size, tmpdir):
 
     eqm = EquilibriumMatchingLoss(model=model, energy_type="dot")
     try:
-        eqm(x, generator=torch.Generator().manual_seed(5))
+        eqm(x, generator=make_generator(5))
         out["train_error"] = ""
     except RuntimeError as e:
         out["train_error"] = str(e)
@@ -208,8 +209,8 @@ def _eqm_explicit_worker(rank, world_size, tmpdir):
     model.eval()
     ref.eval()
     eqm_ref = EquilibriumMatchingLoss(model=ref, energy_type="dot")
-    val = eqm(x, generator=torch.Generator().manual_seed(5))
-    ref_val = eqm_ref(x, generator=torch.Generator().manual_seed(5))
+    val = eqm(x, generator=make_generator(5))
+    ref_val = eqm_ref(x, generator=make_generator(5))
     out["eval_err"] = abs(val.item() - ref_val.item())
     save_result(tmpdir, rank, out)
 

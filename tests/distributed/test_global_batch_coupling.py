@@ -21,7 +21,7 @@ from torchebm.couplings import (
     UnbalancedSinkhornCoupling,
 )
 
-from dist_harness import save_result, spawn_dist
+from dist_harness import dist_device, make_generator, save_result, spawn_dist
 
 pytestmark = [
     pytest.mark.distributed,
@@ -37,8 +37,8 @@ N_ITERS = 200
 
 
 def _rank_batches(rank):
-    x0 = torch.randn(BATCH, DIM, generator=torch.Generator().manual_seed(100 + rank))
-    x1 = torch.randn(BATCH, DIM, generator=torch.Generator().manual_seed(200 + rank))
+    x0 = torch.randn(BATCH, DIM, device=dist_device(), generator=make_generator(100 + rank))
+    x1 = torch.randn(BATCH, DIM, device=dist_device(), generator=make_generator(200 + rank))
     return x0, x1
 
 
@@ -48,29 +48,31 @@ def _global_worker(rank, world_size, tmpdir):
         reg=REG, n_iters=N_ITERS, process_group=dist.group.WORLD
     )
     # rank-offset seeds: only rank 0's generator may influence the draw
-    res = coupling(
-        x0, x1, generator=torch.Generator().manual_seed(DRAW_SEED + rank)
+    res = coupling(x0, x1, generator=make_generator(DRAW_SEED + rank))
+
+    # in-worker single-process reference on the concatenated batches: same
+    # device, same kernels, same generator stream as rank 0's draw
+    batches = [_rank_batches(r) for r in range(world_size)]
+    full0 = torch.cat([b[0] for b in batches])
+    full1 = torch.cat([b[1] for b in batches])
+    ref = SinkhornCoupling(reg=REG, n_iters=N_ITERS)(
+        full0, full1, generator=make_generator(DRAW_SEED)
     )
-    save_result(tmpdir, rank, {"x0": res.x0, "x1": res.x1})
+    start = rank * BATCH
+    save_result(
+        tmpdir,
+        rank,
+        {
+            "x0_unchanged": torch.equal(res.x0, x0),
+            "x1_err": (res.x1 - ref.x1[start : start + BATCH]).abs().max().item(),
+        },
+    )
 
 
 def test_two_rank_global_coupling_matches_single_process():
-    results = spawn_dist(_global_worker)
-    full0 = torch.cat([_rank_batches(0)[0], _rank_batches(1)[0]])
-    full1 = torch.cat([_rank_batches(0)[1], _rank_batches(1)[1]])
-
-    # workers run single-threaded; pin the reference solve to match bitwise
-    prev_threads = torch.get_num_threads()
-    torch.set_num_threads(1)
-    try:
-        ref = SinkhornCoupling(reg=REG, n_iters=N_ITERS)(
-            full0, full1, generator=torch.Generator().manual_seed(DRAW_SEED)
-        )
-    finally:
-        torch.set_num_threads(prev_threads)
-
-    assert torch.equal(torch.cat([results[0]["x0"], results[1]["x0"]]), full0)
-    assert torch.equal(torch.cat([results[0]["x1"], results[1]["x1"]]), ref.x1)
+    for res in spawn_dist(_global_worker):
+        assert res["x0_unchanged"], res
+        assert res["x1_err"] == 0.0, res
 
 
 def test_assignment_and_unbalanced_couplings_reject_process_group():
@@ -82,10 +84,10 @@ def test_assignment_and_unbalanced_couplings_reject_process_group():
 def test_single_process_with_group_degrades_to_local():
     x0, x1 = _rank_batches(0)
     grouped = SinkhornCoupling(reg=REG, n_iters=N_ITERS, process_group=object())(
-        x0, x1, generator=torch.Generator().manual_seed(3)
+        x0, x1, generator=make_generator(3)
     )
     local = SinkhornCoupling(reg=REG, n_iters=N_ITERS)(
-        x0, x1, generator=torch.Generator().manual_seed(3)
+        x0, x1, generator=make_generator(3)
     )
     assert torch.equal(grouped.x1, local.x1)
 
