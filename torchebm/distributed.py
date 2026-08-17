@@ -7,10 +7,12 @@ optional ``process_group`` only where the math is batch-global (e.g. minibatch
 OT couplings); no default ``forward()``/``sample()`` path issues a collective.
 """
 
-from typing import Any, Optional
+from contextlib import contextmanager
+from typing import Any, Iterator, Optional
 
 import torch
 import torch.distributed as dist
+from torch import nn
 
 __all__ = [
     "is_distributed",
@@ -18,6 +20,7 @@ __all__ = [
     "get_world_size",
     "all_gather_cat",
     "broadcast_object",
+    "unsharded",
 ]
 
 
@@ -86,3 +89,45 @@ def broadcast_object(
     buf = [obj if get_rank(group) == src else None]
     dist.broadcast_object_list(buf, src=src, group=group)
     return buf[0]
+
+
+@contextmanager
+def unsharded(module: nn.Module, recurse: bool = True) -> Iterator[nn.Module]:
+    r"""Keep an FSDP2 module's parameters unsharded for the duration of the block.
+
+    A k-step MCMC chain calls the energy model k times; with the default
+    reshard-after-forward, every step re-runs the parameter all-gather. This
+    holds the parameters gathered across the whole block, trading memory for
+    k-1 fewer all-gathers, and restores reshard-after-forward on exit.
+
+    Duck-typed on `set_reshard_after_forward`, so it is a no-op for plain
+    modules, `DistributedDataParallel`, and single-process runs; no FSDP import
+    and no distributed initialization are required.
+
+    Use it around inference-style loops (sampling, evaluation), not around a
+    forward whose activations feed a backward pass.
+
+    Args:
+        module: Module to run unsharded.
+        recurse: Apply to nested FSDP modules as well.
+
+    Yields:
+        `module`, unchanged.
+
+    Example:
+        ```python
+        from torchebm.distributed import unsharded
+
+        with unsharded(model):
+            samples = sampler.sample(x=x0, n_steps=100)
+        ```
+    """
+    set_reshard = getattr(module, "set_reshard_after_forward", None)
+    if set_reshard is None:
+        yield module
+        return
+    set_reshard(False, recurse=recurse)
+    try:
+        yield module
+    finally:
+        set_reshard(True, recurse=recurse)
