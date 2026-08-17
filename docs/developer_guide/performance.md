@@ -56,6 +56,38 @@ for step in range(n_steps):
 avg = torch.stack(losses).mean().item()       # single sync
 ```
 
+### The GPU-first contract
+
+Every new sampler, loss, or trainer honours these rules; the existing
+components already do:
+
+- **Normalise transfers once at entry, never per step.** Move conditioning and
+  inputs to the device a single time when a call begins, then reuse them.
+  `TorchEBMModule._prepare_model_kwargs` is the reference: it device-aligns
+  `model_kwargs` once and the per-step drift closures capture the result.
+- **No `.item()` / `.cpu()` / `.tolist()` / `.numpy()` inside a step loop.**
+  Diagnostics and metrics stay device tensors and are stacked, then synced once
+  at a logging boundary (`BaseTrainer.train_step` returns device scalars;
+  `train_epoch` syncs once per epoch). Preallocate trajectories/diagnostics on
+  device and fill them in place.
+- **Host scalars enter only through schedulers.** `get_scheduled_value` returns
+  a Python float computed on the host, so it folds into the next kernel launch
+  with no device→host sync. Do not read step sizes or temperatures back off a
+  device tensor.
+- **Respect the input dtype.** `BaseModel.gradient` computes in the input's
+  dtype (byte-identical for float32, no fp64 downcast); set
+  `model.force_fp32_gradient = True` only when a low-precision model needs
+  fp32-precision gradients.
+- **Adaptive/implicit integrators carry one bounded sync per iteration** (the
+  step-acceptance and solver-convergence checks are data-dependent and must
+  reach the host). This is inherent; fixed-step integrators are the sync-free
+  path. Greedy OT coupling is likewise host-bound by nature - use Sinkhorn in
+  the training loop.
+
+To catch a regression, wrap a hot loop in
+`torch.cuda.set_sync_debug_mode("error")`: any accidental host sync raises with
+the offending op named.
+
 ## Reuse memory
 
 Pre-allocate buffers once and fill them in place inside loops; for

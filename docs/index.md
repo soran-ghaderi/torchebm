@@ -326,11 +326,11 @@ each component and a runnable, CI-tested curriculum.
 If TorchEBM is useful in your research, please cite it:
 
 ```bibtex
-@misc{torchebm_library_2025,
-  author       = {Ghaderi, Soran and Contributors},
-  title        = {{TorchEBM}: Simulation-Free, {GPU}-First Generative Modeling in {PyTorch}},
-  year         = {2025},
-  url          = {https://github.com/soran-ghaderi/torchebm},
+@misc{ghaderi2024torchebm,
+  author       = {Ghaderi, Soran},
+  title        = {{TorchEBM}: A Composable {PyTorch} Library for Energy-Based and Transport-Based Generative Models},
+  year         = {2024},
+  howpublished = {\url{https://github.com/soran-ghaderi/torchebm}},
 }
 ```
 
