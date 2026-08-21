@@ -465,7 +465,7 @@ class BaseContrastiveDivergence(BaseLoss):
                 "The replay buffer is not initialized; run one training step "
                 "or call initialize_buffer() first."
             )
-        from torchebm.distributed import (
+        from torchebm.utils.distributed import (
             all_gather_cat,
             broadcast_tensor,
             get_rank,

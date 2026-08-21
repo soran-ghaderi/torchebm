@@ -233,7 +233,7 @@ class BaseCostCoupling(BaseCoupling):
                 "process_group: conditioning stays rank-local while the cost "
                 "is computed on the pooled batches."
             )
-        from torchebm.distributed import (
+        from torchebm.utils.distributed import (
             all_gather_cat,
             broadcast_tensor,
             get_rank,

@@ -7,6 +7,15 @@ from .training import (
     load_checkpoint,
 )
 from .profiling import profile_context
+from .distributed import (
+    is_distributed,
+    get_rank,
+    get_world_size,
+    all_gather_cat,
+    broadcast_object,
+    broadcast_tensor,
+    unsharded,
+)
 
 __all__ = [
     "update_ema",
@@ -14,4 +23,11 @@ __all__ = [
     "save_checkpoint",
     "load_checkpoint",
     "profile_context",
+    "is_distributed",
+    "get_rank",
+    "get_world_size",
+    "all_gather_cat",
+    "broadcast_object",
+    "broadcast_tensor",
+    "unsharded",
 ]

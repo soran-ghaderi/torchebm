@@ -150,7 +150,7 @@ def unsharded(module: nn.Module, recurse: bool = True) -> Iterator[nn.Module]:
 
     Example:
         ```python
-        from torchebm.distributed import unsharded
+        from torchebm.utils.distributed import unsharded
 
         with unsharded(model):
             samples = sampler.sample(x=x0, n_steps=100)
