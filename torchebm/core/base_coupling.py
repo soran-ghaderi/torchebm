@@ -162,7 +162,34 @@ class BaseCostCoupling(BaseCoupling):
     non-Euclidean or conditioning-aware ground cost. Weighted cost variants
     (unbalanced OT) override `couple` itself, reusing `compute_cost`, to
     attach per-pair `weights` to the result.
+
+    Constructed with a `process_group`, steps 4-5 instead run on the
+    all_gathered pooled batches of every rank and each rank keeps its own
+    rows (see `_couple_global`). Solvers opt in via the
+    `_supports_process_group` class flag; the others reject the argument at
+    construction. `None` (the default) never issues a collective.
+
+    Args:
+        process_group: Group to couple globally over; None couples the local
+            batch only. Only solvers with `_supports_process_group` accept a
+            group.
     """
+
+    _supports_process_group = False
+    process_group: Optional["torch.distributed.ProcessGroup"] = None
+
+    def __init__(
+        self,
+        process_group: Optional["torch.distributed.ProcessGroup"] = None,
+    ):
+        if process_group is not None and not self._supports_process_group:
+            raise ValueError(
+                f"{self.__class__.__name__} does not support process_group; "
+                "global-batch coupling is implemented for SinkhornCoupling "
+                "only (assignment solvers scale quadratically with the "
+                "pooled batch)."
+            )
+        self.process_group = process_group
 
     @torch.no_grad()
     def couple(
@@ -175,11 +202,52 @@ class BaseCostCoupling(BaseCoupling):
     ) -> CouplingResult:
         x1 = self._require_x1(x1)
         self._check_batch(x0, x1)
+        if self.process_group is not None:
+            return self._couple_global(x0, x1, generator=generator, **kwargs)
         if x0.shape[0] == 1:
             return CouplingResult(x0, x1)
         cost = self.compute_cost(x0, x1, **kwargs)
         idx = self._solve(cost, generator=generator)
         return CouplingResult(x0, x1[idx])
+
+    def _couple_global(
+        self,
+        x0: torch.Tensor,
+        x1: torch.Tensor,
+        *,
+        generator: Optional[torch.Generator] = None,
+        **kwargs: Any,
+    ) -> CouplingResult:
+        r"""Couple against the pooled batches of every rank in the group.
+
+        All ranks gather both batches, solve the identical pooled problem,
+        and keep their own rows, paired against targets from any rank; the
+        solver's draw is broadcast from rank 0, so per-rank generators cannot
+        desynchronize the pairing. Requires equal batch sizes on every rank
+        and every rank calling together (collective). Degrades to the local
+        path in single-process runs.
+        """
+        if kwargs:
+            raise NotImplementedError(
+                "Conditioning-aware ground costs are not supported with "
+                "process_group: conditioning stays rank-local while the cost "
+                "is computed on the pooled batches."
+            )
+        from torchebm.utils.distributed import (
+            all_gather_cat,
+            broadcast_tensor,
+            get_rank,
+        )
+
+        g0 = all_gather_cat(x0, group=self.process_group)
+        g1 = all_gather_cat(x1, group=self.process_group)
+        if g0.shape[0] == 1:
+            return CouplingResult(x0, x1)
+        cost = self.compute_cost(g0, g1)
+        idx = self._solve(cost, generator=generator)
+        idx = broadcast_tensor(idx, src=0, group=self.process_group)
+        start = get_rank(self.process_group) * x0.shape[0]
+        return CouplingResult(x0, g1[idx[start : start + x0.shape[0]]])
 
     def compute_cost(
         self, x0: torch.Tensor, x1: torch.Tensor, **kwargs: Any

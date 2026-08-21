@@ -12,6 +12,12 @@ import torch.nn as nn
 def update_ema(ema_model: nn.Module, model: nn.Module, decay: float = 0.9999) -> None:
     r"""Update EMA model parameters.
 
+    Supports sharded (DTensor) parameters when `ema_model` and `model` are
+    sharded identically (same device mesh and same mixed-precision policy);
+    the in-place `mul_`/`add_` then update each local shard with no
+    collective. Mixing a sharded model with an unsharded EMA (or different
+    meshes) is not supported.
+
     Args:
         ema_model: Exponential moving average model.
         model: Current model.

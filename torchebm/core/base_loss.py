@@ -28,9 +28,24 @@ def _dtensor_type():
     return DTensor
 
 
+def _has_dtensor_params(module: nn.Module) -> bool:
+    r"""Whether the module's parameters are sharded DTensors (e.g. FSDP2)."""
+    dtensor = _dtensor_type()
+    return dtensor is not None and isinstance(
+        next(module.parameters(), None), dtensor
+    )
+
+
 class BaseLoss(Schedulable, TorchEBMModule, ABC):
-    """
+    r"""
     Abstract base class for loss functions used in energy-based models.
+
+    Distributed reduction semantics: losses reduce with means over the local
+    batch. Combined with the gradient averaging of data-parallel wrappers
+    (DDP, FSDP), parameter gradients equal the global-batch mean exactly when
+    per-rank batch sizes are equal; with unequal batches the smaller ranks
+    are over-weighted. Batch-global statistics (couplings, trimmed means)
+    stay rank-local unless a component takes an explicit ``process_group``.
 
     Args:
         dtype (torch.dtype): Data type for computations.
@@ -99,7 +114,7 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
 
 
 class BaseContrastiveDivergence(BaseLoss):
-    """
+    r"""
     Abstract base class for Contrastive Divergence (CD) based loss functions.
 
     Args:
@@ -112,6 +127,29 @@ class BaseContrastiveDivergence(BaseLoss):
         init_steps (int): The number of MCMC steps to run when initializing new chain elements.
         dtype (torch.dtype): Data type for computations.
         device (Optional[Union[str, torch.device]]): Device for computations.
+
+    Distributed runs keep the replay buffer rank-local by design: each rank
+    holds independent persistent chains, so the world size multiplies chain
+    diversity, and no default path issues a collective. Chains are exchanged
+    only through an explicit `mix_buffer_across_ranks` call.
+
+    Checkpointing: `replay_buffer` and `buffer_ptr` are registered buffers and
+    enter `state_dict()` once the buffer exists. The buffer is registered
+    lazily as None, so a fresh instance must call `initialize_buffer` (same
+    data shape) before `load_state_dict` on a checkpoint that contains a
+    buffer. Rank-local buffers hold different chains on every rank: save one
+    file per rank, for example
+    `torch.save(loss.state_dict(), f"loss_rank{rank}.pt")`, and restore with
+    the same world size. Do not put this state into a
+    `torch.distributed.checkpoint` state dict; its planner deduplicates
+    non-sharded tensors as replicated, which silently keeps rank 0's chains
+    only. When the loss's `model` is itself sharded, the full
+    `loss.state_dict()` contains its DTensor parameters: save those through
+    `torch.distributed.checkpoint` on the model instead, and keep only the
+    buffer entries (`replay_buffer`, `buffer_ptr`) in the rank-local file,
+    restoring them with `load_state_dict(..., strict=False)` after
+    `initialize_buffer`. Re-initializing from noise instead of restoring is
+    an acceptable fallback; chains re-warm within a few hundred steps.
     """
 
     def __init__(
@@ -387,6 +425,61 @@ class BaseContrastiveDivergence(BaseLoss):
             self._buffer_ptr_int = end_ptr
             self.buffer_ptr.fill_(end_ptr)
 
+    def mix_buffer_across_ranks(
+        self,
+        process_group: Optional["torch.distributed.ProcessGroup"] = None,
+        generator: Optional[torch.Generator] = None,
+    ) -> None:
+        r"""Redistribute the replay-buffer chains uniformly across ranks.
+
+        Gathers every rank's buffer, applies one permutation shared by all
+        ranks, and keeps this rank's shard: the pooled chains are re-dealt
+        with no chain duplicated or lost. The permutation is drawn on rank 0
+        (from `generator` there, the global CPU RNG otherwise) and broadcast,
+        so per-rank generators cannot desynchronize the shuffle.
+
+        This is a collective: every rank in the group must call it together,
+        outside `forward`, at whatever cadence suits the run. It costs one
+        all_gather of the full buffer (transiently the world size times the
+        buffer memory) plus a small broadcast, and requires equal
+        `buffer_size` on every rank. The FIFO pointer is left unchanged;
+        after a uniform shuffle every overwrite position is equally valid.
+        No-op in single-process runs.
+
+        Args:
+            process_group: Group to mix over; the default group when None.
+            generator: CPU generator for the shared permutation; significant
+                on rank 0 only.
+
+        Raises:
+            RuntimeError: If the loss is not persistent or the buffer is not
+                initialized.
+        """
+        if not self.persistent:
+            raise RuntimeError(
+                "mix_buffer_across_ranks requires a persistent loss "
+                "(persistent=True)."
+            )
+        if not self.buffer_initialized:
+            raise RuntimeError(
+                "The replay buffer is not initialized; run one training step "
+                "or call initialize_buffer() first."
+            )
+        from torchebm.utils.distributed import (
+            all_gather_cat,
+            broadcast_tensor,
+            get_rank,
+            get_world_size,
+        )
+
+        if get_world_size(process_group) == 1:
+            return
+        gathered = all_gather_cat(self.replay_buffer, group=process_group)
+        perm = torch.randperm(gathered.shape[0], generator=generator)
+        perm = broadcast_tensor(perm, src=0, group=process_group)
+        start = get_rank(process_group) * self.buffer_size
+        self.replay_buffer.copy_(gathered[perm[start : start + self.buffer_size]])
+
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
         # sync cached int with loaded tensor buffer_ptr
@@ -482,6 +575,36 @@ class BaseScoreMatching(BaseLoss):
         self.hutchinson_samples = hutchinson_samples
         self.custom_regularization = custom_regularization
         object.__setattr__(self, "_functional_model", functional_model)
+        if not use_autograd:
+            self._register_functional_grad_hooks()
+
+    def _register_functional_grad_hooks(self) -> None:
+        r"""Restore parameter-gradient placements after functional backwards.
+
+        The functional path bypasses FSDP's hooks, so the backward leaves
+        DTensor parameter gradients with `Partial` placement (unreduced
+        per-rank contributions); optimizers require gradients that match the
+        parameter's placement. This hook redistributes each gradient to the
+        parameter's placements at accumulation time, performing the same
+        reduce-scatter the hook path would have run. No-op for plain tensors
+        and already-matching placements, so it is safe when the same model is
+        also trained through hook-path losses.
+        """
+        dtensor = _dtensor_type()
+        if dtensor is None:
+            return
+
+        def _restore_placement(param: torch.Tensor) -> None:
+            grad = param.grad
+            if isinstance(grad, dtensor) and tuple(grad.placements) != tuple(
+                param.placements
+            ):
+                param.grad = grad.redistribute(
+                    param.device_mesh, param.placements
+                )
+
+        for p in self.model.parameters():
+            p.register_post_accumulate_grad_hook(_restore_placement)
 
     @property
     def functional_model(self) -> Optional[nn.Module]:
@@ -609,10 +732,7 @@ class BaseScoreMatching(BaseLoss):
 
     def _require_autograd_safe_params(self) -> None:
         r"""Reject the in-place autograd path when parameters are sharded."""
-        dtensor = _dtensor_type()
-        if dtensor is not None and isinstance(
-            next(self.model.parameters(), None), dtensor
-        ):
+        if _has_dtensor_params(self.model):
             raise RuntimeError(
                 "The autograd score path cannot run with FSDP-managed "
                 "(DTensor) parameters: resharding hooks free storage the "

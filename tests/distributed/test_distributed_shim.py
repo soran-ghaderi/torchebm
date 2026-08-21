@@ -6,9 +6,9 @@ import pytest
 import torch
 import torch.distributed as dist
 
-from torchebm import distributed as ebm_dist
+from torchebm.utils import distributed as ebm_dist
 
-from dist_harness import save_result, spawn_dist
+from dist_harness import dist_device, save_result, spawn_dist
 
 pytestmark = [
     pytest.mark.distributed,
@@ -31,7 +31,9 @@ def _shim_worker(rank, world_size, tmpdir):
     assert ebm_dist.is_distributed()
     assert ebm_dist.get_rank() == rank
     assert ebm_dist.get_world_size() == world_size
-    gathered = ebm_dist.all_gather_cat(torch.full((2, 3), float(rank)))
+    gathered = ebm_dist.all_gather_cat(
+        torch.full((2, 3), float(rank), device=dist_device())
+    )
     payload = ebm_dist.broadcast_object({"seed": 1234} if rank == 0 else None)
     save_result(tmpdir, rank, {"gathered": gathered, "payload": payload})
 

@@ -93,6 +93,7 @@ nav:
     - Architecture: developer_guide/architecture.md
     - Code Guidelines: developer_guide/code_guidelines.md
     - Performance and Benchmarking: developer_guide/performance.md
+    - Distributed Training: developer_guide/distributed.md
   - Benchmarks: https://soran-ghaderi.github.io/torchebm-benchmarks/
   - Blog: blog/index.md
   - FAQ: faq/index.md

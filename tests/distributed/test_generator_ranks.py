@@ -15,7 +15,7 @@ from torch import nn
 from torchebm.core import BaseModel
 from torchebm.samplers import LangevinDynamics
 
-from dist_harness import save_result, spawn_dist
+from dist_harness import dist_device, make_generator, save_result, spawn_dist
 
 pytestmark = [
     pytest.mark.distributed,
@@ -36,14 +36,12 @@ class QuadraticEnergy(BaseModel):
 
 
 def _worker(rank, world_size, tmpdir):
-    sampler = LangevinDynamics(model=QuadraticEnergy(), step_size=1e-2)
+    sampler = LangevinDynamics(
+        model=QuadraticEnergy().to(dist_device()), step_size=1e-2
+    )
     kwargs = dict(dim=2, n_samples=4, n_steps=5)
-    shared = sampler.sample(
-        **kwargs, generator=torch.Generator().manual_seed(BASE_SEED)
-    )
-    per_rank = sampler.sample(
-        **kwargs, generator=torch.Generator().manual_seed(BASE_SEED + rank)
-    )
+    shared = sampler.sample(**kwargs, generator=make_generator(BASE_SEED))
+    per_rank = sampler.sample(**kwargs, generator=make_generator(BASE_SEED + rank))
     save_result(tmpdir, rank, {"shared": shared, "per_rank": per_rank})
 
 
