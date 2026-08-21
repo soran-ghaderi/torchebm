@@ -9,52 +9,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- All samplers accept an `integrator` constructor argument: `None` (current default), a registry name (`"heun"`, `"rk4"`, `"dopri5"`, ...), or an integrator instance. Compatibility is enforced at construction (Langevin: SDE family; HMC: separable symplectic; RMHMC: non-separable symplectic; Flow: Runge-Kutta family). Passed instances must match the sampler's device/dtype (no implicit `.to()`); integrator hyperparameters (`atol`/`rtol`/solver iterations) are set on the instance, not via sampler kwargs
-- `BaseSymplecticIntegrator` (core): shared base for the leapfrog family with a `separable` contract flag; `LeapfrogIntegrator` and `GeneralisedLeapfrogIntegrator` now inherit from it
-- `get_integrator(name, device, dtype)` string registry in `torchebm.integrators`
-- `torchebm.interpolants.interpolant_utils`: `get_interpolant` moved here from `torchebm.losses.loss_utils` (still re-exported there) plus a new `resolve_interpolant(interpolant, default, owner)` helper mirroring `resolve_integrator`
-- `resolve_integrator` exported from `torchebm.integrators`
-- Cross-sampler API contract test (`tests/samplers/test_api_contract.py`) pinning the shared `sample()` signature, return types, trajectory/thin shapes, and constructor ordering for every sampler
-- Tiered, runnable examples curriculum under `examples/` (foundations, sampling, training, showcase), smoke-tested in CI: `pytest -m examples tests/examples` executes every example on CPU with `TORCHEBM_SMOKE=1` shrinking iteration counts, so an API change that breaks an example fails the build
-- Documentation: a Concepts section (design and scope, the energy-based view, sampling and integration, learning objectives, interpolants and couplings) replacing the tutorials; component cards, class diagrams, the package tree, and the base-class contract table are now generated from the installed package at build time (`docs/hooks/gen_diagrams.py`), so they cannot drift from the code
+- [`e9a0aaa`](https://github.com/soran-ghaderi/torchebm/commit/e9a0aaab45584d4986d23e3205d5993b75e0e37d) - add guarded process-group helpers + gloo spawn harness and fsdp2 score-matching pins
+- [`767ba76`](https://github.com/soran-ghaderi/torchebm/commit/767ba76f695c7326249a75e1237060378d601ae6) - add guarded process-group helpers + gloo spawn harness and shim tests #243
+- [`06f0993`](https://github.com/soran-ghaderi/torchebm/commit/06f099305c21ad95aee348a9992cec71e0daabbb) - functional score path for sharded dtensor models + tests for functional score parity and fsdp2 double-backward pins(#244)
+- [`f1ba1de`](https://github.com/soran-ghaderi/torchebm/commit/f1ba1de2929bcf8ef79f223c8c50840a32d0ed6a) - thread generator through sampler, integrator, loss, coupling,  rng + generator contract and per-rank decorrelation tests
+- [`0036630`](https://github.com/soran-ghaderi/torchebm/commit/003663034ec523d3824fd34687b63819559cc5eb) - unsharded context manager for k-step mcmc under fsdp2 + energy model parity tests #246
+- [`bbef1b8`](https://github.com/soran-ghaderi/torchebm/commit/bbef1b83efa7630f1190fffa980132298be9e470) - opt-in cross-rank pcd replay buffer mixing + rank-local semantics and checkpoint contract
+- [`0211394`](https://github.com/soran-ghaderi/torchebm/commit/02113943cee5dae92066b8d8aa21c14ab81f42fa) - process-group-aware global-batch sinkhorn coupling with rank0-broadcast draws
+- [`fdfe71b`](https://github.com/soran-ghaderi/torchebm/commit/fdfe71baaaa928099243c7980b0bf916a488dc52) - fail-fast second-order guards under sharded params + fsdp2 loss parity matrix (#248)
 
 ### Changed
 
-- **BREAKING** `FlowSampler` is configured entirely at construction: `mode="ode"|"sde"` selects the process, and `reverse`, `diffusion_form`, `diffusion_norm`, `last_step`, `last_step_size` are constructor arguments (SDE-only options raise `ValueError` in ODE mode). `sample()` now follows the standard `BaseSampler` contract, including `thin`, `return_trajectory`, and `return_diagnostics` (keys `"mean"`, `"var"`, `"t"`) with fixed-step integrators; adaptive integrators return the final state only. `n_steps=None` resolves to 50 (ODE) / 250 (SDE). Fixed-step sampling now advances schedulers once per step
-- **BREAKING** `sample(x=None)` requires `dim=` (or model-based inference in the HMC family); the silent `dim=10` default is gone. `dim` accepts an int or a shape tuple, replacing `FlowSampler`'s `shape=` kwarg
-- Sampler constructors and `sample()` signatures no longer accept unused `*args, **kwargs`
-- `resolve_integrator` validates the integrator family for registry names too, not only instances (e.g. `FlowSampler(mode="sde", integrator="rk4")` now raises `TypeError` at construction)
-- `RiemannianManifoldHMC` resolves its default integrator through `resolve_integrator` like every other sampler
-- `FlowSampler` adaptive ODE sampling (`dopri5`, `dopri8`, `bosh3`, `adaptive_heun`) now runs on native integrators; torchdiffeq is no longer used or required (removed from the `eqm` extra). Outputs are statistically equivalent but not bitwise identical to torchdiffeq (different step-size controller); the default `dopri5` path is ~3x faster on the sampler benchmark
-- `FlowSampler` reverse-time sampling works with adaptive integrators (decreasing time grids are reparameterized internally)
-- Packaging: the source distribution no longer ships `docs/`, `examples/`, `benchmarks/`, or `tests/` (new `MANIFEST.in`; `setuptools_scm` had been adding every git-tracked file), cutting the sdist from tens of megabytes to ~150 KB. README image and link URLs are absolute so they render on PyPI
+- [`aac6092`](https://github.com/soran-ghaderi/torchebm/commit/aac6092fa57594cd378ba1d8cbc0899a65aacde3) - point tests and docs at the relocated utils shim
 
-### Removed
+### Fixed
 
-- **BREAKING** `FlowSampler.sample_ode` / `FlowSampler.sample_sde` and the per-call `method`/`atol`/`rtol`/`ode_method`/`sde_method`/`mode`/`shape` sampling kwargs (deprecated in 0.6.4). Passing a removed kwarg raises `TypeError` with a migration hint. Migration:
+- [`56e6522`](https://github.com/soran-ghaderi/torchebm/commit/56e65226f7c2a631c7dd9c154e30f5fbefed0aa6) - numpy-free tensor broadcasts + optimizer-ready grads on the functional score path (#249)
+- [`c12a58f`](https://github.com/soran-ghaderi/torchebm/commit/c12a58fbf9efb70c85aae7f623f049f9dbaa0fd3) - numpy-free tensor broadcasts + optimizer-ready grads on the functional score path, shim moved to utils (#249)
 
-  | old | new |
-  |---|---|
-  | `s.sample_ode(z, num_steps=50)` | `FlowSampler(model, ...).sample(x=z, n_steps=50)` |
-  | `s.sample_sde(z, num_steps=250, diffusion_form=..., last_step=...)` | `FlowSampler(model, mode="sde", diffusion_form=..., last_step=...).sample(x=z, n_steps=250)` |
-  | `s.sample(mode="sde", ...)` | constructor `mode="sde"` |
-  | `s.sample(shape=(n, C, H, W))` | `s.sample(n_samples=n, dim=(C, H, W))` |
-  | `sample_ode(..., method="rk4", atol=..., rtol=...)` | constructor `integrator="rk4"` or an instance with `atol`/`rtol` set |
-  | `sample_ode(..., reverse=True)` | constructor `reverse=True` |
+### Performance
 
-### Deprecated
+- [`4eb623f`](https://github.com/soran-ghaderi/torchebm/commit/4eb623f69729348d680f245b41cc2895ad5fbd5b) - lazy-load external badges and drop dead analytics snippet
+- [`5c66fba`](https://github.com/soran-ghaderi/torchebm/commit/5c66fba001f83289aff8d5f1200d51e9d718f5d3) - lazy-load external badges and drop dead analytics, load mathjax and mermaid on demand
 
-- `RiemannianManifoldHMC` `solver_max_iter`/`solver_tol`/`solver_check_every`: construct `GeneralisedLeapfrogIntegrator(solver_max_iter=...)` and pass it as `integrator=`
+### Other
 
-- `EnergyMatchingLoss`: Energy Matching (arXiv:2504.10612) — OT flow-matching warm-up plus contrastive-divergence sharpening on a single time-independent scalar potential, with split Langevin negatives, one-sided trimmed mean, and stability clamp
-- `torchebm.couplings` package for source/target pairing, with a contract closed against future coupling families: results are structured `CouplingResult` objects that unpack as the `(x0, x1)` pair while carrying extras as attributes (per-pair `weights` for unbalanced OT); `couple(x0, x1=None, **kwargs)` takes an optional target (generate families) and a conditioning channel. Hierarchy in core: `BaseCoupling` root, `BaseCostCoupling` (cost + solver template), `BaseModelCoupling` (generate from a model map). Concretes — all torch-native, no scipy/POT: `IndependentCoupling`, `ExactOTCoupling` (Bertsekas auction), `SinkhornCoupling` (log-domain entropic), `GreedyCoupling` (nearest-free-pair approximate OT), `UnbalancedSinkhornCoupling` (KL-relaxed marginals, per-pair importance weights), `ReflowCoupling` (rectified-flow pairs `x1 = Phi(x0)` via a FlowSampler or any callable, covering closed-form transport maps). Name registry: `get_coupling`/`resolve_coupling` with `"independent"`, `"ot"`/`"exact_ot"`, `"sinkhorn"`, `"greedy"`, `"unbalanced_sinkhorn"`; model couplings are instance-only
-- `EnergyMatchingLoss` flow term consumes coupling `weights` when present (importance-weighted mean; uniform weights reduce exactly to the plain mean)
-- `TemperatureScheduler`: piecewise-linear temperature profile eps(t) for two-regime sampling; returns sqrt(eps) for direct use as `LangevinDynamics` `noise_scale`
-- `InteractionModel`: pairwise repulsive interaction wrapper with `Schedulable` strength for diverse sampling
-- `LangevinDynamics` optional per-step state `clamp=(min, max)` for image-space EBM stabilization
-- Loss utils: `get_coupling`, `trimmed_mean`, `compute_flow_weight`
-- `EnergyMatchingLoss` arbitrary-source transport: pass `x0=...` to `forward`/`training_losses` (the paper's 8-Gaussians-to-two-moons setup); source-initialized negatives follow
-- Examples: `examples/20-training/04-energy-matching/01-energy-matching-2d` (two moons, minimal) and `02-energy-matching-paper-2d` (paper suite: 8G-to-moons transport, trajectories, sample evolution, LID estimation, repulsive diverse sampling; live terminal progress)
+- [`a25471b`](https://github.com/soran-ghaderi/torchebm/commit/a25471b934eaccedfcea13098a39483828d5ac89) - functional score parity and fsdp2 double-backward pins
+- [`f583901`](https://github.com/soran-ghaderi/torchebm/commit/f583901d2fbebb4eae9ea8a0c5ae26a3acc7691b) - require python 3.10 and torch 2.10 for generator support
+- [`80e1bce`](https://github.com/soran-ghaderi/torchebm/commit/80e1bce94affbb57174eb07405b02f884e779bd0) - pin sync-free hot paths and document the gpu-first contract #239
+- [`264a73f`](https://github.com/soran-ghaderi/torchebm/commit/264a73fc990b824290dbb8ab7d93c5d46b426c25) - standard software title, unified bibtex, orcid and preferred-citation
+- [`86a5c6c`](https://github.com/soran-ghaderi/torchebm/commit/86a5c6c603132980459c62a630cd52655fa43acd) - pin ema updates on identically sharded params and the dcp + rank-local checkpoint recipe
+- [`3499d43`](https://github.com/soran-ghaderi/torchebm/commit/3499d435d4a0082f997d70c9f61d8ec17a0af143) - device-generic nccl harness and 4-gpu fsdp2 training-step benchmark (#249)
+
+## [0.7.5] - 2026-07-16
+
+### Added
+
+- [`7d7cfb2`](https://github.com/soran-ghaderi/torchebm/commit/7d7cfb235049a4f0a709ad0cd3d8d6da9d2fe3a7) - add explicit midpoint RK2
+- [`fa1263d`](https://github.com/soran-ghaderi/torchebm/commit/fa1263dcfded4a7748ccceed79d0f5b095eccee4) - thread model_kwargs conditioning through all samplers,  losses, base modules, and couplings
+- [`96f1268`](https://github.com/soran-ghaderi/torchebm/commit/96f126869ac6da4381350e1af1066e6f5191df70) - eqmenergy adapter for gradient sampling of equilibrium-matching fields
+- [`51a4ded`](https://github.com/soran-ghaderi/torchebm/commit/51a4ded2b6c7e49f088e7f04c2e952bd564f6f1f) - x0 and coupling support in equilibriummatchingloss
+
+### Changed
+
+- [`c800f26`](https://github.com/soran-ghaderi/torchebm/commit/c800f268d5fcc199b0badbc105c78d0a5e9b9866) - generate synthetic datasets with torch instead of numpy
+
+### Fixed
+
+- [`60284c5`](https://github.com/soran-ghaderi/torchebm/commit/60284c52c2631630414d21def5cecc7c701dc93d) - self-host paper figures, semanticscholar serves non-image content-type that github/pypi camo rejects
+- [`b395194`](https://github.com/soran-ghaderi/torchebm/commit/b395194383d2f90c0c0aad706d9ba40b5a94aaac) - register EnergyMatchingLoss model_type so its bench builds
+
+### Performance
+
+- [`0496a12`](https://github.com/soran-ghaderi/torchebm/commit/0496a12c0e93b40e92d3da850fe370e636036aa7) - instant navigation, deferred pinned mathjax, cdn preconnect
+- [`393865d`](https://github.com/soran-ghaderi/torchebm/commit/393865d937ac3b5e6f6ec4dd93c25644cf48b99a) - compute basemodel.gradient in the input dtype with fp32 opt-in + device-tensor metrics, sync once per epoch
+- [`6231624`](https://github.com/soran-ghaderi/torchebm/commit/623162453117907660c88209937a199ac56c1a9e) - drop per-step scalar-tensor syncs; single greedy transfer
+
+### Other
+
+- [`e85e5a7`](https://github.com/soran-ghaderi/torchebm/commit/e85e5a7ae79f7e1809783c3e91db48b4422ef61e) - expand midpoint coverage
+- [`879b35d`](https://github.com/soran-ghaderi/torchebm/commit/879b35dbe5a10358840a59ba944202b3ffa0da6c) - add contributing guide
+- [`11f42fc`](https://github.com/soran-ghaderi/torchebm/commit/11f42fcab7c046ae8e73a9f9e504dd73a015b32d) - cover model_kwargs contract, conditional negatives, deprecations over all components and couplings!
+- [`e3e2c03`](https://github.com/soran-ghaderi/torchebm/commit/e3e2c0362c924bf524a09bee6a32dbffee7b4654) - cover eqmenergy, x0/coupling, and sampling-route agreement
+- [`c6be616`](https://github.com/soran-ghaderi/torchebm/commit/c6be6165b2384a96471f8aa94e5f8f37e3a3d798) - coherent eqm sampling routes and diverse coda
+- [`8044140`](https://github.com/soran-ghaderi/torchebm/commit/80441402f2e712d0f935c7d692f4d3f9f2e34811) - lead with simulation-free, gpu-first narrative across pypi, docs, and readme
+- [`e5ce988`](https://github.com/soran-ghaderi/torchebm/commit/e5ce988dfb81edf8444f7cb7ae67824bad074261) - drop verbose inline comments from library code
+
+## [0.7.1] - 2026-07-13
+
+### Added
+
+- [`e8fd25d`](https://github.com/soran-ghaderi/torchebm/commit/e8fd25df9627dd516962c2bead4fa1a32f9c65f3) - auto-generate example pages from examples/ via in-memory mkdocs hooks
+- [`55a2705`](https://github.com/soran-ghaderi/torchebm/commit/55a2705270c825eff185f96fad1ee7f08e6060f3) - add basesymplecticintegrator base for leapfrog family
+- [`dc0c5c3`](https://github.com/soran-ghaderi/torchebm/commit/dc0c5c3a6c5636158772eaf896d2ae7e839c775e) - add get_integrator string registry and resolver
+- [`90cfb00`](https://github.com/soran-ghaderi/torchebm/commit/90cfb00f2f9952ec47c2212a9936c0a7bbc94a00) - accept integrator instances and registry names in langevin/hmc/rmhmc
+- [`ad7b274`](https://github.com/soran-ghaderi/torchebm/commit/ad7b2748f8bebbe0f69c1b27c08a248301ad008f) - add temperaturescheduler and basecoupling primitives
+- [`3c2c8cc`](https://github.com/soran-ghaderi/torchebm/commit/3c2c8cc69829ee898bad3cab2580318ca479a2b9) - constructor integrator for flowsampler, deprecate per-call method args, drop torchdiffeq
+- [`b3931cc`](https://github.com/soran-ghaderi/torchebm/commit/b3931cc27f33966e6fa0327eb2c74d67207fc3cc) - structured couplingresult return and generalized root contract
+- [`97ad838`](https://github.com/soran-ghaderi/torchebm/commit/97ad8381db0bf532bbf9d2ef261cc4d4e1798f0a) - greedy, unbalanced sinkhorn, and model-induced reflow couplings
+- [`a92542f`](https://github.com/soran-ghaderi/torchebm/commit/a92542f2ea9e1246a765885ef83958bf21bc9102) - wire energymatchingloss exports and flow helpers
+- [`698c02c`](https://github.com/soran-ghaderi/torchebm/commit/698c02c463d77a5c628f2426bdf858c2024544ae) - interaction model for energy matching repulsion
+- [`6138091`](https://github.com/soran-ghaderi/torchebm/commit/6138091307e1e3c4084ffe7cd1d21fbf51663605) - flowsampler mode-based constructor and conforming sample contract (#171)
+- [`146a737`](https://github.com/soran-ghaderi/torchebm/commit/146a73760958ca38b74c368cba783b2fdc1de7df) - tiered ci-tested curriculum with generated pages
+- [`0142c5d`](https://github.com/soran-ghaderi/torchebm/commit/0142c5d43fbed1d1d80bf49876d33e938bb69183) - concepts section, generated component views, and new navigation. slim the sdist, add pyyaml to dev, guard package discovery
+
+### Changed
+
+- [`aaef0ed`](https://github.com/soran-ghaderi/torchebm/commit/aaef0ed2dce81b8a35fa61fac29ad9cc1894ce54) - move get_interpolant to interpolants and add resolve_interpolant
+- [`3e753fe`](https://github.com/soran-ghaderi/torchebm/commit/3e753fe510ec366a2f811a9ff380c8a7359e01c8) - int-or-tuple dim with shared state init and drop kwargs cascades (#172)
+- [`c8b1d6c`](https://github.com/soran-ghaderi/torchebm/commit/c8b1d6cc6c6ad915d784b0d0835241ee7c006daa) - export resolve_integrator and validate family for registry names (#174)
+
+### Fixed
+
+- [`df8b33d`](https://github.com/soran-ghaderi/torchebm/commit/df8b33d42f86a4079a93de040d2eb0390d7d8d93) - add repo root to pytest pythonpath so tests.conftest imports survive package discovery guard
+
+### Other
+
+- [`81feb5b`](https://github.com/soran-ghaderi/torchebm/commit/81feb5bce12275ad3fd1d42b0822f064187d6ca7) - remove polyfill to avoid its popup on the website
+- [`cc5dc19`](https://github.com/soran-ghaderi/torchebm/commit/cc5dc198c7ab2e66e4b47c7cfc7dce270852d537) - cover symplectic base, registry, integrator injection
+- [`0cba390`](https://github.com/soran-ghaderi/torchebm/commit/0cba3907a3e1e8934dd08c06faf97b1c737e9a38) - euler/dopri5 variants via ctor integrator, changelog
+- [`3237d7f`](https://github.com/soran-ghaderi/torchebm/commit/3237d7f4385fb11ed720afafdf5d179f424619a1) - update issue templates and changelog
+- [`75c4d47`](https://github.com/soran-ghaderi/torchebm/commit/75c4d47027acfca487a0609e9a280df0e809db0a) - cross-sampler api contract guard (#175)
+- [`9de9916`](https://github.com/soran-ghaderi/torchebm/commit/9de9916ff5d390fc0016be453e18ca7c9040ebf8) - update changelog for flowsampler standardization (#170)
+- [`84ae09a`](https://github.com/soran-ghaderi/torchebm/commit/84ae09a3264374eb8a63a4323352581723455d11) - readme rewrite and 0.7.1 release notes
 
 ## [0.6.0] - 2026-05-31
 
@@ -466,7 +523,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`6007e01`](https://github.com/soran-ghaderi/torchebm/commit/6007e017ecc02c2d508cb4492fb80c74fecfd097) - example test for ci/cd
 - [`12f1490`](https://github.com/soran-ghaderi/torchebm/commit/12f149092e5d034390b551cdcf388fb3a885498d) - add tests
 
-[Unreleased]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.10...HEAD
+[Unreleased]: https://github.com/soran-ghaderi/torchebm/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/soran-ghaderi/torchebm/compare/v0.7.1...v0.7.5
+[0.7.1]: https://github.com/soran-ghaderi/torchebm/compare/v0.6.0...v0.7.1
+[0.6.0]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.8...v0.6.0
 [0.5.8]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.4...v0.5.6
