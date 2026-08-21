@@ -6,7 +6,7 @@ import pytest
 import torch
 import torch.distributed as dist
 
-from torchebm import distributed as ebm_dist
+from torchebm.utils import distributed as ebm_dist
 
 from dist_harness import dist_device, save_result, spawn_dist
 

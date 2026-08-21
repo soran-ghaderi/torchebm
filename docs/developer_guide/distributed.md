@@ -101,7 +101,7 @@ Three library-specific points, everything else is a standard FSDP2 loop:
    inside a training forward/backward), hold them gathered:
 
     ```python
-    from torchebm.distributed import unsharded
+    from torchebm.utils.distributed import unsharded
 
     with unsharded(model.net):
         samples = sampler.sample(x=x0, n_steps=500, generator=generator)

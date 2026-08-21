@@ -19,7 +19,7 @@ import torch.distributed as dist
 from torch import nn
 
 from torchebm.core import BaseModel
-from torchebm.distributed import unsharded
+from torchebm.utils.distributed import unsharded
 from torchebm.samplers import HamiltonianMonteCarlo, LangevinDynamics
 
 from dist_harness import (
