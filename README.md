@@ -441,7 +441,7 @@ If TorchEBM is useful in your research, please cite it:
 }
 ```
 
-## Citations
+## References
 
 ```bibtex
 @article{hinton2002training,
