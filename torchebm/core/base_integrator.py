@@ -654,8 +654,6 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
     def _resolve_diffusion(
         diffusion: Optional[torch.Tensor],
         noise_scale: Optional[torch.Tensor],
-        device: torch.device,
-        dtype: torch.dtype,
     ) -> Optional[torch.Tensor]:
         r"""Return the diffusion coefficient from an explicit value or ``noise_scale``.
 
@@ -712,9 +710,7 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
             t = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
 
         drift_fn = self._resolve_drift(drift)
-        diffusion_val = self._resolve_diffusion(
-            diffusion, noise_scale, x.device, x.dtype
-        )
+        diffusion_val = self._resolve_diffusion(diffusion, noise_scale)
 
         x_new = self._deterministic_step(x, step_size, drift_fn, t)
 
@@ -801,9 +797,11 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
         x = state["x"]
         drift_fn = self._resolve_drift(drift)
         has_diffusion_fn = diffusion is not None
-        ns_const = self._resolve_diffusion(
-            None, noise_scale, x.device, x.dtype
-        ) if not has_diffusion_fn else None
+        ns_const = (
+            self._resolve_diffusion(None, noise_scale)
+            if not has_diffusion_fn
+            else None
+        )
         n = t_grid.numel() - 1
         batch_size = x.size(0)
         for i in range(n):
