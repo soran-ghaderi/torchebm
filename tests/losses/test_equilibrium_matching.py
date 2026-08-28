@@ -149,8 +149,8 @@ def test_eqm_gradient_direction():
 
 
 def test_eqm_time_invariance():
-    """Verify model receives zeroed time when time_invariant=True.
-    
+    """Verify the model always receives zeroed time.
+
     EqM learns a time-invariant energy landscape by zeroing out time.
     """
     class TimeTrackingModel(nn.Module):
@@ -163,40 +163,15 @@ def test_eqm_time_invariance():
             return torch.zeros_like(x)
     
     model = TimeTrackingModel()
-    loss_fn = EquilibriumMatchingLoss(model=model, time_invariant=True)
-    
+    loss_fn = EquilibriumMatchingLoss(model=model)
+
     x = torch.randn(4, 4)
     loss_fn(x)
-    
+
     # Time should be all zeros for time-invariance
     assert model.received_time is not None, "Model should receive time argument"
     assert torch.all(model.received_time == 0), \
         f"EqM should zero out time (got {model.received_time})"
-
-
-def test_eqm_time_variant_mode():
-    """Verify model receives actual time when time_invariant=False."""
-    class TimeTrackingModel(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.received_time = None
-            
-        def forward(self, x, t=None, **kwargs):
-            self.received_time = t
-            return torch.zeros_like(x)
-    
-    model = TimeTrackingModel()
-    loss_fn = EquilibriumMatchingLoss(
-        model=model, time_invariant=False, check_time_conditioning=False
-    )
-
-    x = torch.randn(4, 4)
-    loss_fn(x)
-
-    # Time should NOT be all zeros
-    assert model.received_time is not None
-    assert not torch.all(model.received_time == 0), \
-        "With time_invariant=False, model should receive actual time values"
 
 
 def test_eqm_gradient_flow():
@@ -669,68 +644,126 @@ def test_repr_records_ct_and_multiplier():
     assert "ct_multiplier=2.0" in repr_str
 
 
-class TimeConsumingModel(nn.Module):
-    def __init__(self, dim=4):
-        super().__init__()
-        self.linear = nn.Linear(dim, dim)
-        self.calls = 0
-
-    def forward(self, x, t=None, **kwargs):
-        self.calls += 1
-        return self.linear(x) + t.view(-1, *([1] * (x.ndim - 1))) * 2.0
+def test_t_sampler_unknown_raises():
+    with pytest.raises(ValueError, match="lognormal"):
+        EquilibriumMatchingLoss(model=DummyModel(), t_sampler="bogus")
 
 
-def test_time_probe_raises_for_t_ignoring_model():
+def test_t_p_std_nonpositive_raises():
+    with pytest.raises(ValueError, match="t_p_std"):
+        EquilibriumMatchingLoss(
+            model=DummyModel(), t_sampler="lognormal", t_p_std=0.0
+        )
+
+
+def test_t_sampler_lognormal_matches_edm_formula():
+    z = torch.tensor([0.0, 1.0, -1.0, 0.5])
     loss_fn = EquilibriumMatchingLoss(
-        model=DummyModel(out_val=0.5), time_invariant=False
+        model=DummyModel(), t_sampler="lognormal", train_eps=0.0, device="cpu"
     )
-    with pytest.raises(ValueError, match="DummyModel"):
-        loss_fn(torch.randn(4, 4))
+    with unittest.mock.patch(
+        "torchebm.losses.equilibrium_matching.torch.randn", return_value=z
+    ):
+        t = loss_fn._sample_t(4, generator=None)
+
+    sigma = torch.exp(z * 1.2 - 1.2)
+    expected = (1.0 / (1.0 + sigma)).clamp(min=1e-4, max=1.0)
+    assert torch.allclose(t, expected, atol=1e-6)
 
 
-def test_time_probe_passes_for_t_consuming_model():
+def test_t_sampler_lognormal_clamps_to_unit_interval():
+    z = torch.tensor([-20.0, 20.0])
     loss_fn = EquilibriumMatchingLoss(
-        model=TimeConsumingModel(), time_invariant=False
+        model=DummyModel(), t_sampler="lognormal", train_eps=0.0, device="cpu"
     )
-    loss = loss_fn(torch.randn(4, 4))
-    assert torch.isfinite(loss)
+    with unittest.mock.patch(
+        "torchebm.losses.equilibrium_matching.torch.randn", return_value=z
+    ):
+        t = loss_fn._sample_t(2, generator=None)
+
+    assert torch.allclose(t, torch.tensor([1.0, 1e-4]))
 
 
-def test_time_probe_runs_once_and_restores_training_mode():
-    model = TimeConsumingModel()
-    model.train()
-    loss_fn = EquilibriumMatchingLoss(model=model, time_invariant=False)
-
-    loss_fn(torch.randn(4, 4))
-    assert model.training
-    assert model.calls == 3  # probe pair + training forward
-
-    loss_fn(torch.randn(4, 4))
-    assert model.calls == 4  # no re-probe
+def test_t_sampler_lognormal_deterministic_with_generator():
+    loss_fn = EquilibriumMatchingLoss(
+        model=DummyModel(), t_sampler="lognormal", device="cpu"
+    )
+    t_first = loss_fn._sample_t(8, torch.Generator().manual_seed(11))
+    t_second = loss_fn._sample_t(8, torch.Generator().manual_seed(11))
+    assert torch.equal(t_first, t_second)
+    assert not torch.all(t_first == t_first[0])
 
 
-def test_time_probe_skipped_when_time_invariant():
-    model = DummyModel(out_val=0.5)
-    loss_fn = EquilibriumMatchingLoss(model=model, time_invariant=True)
-    assert torch.isfinite(loss_fn(torch.randn(4, 4)))
-
-
-def test_time_probe_slices_batch_aligned_model_kwargs():
-    class ConditionalModel(nn.Module):
-        def __init__(self, dim=4):
-            super().__init__()
-            self.linear = nn.Linear(dim, dim)
-
-        def forward(self, x, t=None, y=None, **kwargs):
-            assert y.shape[0] == x.shape[0]
-            return self.linear(x) + t.view(-1, 1) + y.view(-1, 1).float()
+def test_t_sampler_callable_contract():
+    def sampler(batch, *, device, dtype, generator):
+        assert dtype == torch.float32
+        return torch.full((batch,), 0.3, device=device, dtype=dtype)
 
     loss_fn = EquilibriumMatchingLoss(
-        model=ConditionalModel(), time_invariant=False
+        model=DummyModel(), t_sampler=sampler, device="cpu"
     )
-    y = torch.randint(0, 3, (8,))
-    loss = loss_fn(torch.randn(8, 4), model_kwargs={"y": y})
-    assert torch.isfinite(loss)
+    t = loss_fn._sample_t(4, generator=None)
+    assert torch.allclose(t, torch.full((4,), 0.3))
+
+
+def test_t_sampler_lognormal_flows_into_loss():
+    """The drawn lognormal t reaches the loss, exposed via loss_weight_fn."""
+    dim, batch_size = 4, 2
+    x1 = torch.randn(batch_size, dim)
+    x0 = torch.randn(batch_size, dim)
+    z = torch.tensor([0.3, -0.7])
+
+    with unittest.mock.patch(
+        "torchebm.losses.equilibrium_matching.torch.randn", return_value=z
+    ):
+        loss_fn = EquilibriumMatchingLoss(
+            model=DummyModel(out_val=0.5),
+            t_sampler="lognormal",
+            ct="constant",
+            ct_multiplier=1.0,
+            loss_weight_fn=lambda t: t,
+            train_eps=0.0,
+            device="cpu",
+        )
+        loss_val = loss_fn(x1, x0=x0)
+
+    t = (1.0 / (1.0 + torch.exp(z * 1.2 - 1.2))).clamp(min=1e-4, max=1.0)
+    _, ut = get_interpolant("linear").interpolate(x0, x1, t)
+    per_sample = (torch.full_like(ut, 0.5) + ut).square().mean(dim=1)
+    expected = (per_sample * t).mean()
+    assert torch.allclose(loss_val, expected, atol=1e-5)
+
+
+def test_loss_weight_fn_scales_per_sample_loss():
+    dim, batch_size = 4, 2
+    x1 = torch.randn(batch_size, dim)
+    fixed_x0 = torch.randn(batch_size, dim)
+    fixed_t_raw = torch.rand(batch_size)
+
+    with unittest.mock.patch(
+        "torchebm.losses.equilibrium_matching.torch.rand",
+        return_value=fixed_t_raw,
+    ):
+        loss_fn = EquilibriumMatchingLoss(
+            model=DummyModel(out_val=0.5),
+            ct="constant",
+            ct_multiplier=1.0,
+            loss_weight_fn=lambda t: t + 1.0,
+            train_eps=0.0,
+            device="cpu",
+        )
+        loss_val = loss_fn(x1, x0=fixed_x0)
+
+    t = fixed_t_raw
+    _, ut = get_interpolant("linear").interpolate(fixed_x0, x1, t)
+    per_sample = (torch.full_like(ut, 0.5) - (-ut)).square().mean(dim=1)
+    expected = (per_sample * (t + 1.0)).mean()
+    assert torch.allclose(loss_val, expected, atol=1e-5)
+
+
+def test_loss_weight_fn_non_callable_raises():
+    with pytest.raises(TypeError, match="callable or None"):
+        EquilibriumMatchingLoss(model=DummyModel(), loss_weight_fn=5)
 
 
 # Fixture for device testing
