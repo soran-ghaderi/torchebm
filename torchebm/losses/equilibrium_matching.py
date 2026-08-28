@@ -95,6 +95,12 @@ class EquilibriumMatchingLoss(BaseLoss):
         apply_dispersion: Whether to apply dispersive regularization.
         dispersion_weight: Weight for dispersive loss term.
         time_invariant: If True, pass zeros for time to model (EqM default).
+        check_time_conditioning: If True and ``time_invariant=False``, verify on
+            the first loss call that the model actually consumes its time input
+            (one probe pair: the same sample at two t values); a model that
+            ignores t raises a ValueError instead of silently training a
+            time-invariant field. Set False for models this probe misjudges,
+            e.g. stochastic-in-eval backbones. Default: True.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -142,6 +148,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         apply_dispersion: bool = False,
         dispersion_weight: float = 0.5,
         time_invariant: bool = True,
+        check_time_conditioning: bool = True,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -175,6 +182,8 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
         self.time_invariant = time_invariant
+        self.check_time_conditioning = check_time_conditioning
+        self._time_check_pending = check_time_conditioning and not time_invariant
         self.interpolant = resolve_interpolant(
             interpolant, default="linear", owner="EquilibriumMatchingLoss"
         )
@@ -194,6 +203,54 @@ class EquilibriumMatchingLoss(BaseLoss):
         r"""Get training time interval respecting epsilon."""
         eps = self.train_eps
         return eps, 1.0 - eps
+
+    # Golden-ratio conjugate: no integer-frequency sinusoidal time embedding
+    # maps both probe times (0, this) to equal values, unlike 0.5 or 1.
+    _TIME_PROBE_T = 0.6180339887
+
+    def _probe_time_conditioning(
+        self, xt: torch.Tensor, model_kwargs: Dict[str, Any]
+    ) -> None:
+        r"""One-time check that the model consumes t when time_invariant=False.
+
+        Runs on the first loss call (input shape and conditioning are unknown
+        at construction): the same one-sample input at t=0 and t~0.618, model
+        temporarily in eval mode, gradients off. Identical outputs mean the
+        backbone drops its time input, so training would silently fit a
+        time-invariant field while the config claims otherwise.
+
+        Raises:
+            ValueError: If the outputs of the probe pair coincide.
+        """
+        probe_x = xt[:1].detach()
+        batch = xt.shape[0]
+        probe_kwargs = {
+            k: v[:1] if isinstance(v, torch.Tensor) and v.ndim > 0 and v.shape[0] == batch else v
+            for k, v in model_kwargs.items()
+        }
+        t0 = torch.zeros(1, device=probe_x.device, dtype=probe_x.dtype)
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            with torch.no_grad():
+                out0 = self.model(probe_x, t0, **probe_kwargs)
+                out1 = self.model(
+                    probe_x, torch.full_like(t0, self._TIME_PROBE_T), **probe_kwargs
+                )
+        finally:
+            self.model.train(was_training)
+        if isinstance(out0, tuple):
+            out0 = out0[0]
+        if isinstance(out1, tuple):
+            out1 = out1[0]
+        if torch.allclose(out0, out1, rtol=1e-5, atol=1e-6):
+            raise ValueError(
+                f"{type(self.model).__name__} returns identical outputs at t=0 "
+                f"and t={self._TIME_PROBE_T:.3f}, so it ignores its time input "
+                "while time_invariant=False expects a time-conditioned field. "
+                "Wire t into the model, set time_invariant=True, or pass "
+                "check_time_conditioning=False to skip this probe."
+            )
 
     def _compute_ct(self, t: torch.Tensor) -> torch.Tensor:
         r"""Target scaling c(t) for the configured variant, times `ct_multiplier`."""
@@ -403,6 +460,10 @@ class EquilibriumMatchingLoss(BaseLoss):
         # For explicit energy, we need gradients w.r.t. xt
         if self.energy_type != "none":
             xt = xt.detach().requires_grad_(True)
+
+        if self._time_check_pending:
+            self._time_check_pending = False
+            self._probe_time_conditioning(xt, model_kwargs)
 
         # EqM: zero out time for time-invariance (model still receives t for API compat)
         t_model = torch.zeros_like(t) if self.time_invariant else t

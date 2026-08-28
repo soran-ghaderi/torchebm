@@ -186,11 +186,13 @@ def test_eqm_time_variant_mode():
             return torch.zeros_like(x)
     
     model = TimeTrackingModel()
-    loss_fn = EquilibriumMatchingLoss(model=model, time_invariant=False)
-    
+    loss_fn = EquilibriumMatchingLoss(
+        model=model, time_invariant=False, check_time_conditioning=False
+    )
+
     x = torch.randn(4, 4)
     loss_fn(x)
-    
+
     # Time should NOT be all zeros
     assert model.received_time is not None
     assert not torch.all(model.received_time == 0), \
@@ -665,6 +667,70 @@ def test_repr_records_ct_and_multiplier():
     repr_str = repr(loss_fn)
     assert "ct='constant'" in repr_str
     assert "ct_multiplier=2.0" in repr_str
+
+
+class TimeConsumingModel(nn.Module):
+    def __init__(self, dim=4):
+        super().__init__()
+        self.linear = nn.Linear(dim, dim)
+        self.calls = 0
+
+    def forward(self, x, t=None, **kwargs):
+        self.calls += 1
+        return self.linear(x) + t.view(-1, *([1] * (x.ndim - 1))) * 2.0
+
+
+def test_time_probe_raises_for_t_ignoring_model():
+    loss_fn = EquilibriumMatchingLoss(
+        model=DummyModel(out_val=0.5), time_invariant=False
+    )
+    with pytest.raises(ValueError, match="DummyModel"):
+        loss_fn(torch.randn(4, 4))
+
+
+def test_time_probe_passes_for_t_consuming_model():
+    loss_fn = EquilibriumMatchingLoss(
+        model=TimeConsumingModel(), time_invariant=False
+    )
+    loss = loss_fn(torch.randn(4, 4))
+    assert torch.isfinite(loss)
+
+
+def test_time_probe_runs_once_and_restores_training_mode():
+    model = TimeConsumingModel()
+    model.train()
+    loss_fn = EquilibriumMatchingLoss(model=model, time_invariant=False)
+
+    loss_fn(torch.randn(4, 4))
+    assert model.training
+    assert model.calls == 3  # probe pair + training forward
+
+    loss_fn(torch.randn(4, 4))
+    assert model.calls == 4  # no re-probe
+
+
+def test_time_probe_skipped_when_time_invariant():
+    model = DummyModel(out_val=0.5)
+    loss_fn = EquilibriumMatchingLoss(model=model, time_invariant=True)
+    assert torch.isfinite(loss_fn(torch.randn(4, 4)))
+
+
+def test_time_probe_slices_batch_aligned_model_kwargs():
+    class ConditionalModel(nn.Module):
+        def __init__(self, dim=4):
+            super().__init__()
+            self.linear = nn.Linear(dim, dim)
+
+        def forward(self, x, t=None, y=None, **kwargs):
+            assert y.shape[0] == x.shape[0]
+            return self.linear(x) + t.view(-1, 1) + y.view(-1, 1).float()
+
+    loss_fn = EquilibriumMatchingLoss(
+        model=ConditionalModel(), time_invariant=False
+    )
+    y = torch.randint(0, 3, (8,))
+    loss = loss_fn(torch.randn(8, 4), model_kwargs={"y": y})
+    assert torch.isfinite(loss)
 
 
 # Fixture for device testing
