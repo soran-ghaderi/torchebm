@@ -23,6 +23,16 @@ class MockModel(nn.Module):
         return torch.zeros_like(x)
 
 
+class TimeRecordingModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.times = []
+
+    def forward(self, x, t, **kwargs):
+        self.times.append(torch.as_tensor(t).detach().clone())
+        return torch.zeros_like(x)
+
+
 @pytest.fixture
 def device():
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,6 +68,51 @@ class TestFlowSampler:
         sampler = FlowSampler(MockModel(), mode="sde", device=device, dtype=dtype)
         assert sampler.diffusion_form == "SBDM"
         assert sampler.diffusion_norm == 1.0
+
+    def test_negate_velocity_conditions_model_on_zero_time(self, device, dtype):
+        """EqM fields are time-invariant: trained on zeroed time, so sampling
+        must condition the model on zeros too, not the integration clock."""
+        model = TimeRecordingModel()
+        sampler = FlowSampler(
+            model,
+            negate_velocity=True,
+            integrator="euler",
+            device=device,
+            dtype=dtype,
+        )
+        sampler.sample(n_samples=2, dim=2, n_steps=4)
+        assert model.times
+        assert all(torch.all(t == 0) for t in model.times)
+
+    def test_plain_velocity_receives_integration_time(self, device, dtype):
+        model = TimeRecordingModel()
+        sampler = FlowSampler(
+            model, integrator="euler", device=device, dtype=dtype
+        )
+        sampler.sample(n_samples=2, dim=2, n_steps=4)
+        assert any(torch.any(t != 0) for t in model.times)
+
+    def test_negate_velocity_sde_score_uses_negated_zero_time_velocity(
+        self, device, dtype
+    ):
+        """SDE mode: the score must come from the sampling velocity v = -f,
+        with the model conditioned on zeroed time."""
+        model = MockModel(mode="constant", val=2.0)
+        sampler = FlowSampler(
+            model,
+            mode="sde",
+            negate_velocity=True,
+            integrator="euler_maruyama",
+            device=device,
+            dtype=dtype,
+        )
+        x = torch.randn(3, 2, device=device, dtype=dtype)
+        t = torch.full((3,), 0.5, device=device, dtype=dtype)
+        score = sampler._get_score()(x, t)
+        expected = sampler.interpolant.velocity_to_score(
+            -torch.full_like(x, 2.0), x, t
+        )
+        assert_close(score, expected)
         assert sampler.last_step == "Mean"
         assert sampler.last_step_size == 0.04
 
