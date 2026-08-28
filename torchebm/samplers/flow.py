@@ -87,6 +87,9 @@ class FlowSampler(BaseSampler):
             `BaseScheduler` (advanced via `step_schedulers()`).
         negate_velocity: Negate the velocity during sampling. Set True for
             EqM models which learn (ε - x) direction; velocity is v = -f(x).
+            EqM equilibrium fields are time-invariant, so the model is then
+            conditioned on zeroed time (matching training) while the
+            integration clock still drives the grid and interpolant math.
         reverse: If True, integrate from data to noise (ODE mode only).
         diffusion_form: SDE-only. Form of the diffusion coefficient:
             'constant', 'SBDM' (default), 'sigma', 'linear', 'decreasing',
@@ -242,8 +245,12 @@ class FlowSampler(BaseSampler):
         r"""Get drift function for probability flow ODE."""
 
         def velocity_drift(x, t, **model_kwargs):
-            v = self.model(x, t, **model_kwargs)
-            return -v if self.negate_velocity else v
+            if self.negate_velocity:
+                # EqM equilibrium fields are time-invariant: trained with
+                # zeroed time, so the model is conditioned on zeros here too;
+                # t still drives the integration grid.
+                return -self.model(x, torch.zeros_like(t), **model_kwargs)
+            return self.model(x, t, **model_kwargs)
 
         def score_drift(x, t, **model_kwargs):
             drift_mean, drift_var = self.interpolant.compute_drift(x, t)
@@ -269,7 +276,12 @@ class FlowSampler(BaseSampler):
         r"""Get score function from model output."""
 
         def velocity_score(x, t, **model_kwargs):
-            velocity = self.model(x, t, **model_kwargs)
+            if self.negate_velocity:
+                # Match velocity_drift: the sampling velocity is v = -f with
+                # the field evaluated at zeroed time.
+                velocity = -self.model(x, torch.zeros_like(t), **model_kwargs)
+            else:
+                velocity = self.model(x, t, **model_kwargs)
             return self.interpolant.velocity_to_score(velocity, x, t)
 
         def score_score(x, t, **model_kwargs):

@@ -27,7 +27,7 @@ Key differences from Flow Matching:
 
 from __future__ import annotations
 
-from typing import Dict, Literal, Optional, Any, Union
+from typing import Callable, Dict, Literal, Optional, Any, Union
 
 import torch
 from torch import nn
@@ -78,11 +78,36 @@ class EquilibriumMatchingLoss(BaseLoss):
             the source and target batches before interpolation.
         loss_weight: Loss weighting scheme ('velocity', 'likelihood', or None).
         train_eps: Epsilon for training time interval stability.
-        ct_threshold: Decay threshold $a$ for $c(t)$. Decay starts after $t > a$. Default: 0.8.
-        ct_multiplier: Gradient multiplier $\lambda$ for $c(t)$. Default: 4.0.
+        t_sampler: Training-time distribution:
+            - 'uniform' (default): uniform over the training interval
+            - 'lognormal': EDM timestep skew, $\sigma = e^{z p_{std} + p_{mean}}$
+              with $z \sim \mathcal{N}(0, 1)$ and $t = 1/(1+\sigma)$ clamped to
+              [1e-4, 1] (intersected with the ``train_eps`` interval)
+            - a callable ``(batch, *, device, dtype, generator) -> t`` returning
+              shape (batch_size,)
+        t_p_mean: Lognormal skew location $p_{mean}$ (EDM $P_{mean}$). Default: -1.2.
+        t_p_std: Lognormal skew scale $p_{std}$ (EDM $P_{std}$), positive. Default: 1.2.
+        loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)`` (shape
+            (batch_size,)), multiplied into the per-sample loss before the
+            dispersion term; the mechanism behind min-SNR / EDM
+            $\lambda(\sigma)$ style weightings. None (default) keeps the loss
+            unweighted.
+        ct: Weight family for the target scaling $c(t)$, always multiplied by
+            ``ct_multiplier``:
+            - 'truncated' (default): $\min(1, (1-t)/(1-a))$, the EqM truncated decay
+            - 'linear': $1 - t$, the $a \to 0$ endpoint of the truncated dial
+            - 'constant': $1$, the $a \to 1$ endpoint; with ``ct_multiplier=1``
+              this is exactly the negated Flow Matching objective
+            - a callable ``t -> c(t)`` mapping a (batch_size,) time tensor to
+              weights of the same shape
+        ct_threshold: Decay threshold $a$ for ct='truncated', strictly inside
+            (0, 1); the endpoints are the 'linear' and 'constant' variants.
+            Decay starts after $t > a$. Default: 0.8.
+        ct_multiplier: Gradient multiplier $\lambda$ applied to every ct
+            variant. Samplers that rescale velocities divide it back out, so it
+            is recorded on the loss (attribute and ``repr``). Default: 4.0.
         apply_dispersion: Whether to apply dispersive regularization.
         dispersion_weight: Weight for dispersive loss term.
-        time_invariant: If True, pass zeros for time to model (EqM default).
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -121,11 +146,21 @@ class EquilibriumMatchingLoss(BaseLoss):
         coupling: Union[str, BaseCoupling, None] = None,
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
         train_eps: Union[float, BaseScheduler] = 0.0,
+        t_sampler: Union[
+            Literal["uniform", "lognormal"],
+            Callable[..., torch.Tensor],
+        ] = "uniform",
+        t_p_mean: float = -1.2,
+        t_p_std: float = 1.2,
+        loss_weight_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        ct: Union[
+            Literal["truncated", "linear", "constant"],
+            Callable[[torch.Tensor], torch.Tensor],
+        ] = "truncated",
         ct_threshold: float = 0.8,
         ct_multiplier: float = 4.0,
         apply_dispersion: bool = False,
         dispersion_weight: float = 0.5,
-        time_invariant: bool = True,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -137,16 +172,43 @@ class EquilibriumMatchingLoss(BaseLoss):
             *args,
             **kwargs,
         )
+        if not callable(t_sampler) and t_sampler not in ("uniform", "lognormal"):
+            raise ValueError(
+                "t_sampler must be 'uniform', 'lognormal', or a callable "
+                f"(batch, *, device, dtype, generator) -> t, got {t_sampler!r}"
+            )
+        if t_p_std <= 0:
+            raise ValueError(f"t_p_std must be positive, got {t_p_std}")
+        if loss_weight_fn is not None and not callable(loss_weight_fn):
+            raise TypeError(
+                "loss_weight_fn must be callable or None, got "
+                f"{type(loss_weight_fn).__name__}"
+            )
+        if not callable(ct) and ct not in ("truncated", "linear", "constant"):
+            raise ValueError(
+                "ct must be 'truncated', 'linear', 'constant', or a callable "
+                f"t -> c(t), got {ct!r}"
+            )
+        if ct == "truncated" and not 0.0 < ct_threshold < 1.0:
+            raise ValueError(
+                f"ct_threshold must be in (0, 1) for ct='truncated', got "
+                f"{ct_threshold}; use ct='linear' for the threshold -> 0 "
+                "endpoint or ct='constant' for the threshold -> 1 endpoint"
+            )
         self.model = model
         self.prediction = prediction
         self.energy_type = energy_type
         self.loss_weight = loss_weight
+        self.t_sampler = t_sampler
+        self.t_p_mean = t_p_mean
+        self.t_p_std = t_p_std
+        self.loss_weight_fn = loss_weight_fn
         self._register_param("train_eps", train_eps)
+        self.ct = ct
         self.ct_threshold = ct_threshold
         self.ct_multiplier = ct_multiplier
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
-        self.time_invariant = time_invariant
         self.interpolant = resolve_interpolant(
             interpolant, default="linear", owner="EquilibriumMatchingLoss"
         )
@@ -166,6 +228,47 @@ class EquilibriumMatchingLoss(BaseLoss):
         r"""Get training time interval respecting epsilon."""
         eps = self.train_eps
         return eps, 1.0 - eps
+
+    def _sample_t(
+        self, batch: int, generator: Optional[torch.Generator]
+    ) -> torch.Tensor:
+        r"""Draw training times for the configured `t_sampler`.
+
+        'lognormal' is the EDM timestep skew: \(\sigma = e^{z p_{std} + p_{mean}}\)
+        with \(z \sim \mathcal{N}(0, 1)\), \(t = 1/(1+\sigma)\), clamped into the
+        training interval with a 1e-4 floor. A callable receives
+        ``(batch, device=, dtype=, generator=)`` and must return shape (batch,).
+        """
+        if callable(self.t_sampler):
+            return self.t_sampler(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+        t0, t1 = self._check_interval()
+        if self.t_sampler == "lognormal":
+            z = torch.randn(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+            sigma = torch.exp(z * self.t_p_std + self.t_p_mean)
+            return (1.0 / (1.0 + sigma)).clamp(min=max(1.0e-4, t0), max=t1)
+        return (
+            torch.rand(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+            * (t1 - t0)
+            + t0
+        )
+
+    def _compute_ct(self, t: torch.Tensor) -> torch.Tensor:
+        r"""Target scaling c(t) for the configured variant, times `ct_multiplier`."""
+        if callable(self.ct):
+            return self.ct(t) * self.ct_multiplier
+        if self.ct == "truncated":
+            return compute_eqm_ct(
+                t, threshold=self.ct_threshold, multiplier=self.ct_multiplier
+            )
+        if self.ct == "linear":
+            return (1.0 - t) * self.ct_multiplier
+        return torch.full_like(t, self.ct_multiplier)
 
     def _reduce_dims(self, ndim: int) -> tuple:
         r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
@@ -293,7 +396,7 @@ class EquilibriumMatchingLoss(BaseLoss):
 
         Implements gradient matching with EqM target:
         - Target: $(\epsilon - x) \cdot c(t) = (x_0 - x_1) \cdot c(t)$
-        - Time-invariant: zeros out time if time_invariant=True
+        - Time-invariant: the model always receives zeroed time
 
         Args:
             x1: Data samples of shape (batch_size, ...).
@@ -340,14 +443,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         coupled = self.coupling(x0, x1, generator=generator, **model_kwargs)
         x0, x1 = coupled
 
-        t0, t1 = self._check_interval()
-        t = (
-            torch.rand(
-                batch, device=self.device, dtype=self.dtype, generator=generator
-            )
-            * (t1 - t0)
-            + t0
-        )
+        t = self._sample_t(batch, generator)
 
         # Interpolate: xt between x0 (noise) and x1 (data)
         xt, ut = self.interpolant.interpolate(x0, x1, t)
@@ -356,7 +452,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         # For linear interpolant, -ut = x0 - x1 (equivalent to original formulation).
         # For VP/cosine, ut encodes the schedule-specific velocity coefficients.
         # Sampling with negate_velocity=True recovers the positive velocity ut*c(t).
-        ct = compute_eqm_ct(t, threshold=self.ct_threshold, multiplier=self.ct_multiplier)
+        ct = self._compute_ct(t)
         ct = ct.view(batch, *([1] * (xt.ndim - 1)))
         target = -ut * ct
 
@@ -365,7 +461,7 @@ class EquilibriumMatchingLoss(BaseLoss):
             xt = xt.detach().requires_grad_(True)
 
         # EqM: zero out time for time-invariance (model still receives t for API compat)
-        t_model = torch.zeros_like(t) if self.time_invariant else t
+        t_model = torch.zeros_like(t)
 
         with self.autocast_context():
             model_output = self.model(xt, t_model, **model_kwargs)
@@ -417,6 +513,9 @@ class EquilibriumMatchingLoss(BaseLoss):
             else:
                 raise ValueError(f"Unknown prediction type: {self.prediction}")
 
+        if self.loss_weight_fn is not None:
+            terms["loss"] = terms["loss"] * self.loss_weight_fn(t)
+
         # Add dispersive regularization
         if self.apply_dispersion:
             terms["loss"] = terms["loss"] + self.dispersion_weight * disp_loss
@@ -429,7 +528,9 @@ class EquilibriumMatchingLoss(BaseLoss):
             f"prediction={self.prediction!r}, "
             f"energy_type={self.energy_type!r}, "
             f"interpolant={type(self.interpolant).__name__}, "
-            f"coupling={type(self.coupling).__name__})"
+            f"coupling={type(self.coupling).__name__}, "
+            f"ct={self.ct!r}, "
+            f"ct_multiplier={self.ct_multiplier})"
         )
 
 

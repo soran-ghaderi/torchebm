@@ -88,14 +88,9 @@ records the gap explicitly.
 
 ## How do I cite TorchEBM?
 
-```bibtex
-@misc{ghaderi2024torchebm,
-  author       = {Ghaderi, Soran},
-  title        = {{TorchEBM}: A Composable {PyTorch} Library for Energy-Based and Transport-Based Generative Models},
-  year         = {2024},
-  howpublished = {\url{https://github.com/soran-ghaderi/torchebm}},
-}
-```
+Use the BibTeX entry on the [home page](../index.md#citation). GitHub also
+serves it from `CITATION.cff` through the "Cite this repository" button, which
+exports BibTeX and APA.
 
 ## How do I contribute?
 

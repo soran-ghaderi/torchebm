@@ -296,6 +296,54 @@ def test_integrate_sde(integrator):
     assert torch.all(torch.isfinite(result["x"]))
 
 
+def test_integrate_sde_with_noise_scale(integrator):
+    """Integration accepts a scalar noise_scale instead of a diffusion callable."""
+    device = integrator.device
+    state = {"x": torch.randn(4, 2, device=device)}
+
+    result = integrator.integrate(
+        state,
+        step_size=0.1,
+        n_steps=5,
+        drift=lambda x_, t_: -x_,
+        noise_scale=1.0,
+    )
+
+    assert result["x"].shape == (4, 2)
+    assert torch.all(torch.isfinite(result["x"]))
+
+
+def test_integrate_noise_scale_diffusion_equivalence(integrator):
+    """Over a full trajectory, noise_scale sigma matches diffusion = sigma**2."""
+    device = integrator.device
+    noise_scale = 1.5
+    x = torch.randn(8, 2, device=device)
+    drift = lambda x_, t_: -x_
+
+    gen = torch.Generator(device=device)
+    gen.manual_seed(0)
+    from_scale = integrator.integrate(
+        {"x": x.clone()},
+        step_size=0.01,
+        n_steps=10,
+        drift=drift,
+        noise_scale=noise_scale,
+        generator=gen,
+    )
+
+    gen.manual_seed(0)
+    from_diffusion = integrator.integrate(
+        {"x": x.clone()},
+        step_size=0.01,
+        n_steps=10,
+        drift=drift,
+        diffusion=lambda x_, t_: torch.full_like(x_, noise_scale**2),
+        generator=gen,
+    )
+
+    assert torch.allclose(from_scale["x"], from_diffusion["x"], atol=1e-6)
+
+
 def test_integrate_with_model(integrator, gaussian_model):
     """Test integration using model gradient."""
     device = integrator.device

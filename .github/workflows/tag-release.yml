@@ -79,33 +79,65 @@ jobs:
         git tag $new_tag
         git push origin $new_tag
 
-  # update-changelog:
-  #   needs: update-tag
-  #   runs-on: ubuntu-latest
-  #   outputs:
-  #     changes: ${{ steps.changelog.outputs.changes }}
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-  #       with:
-  #         fetch-depth: 0
+  # CHANGELOG.md automation: every master push (PR merge) refreshes the
+  # [Unreleased] section from all commits since the last GitHub Release; a
+  # '#release' push instead promotes that range to a version section. Ranges
+  # are bounded by real releases, never by the per-push tags minted above.
+  # The bot commits carry [skip ci], so they trigger neither tags nor CI.
+  changelog:
+    if: ${{ !contains(github.event.head_commit.message, '#release') }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-  #     - name: Update CHANGELOG.md
-  #       id: changelog
-  #       uses: requarks/changelog-action@v1
-  #       with:
-  #         token: ${{ github.token }}
-  #         tag: ${{ needs.update-tag.outputs.new_tag }}
-  #         excludeTypes: ""
-  #         includeInvalidCommits: true
-  #         useGitmojis: false
+    - name: Render unreleased changes
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        pip install --quiet git-cliff
+        last=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+        git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
+        python scripts/update_changelog.py unreleased --body body.md
+        rm body.md
 
-  #     - name: Commit CHANGELOG.md
-  #       uses: stefanzweifel/git-auto-commit-action@v5
-  #       with:
-  #         branch: master
-  #         commit_message: "chore: update CHANGELOG.md for ${{ needs.update-tag.outputs.new_tag }} [skip ci]"
-  #         file_pattern: CHANGELOG.md
+    - name: Commit CHANGELOG.md
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        branch: master
+        commit_message: "chore(changelog): refresh unreleased [skip ci]"
+        file_pattern: CHANGELOG.md
+
+  changelog-release:
+    needs: [update-tag]
+    if: contains(github.event.head_commit.message, '#release')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Promote unreleased to ${{ needs.update-tag.outputs.new_tag }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        NEW_TAG: ${{ needs.update-tag.outputs.new_tag }}
+      run: |
+        pip install --quiet git-cliff
+        last=$(gh release list --json tagName --jq '.[].tagName' | grep -vx "$NEW_TAG" | head -1)
+        git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
+        python scripts/update_changelog.py release --version "$NEW_TAG" \
+          --date "$(date -u +%F)" --body body.md
+        rm body.md
+
+    - name: Commit CHANGELOG.md
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        branch: master
+        commit_message: "chore(changelog): release ${{ needs.update-tag.outputs.new_tag }} [skip ci]"
+        file_pattern: CHANGELOG.md
 
   release:
     needs: [update-tag]

@@ -1,0 +1,41 @@
+# git-cliff configuration for the CHANGELOG.md sections.
+#
+# Output matches the format of the previously generated sections: Keep a
+# Changelog labels (Added/Changed/Deprecated/Removed/Fixed/Performance/Other)
+# and short-SHA commit links on every bullet; non-conventional commits land
+# under Other.
+#
+# CI always passes an explicit release-to-release commit range and owns the
+# version headings (scripts/update_changelog.py splices the rendered body into
+# CHANGELOG.md), so tags are ignored as section boundaries here: the repo
+# mints a tag on every master push and only GitHub Releases mark real
+# versions.
+
+[changelog]
+trim = true
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group | striptags | trim }}
+
+{% for commit in commits %}\
+- [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/soran-ghaderi/torchebm/commit/{{ commit.id }}) - {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message }}
+{% endfor %}
+{% endfor %}\
+"""
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+protect_breaking_commits = true
+ignore_tags = ".*"
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^refactor", group = "<!-- 1 -->Changed" },
+  { message = "^deprecate", group = "<!-- 2 -->Deprecated" },
+  { message = "^(remove|revert)", group = "<!-- 3 -->Removed" },
+  { message = "^fix", group = "<!-- 4 -->Fixed" },
+  { message = "^perf", group = "<!-- 5 -->Performance" },
+  { message = "^Merge ", skip = true },
+  { message = "^chore\\(changelog\\)", skip = true },
+  { message = ".*", group = "<!-- 6 -->Other" },
+]
