@@ -20,6 +20,45 @@ from torchebm.core.base_module import warn_once
 logger = logging.getLogger(__name__)
 
 
+def _unexpected_init_args_message(cls, args, kwargs) -> str:
+    r"""Build the TypeError message for constructor arguments no loss accepts.
+
+    Walks `cls.__mro__` down to `BaseLoss` collecting every named constructor
+    parameter, so the message lists what the concrete loss actually supports,
+    including parameters bound by intermediate bases that the leaf signature
+    forwards through ``**kwargs``.
+    """
+    import inspect
+
+    from torchebm._version import __version__
+
+    supported: dict = {}
+    for klass in cls.__mro__:
+        init = klass.__dict__.get("__init__")
+        if init is not None:
+            for name, param in inspect.signature(init).parameters.items():
+                if name != "self" and param.kind not in (
+                    param.VAR_POSITIONAL,
+                    param.VAR_KEYWORD,
+                ):
+                    supported.setdefault(name)
+        if klass is BaseLoss:
+            break
+
+    problems = []
+    if kwargs:
+        problems.append(
+            "unexpected keyword argument(s) "
+            + ", ".join(repr(k) for k in kwargs)
+        )
+    if args:
+        problems.append(f"{len(args)} unexpected positional argument(s)")
+    return (
+        f"{cls.__name__}.__init__() got {' and '.join(problems)}. "
+        f"Supported parameters: {', '.join(supported)} (torchebm {__version__})."
+    )
+
+
 def _dtensor_type():
     try:
         from torch.distributed.tensor import DTensor
@@ -59,8 +98,16 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         *args: Any,
         **kwargs: Any,
     ):
-        """Initialize the base loss class."""
-        super().__init__(device=device, dtype=dtype, *args, **kwargs)
+        """Initialize the base loss class.
+
+        Raises:
+            TypeError: If constructor arguments remain that no class in the
+                loss's MRO binds; the message lists the supported parameters
+                and the installed torchebm version.
+        """
+        if args or kwargs:
+            raise TypeError(_unexpected_init_args_message(type(self), args, kwargs))
+        super().__init__(device=device, dtype=dtype)
 
     def _resolve_model_kwargs(
         self,
