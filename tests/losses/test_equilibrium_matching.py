@@ -570,6 +570,103 @@ def test_weighted_coupling_weights_the_loss():
     assert not torch.allclose(lw, lp)
 
 
+def test_ct_unknown_variant_raises():
+    with pytest.raises(ValueError, match="truncated"):
+        EquilibriumMatchingLoss(model=DummyModel(), ct="bogus")
+
+
+@pytest.mark.parametrize("threshold", [0.0, 1.0])
+def test_ct_truncated_endpoint_threshold_raises_at_construction(threshold):
+    """Threshold endpoints are separate variants, not division-by-zero crashes."""
+    with pytest.raises(ValueError, match="constant"):
+        EquilibriumMatchingLoss(model=DummyModel(), ct_threshold=threshold)
+
+
+@pytest.mark.parametrize(
+    "ct,weight_fn",
+    [
+        ("linear", lambda t: 1.0 - t),
+        ("constant", lambda t: torch.ones_like(t)),
+        (lambda t: t.square(), lambda t: t.square()),
+    ],
+    ids=["linear", "constant", "callable"],
+)
+def test_ct_variants_apply_multiplier(ct, weight_fn):
+    """Every ct variant produces target -ut * c(t) * ct_multiplier."""
+    dim, batch_size = 4, 2
+    multiplier = 3.0
+    x1 = torch.randn(batch_size, dim)
+    fixed_x0 = torch.randn(batch_size, dim)
+    fixed_t_raw = torch.rand(batch_size)
+
+    with unittest.mock.patch(
+        "torchebm.losses.equilibrium_matching.torch.rand",
+        return_value=fixed_t_raw,
+    ):
+        loss_fn = EquilibriumMatchingLoss(
+            model=DummyModel(out_val=0.5),
+            ct=ct,
+            ct_multiplier=multiplier,
+            train_eps=0.0,
+            device="cpu",
+        )
+        loss_val = loss_fn(x1, x0=fixed_x0)
+
+    t = fixed_t_raw
+    _, ut = get_interpolant("linear").interpolate(fixed_x0, x1, t)
+    target = -ut * (weight_fn(t) * multiplier).view(batch_size, 1)
+    expected = (torch.full_like(target, 0.5) - target).square().mean(dim=1).mean()
+    assert torch.allclose(loss_val, expected, atol=1e-5)
+
+
+def test_ct_constant_matches_flow_matching_reference():
+    """ct='constant', ct_multiplier=1 is exactly the negated FM objective.
+
+    Reference FM on Gaussian data: v = -f, loss = ||v - ut||^2. Values and
+    parameter gradients must coincide.
+    """
+    torch.manual_seed(7)
+    dim, batch_size = 4, 16
+    model = LearnableModel(dim=dim)
+    x1 = torch.randn(batch_size, dim)
+    x0 = torch.randn(batch_size, dim)
+    fixed_t_raw = torch.rand(batch_size)
+
+    with unittest.mock.patch(
+        "torchebm.losses.equilibrium_matching.torch.rand",
+        return_value=fixed_t_raw,
+    ):
+        loss_fn = EquilibriumMatchingLoss(
+            model=model,
+            ct="constant",
+            ct_multiplier=1.0,
+            train_eps=0.0,
+            device="cpu",
+        )
+        eqm_loss = loss_fn(x1, x0=x0)
+    eqm_loss.backward()
+    eqm_grads = [p.grad.clone() for p in model.parameters()]
+    model.zero_grad()
+
+    xt, ut = get_interpolant("linear").interpolate(x0, x1, fixed_t_raw)
+    v_pred = -model(xt, torch.zeros_like(fixed_t_raw))
+    fm_loss = (v_pred - ut).square().mean(dim=1).mean()
+
+    assert torch.allclose(eqm_loss, fm_loss, atol=1e-6)
+    fm_loss.backward()
+    for g_eqm, p in zip(eqm_grads, model.parameters()):
+        assert torch.allclose(g_eqm, p.grad, atol=1e-6)
+
+
+def test_repr_records_ct_and_multiplier():
+    loss_fn = EquilibriumMatchingLoss(
+        model=DummyModel(), ct="constant", ct_multiplier=2.0
+    )
+    repr_str = repr(loss_fn)
+    assert "ct='constant'" in repr_str
+    assert "ct_multiplier=2.0" in repr_str
+
+
 # Fixture for device testing
 @pytest.fixture(params=["cpu", "cuda"])
 def device(request):

@@ -27,7 +27,7 @@ Key differences from Flow Matching:
 
 from __future__ import annotations
 
-from typing import Dict, Literal, Optional, Any, Union
+from typing import Callable, Dict, Literal, Optional, Any, Union
 
 import torch
 from torch import nn
@@ -78,8 +78,20 @@ class EquilibriumMatchingLoss(BaseLoss):
             the source and target batches before interpolation.
         loss_weight: Loss weighting scheme ('velocity', 'likelihood', or None).
         train_eps: Epsilon for training time interval stability.
-        ct_threshold: Decay threshold $a$ for $c(t)$. Decay starts after $t > a$. Default: 0.8.
-        ct_multiplier: Gradient multiplier $\lambda$ for $c(t)$. Default: 4.0.
+        ct: Weight family for the target scaling $c(t)$, always multiplied by
+            ``ct_multiplier``:
+            - 'truncated' (default): $\min(1, (1-t)/(1-a))$, the EqM truncated decay
+            - 'linear': $1 - t$, the $a \to 0$ endpoint of the truncated dial
+            - 'constant': $1$, the $a \to 1$ endpoint; with ``ct_multiplier=1``
+              this is exactly the negated Flow Matching objective
+            - a callable ``t -> c(t)`` mapping a (batch_size,) time tensor to
+              weights of the same shape
+        ct_threshold: Decay threshold $a$ for ct='truncated', strictly inside
+            (0, 1); the endpoints are the 'linear' and 'constant' variants.
+            Decay starts after $t > a$. Default: 0.8.
+        ct_multiplier: Gradient multiplier $\lambda$ applied to every ct
+            variant. Samplers that rescale velocities divide it back out, so it
+            is recorded on the loss (attribute and ``repr``). Default: 4.0.
         apply_dispersion: Whether to apply dispersive regularization.
         dispersion_weight: Weight for dispersive loss term.
         time_invariant: If True, pass zeros for time to model (EqM default).
@@ -121,6 +133,10 @@ class EquilibriumMatchingLoss(BaseLoss):
         coupling: Union[str, BaseCoupling, None] = None,
         loss_weight: Optional[Literal["velocity", "likelihood"]] = None,
         train_eps: Union[float, BaseScheduler] = 0.0,
+        ct: Union[
+            Literal["truncated", "linear", "constant"],
+            Callable[[torch.Tensor], torch.Tensor],
+        ] = "truncated",
         ct_threshold: float = 0.8,
         ct_multiplier: float = 4.0,
         apply_dispersion: bool = False,
@@ -137,11 +153,23 @@ class EquilibriumMatchingLoss(BaseLoss):
             *args,
             **kwargs,
         )
+        if not callable(ct) and ct not in ("truncated", "linear", "constant"):
+            raise ValueError(
+                "ct must be 'truncated', 'linear', 'constant', or a callable "
+                f"t -> c(t), got {ct!r}"
+            )
+        if ct == "truncated" and not 0.0 < ct_threshold < 1.0:
+            raise ValueError(
+                f"ct_threshold must be in (0, 1) for ct='truncated', got "
+                f"{ct_threshold}; use ct='linear' for the threshold -> 0 "
+                "endpoint or ct='constant' for the threshold -> 1 endpoint"
+            )
         self.model = model
         self.prediction = prediction
         self.energy_type = energy_type
         self.loss_weight = loss_weight
         self._register_param("train_eps", train_eps)
+        self.ct = ct
         self.ct_threshold = ct_threshold
         self.ct_multiplier = ct_multiplier
         self.apply_dispersion = apply_dispersion
@@ -166,6 +194,18 @@ class EquilibriumMatchingLoss(BaseLoss):
         r"""Get training time interval respecting epsilon."""
         eps = self.train_eps
         return eps, 1.0 - eps
+
+    def _compute_ct(self, t: torch.Tensor) -> torch.Tensor:
+        r"""Target scaling c(t) for the configured variant, times `ct_multiplier`."""
+        if callable(self.ct):
+            return self.ct(t) * self.ct_multiplier
+        if self.ct == "truncated":
+            return compute_eqm_ct(
+                t, threshold=self.ct_threshold, multiplier=self.ct_multiplier
+            )
+        if self.ct == "linear":
+            return (1.0 - t) * self.ct_multiplier
+        return torch.full_like(t, self.ct_multiplier)
 
     def _reduce_dims(self, ndim: int) -> tuple:
         r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
@@ -356,7 +396,7 @@ class EquilibriumMatchingLoss(BaseLoss):
         # For linear interpolant, -ut = x0 - x1 (equivalent to original formulation).
         # For VP/cosine, ut encodes the schedule-specific velocity coefficients.
         # Sampling with negate_velocity=True recovers the positive velocity ut*c(t).
-        ct = compute_eqm_ct(t, threshold=self.ct_threshold, multiplier=self.ct_multiplier)
+        ct = self._compute_ct(t)
         ct = ct.view(batch, *([1] * (xt.ndim - 1)))
         target = -ut * ct
 
@@ -429,7 +469,9 @@ class EquilibriumMatchingLoss(BaseLoss):
             f"prediction={self.prediction!r}, "
             f"energy_type={self.energy_type!r}, "
             f"interpolant={type(self.interpolant).__name__}, "
-            f"coupling={type(self.coupling).__name__})"
+            f"coupling={type(self.coupling).__name__}, "
+            f"ct={self.ct!r}, "
+            f"ct_multiplier={self.ct_multiplier})"
         )
 
 

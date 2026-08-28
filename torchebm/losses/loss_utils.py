@@ -84,21 +84,25 @@ def compute_eqm_ct(
 
     Args:
         t: Time tensor of shape (batch_size,).
-        threshold: Decay threshold \(a\), decay starts after \(t > a\). Default: 0.8.
+        threshold: Decay threshold \(a\), decay starts after \(t > a\).
+            Must lie strictly inside (0, 1). Default: 0.8.
         multiplier: Gradient multiplier \(\lambda\). Default: 4.0.
 
     Returns:
         Scaling factor c(t) of same shape as t.
+
+    Raises:
+        ValueError: If `threshold` is not strictly inside (0, 1). The endpoint
+            behaviors are the ``'linear'`` (threshold to 0) and ``'constant'``
+            (threshold to 1) ``ct`` variants of `EquilibriumMatchingLoss`.
     """
-    start = 1.0
-    ct = (
-        torch.minimum(
-            start - (start - 1) / threshold * t,
-            1 / (1 - threshold) - 1 / (1 - threshold) * t,
+    if not 0.0 < threshold < 1.0:
+        raise ValueError(
+            f"threshold must be in (0, 1), got {threshold}; use the 'linear' "
+            "(threshold -> 0) or 'constant' (threshold -> 1) ct variant of "
+            "EquilibriumMatchingLoss for the endpoints"
         )
-        * multiplier
-    )
-    return ct
+    return ((1.0 - t) / (1.0 - threshold)).clamp(max=1.0) * multiplier
 
 
 def dispersive_loss(z: torch.Tensor) -> torch.Tensor:

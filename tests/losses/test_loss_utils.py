@@ -40,6 +40,12 @@ def test_get_interpolant():
         get_interpolant("unknown")
 
 
+@pytest.mark.parametrize("threshold", [0.0, 1.0])
+def test_compute_eqm_ct_endpoint_threshold_raises(threshold):
+    with pytest.raises(ValueError, match="threshold"):
+        compute_eqm_ct(torch.rand(4), threshold=threshold)
+
+
 def test_compute_eqm_ct():
     # Test formula: c(t) = 4 * min(1, (1-t)/0.2)
     
