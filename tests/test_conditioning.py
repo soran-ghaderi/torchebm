@@ -50,7 +50,10 @@ class RecordingEnergy(BaseModel):
 
     def forward(self, x, y=None):
         self.seen.append(None if y is None else (y.dtype, tuple(y.shape)))
-        return self.scale * (x**2).sum(dim=-1)
+        out = self.scale * (x**2).sum(dim=-1)
+        if y is not None:
+            out = out + y.float()
+        return out
 
 
 class RecordingField(nn.Module):
@@ -63,7 +66,10 @@ class RecordingField(nn.Module):
 
     def forward(self, x, t=None, y=None, **kwargs):
         self.seen.append(None if y is None else (y.dtype, tuple(y.shape)))
-        return self.lin(x)
+        out = self.lin(x)
+        if y is not None:
+            out = out + y.view(-1, 1).float()
+        return out
 
 
 class PlainEnergy(BaseModel):

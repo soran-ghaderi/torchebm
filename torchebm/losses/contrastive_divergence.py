@@ -115,10 +115,11 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
                 - The scalar CD loss value.
                 - The generated negative samples.
         """
-        model_kwargs = self._apply_cfg_dropout(
-            self._prepare_model_kwargs(self._merge_condition(model_kwargs, y)),
-            generator,
+        model_kwargs = self._prepare_model_kwargs(
+            self._merge_condition(model_kwargs, y)
         )
+        self._check_condition(x, model_kwargs)
+        model_kwargs = self._apply_cfg_dropout(model_kwargs, generator)
         if any(key in kwargs for key in self._CD_OPTION_KEYS):
             warn_once(
                 "cd-option-kwargs",

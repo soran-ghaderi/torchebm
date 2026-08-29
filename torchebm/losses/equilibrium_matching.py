@@ -236,6 +236,11 @@ class EquilibriumMatchingLoss(BaseLoss):
         eps = self.train_eps
         return eps, 1.0 - eps
 
+    def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
+        r"""Field convention for the conditioning probe: zeroed time."""
+        t0 = torch.zeros(px.shape[0], device=px.device, dtype=px.dtype)
+        return self.model(px, t0, **pmk)
+
     def _sample_t(
         self, batch: int, generator: Optional[torch.Generator]
     ) -> torch.Tensor:
@@ -385,12 +390,11 @@ class EquilibriumMatchingLoss(BaseLoss):
         Returns:
             Scalar loss value.
         """
-        mk = self._apply_cfg_dropout(
-            self._resolve_model_kwargs(
-                model_kwargs, kwargs, warn_key="eqm-bare-model-kwargs"
-            ),
-            generator,
+        mk = self._resolve_model_kwargs(
+            model_kwargs, kwargs, warn_key="eqm-bare-model-kwargs"
         )
+        self._check_condition(x, mk)
+        mk = self._apply_cfg_dropout(mk, generator)
         terms = self.training_losses(
             x, model_kwargs=mk, x0=x0, generator=generator
         )
