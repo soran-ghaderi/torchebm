@@ -91,6 +91,7 @@ class LangevinDynamics(BaseSampler):
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
         *,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
@@ -109,6 +110,8 @@ class LangevinDynamics(BaseSampler):
                 ``"mean"`` (`[n_kept, *data_shape]`), ``"var"``
                 (`[n_kept, *data_shape]`), and ``"energy"`` (`[n_kept]`).
             reset_schedulers: If True (default), reset registered schedulers.
+            y: Optional conditioning tensor forwarded to the model; shorthand
+                for ``model_kwargs={'y': y}``.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model at every step. Normalized to the sampler device once at
                 entry; ``None`` (default) is the exact unconditional path.
@@ -128,7 +131,9 @@ class LangevinDynamics(BaseSampler):
             self.reset_schedulers()
 
         x = self._init_state(x, dim, n_samples, generator)
-        model_kwargs = self._prepare_model_kwargs(model_kwargs)
+        model_kwargs = self._prepare_model_kwargs(
+            self._merge_condition(model_kwargs, y)
+        )
         n_samples = x.shape[0]
         data_shape = x.shape[1:]
 

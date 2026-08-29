@@ -57,6 +57,7 @@ class EquilibriumMatchingLoss(BaseLoss):
     with multiple prediction types and loss weighting schemes.
 
     The target is $(\epsilon - x) \cdot c(\gamma)$ where:
+
     - $\epsilon$ is noise (x0), $x$ is data (x1)
     - For linear interpolant: target is $(x_0 - x_1) \cdot c(t)$ (noise - data)
     - $c(\gamma) = \lambda \cdot \min(1, (1-\gamma)/(1-a))$ is truncated decay
@@ -68,10 +69,12 @@ class EquilibriumMatchingLoss(BaseLoss):
         model: Neural network predicting velocity/score/noise.
         prediction: Network prediction type ('velocity', 'score', or 'noise').
         energy_type: Energy formulation type:
+
             - 'none': Implicit EqM, model predicts gradient directly
             - 'dot': $g(x) = x \cdot f(x)$, dot product energy formulation
             - 'l2': $g(x) = -\frac{1}{2}\|f(x)\|^2$ (experimental)
             - 'mean': Same as dot (alias)
+
         interpolant: Interpolant name (e.g. 'linear', 'cosine', 'vp') or BaseInterpolant instance.
         coupling: Minibatch coupling: a name ('independent' (default, identity),
             'ot'/'exact_ot', 'sinkhorn', ...) or a BaseCoupling instance. Pairs
@@ -79,12 +82,14 @@ class EquilibriumMatchingLoss(BaseLoss):
         loss_weight: Loss weighting scheme ('velocity', 'likelihood', or None).
         train_eps: Epsilon for training time interval stability.
         t_sampler: Training-time distribution:
+
             - 'uniform' (default): uniform over the training interval
             - 'lognormal': EDM timestep skew, $\sigma = e^{z p_{std} + p_{mean}}$
               with $z \sim \mathcal{N}(0, 1)$ and $t = 1/(1+\sigma)$ clamped to
               [1e-4, 1] (intersected with the ``train_eps`` interval)
             - a callable ``(batch, *, device, dtype, generator) -> t`` returning
               shape (batch_size,)
+
         t_p_mean: Lognormal skew location $p_{mean}$ (EDM $P_{mean}$). Default: -1.2.
         t_p_std: Lognormal skew scale $p_{std}$ (EDM $P_{std}$), positive. Default: 1.2.
         loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)`` (shape
@@ -94,12 +99,14 @@ class EquilibriumMatchingLoss(BaseLoss):
             unweighted.
         ct: Weight family for the target scaling $c(t)$, always multiplied by
             ``ct_multiplier``:
+
             - 'truncated' (default): $\min(1, (1-t)/(1-a))$, the EqM truncated decay
             - 'linear': $1 - t$, the $a \to 0$ endpoint of the truncated dial
             - 'constant': $1$, the $a \to 1$ endpoint; with ``ct_multiplier=1``
               this is exactly the negated Flow Matching objective
             - a callable ``t -> c(t)`` mapping a (batch_size,) time tensor to
               weights of the same shape
+              
         ct_threshold: Decay threshold $a$ for ct='truncated', strictly inside
             (0, 1); the endpoints are the 'linear' and 'constant' variants.
             Decay starts after $t > a$. Default: 0.8.

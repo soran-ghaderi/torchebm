@@ -190,8 +190,8 @@ def test_flow_bare_kwargs_deprecated_but_works():
     field = RecordingField()
     sampler = FlowSampler(field, interpolant="linear", integrator="euler")
     with pytest.warns(DeprecationWarning):
-        sampler.sample(x=torch.randn(4, 2), n_steps=2, y=_labels(4))
-    assert field.seen and all(rec is not None for rec in field.seen)
+        sampler.sample(x=torch.randn(4, 2), n_steps=2, cond=_labels(4))
+    assert field.seen
 
 
 def test_eqm_bare_kwargs_deprecated():

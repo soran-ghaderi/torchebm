@@ -386,6 +386,7 @@ class FlowSampler(BaseSampler):
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
         *,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
         **legacy_model_kwargs,
@@ -416,6 +417,8 @@ class FlowSampler(BaseSampler):
                 Fixed-step sampling advances schedulers once per step;
                 adaptive integrators do not step them (the actual step count
                 is controller-dependent).
+            y: Optional conditioning tensor forwarded to the model; shorthand
+                for ``model_kwargs={'y': y}``.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model at every step. Normalized to the sampler device once at
                 entry; ``None`` (default) is the exact unconditional path.
@@ -454,7 +457,9 @@ class FlowSampler(BaseSampler):
                 "arguments is deprecated; pass model_kwargs={...} instead.",
             )
         model_kwargs = self._prepare_model_kwargs(
-            {**legacy_model_kwargs, **(model_kwargs or {})}
+            self._merge_condition(
+                {**legacy_model_kwargs, **(model_kwargs or {})}, y
+            )
         )
         if thin < 1:
             raise ValueError("thin must be >= 1")
