@@ -140,8 +140,11 @@ class ScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar score matching loss.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs, warn_key="sm-bare-model-kwargs"
+        mk = self._apply_cfg_dropout(
+            self._resolve_model_kwargs(
+                model_kwargs, kwargs, warn_key="sm-bare-model-kwargs"
+            ),
+            generator,
         )
         if self.hessian_method == "approx":
             return self._approx_score_matching(x, model_kwargs=mk, generator=generator)
@@ -359,8 +362,11 @@ class DenoisingScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs, warn_key="dsm-bare-model-kwargs"
+        mk = self._apply_cfg_dropout(
+            self._resolve_model_kwargs(
+                model_kwargs, kwargs, warn_key="dsm-bare-model-kwargs"
+            ),
+            generator,
         )
         x_perturbed, noise = self.perturb_data(x, generator=generator)
 

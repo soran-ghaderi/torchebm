@@ -378,8 +378,11 @@ class EquilibriumMatchingLoss(BaseLoss):
         Returns:
             Scalar loss value.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs, warn_key="eqm-bare-model-kwargs"
+        mk = self._apply_cfg_dropout(
+            self._resolve_model_kwargs(
+                model_kwargs, kwargs, warn_key="eqm-bare-model-kwargs"
+            ),
+            generator,
         )
         terms = self.training_losses(
             x, model_kwargs=mk, x0=x0, generator=generator

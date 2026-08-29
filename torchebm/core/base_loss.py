@@ -15,7 +15,7 @@ from torchebm.core import BaseSampler
 from torchebm.core import BaseScheduler
 from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
-from torchebm.core.base_module import warn_once
+from torchebm.core.base_module import substitute_condition, warn_once
 
 logger = logging.getLogger(__name__)
 
@@ -95,41 +95,69 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         self,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
+        cfg_dropout: float = 0.0,
+        null_condition: Union[int, float, torch.Tensor, Callable, None] = None,
         *args: Any,
         **kwargs: Any,
     ):
         """Initialize the base loss class.
 
+        Args:
+            dtype: Data type for computations.
+            device: Device for computations.
+            cfg_dropout: Classifier-free-guidance label dropout: probability of
+                replacing the ``y`` conditioning with `null_condition` per
+                sample during training. 0 (default) disables dropout; applies
+                only in training mode and only when ``y`` is passed.
+            null_condition: Null condition for dropped samples: an int (the
+                ``num_classes`` label convention), a tensor broadcast over the
+                non-batch dims (e.g. a zero embedding), or a callable
+                ``(y, mask) -> y``. Required when ``cfg_dropout > 0``.
+
         Raises:
             TypeError: If constructor arguments remain that no class in the
                 loss's MRO binds; the message lists the supported parameters
                 and the installed torchebm version.
+            ValueError: If ``cfg_dropout`` is outside [0, 1], or positive
+                without a `null_condition`.
         """
         if args or kwargs:
             raise TypeError(_unexpected_init_args_message(type(self), args, kwargs))
+        if not 0.0 <= cfg_dropout <= 1.0:
+            raise ValueError(f"cfg_dropout must be in [0, 1], got {cfg_dropout}")
+        if cfg_dropout > 0 and null_condition is None:
+            raise ValueError("cfg_dropout > 0 requires null_condition")
         super().__init__(device=device, dtype=dtype)
+        self.cfg_dropout = cfg_dropout
+        self.null_condition = null_condition
 
-    @staticmethod
-    def _merge_condition(
-        model_kwargs: Optional[dict], y: Optional[torch.Tensor]
+    def _apply_cfg_dropout(
+        self,
+        model_kwargs: Optional[dict],
+        generator: Optional[torch.Generator] = None,
     ) -> Optional[dict]:
-        r"""Fold the explicit ``y=`` conditioning into `model_kwargs`.
+        r"""Replace ``y`` with the null condition per sample during training.
 
-        ``y=None`` returns `model_kwargs` untouched, keeping the unconditional
-        path identical. Passing ``y`` while `model_kwargs` already carries a
-        ``'y'`` key is ambiguous and raises.
-
-        Raises:
-            ValueError: If both ``y`` and ``model_kwargs['y']`` are given.
+        No-op unless the loss is in training mode, ``cfg_dropout > 0`` and
+        `model_kwargs` carries a ``'y'`` entry. The mask is drawn with
+        `generator` for reproducibility.
         """
-        if y is None:
+        if (
+            self.cfg_dropout == 0.0
+            or not self.training
+            or not model_kwargs
+            or "y" not in model_kwargs
+        ):
             return model_kwargs
-        if model_kwargs and "y" in model_kwargs:
-            raise ValueError(
-                "y was passed both as y= and inside model_kwargs['y']; "
-                "provide it once"
-            )
-        return {**(model_kwargs or {}), "y": y}
+        y = model_kwargs["y"]
+        mask = (
+            torch.rand(y.shape[0], device=y.device, generator=generator)
+            < self.cfg_dropout
+        )
+        return {
+            **model_kwargs,
+            "y": substitute_condition(y, mask, self.null_condition),
+        }
 
     def _resolve_model_kwargs(
         self,
