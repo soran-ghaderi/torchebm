@@ -230,6 +230,7 @@ class EnergyMatchingLoss(BaseLoss):
         self,
         x: torch.Tensor,
         *args,
+        y: Optional[torch.Tensor] = None,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
@@ -240,6 +241,9 @@ class EnergyMatchingLoss(BaseLoss):
         Args:
             x: Data samples of shape (batch_size, ...).
             *args: Additional positional arguments.
+            y: Optional conditioning tensor forwarded to the potential as
+                ``y=``; shorthand for ``model_kwargs={'y': y}``. ``None`` keeps
+                the unconditional path.
             x0: Optional source samples of shape (batch_size, ...). Defaults
                 to standard Gaussian noise; pass a batch from any source
                 distribution for arbitrary source-to-target transport.
@@ -253,6 +257,7 @@ class EnergyMatchingLoss(BaseLoss):
         Returns:
             Scalar loss value.
         """
+        model_kwargs = self._merge_condition(model_kwargs, y)
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 

@@ -61,7 +61,7 @@ class RecordingField(nn.Module):
         self.lin = nn.Linear(dim, dim)
         self.seen = []
 
-    def forward(self, x, t=None, y=None):
+    def forward(self, x, t=None, y=None, **kwargs):
         self.seen.append(None if y is None else (y.dtype, tuple(y.shape)))
         return self.lin(x)
 
@@ -198,7 +198,7 @@ def test_eqm_bare_kwargs_deprecated():
     field = RecordingField()
     loss_fn = EquilibriumMatchingLoss(model=field, energy_type="none")
     with pytest.warns(DeprecationWarning):
-        loss_fn(torch.randn(6, 2), y=_labels(6))
+        loss_fn(torch.randn(6, 2), cond=_labels(6))
 
 
 def test_cd_option_kwargs_deprecated():

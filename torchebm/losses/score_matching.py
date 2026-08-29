@@ -81,6 +81,7 @@ class ScoreMatching(BaseScoreMatching):
         self,
         x: torch.Tensor,
         *args,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
         **kwargs,
@@ -91,6 +92,8 @@ class ScoreMatching(BaseScoreMatching):
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional positional arguments.
+            y: Optional conditioning tensor; shorthand for
+                ``model_kwargs={'y': y}`` with the same support constraints.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. Supported for ``hessian_method="approx"``; the exact
                 Hessian path raises if conditioning is passed (see below).
@@ -99,6 +102,7 @@ class ScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar score matching loss.
         """
+        model_kwargs = self._merge_condition(model_kwargs, y)
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 
@@ -298,6 +302,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         self,
         x: torch.Tensor,
         *args,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
         **kwargs,
@@ -308,6 +313,8 @@ class DenoisingScoreMatching(BaseScoreMatching):
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional positional arguments.
+            y: Optional conditioning tensor forwarded to the model; shorthand
+                for ``model_kwargs={'y': y}``.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. ``None`` (default) is the unconditional path.
             **kwargs: Deprecated bare model kwargs (see `model_kwargs`).
@@ -315,6 +322,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
         """
+        model_kwargs = self._merge_condition(model_kwargs, y)
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 
@@ -466,6 +474,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         self,
         x: torch.Tensor,
         *args,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
         **kwargs,
@@ -476,6 +485,9 @@ class SlicedScoreMatching(BaseScoreMatching):
         Args:
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional positional arguments.
+            y: Optional conditioning tensor; conditioning is not supported here,
+                so any non-None value raises in `compute_loss` (see
+                `model_kwargs`).
             model_kwargs: Conditioning is not supported (the projection tiling
                 expands the batch, so per-sample conditioning cannot be aligned);
                 a non-empty mapping raises in `compute_loss`.
@@ -484,6 +496,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
         """
+        model_kwargs = self._merge_condition(model_kwargs, y)
         if (x.device != self.device) or (x.dtype != self.dtype):
             x = x.to(device=self.device, dtype=self.dtype)
 

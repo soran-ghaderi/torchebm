@@ -109,6 +109,28 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
             raise TypeError(_unexpected_init_args_message(type(self), args, kwargs))
         super().__init__(device=device, dtype=dtype)
 
+    @staticmethod
+    def _merge_condition(
+        model_kwargs: Optional[dict], y: Optional[torch.Tensor]
+    ) -> Optional[dict]:
+        r"""Fold the explicit ``y=`` conditioning into `model_kwargs`.
+
+        ``y=None`` returns `model_kwargs` untouched, keeping the unconditional
+        path identical. Passing ``y`` while `model_kwargs` already carries a
+        ``'y'`` key is ambiguous and raises.
+
+        Raises:
+            ValueError: If both ``y`` and ``model_kwargs['y']`` are given.
+        """
+        if y is None:
+            return model_kwargs
+        if model_kwargs and "y" in model_kwargs:
+            raise ValueError(
+                "y was passed both as y= and inside model_kwargs['y']; "
+                "provide it once"
+            )
+        return {**(model_kwargs or {}), "y": y}
+
     def _resolve_model_kwargs(
         self,
         model_kwargs: Optional[dict],
