@@ -27,6 +27,31 @@ def _normalize(device: torch.device) -> torch.device:
     return device
 
 
+def substitute_condition(y, mask, null):
+    r"""Replace conditioning rows selected by `mask` with the null condition.
+
+    Shared semantics for classifier-free-guidance label dropout (losses) and
+    the guidance wrapper's unconditional half (sampling).
+
+    Args:
+        y: Conditioning tensor of shape (batch_size, ...).
+        mask: Bool tensor of shape (batch_size,); True rows become null.
+        null: Null condition: an int/float filled into y's dtype (the
+            ``num_classes`` label convention), a tensor broadcast over y's
+            non-batch dims (e.g. a zero or learned null embedding), or a
+            callable ``(y, mask) -> y``.
+
+    Returns:
+        Tensor of y's shape with masked rows nulled.
+    """
+    if callable(null):
+        return null(y, mask)
+    mask = mask.view(-1, *([1] * (y.ndim - 1)))
+    if isinstance(null, torch.Tensor):
+        return torch.where(mask, null.to(device=y.device, dtype=y.dtype), y)
+    return torch.where(mask, torch.full_like(y, null), y)
+
+
 _WARNED_ONCE: set = set()
 
 
@@ -71,6 +96,28 @@ class TorchEBMModule(nn.Module):
         self._amp_dtype: torch.dtype = torch.float16
         self._cached_device: Optional[torch.device] = None
         self._cached_dtype: Optional[torch.dtype] = None
+
+    @staticmethod
+    def _merge_condition(
+        model_kwargs: Optional[dict], y: Optional[torch.Tensor]
+    ) -> Optional[dict]:
+        r"""Fold the explicit ``y=`` conditioning into `model_kwargs`.
+
+        ``y=None`` returns `model_kwargs` untouched, keeping the unconditional
+        path identical. Passing ``y`` while `model_kwargs` already carries a
+        ``'y'`` key is ambiguous and raises.
+
+        Raises:
+            ValueError: If both ``y`` and ``model_kwargs['y']`` are given.
+        """
+        if y is None:
+            return model_kwargs
+        if model_kwargs and "y" in model_kwargs:
+            raise ValueError(
+                "y was passed both as y= and inside model_kwargs['y']; "
+                "provide it once"
+            )
+        return {**(model_kwargs or {}), "y": y}
 
     def _resolve_device_dtype(self) -> None:
         try:
