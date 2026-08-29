@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from torchebm.core import BaseModel, TemperatureScheduler
-from torchebm.models.wrappers import InteractionModel, LabelClassifierFreeGuidance
+from torchebm.models.wrappers import ClassifierFreeGuidance, InteractionModel
 from torchebm.samplers import LangevinDynamics
 
 
@@ -13,18 +13,16 @@ class _DummyBase(nn.Module):
         self.null_id = null_id
         self.out_channels = out_channels
 
-    def forward(self, x, t, *, y):
+    def forward(self, x, t, y=None, **kwargs):
         b, _, h, w = x.shape
         base = torch.zeros(b, self.out_channels, h, w)
         cond_marker = (y != self.null_id).float().view(b, 1, 1, 1)
         return base + cond_marker
 
 
-def test_cfg_scale_one_returns_base_forward():
+def test_cfg_scale_one_matches_base_forward():
     base = _DummyBase(null_id=10)
-    wrapped = LabelClassifierFreeGuidance(
-        base, null_label_id=10, cfg_scale=1.0, guide_channels=3
-    )
+    wrapped = ClassifierFreeGuidance(base, guidance_scale=1.0, null_condition=10)
     x = torch.randn(2, 3, 4, 4)
     t = torch.rand(2)
     y = torch.tensor([1, 2])
@@ -34,8 +32,8 @@ def test_cfg_scale_one_returns_base_forward():
 
 def test_cfg_applies_guidance_to_first_channels_only():
     base = _DummyBase(null_id=10, out_channels=4)
-    wrapped = LabelClassifierFreeGuidance(
-        base, null_label_id=10, cfg_scale=2.0, guide_channels=3
+    wrapped = ClassifierFreeGuidance(
+        base, guidance_scale=2.0, null_condition=10, guide_channels=3
     )
     x = torch.randn(1, 3, 4, 4)
     t = torch.rand(1)
@@ -50,8 +48,8 @@ def test_cfg_applies_guidance_to_first_channels_only():
 
 def test_cfg_guide_channels_exceeds_output_clamps():
     base = _DummyBase(null_id=5, out_channels=2)
-    wrapped = LabelClassifierFreeGuidance(
-        base, null_label_id=5, cfg_scale=3.0, guide_channels=10
+    wrapped = ClassifierFreeGuidance(
+        base, guidance_scale=3.0, null_condition=5, guide_channels=10
     )
     x = torch.randn(1, 3, 2, 2)
     t = torch.rand(1)
