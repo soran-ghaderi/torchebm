@@ -47,7 +47,7 @@ Key differences from `EquilibriumMatchingLoss` (EqM):
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import torch
 
@@ -60,9 +60,7 @@ from torchebm.core import (
     ConstantScheduler,
     TemperatureScheduler,
 )
-from torchebm.core.base_loss import _has_dtensor_params
-from torchebm.couplings import resolve_coupling
-from torchebm.interpolants import resolve_interpolant
+from torchebm.core.base_loss import BaseInterpolantLoss, _has_dtensor_params
 from torchebm.losses.loss_utils import (
     compute_flow_weight,
     mean_flat,
@@ -71,7 +69,7 @@ from torchebm.losses.loss_utils import (
 from torchebm.samplers import LangevinDynamics
 
 
-class EnergyMatchingLoss(BaseLoss):
+class EnergyMatchingLoss(BaseInterpolantLoss):
     r"""Energy Matching (EM) training loss.
 
     Trains a time-independent scalar potential \(V_\theta(x)\) so that
@@ -104,6 +102,21 @@ class EnergyMatchingLoss(BaseLoss):
             one-sided trimmed mean.
         cd_clamp: Stability floor: the contrastive term is clamped to
             `>= -cd_clamp`. None disables.
+        t_sampler: Training-time distribution for the flow term:
+
+            - 'uniform' (default): uniform over (0, 1)
+            - 'lognormal': EDM timestep skew, $\sigma = e^{z p_{std} + p_{mean}}$
+              with $z \sim \mathcal{N}(0, 1)$ and $t = 1/(1+\sigma)$ clamped to
+              [1e-4, 1]
+            - a callable ``(batch, *, device, dtype, generator) -> t`` returning
+              shape (batch_size,)
+
+        t_p_mean: Lognormal skew location $p_{mean}$ (EDM $P_{mean}$). Default: -1.2.
+        t_p_std: Lognormal skew scale $p_{std}$ (EDM $P_{std}$), positive. Default: 1.2.
+        loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)`` (shape
+            (batch_size,)) multiplied into the per-pair flow term before
+            reduction; the contrastive term has no timestep and stays
+            unweighted. None (default) keeps the flow term unweighted.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -140,6 +153,8 @@ class EnergyMatchingLoss(BaseLoss):
     pairwise repulsion \(W\)).
     """
 
+    _default_coupling = "ot"
+
     def __init__(
         self,
         model: BaseModel,
@@ -156,12 +171,27 @@ class EnergyMatchingLoss(BaseLoss):
         noise_fraction: float = 0.5,
         cd_trim_fraction: float = 0.1,
         cd_clamp: Optional[float] = 0.02,
+        t_sampler: Union[str, Callable[..., torch.Tensor]] = "uniform",
+        t_p_mean: float = -1.2,
+        t_p_std: float = 1.2,
+        loss_weight_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
         **kwargs,
     ):
-        super().__init__(dtype=dtype, device=device, *args, **kwargs)
+        super().__init__(
+            interpolant=interpolant,
+            coupling=coupling,
+            t_sampler=t_sampler,
+            t_p_mean=t_p_mean,
+            t_p_std=t_p_std,
+            loss_weight_fn=loss_weight_fn,
+            dtype=dtype,
+            device=device,
+            *args,
+            **kwargs,
+        )
 
         if not 0.0 <= noise_fraction <= 1.0:
             raise ValueError(f"noise_fraction must be in [0, 1], got {noise_fraction}")
@@ -185,12 +215,6 @@ class EnergyMatchingLoss(BaseLoss):
                 dtype=dtype,
                 device=device,
             )
-        )
-        self.coupling = resolve_coupling(
-            coupling, default="ot", owner="EnergyMatchingLoss"
-        )
-        self.interpolant = resolve_interpolant(
-            interpolant, default="linear", owner="EnergyMatchingLoss"
         )
         self._register_param("sigma", sigma)
         self._register_param("lambda_cd", lambda_cd)
@@ -431,9 +455,7 @@ class EnergyMatchingLoss(BaseLoss):
                 )
         coupled = self.coupling(x0, x1, generator=generator, **model_kwargs)
         x0, x1c = coupled
-        t = torch.rand(
-            batch, device=self.device, dtype=self.dtype, generator=generator
-        )
+        t = self._sample_t(batch, generator)
         xt, ut = self.interpolant.interpolate(x0, x1c, t)
 
         sigma = self.sigma
@@ -449,6 +471,8 @@ class EnergyMatchingLoss(BaseLoss):
 
         w = compute_flow_weight(t, cutoff=self.flow_weight_cutoff)
         per_pair = w * mean_flat((-grad - ut).square())
+        if self.loss_weight_fn is not None:
+            per_pair = per_pair * self.loss_weight_fn(t)
         if coupled.weights is not None:
             # Weighted couplings (unbalanced OT) carry per-pair importance
             # weights; uniform weights reduce this exactly to the plain mean.

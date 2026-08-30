@@ -54,11 +54,28 @@ and sliced SM, which estimates the trace with random projections. DSM at a
 ladder of noise scales is the training principle underlying score-based
 diffusion[^4].
 
-## Transport-based: equilibrium and energy matching
+## Transport-based: flow, equilibrium and energy matching
 
 The modern objectives are simulation-free: they replace the inner sampling
 loop with regression along an interpolant path (see
 [Interpolants and Couplings](transport.md)).
+
+**Flow matching** regresses a time-conditioned velocity field `v(x, t)` onto
+the interpolant velocity `u_t` and generates by integrating it forward with
+`FlowSampler` (no negation). It shares the transport surface of the other
+matching losses: `interpolant=`, `coupling=` with per-pair weights,
+`t_sampler=` (uniform or the EDM lognormal skew), and a per-timestep
+`loss_weight_fn`.
+
+```python
+from torchebm.losses import FlowMatchingLoss
+from torchebm.samplers import FlowSampler
+
+fm = FlowMatchingLoss(model=velocity_net, interpolant="linear")
+# ... train ...
+ode = FlowSampler(velocity_net, interpolant="linear")
+samples = ode.sample(n_samples=64, dim=2, n_steps=50)
+```
 
 **Equilibrium matching** trains a time-invariant field `f(x)` toward the noise
 direction along the path (`f` points data -> noise), so every route transports
@@ -106,6 +123,7 @@ em = EnergyMatchingLoss(model=potential, coupling=SinkhornCoupling(reg=0.01),
 | CD / PCD / PT-CD | yes (k MCMC steps) | energy | MCMC | you need a calibrated energy and can afford MCMC per step |
 | Exact / sliced SM | no (Hessian term) | energy | Langevin | low dimension, no noise tolerance |
 | Denoising SM | no | energy (smoothed) | annealed Langevin | fast sampling-free training, noise scale acceptable |
+| Flow matching | no | velocity field | `FlowSampler` ODE/SDE | pure generative transport, standard diffusion-style recipes |
 | Equilibrium matching | no | field or energy | `FlowSampler` ODE or `EqMEnergy` + gradient descent | generative quality with few integration steps |
 | Energy matching | phase 2 only | energy | one Langevin sweep | one potential for both transport and Boltzmann sampling |
 

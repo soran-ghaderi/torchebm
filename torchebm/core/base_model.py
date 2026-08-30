@@ -5,6 +5,7 @@ from torch import nn
 from typing import Optional, Union
 
 from torchebm.core import TorchEBMModule
+from torchebm.core.base_module import _unexpected_init_args_message
 
 
 class BaseModel(TorchEBMModule, ABC):
@@ -29,11 +30,22 @@ class BaseModel(TorchEBMModule, ABC):
     def __init__(
         self,
         dtype: torch.dtype = torch.float32,
+        device=None,
         *args,
         **kwargs,
     ):
-        """Initializes the BaseModel base class."""
-        super().__init__(dtype=dtype, *args, **kwargs)
+        """Initializes the BaseModel base class.
+
+        Raises:
+            TypeError: If constructor arguments remain that no class in the
+                model's MRO binds; the message lists the supported parameters
+                and the installed torchebm version.
+        """
+        if args or kwargs:
+            raise TypeError(
+                _unexpected_init_args_message(type(self), args, kwargs, BaseModel)
+            )
+        super().__init__(dtype=dtype, device=device)
 
     # @property
     # def device(self) -> torch.device:

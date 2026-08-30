@@ -15,48 +15,13 @@ from torchebm.core import BaseSampler
 from torchebm.core import BaseScheduler
 from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
-from torchebm.core.base_module import substitute_condition, warn_once
+from torchebm.core.base_module import (
+    _unexpected_init_args_message,
+    substitute_condition,
+    warn_once,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _unexpected_init_args_message(cls, args, kwargs) -> str:
-    r"""Build the TypeError message for constructor arguments no loss accepts.
-
-    Walks `cls.__mro__` down to `BaseLoss` collecting every named constructor
-    parameter, so the message lists what the concrete loss actually supports,
-    including parameters bound by intermediate bases that the leaf signature
-    forwards through ``**kwargs``.
-    """
-    import inspect
-
-    from torchebm._version import __version__
-
-    supported: dict = {}
-    for klass in cls.__mro__:
-        init = klass.__dict__.get("__init__")
-        if init is not None:
-            for name, param in inspect.signature(init).parameters.items():
-                if name != "self" and param.kind not in (
-                    param.VAR_POSITIONAL,
-                    param.VAR_KEYWORD,
-                ):
-                    supported.setdefault(name)
-        if klass is BaseLoss:
-            break
-
-    problems = []
-    if kwargs:
-        problems.append(
-            "unexpected keyword argument(s) "
-            + ", ".join(repr(k) for k in kwargs)
-        )
-    if args:
-        problems.append(f"{len(args)} unexpected positional argument(s)")
-    return (
-        f"{cls.__name__}.__init__() got {' and '.join(problems)}. "
-        f"Supported parameters: {', '.join(supported)} (torchebm {__version__})."
-    )
 
 
 def _dtensor_type():
@@ -129,7 +94,9 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
                 without a `null_condition`.
         """
         if args or kwargs:
-            raise TypeError(_unexpected_init_args_message(type(self), args, kwargs))
+            raise TypeError(
+                _unexpected_init_args_message(type(self), args, kwargs, BaseLoss)
+            )
         if not 0.0 <= cfg_dropout <= 1.0:
             raise ValueError(f"cfg_dropout must be in [0, 1], got {cfg_dropout}")
         if cfg_dropout > 0 and null_condition is None:
@@ -280,6 +247,172 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
     def __str__(self):
         """Return a string representation of the loss function."""
         return self.__repr__()
+
+
+class BaseInterpolantLoss(BaseLoss):
+    r"""Shared skeleton for interpolant-based losses (EqM, EM, FM).
+
+    Owns the pieces every stochastic-interpolant objective repeats:
+    interpolant and minibatch-coupling resolution, the training-time
+    distribution (`t_sampler`, uniform or the EDM lognormal skew or a
+    callable), the ``train_eps`` interval, and the per-timestep weight hook
+    ``loss_weight_fn``. Subclasses set `_default_coupling` and consume
+    `_sample_t` / `_check_interval` in their forwards; everything else
+    (targets, reductions, regularizers) stays subclass-specific.
+
+    Internal: not exported from ``torchebm.losses``; its constructor
+    signature may change as more losses adopt it.
+
+    Args:
+        interpolant: Interpolant name (e.g. 'linear', 'cosine', 'vp') or
+            BaseInterpolant instance.
+        coupling: Minibatch coupling name or BaseCoupling instance; ``None``
+            uses the subclass default.
+        train_eps: Epsilon for training time interval stability. Float or
+            `BaseScheduler`.
+        t_sampler: Training-time distribution:
+
+            - 'uniform' (default): uniform over the training interval
+            - 'lognormal': EDM timestep skew, $\sigma = e^{z p_{std} + p_{mean}}$
+              with $z \sim \mathcal{N}(0, 1)$ and $t = 1/(1+\sigma)$ clamped to
+              [1e-4, 1] (intersected with the ``train_eps`` interval)
+            - a callable ``(batch, *, device, dtype, generator) -> t``
+              returning shape (batch_size,)
+
+        t_p_mean: Lognormal skew location $p_{mean}$ (EDM $P_{mean}$). Default: -1.2.
+        t_p_std: Lognormal skew scale $p_{std}$ (EDM $P_{std}$), positive. Default: 1.2.
+        loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)`` (shape
+            (batch_size,)) multiplied into the per-sample loss; the mechanism
+            behind min-SNR / EDM $\lambda(\sigma)$ style weightings. None
+            (default) keeps the loss unweighted.
+    """
+
+    _default_coupling = "independent"
+
+    def __init__(
+        self,
+        interpolant="linear",
+        coupling=None,
+        train_eps: Union[float, "BaseScheduler"] = 0.0,
+        t_sampler: Union[str, Callable[..., torch.Tensor]] = "uniform",
+        t_p_mean: float = -1.2,
+        t_p_std: float = 1.2,
+        loss_weight_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        super().__init__(*args, **kwargs)
+        if not callable(t_sampler) and t_sampler not in ("uniform", "lognormal"):
+            raise ValueError(
+                "t_sampler must be 'uniform', 'lognormal', or a callable "
+                f"(batch, *, device, dtype, generator) -> t, got {t_sampler!r}"
+            )
+        if t_p_std <= 0:
+            raise ValueError(f"t_p_std must be positive, got {t_p_std}")
+        if loss_weight_fn is not None and not callable(loss_weight_fn):
+            raise TypeError(
+                "loss_weight_fn must be callable or None, got "
+                f"{type(loss_weight_fn).__name__}"
+            )
+        self.t_sampler = t_sampler
+        self.t_p_mean = t_p_mean
+        self.t_p_std = t_p_std
+        self.loss_weight_fn = loss_weight_fn
+        self._register_param("train_eps", train_eps)
+        from torchebm.couplings import resolve_coupling
+        from torchebm.interpolants import resolve_interpolant
+
+        owner = type(self).__name__
+        self.interpolant = resolve_interpolant(
+            interpolant, default="linear", owner=owner
+        )
+        self.coupling = resolve_coupling(
+            coupling, default=self._default_coupling, owner=owner
+        )
+
+    @property
+    def train_eps(self) -> float:
+        return self.get_scheduled_value("train_eps")
+
+    @train_eps.setter
+    def train_eps(self, value) -> None:
+        self._register_param("train_eps", value)
+
+    def compute_loss(
+        self,
+        x: torch.Tensor,
+        *args,
+        x0: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        r"""Resolve conditioning, run `training_losses`, reduce with weights.
+
+        Shared pipeline: model_kwargs resolution (deprecated bare kwargs
+        included), the conditioning-consumption probe, cfg label dropout,
+        then the subclass `training_losses`; per-pair coupling weights, when
+        present, replace the plain mean.
+
+        Args:
+            x: Data samples of shape (batch_size, ...).
+            *args: Additional positional arguments.
+            x0: Optional source samples of shape (batch_size, ...).
+            model_kwargs: Conditioning arguments forwarded to the model.
+            **kwargs: Deprecated bare model kwargs.
+
+        Returns:
+            Scalar loss value.
+        """
+        mk = self._resolve_model_kwargs(
+            model_kwargs,
+            kwargs,
+            warn_key=f"{type(self).__name__}-bare-model-kwargs",
+        )
+        self._check_condition(x, mk)
+        mk = self._apply_cfg_dropout(mk, generator)
+        terms = self.training_losses(
+            x, model_kwargs=mk, x0=x0, generator=generator
+        )
+        loss = terms["loss"]
+        weights = terms.get("weights")
+        if weights is not None:
+            return (weights * loss).sum() / weights.sum().clamp_min(1e-12)
+        return loss.mean()
+
+    def _check_interval(self) -> Tuple[float, float]:
+        r"""Get training time interval respecting epsilon."""
+        eps = self.train_eps
+        return eps, 1.0 - eps
+
+    def _sample_t(
+        self, batch: int, generator: Optional[torch.Generator]
+    ) -> torch.Tensor:
+        r"""Draw training times for the configured `t_sampler`.
+
+        'lognormal' is the EDM timestep skew: \(\sigma = e^{z p_{std} + p_{mean}}\)
+        with \(z \sim \mathcal{N}(0, 1)\), \(t = 1/(1+\sigma)\), clamped into the
+        training interval with a 1e-4 floor. A callable receives
+        ``(batch, device=, dtype=, generator=)`` and must return shape (batch,).
+        """
+        if callable(self.t_sampler):
+            return self.t_sampler(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+        t0, t1 = self._check_interval()
+        if self.t_sampler == "lognormal":
+            z = torch.randn(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+            sigma = torch.exp(z * self.t_p_std + self.t_p_mean)
+            return (1.0 / (1.0 + sigma)).clamp(min=max(1.0e-4, t0), max=t1)
+        return (
+            torch.rand(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+            * (t1 - t0)
+            + t0
+        )
 
 
 class BaseContrastiveDivergence(BaseLoss):
