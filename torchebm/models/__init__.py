@@ -10,6 +10,19 @@ This package therefore exposes *reusable building blocks* under
 """
 
 __all__ = [
+    "DiT",
+    "dit_s_2",
+    "dit_s_4",
+    "dit_s_8",
+    "dit_b_2",
+    "dit_b_4",
+    "dit_b_8",
+    "dit_l_2",
+    "dit_l_4",
+    "dit_l_8",
+    "dit_xl_2",
+    "dit_xl_4",
+    "dit_xl_8",
     "ConditionalTransformer2D",
     "ClassifierFreeGuidance",
     "InteractionModel",
@@ -27,6 +40,19 @@ __all__ = [
 ]
 
 _LAZY_IMPORTS = {
+    "DiT": ".dit",
+    "dit_s_2": ".dit",
+    "dit_s_4": ".dit",
+    "dit_s_8": ".dit",
+    "dit_b_2": ".dit",
+    "dit_b_4": ".dit",
+    "dit_b_8": ".dit",
+    "dit_l_2": ".dit",
+    "dit_l_4": ".dit",
+    "dit_l_8": ".dit",
+    "dit_xl_2": ".dit",
+    "dit_xl_4": ".dit",
+    "dit_xl_8": ".dit",
     "ConditionalTransformer2D": ".conditional_transformer_2d",
     "ClassifierFreeGuidance": ".wrappers",
     "InteractionModel": ".wrappers",

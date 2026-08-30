@@ -3,8 +3,8 @@
 These are intentionally *model-agnostic* components that can be composed into
 backbones compatible with different losses and samplers.
 
-The library avoids exposing paper-specific preset/config objects here; keep
-those at the example/use-case layer.
+Paper-preset factories (e.g. the DiT sizes) live next to their backbone in
+`torchebm.models`, not here.
 """
 
 from .embeddings import MLPTimestepEmbedder, LabelEmbedder
