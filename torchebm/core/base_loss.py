@@ -282,6 +282,130 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         return self.__repr__()
 
 
+class BaseInterpolantLoss(BaseLoss):
+    r"""Shared skeleton for interpolant-based losses (EqM, EM, FM).
+
+    Owns the pieces every stochastic-interpolant objective repeats:
+    interpolant and minibatch-coupling resolution, the training-time
+    distribution (`t_sampler`, uniform or the EDM lognormal skew or a
+    callable), the ``train_eps`` interval, and the per-timestep weight hook
+    ``loss_weight_fn``. Subclasses set `_default_coupling` and consume
+    `_sample_t` / `_check_interval` in their forwards; everything else
+    (targets, reductions, regularizers) stays subclass-specific.
+
+    Internal: not exported from ``torchebm.losses``; its constructor
+    signature may change as more losses adopt it.
+
+    Args:
+        interpolant: Interpolant name (e.g. 'linear', 'cosine', 'vp') or
+            BaseInterpolant instance.
+        coupling: Minibatch coupling name or BaseCoupling instance; ``None``
+            uses the subclass default.
+        train_eps: Epsilon for training time interval stability. Float or
+            `BaseScheduler`.
+        t_sampler: Training-time distribution:
+
+            - 'uniform' (default): uniform over the training interval
+            - 'lognormal': EDM timestep skew, $\sigma = e^{z p_{std} + p_{mean}}$
+              with $z \sim \mathcal{N}(0, 1)$ and $t = 1/(1+\sigma)$ clamped to
+              [1e-4, 1] (intersected with the ``train_eps`` interval)
+            - a callable ``(batch, *, device, dtype, generator) -> t``
+              returning shape (batch_size,)
+
+        t_p_mean: Lognormal skew location $p_{mean}$ (EDM $P_{mean}$). Default: -1.2.
+        t_p_std: Lognormal skew scale $p_{std}$ (EDM $P_{std}$), positive. Default: 1.2.
+        loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)`` (shape
+            (batch_size,)) multiplied into the per-sample loss; the mechanism
+            behind min-SNR / EDM $\lambda(\sigma)$ style weightings. None
+            (default) keeps the loss unweighted.
+    """
+
+    _default_coupling = "independent"
+
+    def __init__(
+        self,
+        interpolant="linear",
+        coupling=None,
+        train_eps: Union[float, "BaseScheduler"] = 0.0,
+        t_sampler: Union[str, Callable[..., torch.Tensor]] = "uniform",
+        t_p_mean: float = -1.2,
+        t_p_std: float = 1.2,
+        loss_weight_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        super().__init__(*args, **kwargs)
+        if not callable(t_sampler) and t_sampler not in ("uniform", "lognormal"):
+            raise ValueError(
+                "t_sampler must be 'uniform', 'lognormal', or a callable "
+                f"(batch, *, device, dtype, generator) -> t, got {t_sampler!r}"
+            )
+        if t_p_std <= 0:
+            raise ValueError(f"t_p_std must be positive, got {t_p_std}")
+        if loss_weight_fn is not None and not callable(loss_weight_fn):
+            raise TypeError(
+                "loss_weight_fn must be callable or None, got "
+                f"{type(loss_weight_fn).__name__}"
+            )
+        self.t_sampler = t_sampler
+        self.t_p_mean = t_p_mean
+        self.t_p_std = t_p_std
+        self.loss_weight_fn = loss_weight_fn
+        self._register_param("train_eps", train_eps)
+        from torchebm.couplings import resolve_coupling
+        from torchebm.interpolants import resolve_interpolant
+
+        owner = type(self).__name__
+        self.interpolant = resolve_interpolant(
+            interpolant, default="linear", owner=owner
+        )
+        self.coupling = resolve_coupling(
+            coupling, default=self._default_coupling, owner=owner
+        )
+
+    @property
+    def train_eps(self) -> float:
+        return self.get_scheduled_value("train_eps")
+
+    @train_eps.setter
+    def train_eps(self, value) -> None:
+        self._register_param("train_eps", value)
+
+    def _check_interval(self) -> Tuple[float, float]:
+        r"""Get training time interval respecting epsilon."""
+        eps = self.train_eps
+        return eps, 1.0 - eps
+
+    def _sample_t(
+        self, batch: int, generator: Optional[torch.Generator]
+    ) -> torch.Tensor:
+        r"""Draw training times for the configured `t_sampler`.
+
+        'lognormal' is the EDM timestep skew: \(\sigma = e^{z p_{std} + p_{mean}}\)
+        with \(z \sim \mathcal{N}(0, 1)\), \(t = 1/(1+\sigma)\), clamped into the
+        training interval with a 1e-4 floor. A callable receives
+        ``(batch, device=, dtype=, generator=)`` and must return shape (batch,).
+        """
+        if callable(self.t_sampler):
+            return self.t_sampler(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+        t0, t1 = self._check_interval()
+        if self.t_sampler == "lognormal":
+            z = torch.randn(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+            sigma = torch.exp(z * self.t_p_std + self.t_p_mean)
+            return (1.0 / (1.0 + sigma)).clamp(min=max(1.0e-4, t0), max=t1)
+        return (
+            torch.rand(
+                batch, device=self.device, dtype=self.dtype, generator=generator
+            )
+            * (t1 - t0)
+            + t0
+        )
+
+
 class BaseContrastiveDivergence(BaseLoss):
     r"""
     Abstract base class for Contrastive Divergence (CD) based loss functions.

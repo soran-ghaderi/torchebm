@@ -34,14 +34,11 @@ from torch import nn
 
 from torchebm.core import (
     BaseCoupling,
-    BaseLoss,
     BaseInterpolant,
     BaseScheduler,
     expand_t_like_x,
 )
-from torchebm.core.base_loss import _has_dtensor_params
-from torchebm.couplings import resolve_coupling
-from torchebm.interpolants import resolve_interpolant
+from torchebm.core.base_loss import BaseInterpolantLoss, _has_dtensor_params
 from torchebm.losses import (
     mean_flat,
     compute_eqm_ct,
@@ -49,7 +46,7 @@ from torchebm.losses import (
 )
 
 
-class EquilibriumMatchingLoss(BaseLoss):
+class EquilibriumMatchingLoss(BaseInterpolantLoss):
     r"""Equilibrium Matching (EqM) training loss.
 
     Implements gradient matching for learning equilibrium energy landscapes.
@@ -174,23 +171,18 @@ class EquilibriumMatchingLoss(BaseLoss):
         **kwargs,
     ):
         super().__init__(
+            interpolant=interpolant,
+            coupling=coupling,
+            train_eps=train_eps,
+            t_sampler=t_sampler,
+            t_p_mean=t_p_mean,
+            t_p_std=t_p_std,
+            loss_weight_fn=loss_weight_fn,
             dtype=dtype,
             device=device,
             *args,
             **kwargs,
         )
-        if not callable(t_sampler) and t_sampler not in ("uniform", "lognormal"):
-            raise ValueError(
-                "t_sampler must be 'uniform', 'lognormal', or a callable "
-                f"(batch, *, device, dtype, generator) -> t, got {t_sampler!r}"
-            )
-        if t_p_std <= 0:
-            raise ValueError(f"t_p_std must be positive, got {t_p_std}")
-        if loss_weight_fn is not None and not callable(loss_weight_fn):
-            raise TypeError(
-                "loss_weight_fn must be callable or None, got "
-                f"{type(loss_weight_fn).__name__}"
-            )
         if not callable(ct) and ct not in ("truncated", "linear", "constant"):
             raise ValueError(
                 "ct must be 'truncated', 'linear', 'constant', or a callable "
@@ -206,69 +198,16 @@ class EquilibriumMatchingLoss(BaseLoss):
         self.prediction = prediction
         self.energy_type = energy_type
         self.loss_weight = loss_weight
-        self.t_sampler = t_sampler
-        self.t_p_mean = t_p_mean
-        self.t_p_std = t_p_std
-        self.loss_weight_fn = loss_weight_fn
-        self._register_param("train_eps", train_eps)
         self.ct = ct
         self.ct_threshold = ct_threshold
         self.ct_multiplier = ct_multiplier
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
-        self.interpolant = resolve_interpolant(
-            interpolant, default="linear", owner="EquilibriumMatchingLoss"
-        )
-        self.coupling = resolve_coupling(
-            coupling, default="independent", owner="EquilibriumMatchingLoss"
-        )
-
-    @property
-    def train_eps(self) -> float:
-        return self.get_scheduled_value("train_eps")
-
-    @train_eps.setter
-    def train_eps(self, value: Union[float, BaseScheduler]) -> None:
-        self._register_param("train_eps", value)
-
-    def _check_interval(self) -> tuple[float, float]:
-        r"""Get training time interval respecting epsilon."""
-        eps = self.train_eps
-        return eps, 1.0 - eps
 
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
         r"""Field convention for the conditioning probe: zeroed time."""
         t0 = torch.zeros(px.shape[0], device=px.device, dtype=px.dtype)
         return self.model(px, t0, **pmk)
-
-    def _sample_t(
-        self, batch: int, generator: Optional[torch.Generator]
-    ) -> torch.Tensor:
-        r"""Draw training times for the configured `t_sampler`.
-
-        'lognormal' is the EDM timestep skew: \(\sigma = e^{z p_{std} + p_{mean}}\)
-        with \(z \sim \mathcal{N}(0, 1)\), \(t = 1/(1+\sigma)\), clamped into the
-        training interval with a 1e-4 floor. A callable receives
-        ``(batch, device=, dtype=, generator=)`` and must return shape (batch,).
-        """
-        if callable(self.t_sampler):
-            return self.t_sampler(
-                batch, device=self.device, dtype=self.dtype, generator=generator
-            )
-        t0, t1 = self._check_interval()
-        if self.t_sampler == "lognormal":
-            z = torch.randn(
-                batch, device=self.device, dtype=self.dtype, generator=generator
-            )
-            sigma = torch.exp(z * self.t_p_std + self.t_p_mean)
-            return (1.0 / (1.0 + sigma)).clamp(min=max(1.0e-4, t0), max=t1)
-        return (
-            torch.rand(
-                batch, device=self.device, dtype=self.dtype, generator=generator
-            )
-            * (t1 - t0)
-            + t0
-        )
 
     def _compute_ct(self, t: torch.Tensor) -> torch.Tensor:
         r"""Target scaling c(t) for the configured variant, times `ct_multiplier`."""
