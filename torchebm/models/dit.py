@@ -5,12 +5,11 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
+from torchebm.models.backbone import _ConditionalBackbone, _xavier_linear_init
 from torchebm.models.components import (
     AdaLNZeroBlock,
     AdaLNZeroPatchHead,
     ConvPatchEmbed2d,
-    LabelEmbedder,
-    MLPTimestepEmbedder,
     build_2d_sincos_pos_embed,
 )
 
@@ -24,7 +23,7 @@ _DIT_CONFIGS = {
 _POS_EMBED_KINDS = ("sincos", "learnable", None)
 
 
-class DiT(nn.Module):
+class DiT(_ConditionalBackbone):
     r"""Diffusion Transformer (DiT) backbone with adaLN-Zero conditioning.
 
     The architecture of Peebles & Xie (2023, arXiv:2212.09748): patchify,
@@ -144,7 +143,6 @@ class DiT(nn.Module):
         head_num_heads: Optional[int] = None,
         pos_embed: Optional[str] = "sincos",
     ):
-        super().__init__()
         if isinstance(input_size, int):
             size = (int(input_size), int(input_size))
         else:
@@ -160,16 +158,17 @@ class DiT(nn.Module):
             raise ValueError(f"pos_embed must be one of {_POS_EMBED_KINDS}, got {pos_embed!r}")
         if head_depth < 0:
             raise ValueError(f"head_depth must be non-negative, got {head_depth}")
-        if not 0.0 <= class_dropout_prob <= 1.0:
-            raise ValueError(f"class_dropout_prob must be in [0, 1], got {class_dropout_prob}")
-        if y_embedder is not None and (num_classes is not None or class_dropout_prob > 0):
-            raise ValueError(
-                "pass either y_embedder or num_classes/class_dropout_prob, not both"
-            )
-        if class_dropout_prob > 0 and num_classes is None:
-            raise ValueError("class_dropout_prob > 0 requires num_classes")
-        if num_classes is not None and num_classes <= 0:
-            raise ValueError(f"num_classes must be positive, got {num_classes}")
+        resolved_cond = int(cond_dim) if cond_dim is not None else int(embed_dim)
+        if resolved_cond <= 0:
+            raise ValueError(f"cond_dim must be positive, got {resolved_cond}")
+
+        super().__init__(
+            cond_dim=resolved_cond,
+            num_classes=num_classes,
+            class_dropout_prob=class_dropout_prob,
+            t_embedder=t_embedder,
+            y_embedder=y_embedder,
+        )
 
         self.input_size = size
         self.patch_size = p
@@ -178,8 +177,6 @@ class DiT(nn.Module):
         self.embed_dim = int(embed_dim)
         self.depth = int(depth)
         self.num_heads = int(num_heads)
-        self.cond_dim = int(cond_dim) if cond_dim is not None else self.embed_dim
-        self.num_classes = int(num_classes) if num_classes is not None else None
         self.grid_size = (size[0] // p, size[1] // p)
         self.head_dim = int(head_dim) if head_dim is not None else self.embed_dim
         self.head_depth = int(head_depth)
@@ -198,21 +195,6 @@ class DiT(nn.Module):
             nn.init.trunc_normal_(self.pos_embed, std=0.02)
         else:
             self.pos_embed = None
-
-        self.t_embedder = (
-            t_embedder if t_embedder is not None else MLPTimestepEmbedder(self.cond_dim)
-        )
-        if y_embedder is not None:
-            self.y_embedder = y_embedder
-        elif self.num_classes is not None:
-            self.y_embedder = LabelEmbedder(
-                self.num_classes,
-                self.cond_dim,
-                dropout_prob=class_dropout_prob,
-                null_token=True,
-            )
-        else:
-            self.y_embedder = None
 
         self.blocks = nn.ModuleList(
             AdaLNZeroBlock(
@@ -246,14 +228,9 @@ class DiT(nn.Module):
             grid_size=self.grid_size,
         )
 
-        self._initialize_weights(
-            default_t_embedder=t_embedder is None,
-            default_y_embedder=y_embedder is None and self.num_classes is not None,
-        )
+        self._initialize_weights()
 
-    def _initialize_weights(
-        self, *, default_t_embedder: bool, default_y_embedder: bool
-    ) -> None:
+    def _initialize_weights(self) -> None:
         r"""Apply the reference DiT initialization scheme.
 
         Xavier-uniform on every trunk Linear with zeroed biases, the patch
@@ -262,28 +239,16 @@ class DiT(nn.Module):
         modulations and final head. User-supplied embedder modules are left
         untouched; they own their initialization.
         """
-
-        def _basic_init(module: nn.Module) -> None:
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
-
         for module in (self.blocks, self.head_blocks, self.head):
-            module.apply(_basic_init)
+            module.apply(_xavier_linear_init)
         if self.head_proj is not None:
-            _basic_init(self.head_proj)
+            _xavier_linear_init(self.head_proj)
 
         w = self.patch_embed.proj.weight.data
         nn.init.xavier_uniform_(w.view(w.shape[0], -1))
         nn.init.zeros_(self.patch_embed.proj.bias)
 
-        if default_t_embedder:
-            self.t_embedder.apply(_basic_init)
-            nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
-            nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
-        if default_y_embedder:
-            nn.init.normal_(self.y_embedder.embedding.weight, std=0.02)
+        self._init_default_embedder_weights()
 
         for block in (*self.blocks, *self.head_blocks):
             nn.init.zeros_(block.modulation[-1].weight)
@@ -292,36 +257,6 @@ class DiT(nn.Module):
         nn.init.zeros_(self.head.modulation[-1].bias)
         nn.init.zeros_(self.head.proj.weight)
         nn.init.zeros_(self.head.proj.bias)
-
-    def _condition(
-        self,
-        t: Optional[torch.Tensor],
-        y: Optional[torch.Tensor],
-        cond: Optional[torch.Tensor],
-    ) -> torch.Tensor:
-        c = None
-        if t is not None:
-            c = self.t_embedder(t)
-        if y is not None:
-            if self.y_embedder is None:
-                raise ValueError(
-                    "y was given but this DiT has no label embedder; "
-                    "construct it with num_classes= or y_embedder="
-                )
-            if isinstance(self.y_embedder, LabelEmbedder):
-                emb = self.y_embedder(y, training=self.training)
-            else:
-                emb = self.y_embedder(y)
-            c = emb if c is None else c + emb
-        if cond is not None:
-            if cond.shape[-1] != self.cond_dim:
-                raise ValueError(
-                    f"cond has width {cond.shape[-1]}, expected cond_dim={self.cond_dim}"
-                )
-            c = cond if c is None else c + cond
-        if c is None:
-            raise ValueError("DiT.forward requires at least one of t, y, or cond")
-        return c
 
     def forward(
         self,
