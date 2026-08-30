@@ -47,18 +47,30 @@ class MLPTimestepEmbedder(nn.Module):
 class LabelEmbedder(nn.Module):
     """Label embedding with optional classifier-free guidance token dropping.
 
-    If `dropout_prob>0`, one extra embedding row is allocated to represent the
-    *null/unconditional* label.
+    The *null/unconditional* label, when present, is one extra embedding row
+    with id `num_classes`. It is allocated when `dropout_prob>0`, or
+    unconditionally with `null_token=True` (for setups that substitute the
+    null id outside this module, e.g. loss-level CFG dropout or a guidance
+    wrapper).
 
     Note: this module does *not* assume any specific loss/sampler; it only
     produces vectors.
     """
 
-    def __init__(self, num_classes: int, out_dim: int, dropout_prob: float = 0.0):
+    def __init__(
+        self,
+        num_classes: int,
+        out_dim: int,
+        dropout_prob: float = 0.0,
+        *,
+        null_token: Optional[bool] = None,
+    ):
         super().__init__()
         self.num_classes = int(num_classes)
         self.dropout_prob = float(dropout_prob)
-        use_null = self.dropout_prob > 0
+        use_null = (self.dropout_prob > 0) if null_token is None else bool(null_token)
+        if self.dropout_prob > 0 and not use_null:
+            raise ValueError("dropout_prob > 0 requires the null token")
         self.null_label_id = self.num_classes if use_null else None
         self.embedding = nn.Embedding(self.num_classes + (1 if use_null else 0), out_dim)
 

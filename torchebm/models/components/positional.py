@@ -19,21 +19,26 @@ def _get_1d_sincos_pos_embed_from_grid(embed_dim: int, pos: torch.Tensor) -> tor
 
 def build_2d_sincos_pos_embed(
     embed_dim: int,
-    grid_size: int,
+    grid_size: int | Tuple[int, int],
     *,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """Create 2D sin/cos positional embeddings.
 
-    Returns tensor with shape (grid_size*grid_size, embed_dim).
+    `grid_size` is an int for square grids or an `(gh, gw)` tuple. Returns a
+    tensor of shape (gh*gw, embed_dim) in row-major token order.
     """
     if embed_dim % 2 != 0:
         raise ValueError(f"embed_dim must be even, got {embed_dim}")
+    if isinstance(grid_size, int):
+        gh = gw = int(grid_size)
+    else:
+        gh, gw = (int(s) for s in grid_size)
 
     dev = device if device is not None else torch.device("cpu")
-    grid_h = torch.arange(grid_size, device=dev, dtype=torch.float32)
-    grid_w = torch.arange(grid_size, device=dev, dtype=torch.float32)
+    grid_h = torch.arange(gh, device=dev, dtype=torch.float32)
+    grid_w = torch.arange(gw, device=dev, dtype=torch.float32)
     grid = torch.meshgrid(grid_w, grid_h, indexing="xy")
     grid = torch.stack(grid, dim=0).reshape(2, -1)  # (2, M)
 

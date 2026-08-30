@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -19,8 +19,18 @@ def patchify2d(x: torch.Tensor, patch_size: int) -> torch.Tensor:
     return x.view(b, gh * gw, p * p * c)
 
 
-def unpatchify2d(tokens: torch.Tensor, patch_size: int, *, out_channels: int) -> torch.Tensor:
-    """Convert patch tokens (B,N,P*P*C) back to (B,C,H,W)."""
+def unpatchify2d(
+    tokens: torch.Tensor,
+    patch_size: int,
+    *,
+    out_channels: int,
+    grid_size: Optional[Tuple[int, int]] = None,
+) -> torch.Tensor:
+    """Convert patch tokens (B,N,P*P*C) back to (B,C,H,W).
+
+    `grid_size` is the `(gh, gw)` token grid; `None` infers a square grid
+    (rectangular grids must pass it explicitly).
+    """
     b, n, d = tokens.shape
     p = int(patch_size)
 
@@ -28,13 +38,22 @@ def unpatchify2d(tokens: torch.Tensor, patch_size: int, *, out_channels: int) ->
     if d != p * p * c:
         raise ValueError(f"Token dim {d} != patch_size^2*out_channels ({p*p*c})")
 
-    grid = int(n ** 0.5)
-    if grid * grid != n:
-        raise ValueError("Number of tokens must be a perfect square for 2D unpatchify.")
+    if grid_size is None:
+        grid = int(n ** 0.5)
+        if grid * grid != n:
+            raise ValueError(
+                "Number of tokens is not a perfect square; pass grid_size for "
+                "rectangular grids."
+            )
+        gh = gw = grid
+    else:
+        gh, gw = (int(s) for s in grid_size)
+        if gh * gw != n:
+            raise ValueError(f"grid_size {(gh, gw)} does not match {n} tokens")
 
-    x = tokens.view(b, grid, grid, p, p, c)
+    x = tokens.view(b, gh, gw, p, p, c)
     x = x.permute(0, 5, 1, 3, 2, 4).contiguous()  # (B,C,gh,p,gw,p)
-    return x.view(b, c, grid * p, grid * p)
+    return x.view(b, c, gh * p, gw * p)
 
 
 class ConvPatchEmbed2d(nn.Module):
