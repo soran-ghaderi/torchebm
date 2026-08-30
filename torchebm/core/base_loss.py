@@ -371,6 +371,48 @@ class BaseInterpolantLoss(BaseLoss):
     def train_eps(self, value) -> None:
         self._register_param("train_eps", value)
 
+    def compute_loss(
+        self,
+        x: torch.Tensor,
+        *args,
+        x0: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        r"""Resolve conditioning, run `training_losses`, reduce with weights.
+
+        Shared pipeline: model_kwargs resolution (deprecated bare kwargs
+        included), the conditioning-consumption probe, cfg label dropout,
+        then the subclass `training_losses`; per-pair coupling weights, when
+        present, replace the plain mean.
+
+        Args:
+            x: Data samples of shape (batch_size, ...).
+            *args: Additional positional arguments.
+            x0: Optional source samples of shape (batch_size, ...).
+            model_kwargs: Conditioning arguments forwarded to the model.
+            **kwargs: Deprecated bare model kwargs.
+
+        Returns:
+            Scalar loss value.
+        """
+        mk = self._resolve_model_kwargs(
+            model_kwargs,
+            kwargs,
+            warn_key=f"{type(self).__name__}-bare-model-kwargs",
+        )
+        self._check_condition(x, mk)
+        mk = self._apply_cfg_dropout(mk, generator)
+        terms = self.training_losses(
+            x, model_kwargs=mk, x0=x0, generator=generator
+        )
+        loss = terms["loss"]
+        weights = terms.get("weights")
+        if weights is not None:
+            return (weights * loss).sum() / weights.sum().clamp_min(1e-12)
+        return loss.mean()
+
     def _check_interval(self) -> Tuple[float, float]:
         r"""Get training time interval respecting epsilon."""
         eps = self.train_eps
