@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
@@ -47,12 +47,19 @@ class MultiheadSelfAttention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, embed_dim: int, mlp_ratio: float = 4.0, dropout: float = 0.0):
+    def __init__(
+        self,
+        embed_dim: int,
+        mlp_ratio: float = 4.0,
+        dropout: float = 0.0,
+        act_layer: Optional[Callable[[], nn.Module]] = None,
+    ):
         super().__init__()
         hidden = int(embed_dim * mlp_ratio)
+        act = act_layer() if act_layer is not None else nn.GELU(approximate="tanh")
         self.net = nn.Sequential(
             nn.Linear(embed_dim, hidden, bias=True),
-            nn.GELU(approximate="tanh"),
+            act,
             nn.Dropout(dropout),
             nn.Linear(hidden, embed_dim, bias=True),
         )
@@ -107,3 +114,40 @@ class AdaLNZeroBlock(nn.Module):
         x = x + gate1.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift1, scale1))
         x = x + gate2.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift2, scale2))
         return x
+
+
+class AdaLNZeroMLPBlock(nn.Module):
+    """Residual MLP block with adaLN-Zero conditioning on a vector stream.
+
+    The MLP branch of `AdaLNZeroBlock` for (B, D) inputs: LayerNorm without
+    affine parameters, conditioning-derived shift/scale/gate, and a
+    zero-initialized modulation so the block starts as the identity.
+    """
+
+    def __init__(
+        self,
+        *,
+        embed_dim: int,
+        cond_dim: Optional[int] = None,
+        mlp_ratio: float = 4.0,
+        act_layer: Optional[Callable[[], nn.Module]] = None,
+        eps: float = 1e-6,
+    ):
+        super().__init__()
+        self.embed_dim = int(embed_dim)
+        self.cond_dim = int(cond_dim) if cond_dim is not None else int(embed_dim)
+
+        self.norm = nn.LayerNorm(self.embed_dim, elementwise_affine=False, eps=eps)
+        self.mlp = FeedForward(self.embed_dim, mlp_ratio=mlp_ratio, act_layer=act_layer)
+        self.modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(self.cond_dim, 3 * self.embed_dim, bias=True),
+        )
+
+        nn.init.zeros_(self.modulation[-1].weight)
+        nn.init.zeros_(self.modulation[-1].bias)
+
+    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+        # x: (B,D), cond: (B,cond_dim)
+        shift, scale, gate = self.modulation(cond).chunk(3, dim=1)
+        return x + gate * self.mlp(self.norm(x) * (1 + scale) + shift)

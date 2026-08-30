@@ -55,3 +55,41 @@ class AdaLNZeroPatchHead(nn.Module):
             out_channels=self.out_channels,
             grid_size=self.grid_size,
         )
+
+
+class AdaLNZeroLinearHead(nn.Module):
+    """Final layer mapping a vector stream to `out_dim` with adaLN-Zero.
+
+    The vector (B, D) sibling of `AdaLNZeroPatchHead`: modulation and
+    projection are zero-initialized so the output starts at zero.
+    """
+
+    def __init__(
+        self,
+        *,
+        embed_dim: int,
+        cond_dim: Optional[int] = None,
+        out_dim: int,
+        eps: float = 1e-6,
+    ):
+        super().__init__()
+        self.embed_dim = int(embed_dim)
+        self.cond_dim = int(cond_dim) if cond_dim is not None else int(embed_dim)
+        self.out_dim = int(out_dim)
+
+        self.norm = nn.LayerNorm(self.embed_dim, elementwise_affine=False, eps=eps)
+        self.modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(self.cond_dim, 2 * self.embed_dim, bias=True),
+        )
+        self.proj = nn.Linear(self.embed_dim, self.out_dim, bias=True)
+
+        nn.init.zeros_(self.modulation[-1].weight)
+        nn.init.zeros_(self.modulation[-1].bias)
+        nn.init.zeros_(self.proj.weight)
+        nn.init.zeros_(self.proj.bias)
+
+    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+        # x: (B,D), cond: (B,cond_dim)
+        shift, scale = self.modulation(cond).chunk(2, dim=1)
+        return self.proj(self.norm(x) * (1 + scale) + shift)
