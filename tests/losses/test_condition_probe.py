@@ -15,6 +15,7 @@ from torchebm.losses import (
     DenoisingScoreMatching,
     EnergyMatchingLoss,
     EquilibriumMatchingLoss,
+    FlowMatchingLoss,
     ScoreMatching,
 )
 from torchebm.samplers import LangevinDynamics
@@ -72,6 +73,11 @@ LOSSES = [
     ),
     pytest.param(IgnoringPotential, DenoisingScoreMatching, id="DenoisingScoreMatching"),
     pytest.param(IgnoringPotential, _cd, id="ContrastiveDivergence"),
+    pytest.param(
+        IgnoringField,
+        lambda model, **kw: FlowMatchingLoss(model=model, **kw),
+        id="FlowMatchingLoss",
+    ),
 ]
 
 

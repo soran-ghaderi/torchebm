@@ -17,6 +17,7 @@ from torchebm.losses import (
     DenoisingScoreMatching,
     EnergyMatchingLoss,
     EquilibriumMatchingLoss,
+    FlowMatchingLoss,
     ScoreMatching,
     SlicedScoreMatching,
 )
@@ -75,6 +76,11 @@ LOSSES = [
     ),
     pytest.param(RecordingPotential, DenoisingScoreMatching, id="DenoisingScoreMatching"),
     pytest.param(RecordingPotential, _cd, id="ContrastiveDivergence"),
+    pytest.param(
+        RecordingField,
+        lambda model: FlowMatchingLoss(model=model),
+        id="FlowMatchingLoss",
+    ),
 ]
 
 UNSUPPORTED = [
