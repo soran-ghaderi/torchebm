@@ -47,7 +47,7 @@ Key differences from `EquilibriumMatchingLoss` (EqM):
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import torch
 
@@ -102,6 +102,21 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             one-sided trimmed mean.
         cd_clamp: Stability floor: the contrastive term is clamped to
             `>= -cd_clamp`. None disables.
+        t_sampler: Training-time distribution for the flow term:
+
+            - 'uniform' (default): uniform over (0, 1)
+            - 'lognormal': EDM timestep skew, $\sigma = e^{z p_{std} + p_{mean}}$
+              with $z \sim \mathcal{N}(0, 1)$ and $t = 1/(1+\sigma)$ clamped to
+              [1e-4, 1]
+            - a callable ``(batch, *, device, dtype, generator) -> t`` returning
+              shape (batch_size,)
+
+        t_p_mean: Lognormal skew location $p_{mean}$ (EDM $P_{mean}$). Default: -1.2.
+        t_p_std: Lognormal skew scale $p_{std}$ (EDM $P_{std}$), positive. Default: 1.2.
+        loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)`` (shape
+            (batch_size,)) multiplied into the per-pair flow term before
+            reduction; the contrastive term has no timestep and stays
+            unweighted. None (default) keeps the flow term unweighted.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -156,6 +171,10 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
         noise_fraction: float = 0.5,
         cd_trim_fraction: float = 0.1,
         cd_clamp: Optional[float] = 0.02,
+        t_sampler: Union[str, Callable[..., torch.Tensor]] = "uniform",
+        t_p_mean: float = -1.2,
+        t_p_std: float = 1.2,
+        loss_weight_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -164,6 +183,10 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
         super().__init__(
             interpolant=interpolant,
             coupling=coupling,
+            t_sampler=t_sampler,
+            t_p_mean=t_p_mean,
+            t_p_std=t_p_std,
+            loss_weight_fn=loss_weight_fn,
             dtype=dtype,
             device=device,
             *args,
