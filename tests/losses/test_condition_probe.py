@@ -53,6 +53,27 @@ class ConsumingField(nn.Module):
         return out
 
 
+class ZeroInitField(nn.Module):
+    """Emits exactly zero until its weight is set, like an adaLN-Zero head.
+
+    While the output layer is zero, y-dependence is invisible from outputs;
+    once nonzero, `consumes_y` decides whether y actually reaches the output.
+    """
+
+    def __init__(self, dim=4, consumes_y=True):
+        super().__init__()
+        self.linear = nn.Linear(dim, dim)
+        nn.init.zeros_(self.linear.weight)
+        nn.init.zeros_(self.linear.bias)
+        self.consumes_y = consumes_y
+
+    def forward(self, x, t=None, y=None, **kwargs):
+        out = self.linear(x)
+        if self.consumes_y and y is not None:
+            out = out * (1 + y.view(y.shape[0], -1).float().sum(dim=1, keepdim=True))
+        return out
+
+
 def _cd(model, **kw):
     return ContrastiveDivergence(
         model=model, sampler=LangevinDynamics(model=model), k_steps=2, **kw
@@ -139,3 +160,35 @@ def test_probe_restores_training_mode():
     loss_fn = EquilibriumMatchingLoss(model=model)
     loss_fn(torch.randn(8, 4), y=_distinct_y())
     assert model.training
+
+
+def test_zero_init_output_defers_probe():
+    model = ZeroInitField(consumes_y=True)
+    loss_fn = FlowMatchingLoss(model=model)
+    loss_fn(torch.randn(8, 4), y=_distinct_y())
+    assert loss_fn._condition_check_pending
+    with torch.no_grad():
+        model.linear.weight.add_(torch.eye(4))
+    loss_fn(torch.randn(8, 4), y=_distinct_y())
+    assert not loss_fn._condition_check_pending
+
+
+def test_equal_nonzero_within_grace_defers():
+    # After a zero deferral, equal nonzero outputs get the grace window
+    # (adaLN-Zero: the head trains before the conditioning path does).
+    model = ZeroInitField(consumes_y=False)
+    loss_fn = FlowMatchingLoss(model=model)
+    loss_fn(torch.randn(8, 4), y=_distinct_y())
+    with torch.no_grad():
+        model.linear.weight.add_(torch.eye(4))
+    loss_fn(torch.randn(8, 4), y=_distinct_y())
+    assert loss_fn._condition_check_pending
+
+
+def test_zero_init_ignoring_model_raises_after_grace():
+    model = ZeroInitField(consumes_y=False)
+    loss_fn = FlowMatchingLoss(model=model)
+    for _ in range(loss_fn._CONDITION_PROBE_MAX_DEFERRALS):
+        loss_fn(torch.randn(8, 4), y=_distinct_y())
+    with pytest.raises(ValueError, match="ZeroInitField"):
+        loss_fn(torch.randn(8, 4), y=_distinct_y())

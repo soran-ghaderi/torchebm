@@ -105,10 +105,16 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         self.cfg_dropout = cfg_dropout
         self.null_condition = null_condition
         self._condition_check_pending = check_conditioning
+        self._condition_probe_deferrals = 0
 
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
         r"""Model call used by the conditioning probe; energy convention."""
         return self.model(px, **pmk)
+
+    #: Undecided conditioning probes tolerated before concluding the model
+    #: ignores y. adaLN-Zero models need 3 optimizer steps for y-dependence
+    #: to reach the output; 10 leaves headroom without hiding real bugs long.
+    _CONDITION_PROBE_MAX_DEFERRALS = 10
 
     def _check_condition(
         self, x: torch.Tensor, model_kwargs: Optional[dict]
@@ -118,21 +124,28 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         Runs on the first conditional call: the same one-sample input under
         two distinct in-batch y values (never fabricated labels, which could
         index outside an embedding), model temporarily in eval mode,
-        gradients off. Identical outputs raise. A first conditional batch
-        with no two distinct y values warns and disarms the probe instead,
-        so no per-step work remains on the hot path.
+        gradients off. Identical nonzero outputs on a fresh model raise.
+        Identical all-zero outputs are indeterminate, the signature of a
+        zero-initialized output head: adaLN-Zero models emit exactly zero
+        until trained, and their y-dependence surfaces only a few optimizer
+        steps later (head, then modulations, then conditioning). The probe
+        therefore stays armed and retries on later calls, tolerating a
+        bounded number of undecided probes before raising; once decided or
+        warned, no per-step work remains on the hot path. A first conditional
+        batch with no two distinct y values warns and disarms the probe.
 
         Raises:
-            ValueError: If the outputs of the probe pair coincide.
+            ValueError: If the outputs of the probe pair coincide on a fresh
+                model, or remain undecided after the deferral budget.
         """
         if not self._condition_check_pending or not model_kwargs:
             return
         y = model_kwargs.get("y")
         if y is None:
             return
-        self._condition_check_pending = False
         distinct = (y != y[0]).reshape(y.shape[0], -1).any(dim=1)
         if y.shape[0] < 2 or not bool(distinct.any()):
+            self._condition_check_pending = False
             warnings.warn(
                 "Conditioning consumption could not be verified: the first "
                 "conditional batch carries a single distinct y value. Pass "
@@ -163,12 +176,25 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         if isinstance(out_b, tuple):
             out_b = out_b[0]
         if torch.allclose(out_a, out_b, rtol=1e-5, atol=1e-6):
+            if bool(out_a.any()) and self._condition_probe_deferrals == 0:
+                raise ValueError(
+                    f"{type(self.model).__name__} returns identical outputs for "
+                    "two different y values, so it ignores its conditioning input "
+                    "while y was passed. Wire y into the model's forward, or pass "
+                    "check_conditioning=False to skip this probe."
+                )
+            self._condition_probe_deferrals += 1
+            if self._condition_probe_deferrals <= self._CONDITION_PROBE_MAX_DEFERRALS:
+                return
             raise ValueError(
-                f"{type(self.model).__name__} returns identical outputs for "
-                "two different y values, so it ignores its conditioning input "
-                "while y was passed. Wire y into the model's forward, or pass "
-                "check_conditioning=False to skip this probe."
+                f"{type(self.model).__name__} still returns identical outputs "
+                f"for two different y values after "
+                f"{self._CONDITION_PROBE_MAX_DEFERRALS} deferred probes, so it "
+                "ignores its conditioning input while y was passed. Wire y "
+                "into the model's forward, or pass check_conditioning=False "
+                "to skip this probe."
             )
+        self._condition_check_pending = False
 
     def _apply_cfg_dropout(
         self,
