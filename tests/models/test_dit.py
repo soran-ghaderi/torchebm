@@ -271,3 +271,35 @@ def test_custom_embedder_init_untouched():
         t_emb.weight.fill_(7.0)
     _tiny(t_embedder=t_emb)
     assert torch.all(t_emb.weight == 7.0)
+
+
+def _fm_steps(model, n, **loss_kwargs):
+    """Optimizer steps through FlowMatchingLoss. Zero-init gates gradient
+    reach (reference behavior): step 1 only updates the head projection,
+    step 2 the modulation weights, so the conditioning embedders receive
+    gradient from step 3 onward."""
+    from torchebm.losses import FlowMatchingLoss
+
+    loss_fn = FlowMatchingLoss(model=model)
+    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+    for _ in range(n):
+        loss = loss_fn(torch.randn(4, 3, 8, 8), **loss_kwargs)
+        assert torch.isfinite(loss)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+
+def test_flow_matching_trains_dit():
+    torch.manual_seed(0)
+    model = _tiny()
+    _fm_steps(model, 3)
+    assert (model.t_embedder.mlp[0].weight.grad.abs() > 0).any()
+    assert (model.patch_embed.proj.weight.grad.abs() > 0).any()
+
+
+def test_flow_matching_trains_class_conditional_dit():
+    torch.manual_seed(0)
+    model = _tiny(num_classes=4, class_dropout_prob=0.5)
+    _fm_steps(model, 3, y=torch.randint(0, 4, (4,)))
+    assert (model.y_embedder.embedding.weight.grad.abs() > 0).any()
