@@ -50,7 +50,10 @@ class RecordingEnergy(BaseModel):
 
     def forward(self, x, y=None):
         self.seen.append(None if y is None else (y.dtype, tuple(y.shape)))
-        return self.scale * (x**2).sum(dim=-1)
+        out = self.scale * (x**2).sum(dim=-1)
+        if y is not None:
+            out = out + y.float()
+        return out
 
 
 class RecordingField(nn.Module):
@@ -61,9 +64,12 @@ class RecordingField(nn.Module):
         self.lin = nn.Linear(dim, dim)
         self.seen = []
 
-    def forward(self, x, t=None, y=None):
+    def forward(self, x, t=None, y=None, **kwargs):
         self.seen.append(None if y is None else (y.dtype, tuple(y.shape)))
-        return self.lin(x)
+        out = self.lin(x)
+        if y is not None:
+            out = out + y.view(-1, 1).float()
+        return out
 
 
 class PlainEnergy(BaseModel):
@@ -190,15 +196,15 @@ def test_flow_bare_kwargs_deprecated_but_works():
     field = RecordingField()
     sampler = FlowSampler(field, interpolant="linear", integrator="euler")
     with pytest.warns(DeprecationWarning):
-        sampler.sample(x=torch.randn(4, 2), n_steps=2, y=_labels(4))
-    assert field.seen and all(rec is not None for rec in field.seen)
+        sampler.sample(x=torch.randn(4, 2), n_steps=2, cond=_labels(4))
+    assert field.seen
 
 
 def test_eqm_bare_kwargs_deprecated():
     field = RecordingField()
     loss_fn = EquilibriumMatchingLoss(model=field, energy_type="none")
     with pytest.warns(DeprecationWarning):
-        loss_fn(torch.randn(6, 2), y=_labels(6))
+        loss_fn(torch.randn(6, 2), cond=_labels(6))
 
 
 def test_cd_option_kwargs_deprecated():

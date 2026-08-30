@@ -83,6 +83,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         self,
         x: torch.Tensor,
         *args,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
         **kwargs,
@@ -93,6 +94,9 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         Args:
             x (torch.Tensor): A batch of real data samples (positive samples).
             *args: Additional positional arguments.
+            y (Optional[torch.Tensor]): Optional conditioning tensor forwarded
+                to the model on both positive and negative paths; shorthand for
+                ``model_kwargs={'y': y}``.
             model_kwargs (Optional[dict]): Conditioning arguments (e.g. class
                 labels) forwarded to the model on both the positive energy calls
                 and the negative-sampling MCMC chains, so the negatives come from
@@ -111,7 +115,11 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
                 - The scalar CD loss value.
                 - The generated negative samples.
         """
-        model_kwargs = self._prepare_model_kwargs(model_kwargs)
+        model_kwargs = self._prepare_model_kwargs(
+            self._merge_condition(model_kwargs, y)
+        )
+        self._check_condition(x, model_kwargs)
+        model_kwargs = self._apply_cfg_dropout(model_kwargs, generator)
         if any(key in kwargs for key in self._CD_OPTION_KEYS):
             warn_once(
                 "cd-option-kwargs",

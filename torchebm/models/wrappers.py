@@ -1,58 +1,113 @@
 from __future__ import annotations
 
-from typing import Literal, Optional, Union
+from typing import Callable, Literal, Optional, Union
 
 import torch
 import torch.nn as nn
 
 from torchebm.core import BaseModel, BaseScheduler, Schedulable
+from torchebm.core.base_module import substitute_condition
 
 
-class LabelClassifierFreeGuidance(nn.Module):
-    """Classifier-free guidance wrapper for label-conditioned models.
+class ClassifierFreeGuidance(BaseModel):
+    r"""Classifier-free guidance in one batched forward.
 
-    This wrapper is intentionally small and generic:
-    - assumes the base model accepts `y` (labels) and supports a *null label id*
-    - performs two forward passes (cond and uncond)
-    - applies guidance to the first `guide_channels` channels by default
+    Wraps a conditional model and returns
 
-    It does **not** assume a specific loss (EqM/diffusion/etc).
+    \[
+    \text{out} = u + w \, (c - u)
+    \]
 
-    Expected base signature:
-      `base(x, t, y=..., **kwargs) -> Tensor[B,C,H,W]`
+    where \(c\) and \(u\) are the wrapped model's outputs under the true and
+    null conditioning, evaluated in a single 2x-batch forward (no python
+    loop). Works with field models, called as ``model(x, t, y=y)`` by
+    `FlowSampler`, and with scalar energies, called as ``model(x, y=y)`` and
+    differentiated through the inherited `BaseModel.gradient` by the MCMC and
+    gradient-descent samplers.
 
-    You can use it with `FlowSampler` by wrapping your model instance.
+    \(w = 0\) reproduces the null-conditioned (unconditional) model exactly
+    via a single un-doubled forward; \(w = 1\) matches the conditional model.
+    ``y=None`` is a plain passthrough. Batch-aligned tensors in ``kwargs``
+    are doubled alongside ``x``; a model returning a tuple is unwrapped to
+    its first element.
+
+    Args:
+        model: Conditional model accepting ``y=``.
+        guidance_scale: Guidance weight \(w\).
+        null_condition: Null condition for the unconditional half: an int
+            (the ``num_classes`` label convention), a tensor broadcast over
+            the non-batch dims (e.g. a zero or learned null embedding), or a
+            callable ``(y, mask) -> y``.
+        guide_channels: If set, apply guidance only to the first
+            ``guide_channels`` entries of dim 1 and keep the unconditional
+            output for the rest (models whose extra channels, e.g. a learned
+            sigma, must not be guided). ``None`` (default) guides everything.
     """
 
     def __init__(
         self,
-        base: nn.Module,
-        *,
-        null_label_id: int,
-        cfg_scale: float = 1.0,
-        guide_channels: int = 3,
+        model: nn.Module,
+        guidance_scale: float,
+        null_condition: Union[int, float, torch.Tensor, Callable],
+        guide_channels: Optional[int] = None,
     ):
         super().__init__()
-        self.base = base
-        self.null_label_id = int(null_label_id)
-        self.cfg_scale = float(cfg_scale)
-        self.guide_channels = int(guide_channels)
+        if null_condition is None:
+            raise ValueError("null_condition is required")
+        self.model = model
+        self.guidance_scale = float(guidance_scale)
+        self.null_condition = null_condition
+        self.guide_channels = guide_channels
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, *, y: torch.Tensor, **kwargs) -> torch.Tensor:
-        if self.cfg_scale <= 1.0:
-            return self.base(x, t, y=y, **kwargs)
+    def _null_y(self, y: torch.Tensor) -> torch.Tensor:
+        mask = torch.ones(y.shape[0], dtype=torch.bool, device=y.device)
+        return substitute_condition(y, mask, self.null_condition)
 
-        y_null = torch.full_like(y, fill_value=self.null_label_id)
+    def _call(self, x, t, y, kwargs):
+        if t is None:
+            out = self.model(x, **kwargs) if y is None else self.model(x, y=y, **kwargs)
+        else:
+            out = (
+                self.model(x, t, **kwargs)
+                if y is None
+                else self.model(x, t, y=y, **kwargs)
+            )
+        return out[0] if isinstance(out, tuple) else out
 
-        cond = self.base(x, t, y=y, **kwargs)
-        uncond = self.base(x, t, y=y_null, **kwargs)
+    def forward(
+        self,
+        x: torch.Tensor,
+        t: Optional[torch.Tensor] = None,
+        y: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        if y is None:
+            return self._call(x, t, None, kwargs)
+        w = self.guidance_scale
+        if w == 0.0:
+            return self._call(x, t, self._null_y(y), kwargs)
 
-        c = min(self.guide_channels, cond.shape[1])
-        guided = uncond[:, :c] + self.cfg_scale * (cond[:, :c] - uncond[:, :c])
+        batch = x.shape[0]
 
-        if c == cond.shape[1]:
+        def _double(v):
+            if isinstance(v, torch.Tensor) and v.ndim > 0 and v.shape[0] == batch:
+                return torch.cat([v, v])
+            return v
+
+        out = self._call(
+            torch.cat([x, x]),
+            _double(t),
+            torch.cat([y, self._null_y(y)]),
+            {k: _double(v) for k, v in kwargs.items()},
+        )
+        cond, uncond = out.chunk(2)
+        if self.guide_channels is not None and out.ndim >= 2:
+            c = min(self.guide_channels, cond.shape[1])
+            guided = uncond[:, :c] + w * (cond[:, :c] - uncond[:, :c])
+            if c < cond.shape[1]:
+                guided = torch.cat([guided, uncond[:, c:]], dim=1)
             return guided
-        return torch.cat([guided, uncond[:, c:]], dim=1)
+        return uncond + w * (cond - uncond)
 
 
 class InteractionModel(Schedulable, BaseModel):

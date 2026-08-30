@@ -15,7 +15,7 @@ from torchebm.core import BaseSampler
 from torchebm.core import BaseScheduler
 from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
-from torchebm.core.base_module import warn_once
+from torchebm.core.base_module import substitute_condition, warn_once
 
 logger = logging.getLogger(__name__)
 
@@ -95,19 +95,141 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         self,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
+        cfg_dropout: float = 0.0,
+        null_condition: Union[int, float, torch.Tensor, Callable, None] = None,
+        check_conditioning: bool = True,
         *args: Any,
         **kwargs: Any,
     ):
         """Initialize the base loss class.
 
+        Args:
+            dtype: Data type for computations.
+            device: Device for computations.
+            cfg_dropout: Classifier-free-guidance label dropout: probability of
+                replacing the ``y`` conditioning with `null_condition` per
+                sample during training. 0 (default) disables dropout; applies
+                only in training mode and only when ``y`` is passed.
+            null_condition: Null condition for dropped samples: an int (the
+                ``num_classes`` label convention), a tensor broadcast over the
+                non-batch dims (e.g. a zero embedding), or a callable
+                ``(y, mask) -> y``. Required when ``cfg_dropout > 0``.
+            check_conditioning: If True (default), verify on the first
+                conditional loss call that the model actually consumes ``y``
+                (same input, two distinct in-batch y values; identical outputs
+                raise instead of silently training an unconditional model).
+                Set False for models this probe misjudges, e.g.
+                stochastic-in-eval backbones.
+
         Raises:
             TypeError: If constructor arguments remain that no class in the
                 loss's MRO binds; the message lists the supported parameters
                 and the installed torchebm version.
+            ValueError: If ``cfg_dropout`` is outside [0, 1], or positive
+                without a `null_condition`.
         """
         if args or kwargs:
             raise TypeError(_unexpected_init_args_message(type(self), args, kwargs))
+        if not 0.0 <= cfg_dropout <= 1.0:
+            raise ValueError(f"cfg_dropout must be in [0, 1], got {cfg_dropout}")
+        if cfg_dropout > 0 and null_condition is None:
+            raise ValueError("cfg_dropout > 0 requires null_condition")
         super().__init__(device=device, dtype=dtype)
+        self.cfg_dropout = cfg_dropout
+        self.null_condition = null_condition
+        self._condition_check_pending = check_conditioning
+
+    def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
+        r"""Model call used by the conditioning probe; energy convention."""
+        return self.model(px, **pmk)
+
+    def _check_condition(
+        self, x: torch.Tensor, model_kwargs: Optional[dict]
+    ) -> None:
+        r"""One-time probe that the model consumes ``y`` when it is passed.
+
+        Runs on the first conditional call: the same one-sample input under
+        two distinct in-batch y values (never fabricated labels, which could
+        index outside an embedding), model temporarily in eval mode,
+        gradients off. Identical outputs raise. A first conditional batch
+        with no two distinct y values warns and disarms the probe instead,
+        so no per-step work remains on the hot path.
+
+        Raises:
+            ValueError: If the outputs of the probe pair coincide.
+        """
+        if not self._condition_check_pending or not model_kwargs:
+            return
+        y = model_kwargs.get("y")
+        if y is None:
+            return
+        self._condition_check_pending = False
+        distinct = (y != y[0]).reshape(y.shape[0], -1).any(dim=1)
+        if y.shape[0] < 2 or not bool(distinct.any()):
+            warnings.warn(
+                "Conditioning consumption could not be verified: the first "
+                "conditional batch carries a single distinct y value. Pass "
+                "check_conditioning=False to silence this warning.",
+                UserWarning,
+            )
+            return
+        i1 = int(distinct.int().argmax())
+        px = x[:1].detach()
+        batch = x.shape[0]
+        pmk = {
+            k: v[:1]
+            if isinstance(v, torch.Tensor) and v.ndim > 0 and v.shape[0] == batch
+            else v
+            for k, v in model_kwargs.items()
+            if k != "y"
+        }
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            with torch.no_grad():
+                out_a = self._probe_forward(px, {**pmk, "y": y[0:1]})
+                out_b = self._probe_forward(px, {**pmk, "y": y[i1 : i1 + 1]})
+        finally:
+            self.model.train(was_training)
+        if isinstance(out_a, tuple):
+            out_a = out_a[0]
+        if isinstance(out_b, tuple):
+            out_b = out_b[0]
+        if torch.allclose(out_a, out_b, rtol=1e-5, atol=1e-6):
+            raise ValueError(
+                f"{type(self.model).__name__} returns identical outputs for "
+                "two different y values, so it ignores its conditioning input "
+                "while y was passed. Wire y into the model's forward, or pass "
+                "check_conditioning=False to skip this probe."
+            )
+
+    def _apply_cfg_dropout(
+        self,
+        model_kwargs: Optional[dict],
+        generator: Optional[torch.Generator] = None,
+    ) -> Optional[dict]:
+        r"""Replace ``y`` with the null condition per sample during training.
+
+        No-op unless the loss is in training mode, ``cfg_dropout > 0`` and
+        `model_kwargs` carries a ``'y'`` entry. The mask is drawn with
+        `generator` for reproducibility.
+        """
+        if (
+            self.cfg_dropout == 0.0
+            or not self.training
+            or not model_kwargs
+            or "y" not in model_kwargs
+        ):
+            return model_kwargs
+        y = model_kwargs["y"]
+        mask = (
+            torch.rand(y.shape[0], device=y.device, generator=generator)
+            < self.cfg_dropout
+        )
+        return {
+            **model_kwargs,
+            "y": substitute_condition(y, mask, self.null_condition),
+        }
 
     def _resolve_model_kwargs(
         self,

@@ -170,6 +170,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
         *,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
@@ -187,6 +188,8 @@ class HamiltonianMonteCarlo(BaseSampler):
                 ``"mean"`` (`[n_kept, dim]`), ``"var"`` (`[n_kept, dim]`),
                 ``"energy"`` (`[n_kept]`), and ``"acceptance_rate"`` (`[n_kept]`).
             reset_schedulers: If True (default), reset registered schedulers.
+            y: Optional conditioning tensor forwarded to the model; shorthand
+                for ``model_kwargs={'y': y}``.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model for both the leapfrog force and the MH-ratio energies.
                 Normalized to the sampler device once at entry; ``None`` (default)
@@ -203,7 +206,9 @@ class HamiltonianMonteCarlo(BaseSampler):
         if reset_schedulers:
             self.reset_schedulers()
 
-        model_kwargs = self._prepare_model_kwargs(model_kwargs)
+        model_kwargs = self._prepare_model_kwargs(
+            self._merge_condition(model_kwargs, y)
+        )
 
         if x is None and dim is None:
             if hasattr(self.model, "mean") and isinstance(
@@ -578,6 +583,7 @@ class RiemannianManifoldHMC(BaseSampler):
         return_diagnostics: bool = False,
         reset_schedulers: bool = True,
         *,
+        y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
@@ -595,6 +601,8 @@ class RiemannianManifoldHMC(BaseSampler):
             return_diagnostics: If True, also return a dict with keys
                 ``"mean"``, ``"var"``, ``"energy"``, and ``"acceptance_rate"``.
             reset_schedulers: If True, reset registered schedulers.
+            y: Optional conditioning tensor forwarded to the model; shorthand
+                for ``model_kwargs={'y': y}``.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model for both the leapfrog force and the MH-ratio energies.
                 Normalized to the sampler device once at entry; ``None`` (default)
@@ -613,7 +621,9 @@ class RiemannianManifoldHMC(BaseSampler):
 
         # `_force` reads conditioning from this attribute; set it every call so
         # stale conditioning cannot leak in.
-        self._active_model_kwargs = self._prepare_model_kwargs(model_kwargs)
+        self._active_model_kwargs = self._prepare_model_kwargs(
+            self._merge_condition(model_kwargs, y)
+        )
         model_kwargs = self._active_model_kwargs
 
         if x is None and dim is None:
