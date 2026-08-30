@@ -11,6 +11,7 @@ This package therefore exposes *reusable building blocks* under
 
 __all__ = [
     "DiT",
+    "TimeConditionedMLP",
     "dit_s_2",
     "dit_s_4",
     "dit_s_8",
@@ -36,11 +37,14 @@ __all__ = [
     "FeedForward",
     "MultiheadSelfAttention",
     "AdaLNZeroBlock",
+    "AdaLNZeroMLPBlock",
+    "AdaLNZeroLinearHead",
     "AdaLNZeroPatchHead",
 ]
 
 _LAZY_IMPORTS = {
     "DiT": ".dit",
+    "TimeConditionedMLP": ".mlp",
     "dit_s_2": ".dit",
     "dit_s_4": ".dit",
     "dit_s_8": ".dit",
@@ -58,6 +62,8 @@ _LAZY_IMPORTS = {
     "InteractionModel": ".wrappers",
     "EqMEnergy": ".wrappers",
     "AdaLNZeroBlock": ".components",
+    "AdaLNZeroMLPBlock": ".components",
+    "AdaLNZeroLinearHead": ".components",
     "AdaLNZeroPatchHead": ".components",
     "ConvPatchEmbed2d": ".components",
     "FeedForward": ".components",

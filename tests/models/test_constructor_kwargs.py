@@ -24,6 +24,7 @@ from torchebm.models import (
     DiT,
     EqMEnergy,
     InteractionModel,
+    TimeConditionedMLP,
 )
 
 
@@ -81,6 +82,10 @@ FIXED_SIGNATURE = [
             **kw,
         ),
         id="DiT",
+    ),
+    pytest.param(
+        lambda **kw: TimeConditionedMLP(in_dim=2, hidden_dim=8, depth=1, **kw),
+        id="TimeConditionedMLP",
     ),
 ]
 
