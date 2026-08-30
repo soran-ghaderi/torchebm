@@ -15,48 +15,13 @@ from torchebm.core import BaseSampler
 from torchebm.core import BaseScheduler
 from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
-from torchebm.core.base_module import substitute_condition, warn_once
+from torchebm.core.base_module import (
+    _unexpected_init_args_message,
+    substitute_condition,
+    warn_once,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _unexpected_init_args_message(cls, args, kwargs) -> str:
-    r"""Build the TypeError message for constructor arguments no loss accepts.
-
-    Walks `cls.__mro__` down to `BaseLoss` collecting every named constructor
-    parameter, so the message lists what the concrete loss actually supports,
-    including parameters bound by intermediate bases that the leaf signature
-    forwards through ``**kwargs``.
-    """
-    import inspect
-
-    from torchebm._version import __version__
-
-    supported: dict = {}
-    for klass in cls.__mro__:
-        init = klass.__dict__.get("__init__")
-        if init is not None:
-            for name, param in inspect.signature(init).parameters.items():
-                if name != "self" and param.kind not in (
-                    param.VAR_POSITIONAL,
-                    param.VAR_KEYWORD,
-                ):
-                    supported.setdefault(name)
-        if klass is BaseLoss:
-            break
-
-    problems = []
-    if kwargs:
-        problems.append(
-            "unexpected keyword argument(s) "
-            + ", ".join(repr(k) for k in kwargs)
-        )
-    if args:
-        problems.append(f"{len(args)} unexpected positional argument(s)")
-    return (
-        f"{cls.__name__}.__init__() got {' and '.join(problems)}. "
-        f"Supported parameters: {', '.join(supported)} (torchebm {__version__})."
-    )
 
 
 def _dtensor_type():
@@ -129,7 +94,9 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
                 without a `null_condition`.
         """
         if args or kwargs:
-            raise TypeError(_unexpected_init_args_message(type(self), args, kwargs))
+            raise TypeError(
+                _unexpected_init_args_message(type(self), args, kwargs, BaseLoss)
+            )
         if not 0.0 <= cfg_dropout <= 1.0:
             raise ValueError(f"cfg_dropout must be in [0, 1], got {cfg_dropout}")
         if cfg_dropout > 0 and null_condition is None:

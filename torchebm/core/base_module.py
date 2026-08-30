@@ -27,6 +27,45 @@ def _normalize(device: torch.device) -> torch.device:
     return device
 
 
+def _unexpected_init_args_message(cls, args, kwargs, stop_at: type) -> str:
+    r"""Build the TypeError message for constructor arguments no class accepts.
+
+    Walks `cls.__mro__` down to `stop_at` (inclusive) collecting every named
+    constructor parameter, so the message lists what the concrete class
+    actually supports, including parameters bound by intermediate bases that
+    the leaf signature forwards through ``**kwargs``.
+    """
+    import inspect
+
+    from torchebm._version import __version__
+
+    supported: dict = {}
+    for klass in cls.__mro__:
+        init = klass.__dict__.get("__init__")
+        if init is not None:
+            for name, param in inspect.signature(init).parameters.items():
+                if name != "self" and param.kind not in (
+                    param.VAR_POSITIONAL,
+                    param.VAR_KEYWORD,
+                ):
+                    supported.setdefault(name)
+        if klass is stop_at:
+            break
+
+    problems = []
+    if kwargs:
+        problems.append(
+            "unexpected keyword argument(s) "
+            + ", ".join(repr(k) for k in kwargs)
+        )
+    if args:
+        problems.append(f"{len(args)} unexpected positional argument(s)")
+    return (
+        f"{cls.__name__}.__init__() got {' and '.join(problems)}. "
+        f"Supported parameters: {', '.join(supported)} (torchebm {__version__})."
+    )
+
+
 def substitute_condition(y, mask, null):
     r"""Replace conditioning rows selected by `mask` with the null condition.
 
