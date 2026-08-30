@@ -80,17 +80,24 @@ class LabelEmbedder(nn.Module):
         *,
         force_drop_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        if self.dropout_prob <= 0:
-            return labels
         if self.null_label_id is None:
-            raise RuntimeError("LabelEmbedder configured without null label.")
+            if force_drop_mask is not None:
+                raise ValueError(
+                    "force_drop_mask requires the null token; construct the "
+                    "LabelEmbedder with dropout_prob > 0 or null_token=True"
+                )
+            if self.dropout_prob > 0:
+                raise RuntimeError("LabelEmbedder configured without null label.")
+            return labels
 
         if force_drop_mask is None:
+            if self.dropout_prob <= 0:
+                return labels
             drop_mask = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
         else:
             drop_mask = force_drop_mask.to(device=labels.device, dtype=torch.bool)
 
-        return torch.where(drop_mask, torch.full_like(labels, self.null_label_id), labels)
+        return torch.where(drop_mask, self.null_label_id, labels)
 
     def forward(
         self,
