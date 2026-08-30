@@ -7,13 +7,14 @@ import torch
 
 
 def _get_1d_sincos_pos_embed_from_grid(embed_dim: int, pos: torch.Tensor) -> torch.Tensor:
-    # pos: (M,)
+    # pos: (M,). Computed in float64 like the reference MAE/DiT tables, so the
+    # float32 result is bit-identical to theirs; the caller casts at the end.
     if embed_dim % 2 != 0:
         raise ValueError(f"embed_dim must be even, got {embed_dim}")
 
-    omega = torch.arange(embed_dim // 2, device=pos.device, dtype=torch.float32)
+    omega = torch.arange(embed_dim // 2, device=pos.device, dtype=torch.float64)
     omega = 1.0 / (10000 ** (omega / (embed_dim / 2)))
-    out = pos[:, None].float() * omega[None, :]
+    out = pos[:, None].double() * omega[None, :]
     return torch.cat([torch.sin(out), torch.cos(out)], dim=1)
 
 

@@ -198,3 +198,76 @@ def test_preset_factory_configures_model():
 def test_preset_factory_kwargs_override():
     model = dit_s_4(input_size=4, in_channels=1, depth=1)
     assert len(model.blocks) == 1
+
+
+def _reference_pos_embed(embed_dim, grid_size):
+    """Verbatim port of get_2d_sincos_pos_embed from facebookresearch/DiT."""
+    np = pytest.importorskip("numpy")
+
+    def get_1d(embed_dim, pos):
+        omega = np.arange(embed_dim // 2, dtype=np.float64)
+        omega /= embed_dim / 2.0
+        omega = 1.0 / 10000**omega
+        pos = pos.reshape(-1)
+        out = np.einsum("m,d->md", pos, omega)
+        return np.concatenate([np.sin(out), np.cos(out)], axis=1)
+
+    grid_h = np.arange(grid_size, dtype=np.float32)
+    grid_w = np.arange(grid_size, dtype=np.float32)
+    grid = np.stack(np.meshgrid(grid_w, grid_h), axis=0)
+    emb = np.concatenate(
+        [get_1d(embed_dim // 2, grid[0]), get_1d(embed_dim // 2, grid[1])], axis=1
+    )
+    return torch.from_numpy(emb).float()
+
+
+def test_pos_embed_bitwise_matches_reference():
+    from torchebm.models.components import build_2d_sincos_pos_embed
+
+    for embed_dim, grid in [(16, 4), (384, 16)]:
+        ours = build_2d_sincos_pos_embed(embed_dim, grid)
+        assert torch.equal(ours, _reference_pos_embed(embed_dim, grid))
+
+
+def test_timestep_embedding_bitwise_matches_reference():
+    import math
+
+    from torchebm.models.components import MLPTimestepEmbedder
+
+    t = torch.tensor([0.0, 0.25, 1.0, 999.0])
+    dim = 256
+    half = dim // 2
+    freqs = torch.exp(
+        -math.log(10000) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+    )
+    args = t[:, None].float() * freqs[None]
+    reference = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    ours = MLPTimestepEmbedder.sinusoidal_embedding(t, dim)
+    assert torch.equal(ours, reference)
+
+
+def test_reference_init_scheme():
+    torch.manual_seed(0)
+    model = _tiny(num_classes=10)
+
+    assert torch.all(model.patch_embed.proj.bias == 0)
+    for block in model.blocks:
+        assert torch.all(block.modulation[-1].weight == 0)
+        assert torch.all(block.modulation[-1].bias == 0)
+        for name in ("attn.qkv", "attn.out_proj"):
+            mod = block.get_submodule(name)
+            assert torch.all(mod.bias == 0)
+            assert (mod.weight != 0).any()
+    assert torch.all(model.head.modulation[-1].weight == 0)
+    assert torch.all(model.head.proj.weight == 0)
+    assert torch.all(model.t_embedder.mlp[0].bias == 0)
+    assert 0.01 < model.t_embedder.mlp[0].weight.std().item() < 0.03
+    assert 0.01 < model.y_embedder.embedding.weight.std().item() < 0.03
+
+
+def test_custom_embedder_init_untouched():
+    t_emb = nn.Linear(1, 16)
+    with torch.no_grad():
+        t_emb.weight.fill_(7.0)
+    _tiny(t_embedder=t_emb)
+    assert torch.all(t_emb.weight == 7.0)

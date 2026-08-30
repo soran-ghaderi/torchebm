@@ -64,6 +64,17 @@ class DiT(nn.Module):
     ``head_dim``, run through ``head_depth`` additional adaLN-Zero blocks at
     that width, and decoded by the patch head there.
 
+    Parity with the reference implementation
+    (github.com/facebookresearch/DiT): block math, modulation order,
+    unpatchify layout, sin/cos tables (computed in float64 and cast, so the
+    values are bit-identical), and the weight-initialization scheme all
+    match. Two constructor defaults differ deliberately:
+    ``out_channels=None`` means ``in_channels`` (the reference defaults to
+    ``learn_sigma=True``, i.e. ``2 * in_channels``) and
+    ``class_dropout_prob`` defaults to 0.0 (the reference trains with 0.1).
+    The timestep frequency table is built on the input's device instead of
+    on CPU; the math is unchanged.
+
     Args:
         input_size: Spatial size of the input, an int for square inputs or an
             ``(H, W)`` tuple. Each side must be divisible by ``patch_size``.
@@ -234,6 +245,53 @@ class DiT(nn.Module):
             out_channels=self.out_channels,
             grid_size=self.grid_size,
         )
+
+        self._initialize_weights(
+            default_t_embedder=t_embedder is None,
+            default_y_embedder=y_embedder is None and self.num_classes is not None,
+        )
+
+    def _initialize_weights(
+        self, *, default_t_embedder: bool, default_y_embedder: bool
+    ) -> None:
+        r"""Apply the reference DiT initialization scheme.
+
+        Xavier-uniform on every trunk Linear with zeroed biases, the patch
+        conv initialized as a flattened Linear, std-0.02 normal weights for
+        the default timestep and label embedders, and re-zeroed adaLN
+        modulations and final head. User-supplied embedder modules are left
+        untouched; they own their initialization.
+        """
+
+        def _basic_init(module: nn.Module) -> None:
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+        for module in (self.blocks, self.head_blocks, self.head):
+            module.apply(_basic_init)
+        if self.head_proj is not None:
+            _basic_init(self.head_proj)
+
+        w = self.patch_embed.proj.weight.data
+        nn.init.xavier_uniform_(w.view(w.shape[0], -1))
+        nn.init.zeros_(self.patch_embed.proj.bias)
+
+        if default_t_embedder:
+            self.t_embedder.apply(_basic_init)
+            nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
+            nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
+        if default_y_embedder:
+            nn.init.normal_(self.y_embedder.embedding.weight, std=0.02)
+
+        for block in (*self.blocks, *self.head_blocks):
+            nn.init.zeros_(block.modulation[-1].weight)
+            nn.init.zeros_(block.modulation[-1].bias)
+        nn.init.zeros_(self.head.modulation[-1].weight)
+        nn.init.zeros_(self.head.modulation[-1].bias)
+        nn.init.zeros_(self.head.proj.weight)
+        nn.init.zeros_(self.head.proj.bias)
 
     def _condition(
         self,
