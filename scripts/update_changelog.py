@@ -1,8 +1,14 @@
 r"""Splice a rendered changes body into CHANGELOG.md.
 
 Only the ``## [Unreleased]`` block is ever touched; released sections below
-it are frozen. Bodies come from git-cliff (see cliff.toml); CI drives this on
-master pushes.
+it are frozen. Bodies come from git-cliff (see cliff.toml). Run locally on
+the PR branch before merging to master; the changelog change ships in the PR
+itself (the master ruleset rejects direct pushes). Render bodies from
+``<last-release-tag>..origin/master`` so bullets link canonical master SHAs:
+
+    git fetch origin master
+    last=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+    git-cliff --config cliff.toml --strip all "${last}..origin/master" -o body.md
 
 Usage:
     python scripts/update_changelog.py unreleased --body FILE
