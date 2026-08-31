@@ -7,9 +7,9 @@
 #
 # Callers pass an explicit release-to-release commit range and own the
 # version headings (scripts/update_changelog.py splices the rendered body
-# into CHANGELOG.md), so tags are ignored as section boundaries here: the
-# repo mints a tag on every master push and only GitHub Releases mark real
-# versions. Run locally before merging to master; see update_changelog.py.
+# into CHANGELOG.md), so tags are ignored as section boundaries here; some
+# historical tags have no release. Run locally on the PR branch before
+# merging to master; see update_changelog.py.
 
 [changelog]
 trim = true
@@ -36,6 +36,6 @@ commit_parsers = [
   { message = "^fix", group = "<!-- 4 -->Fixed" },
   { message = "^perf", group = "<!-- 5 -->Performance" },
   { message = "^Merge ", skip = true },
-  { message = "^chore\\(changelog\\)", skip = true },
+  { message = "^(chore|docs)\\(changelog\\)", skip = true },
   { message = ".*", group = "<!-- 6 -->Other" },
 ]

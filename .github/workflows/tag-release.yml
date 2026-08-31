@@ -82,9 +82,10 @@ jobs:
   # CHANGELOG.md is maintained locally and lands through PRs (the master
   # ruleset rejects direct pushes): git-cliff + scripts/update_changelog.py
   # run on the PR branch before merge. See scripts/update_changelog.py.
+  # Every master push publishes the tag minted above to PyPI and GitHub
+  # Releases; there is no separate release trigger.
   release:
     needs: [update-tag]
-    if: contains(github.event.head_commit.message, '#release')
     runs-on: ubuntu-latest
 
     steps:

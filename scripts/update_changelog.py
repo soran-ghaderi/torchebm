@@ -3,12 +3,14 @@ r"""Splice a rendered changes body into CHANGELOG.md.
 Only the ``## [Unreleased]`` block is ever touched; released sections below
 it are frozen. Bodies come from git-cliff (see cliff.toml). Run locally on
 the PR branch before merging to master; the changelog change ships in the PR
-itself (the master ruleset rejects direct pushes). Render bodies from
-``<last-release-tag>..origin/master`` so bullets link canonical master SHAs:
+itself (the master ruleset rejects direct pushes). Every merge to master is
+released, so each PR promotes its own version section, rendered from the
+last release tag to the branch head (PRs are merged with merge commits, so
+branch SHAs stay canonical on master; never squash or rebase merges):
 
-    git fetch origin master
+    git fetch --tags origin
     last=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
-    git-cliff --config cliff.toml --strip all "${last}..origin/master" -o body.md
+    git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
 
 Usage:
     python scripts/update_changelog.py unreleased --body FILE
