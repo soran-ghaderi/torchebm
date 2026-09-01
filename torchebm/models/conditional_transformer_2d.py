@@ -9,7 +9,8 @@ from torchebm.models.dit import DiT
 
 
 @deprecated(
-    since="0.8.3",
+    since="0.8.4",
+    deprecated_on="2026-08-30",
     replacement="torchebm.models.DiT",
     message=(
         "ConditionalTransformer2D is deprecated; use torchebm.models.DiT "

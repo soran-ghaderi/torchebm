@@ -12,7 +12,8 @@ at collection time, then enforces:
 - no registered removal window has closed for the next release (latest git
   tag + 1 patch, falling back to the installed version on sdist builds;
   skipped with a reason when neither yields a release, e.g. shallow tagless
-  CI checkouts).
+  CI checkouts). A window needs both its release span and its calendar
+  floor (months since declaration) to expire.
 
 There is intentionally no per-deprecation content here: adding a deprecation
 means declaring it at its site, nothing else.
@@ -23,6 +24,7 @@ categories reached via getattr tricks.
 """
 
 import ast
+import datetime
 import importlib
 import subprocess
 from pathlib import Path
@@ -186,23 +188,49 @@ def test_removal_window_open(info):
 
 def test_window_rule():
     entry = declare_deprecation(
-        module=__name__, name="rule-probe", since="0.8.3", replacement="x"
+        module=__name__,
+        name="rule-probe",
+        since="0.8.3",
+        deprecated_on="2026-08-31",
+        replacement="x",
+    )
+    late = datetime.date(2027, 1, 1)  # far past the 2-month floor
+    try:
+        # Release condition (evaluated with the date floor long met).
+        assert not entry.removal_due("0.8.3", late)
+        assert not entry.removal_due("0.8.4", late)
+        assert entry.removal_due("0.8.5", late)
+        assert entry.removal_due("0.9.0", late)
+        assert entry.removal_due("1.0.0", late)
+        assert not entry.removal_due("0.8.2", late)
+        assert not entry.removal_due("0.7.9", late)
+        assert not entry.removal_due("0.8.4.dev2+g0142c5d43.d20260713", late)
+        assert entry.removal_due("0.9.0rc1", late)
+        assert entry.removal_due("1!0.9.0", late)
+        with pytest.raises(ValueError, match="release"):
+            entry.removal_due("garbage", late)
+        # Time floor: version-expired but 2 months not yet elapsed.
+        assert not entry.removal_due("0.8.5", datetime.date(2026, 10, 30))
+        assert entry.removal_due("0.8.5", datetime.date(2026, 10, 31))
+        assert not entry.removal_due("0.9.0", datetime.date(2026, 9, 1))
+    finally:
+        DEPRECATIONS.pop(entry.key, None)
+
+
+def test_time_floor_clamps_month_end():
+    entry = declare_deprecation(
+        module=__name__,
+        name="clamp-probe",
+        since="0.8.3",
+        deprecated_on="2026-12-31",
+        replacement="x",
     )
     try:
-        assert not entry.removal_due("0.8.3")
-        assert not entry.removal_due("0.8.4")
-        assert entry.removal_due("0.8.5")
-        assert entry.removal_due("0.9.0")
-        assert entry.removal_due("1.0.0")
-        assert not entry.removal_due("0.8.2")
-        assert not entry.removal_due("0.7.9")
-        assert not entry.removal_due("0.8.4.dev2+g0142c5d43.d20260713")
-        assert entry.removal_due("0.9.0rc1")
-        assert entry.removal_due("1!0.9.0")
-        with pytest.raises(ValueError, match="release"):
-            entry.removal_due("garbage")
+        # 2026-12-31 + 2 months clamps to 2027-02-28.
+        assert not entry.removal_due("1.0.0", datetime.date(2027, 2, 27))
+        assert entry.removal_due("1.0.0", datetime.date(2027, 2, 28))
     finally:
-        DEPRECATIONS.pop(entry.key)
+        DEPRECATIONS.pop(entry.key, None)
 
 
 def _lint_file(py: Path, errors: list) -> None:
@@ -261,31 +289,59 @@ def test_no_deprecation_warnings_outside_the_api():
 
 def test_declare_is_idempotent_and_conflicts_raise():
     a = declare_deprecation(
-        module=__name__, name="idem-probe", since="0.8.3", replacement="x"
+        module=__name__,
+        name="idem-probe",
+        since="0.8.3",
+        deprecated_on="2026-08-31",
+        replacement="x",
     )
     try:
         b = declare_deprecation(
-            module=__name__, name="idem-probe", since="0.8.3", replacement="x"
+            module=__name__,
+            name="idem-probe",
+            since="0.8.3",
+            deprecated_on="2026-08-31",
+            replacement="x",
         )
         assert a == b
         with pytest.raises(ValueError, match="conflicting"):
             declare_deprecation(
-                module=__name__, name="idem-probe", since="0.8.4", replacement="x"
+                module=__name__,
+                name="idem-probe",
+                since="0.8.4",
+                deprecated_on="2026-08-31",
+                replacement="x",
             )
     finally:
-        DEPRECATIONS.pop(a.key)
+        DEPRECATIONS.pop(a.key, None)
 
 
-def test_declare_validates_since():
+def test_declare_validates_since_and_date():
     with pytest.raises(ValueError, match="release"):
         declare_deprecation(
-            module=__name__, name="bad-since", since="soon", replacement="x"
+            module=__name__,
+            name="bad-since",
+            since="soon",
+            deprecated_on="2026-08-31",
+            replacement="x",
+        )
+    with pytest.raises(ValueError):
+        declare_deprecation(
+            module=__name__,
+            name="bad-date",
+            since="0.8.3",
+            deprecated_on="soon",
+            replacement="x",
         )
 
 
 def test_warn_requires_registration():
     entry = declare_deprecation(
-        module=__name__, name="warn-probe", since="0.8.3", replacement="x"
+        module=__name__,
+        name="warn-probe",
+        since="0.8.3",
+        deprecated_on="2026-08-31",
+        replacement="x",
     )
     DEPRECATIONS.pop(entry.key)
     with pytest.raises(RuntimeError, match="not registered"):
@@ -296,7 +352,11 @@ def test_warn_dedups_per_qualifier_and_attributes_to_caller():
     import warnings as w
 
     entry = declare_deprecation(
-        module=__name__, name="dedup-probe", since="0.8.3", replacement="the new thing"
+        module=__name__,
+        name="dedup-probe",
+        since="0.8.3",
+        deprecated_on="2026-08-31",
+        replacement="the new thing",
     )
     try:
         with w.catch_warnings(record=True) as caught:
@@ -315,7 +375,7 @@ def test_warn_dedups_per_qualifier_and_attributes_to_caller():
 
 
 def test_decorator_registers_warns_and_preserves_identity():
-    @deprecated(since="0.8.3", replacement="NewThing")
+    @deprecated(since="0.8.3", deprecated_on="2026-08-31", replacement="NewThing")
     class OldThing:
         def __init__(self, value):
             self.value = value
@@ -340,7 +400,7 @@ def test_decorator_registers_warns_and_preserves_identity():
 
 
 def test_decorator_on_function():
-    @deprecated(since="0.8.3", replacement="new_fn")
+    @deprecated(since="0.8.3", deprecated_on="2026-08-31", replacement="new_fn")
     def old_fn(x):
         return x + 1
 

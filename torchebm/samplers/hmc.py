@@ -20,7 +20,8 @@ from torchebm.integrators.integrator_utils import resolve_integrator
 _SOLVER_ARGS_DEPRECATION = declare_deprecation(
     module=__name__,
     name="RiemannianManifoldHMC solver_max_iter/solver_tol/solver_check_every",
-    since="0.8.3",
+    since="0.8.4",
+    deprecated_on="2026-08-31",
     replacement="GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) passed as integrator=",
     message=(
         "solver_max_iter/solver_tol/solver_check_every on "
@@ -28,7 +29,11 @@ _SOLVER_ARGS_DEPRECATION = declare_deprecation(
         "GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) "
         "and pass it as integrator=."
     ),
-    removal="the solver_* parameters and their deprecated-path handling in RiemannianManifoldHMC.__init__",
+    removal=(
+        "the solver_* parameters and their deprecated-path handling in "
+        "RiemannianManifoldHMC.__init__, and the solver_max_iter init kwarg "
+        "in benchmarks/registry.py (switch it to integrator=)"
+    ),
 )
 
 

@@ -7,15 +7,24 @@ Declaring registers a `DeprecationInfo` in `DEPRECATIONS` at import time;
 each declaration site against this registry, and fails the suite once a
 removal window closes. No removal version is ever written down.
 
-Window rule (the policy's single home): ``since`` is the first release that
-ships the warning; stamp the upcoming release when declaring (if another
-release lands first, re-stamp on merge). The window stays open for
-``grace`` releases starting at ``since`` (the release automation bumps one
-patch per release) and closes after that, or at any newer minor/major,
-whichever comes first. Example: ``since="0.8.3"`` with ``grace=2`` warns in
-0.8.3 and 0.8.4; 0.8.5 (or 0.9.0) must ship the removal. The tests gate one
-release ahead under patch cadence; a deliberate minor/major release closes
-windows at its own tag, so run the removals before jumping.
+Window rule (the policy's single home): a window closes only when BOTH
+conditions hold, releases and calendar time.
+
+- Releases: ``since`` is the first release that ships the warning; stamp
+  the upcoming release when declaring (if another release lands first,
+  re-stamp on merge). The window stays open for ``grace`` releases starting
+  at ``since`` (the release automation bumps one patch per release) and
+  version-expires after that, or at any newer minor/major, whichever comes
+  first.
+- Time: ``deprecated_on`` is the declaration date; the window never closes
+  earlier than ``GRACE_MONTHS`` calendar months after it, so a burst of
+  releases cannot strip users of migration time.
+
+Example: ``since="0.8.3"``, ``grace=2``, ``deprecated_on="2026-08-31"``
+warns in 0.8.3 and 0.8.4; removal is due at 0.8.5 (or 0.9.0), but not
+before 2026-10-31. The tests gate one release ahead under patch cadence; a
+deliberate minor/major release closes windows at its own tag, so run the
+removals before jumping.
 
 This module must stay importable without torch (stdlib only): it runs at
 import time of every module that declares a deprecation.
@@ -23,6 +32,8 @@ import time of every module that declares a deprecation.
 
 from __future__ import annotations
 
+import calendar
+import datetime
 import functools
 import os
 import re
@@ -32,6 +43,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple
 
 GRACE = 2
+GRACE_MONTHS = 2
 
 _RELEASE_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 _PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -86,6 +98,15 @@ def _parse_release(version: str) -> Tuple[int, int, int]:
     return (int(m[1]), int(m[2]), int(m[3]))
 
 
+def _add_months(day: datetime.date, months: int) -> datetime.date:
+    month_index = day.month - 1 + months
+    year = day.year + month_index // 12
+    month = month_index % 12 + 1
+    return datetime.date(
+        year, month, min(day.day, calendar.monthrange(year, month)[1])
+    )
+
+
 def _find_stacklevel() -> int:
     r"""Stacklevel that attributes a warning to the first caller outside
     torchebm and torch (the pandas ``find_stack_level`` idiom)."""
@@ -117,9 +138,11 @@ class DeprecationInfo:
 
     name: str
     since: str
+    deprecated_on: str
     replacement: str
     module: str
     grace: int = GRACE
+    grace_months: int = GRACE_MONTHS
     message: str = ""
     removal: str = ""
 
@@ -158,15 +181,30 @@ class DeprecationInfo:
             stacklevel=_find_stacklevel(),
         )
 
-    def removal_due(self, current_version: str) -> bool:
-        r"""Whether ``current_version`` falls past this window (see module
-        docstring for the rule). A current release below ``since`` is never
-        due: stale dev installs lag the released anchors."""
+    def removal_due(
+        self, current_version: str, today: Optional[datetime.date] = None
+    ) -> bool:
+        r"""Whether the window is past for ``current_version`` on ``today``.
+
+        Both conditions of the module-docstring rule must hold: the release
+        window is version-expired AND at least ``grace_months`` calendar
+        months have passed since ``deprecated_on``. A current release below
+        ``since`` is never due: stale dev installs lag the released anchors.
+        """
         cur = _parse_release(current_version)
         anchor = _parse_release(self.since)
         if cur[:2] != anchor[:2]:
-            return cur[:2] > anchor[:2]
-        return cur[2] - anchor[2] >= self.grace
+            version_due = cur[:2] > anchor[:2]
+        else:
+            version_due = cur[2] - anchor[2] >= self.grace
+        if not version_due:
+            return False
+        if today is None:
+            today = datetime.date.today()
+        floor = _add_months(
+            datetime.date.fromisoformat(self.deprecated_on), self.grace_months
+        )
+        return today >= floor
 
 
 DEPRECATIONS: Dict[Tuple[str, str], DeprecationInfo] = {}
@@ -187,9 +225,11 @@ def declare_deprecation(
     *,
     name: str,
     since: str,
+    deprecated_on: str,
     replacement: str,
     module: Optional[str] = None,
     grace: int = GRACE,
+    grace_months: int = GRACE_MONTHS,
     message: str = "",
     removal: str = "",
 ) -> DeprecationInfo:
@@ -203,23 +243,29 @@ def declare_deprecation(
     Args:
         name: The deprecated surface, as a user would name it.
         since: First release shipping the warning (validated eagerly).
+        deprecated_on: ISO declaration date; the window never closes before
+            ``grace_months`` months after it (validated eagerly).
         replacement: What users migrate to.
         module: Declaring module; defaults to the caller's ``__name__``.
             Pass ``module=__name__`` explicitly when wrapping this call.
         grace: Releases the window stays open, counting ``since``.
+        grace_months: Calendar months the window stays open at minimum.
         message: Full warning text; derived from name/replacement if empty.
         removal: What to delete when the window closes (shown by the gate).
     """
     if module is None:
         module = sys._getframe(1).f_globals.get("__name__", "<unknown>")
     _parse_release(since)
+    datetime.date.fromisoformat(deprecated_on)
     return _register(
         DeprecationInfo(
             name=name,
             since=since,
+            deprecated_on=deprecated_on,
             replacement=replacement,
             module=module,
             grace=int(grace),
+            grace_months=int(grace_months),
             message=message,
             removal=removal,
         )
@@ -229,8 +275,10 @@ def declare_deprecation(
 def deprecated(
     *,
     since: str,
+    deprecated_on: str,
     replacement: str,
     grace: int = GRACE,
+    grace_months: int = GRACE_MONTHS,
     message: str = "",
     removal: str = "",
 ) -> Callable:
@@ -250,9 +298,11 @@ def deprecated(
         info = declare_deprecation(
             name=obj.__qualname__,
             since=since,
+            deprecated_on=deprecated_on,
             replacement=replacement,
             module=obj.__module__,
             grace=grace,
+            grace_months=grace_months,
             message=message,
             removal=removal,
         )

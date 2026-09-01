@@ -14,7 +14,8 @@ from torchebm._deprecation import declare_deprecation
 _CD_OPTION_KWARGS_DEPRECATION = declare_deprecation(
     module=__name__,
     name="ContrastiveDivergence loss-option call kwargs",
-    since="0.8.3",
+    since="0.8.4",
+    deprecated_on="2026-08-31",
     replacement="the energy_reg_weight/add_noise_to_real/noise_scale constructor parameters",
     message=(
         "Passing energy_reg_weight/add_noise_to_real/noise_scale to "
