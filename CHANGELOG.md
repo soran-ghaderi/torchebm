@@ -5,6 +5,37 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5](https://github.com/soran-ghaderi/torchebm/compare/v0.8.4...v0.8.5) - 2026-09-01
+
+### Added
+
+- [`230737f`](https://github.com/soran-ghaderi/torchebm/commit/230737fbf2d0fb492890bbb703ee0f2e0c855d12) - rectangular token grids and explicit label null token (#273)
+- [`6c4c022`](https://github.com/soran-ghaderi/torchebm/commit/6c4c0226224371062bfad4af96131898aa7b7245) - dit backbone with standard size presets (#273)
+- [`a2b7c3e`](https://github.com/soran-ghaderi/torchebm/commit/a2b7c3e1f9fc0eda977ecef2db816979264de9cd) - adaln-zero mlp block and linear head components (#275)
+- [`752f725`](https://github.com/soran-ghaderi/torchebm/commit/752f7255295646e0f4bc428cae0c8ad1fb8d6575) - timeconditionedmlp with adaln-zero and concat conditioning (#275)
+- [`c5b93e9`](https://github.com/soran-ghaderi/torchebm/commit/c5b93e961b1783d288a7b20d030c4059b13c0e1c) - fused ema of model weights with decay schedules (#276)
+- [`ce3f2f8`](https://github.com/soran-ghaderi/torchebm/commit/ce3f2f8b69148b021518e5eb03819ad10fd841f7) - self-registering deprecation api with computed removal windows (#277)
+- [`f5e5408`](https://github.com/soran-ghaderi/torchebm/commit/f5e54089dac580e34dcea52b5e45b1c236b7b436) - calendar-month floor on deprecation removal windows (#277)
+
+### Changed
+
+- [`e9f17b0`](https://github.com/soran-ghaderi/torchebm/commit/e9f17b0279c9f5d35ea86effd3017a6339fc5b0f) - deprecate conditionaltransformer2d in favor of dit (#273)
+- [`4a0a515`](https://github.com/soran-ghaderi/torchebm/commit/4a0a515c6ef2f796a0a7cc285fb0e35784f49576) - shared conditional backbone base under dit (#275)
+- [`c132073`](https://github.com/soran-ghaderi/torchebm/commit/c132073eb6da9ac32d1ee9ba1a67d39d9f9ec5f8) - declare deprecations at their sites via the deprecation api (#277)
+
+### Fixed
+
+- [`184f49c`](https://github.com/soran-ghaderi/torchebm/commit/184f49c091e94bd7bba6c4e0ca9366d0ee7a3537) - exact sincos tables and reference dit weight init (#273)
+- [`381bea8`](https://github.com/soran-ghaderi/torchebm/commit/381bea8530fea43617404ec63acbfc20aa330b3e) - force label drop independent of dropout probability (#273)
+- [`eac738d`](https://github.com/soran-ghaderi/torchebm/commit/eac738da534ae11ab7059c545d2797210d742d42) - grace window for conditioning probe on zero-initialized models (#273)
+- [`9ded6cb`](https://github.com/soran-ghaderi/torchebm/commit/9ded6cb3c1fffa9c75534ea026b43a8a474a6252) - register flow matching loss velocity spec (#268)
+
+### Other
+
+- [`10c5368`](https://github.com/soran-ghaderi/torchebm/commit/10c5368ee349a99d788049de59f36b96889d053d) - flow matching in 2d with timeconditionedmlp (#275)
+- [`c971744`](https://github.com/soran-ghaderi/torchebm/commit/c971744c8f7ee512840a2186e25c7804c88b9ebc) - flow matching trains time-conditioned dit (#273)
+- [`d46d7eb`](https://github.com/soran-ghaderi/torchebm/commit/d46d7ebb94ca4c2c5bab3895575b124fc5b63320) - derive the deprecation ledger from declaration sites (#277)
+
 ## [0.8.4](https://github.com/soran-ghaderi/torchebm/compare/v0.8.3...v0.8.4) - 2026-09-01
 
 ### Other
