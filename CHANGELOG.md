@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-09-01
+
+### Other
+
+- [`f3c9672`](https://github.com/soran-ghaderi/torchebm/commit/f3c9672d6cbbe84b5476975144e997408cc7a187) - use changelog section as github release body
+
 ## [0.8.3] - 2026-09-01
 
 ### Other

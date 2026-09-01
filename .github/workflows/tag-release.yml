@@ -124,13 +124,31 @@ jobs:
         password: ${{ secrets.PYPI_API_TOKEN_EBM }}
         verbose: true
 
+    # The release body is the tag's own CHANGELOG.md section (commit-level
+    # detail); GitHub's generated notes (PR list + Full Changelog link) are
+    # appended below it. An empty extract (version mismatch) falls back to
+    # the generated notes alone.
+    - name: Extract release notes from CHANGELOG.md
+      env:
+        RELEASE_TAG: ${{ needs.update-tag.outputs.new_tag }}
+      run: |
+        awk -v ver="${RELEASE_TAG#v}" '
+          $0 ~ ("^## \\[" ver "\\]") {found=1; next}
+          /^## \[/ {found=0}
+          found
+        ' CHANGELOG.md > release_body.md
+
     - name: Create GitHub Release
       uses: actions/github-script@v7
       env:
         RELEASE_TAG: ${{ needs.update-tag.outputs.new_tag }}
       with:
         script: |
+          const fs = require('fs');
+          let body = '';
+          try { body = fs.readFileSync('release_body.md', 'utf8').trim(); } catch {}
           const response = await github.rest.repos.createRelease({
+            body: body,
             draft: false,
             generate_release_notes: true,
             name: process.env.RELEASE_TAG,
