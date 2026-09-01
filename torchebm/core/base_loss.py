@@ -15,10 +15,24 @@ from torchebm.core import BaseSampler
 from torchebm.core import BaseScheduler
 from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
+from torchebm._deprecation import declare_deprecation
 from torchebm.core.base_module import (
     _unexpected_init_args_message,
     substitute_condition,
-    warn_once,
+)
+
+# First warned in v0.7.5; window restarted when the deprecation ledger was
+# adopted.
+_BARE_MODEL_KWARGS_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="bare model-conditioning kwargs",
+    since="0.8.3",
+    replacement="model_kwargs={...}",
+    message=(
+        "Passing model conditioning as bare keyword arguments is "
+        "deprecated; pass model_kwargs={...} instead."
+    ),
+    removal="the legacy_kwargs merge path in _resolve_model_kwargs and every caller's bare **kwargs forwarding",
 )
 
 logger = logging.getLogger(__name__)
@@ -228,23 +242,19 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         self,
         model_kwargs: Optional[dict],
         legacy_kwargs: Optional[dict] = None,
-        *,
-        warn_key: str,
     ) -> dict:
         r"""Merge explicit `model_kwargs` with deprecated bare ``**kwargs``.
 
         Shared shim for losses whose bare ``**kwargs`` historically meant *model*
         conditioning (EqM, EM, score matching). The explicit dict wins on key
         conflicts; a non-empty legacy mapping triggers a one-time
-        ``DeprecationWarning`` keyed by `warn_key`. The result is device-
+        ``DeprecationWarning`` per concrete loss class. The result is device-
         normalized once (see `_prepare_model_kwargs`) and is a fresh dict, so it
         never aliases the caller's mapping.
         """
         if legacy_kwargs:
-            warn_once(
-                warn_key,
-                "Passing model conditioning as bare keyword arguments is "
-                "deprecated; pass model_kwargs={...} instead.",
+            _BARE_MODEL_KWARGS_DEPRECATION.warn(
+                qualifier=f"{type(self).__module__}.{type(self).__qualname__}"
             )
             merged = {**legacy_kwargs, **(model_kwargs or {})}
         else:
@@ -390,11 +400,7 @@ class BaseInterpolantLoss(BaseLoss):
         Returns:
             Scalar loss value.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs,
-            kwargs,
-            warn_key=f"{type(self).__name__}-bare-model-kwargs",
-        )
+        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         terms = self.training_losses(

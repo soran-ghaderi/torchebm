@@ -18,8 +18,8 @@ from torchebm.core import (
     BaseScheduler,
     BaseSDERungeKuttaIntegrator,
     expand_t_like_x,
-    warn_once,
 )
+from torchebm._deprecation import declare_deprecation
 from torchebm.integrators.integrator_utils import resolve_integrator
 from torchebm.interpolants import (
     CosineInterpolant,
@@ -27,6 +27,20 @@ from torchebm.interpolants import (
     VariancePreservingInterpolant,
 )
 from torchebm.interpolants.interpolant_utils import resolve_interpolant
+
+# First warned in v0.7.5; window restarted when the deprecation ledger was
+# adopted.
+_BARE_SAMPLE_KWARGS_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="FlowSampler.sample bare conditioning kwargs",
+    since="0.8.3",
+    replacement="model_kwargs={...}",
+    message=(
+        "Passing conditioning to FlowSampler.sample() as bare keyword "
+        "arguments is deprecated; pass model_kwargs={...} instead."
+    ),
+    removal="the **legacy_model_kwargs parameter and its merge in FlowSampler.sample",
+)
 
 # Sampling-call kwargs removed with the sample_ode/sample_sde retirement.
 # Guarded so stale call sites fail loudly instead of silently forwarding
@@ -451,11 +465,7 @@ class FlowSampler(BaseSampler):
                 "dim=(...) instead of shape."
             )
         if legacy_model_kwargs:
-            warn_once(
-                "flowsampler-bare-model-kwargs",
-                "Passing conditioning to FlowSampler.sample() as bare keyword "
-                "arguments is deprecated; pass model_kwargs={...} instead.",
-            )
+            _BARE_SAMPLE_KWARGS_DEPRECATION.warn()
         model_kwargs = self._prepare_model_kwargs(
             self._merge_condition(
                 {**legacy_model_kwargs, **(model_kwargs or {})}, y

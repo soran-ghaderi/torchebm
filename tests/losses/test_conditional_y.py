@@ -5,7 +5,7 @@ model_kwargs channel), y=None keeps the unconditional path identical, and
 passing y both ways at once fails loudly.
 """
 
-import unittest.mock
+import warnings
 
 import pytest
 import torch
@@ -142,9 +142,9 @@ def test_y_none_is_identical_to_omitting(model_cls, factory):
 
 def test_y_does_not_trigger_deprecated_kwargs_path():
     loss_fn = EquilibriumMatchingLoss(model=RecordingField())
-    with unittest.mock.patch("torchebm.core.base_loss.warn_once") as warn:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
         loss_fn(torch.randn(4, 4), y=torch.randint(0, 3, (4,)))
-    warn.assert_not_called()
 
 
 def test_y_conflict_with_model_kwargs_raises():

@@ -112,9 +112,7 @@ class ScoreMatching(BaseScoreMatching):
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            mk = self._resolve_model_kwargs(
-                model_kwargs, kwargs, warn_key="sm-bare-model-kwargs"
-            )
+            mk = self._resolve_model_kwargs(model_kwargs, kwargs)
             loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
@@ -140,9 +138,7 @@ class ScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar score matching loss.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs, warn_key="sm-bare-model-kwargs"
-        )
+        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         if self.hessian_method == "approx":
@@ -334,9 +330,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            mk = self._resolve_model_kwargs(
-                model_kwargs, kwargs, warn_key="dsm-bare-model-kwargs"
-            )
+            mk = self._resolve_model_kwargs(model_kwargs, kwargs)
             loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
@@ -361,9 +355,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs, warn_key="dsm-bare-model-kwargs"
-        )
+        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         x_perturbed, noise = self.perturb_data(x, generator=generator)
@@ -534,9 +526,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs, warn_key="ssm-bare-model-kwargs"
-        )
+        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
         if mk:
             raise NotImplementedError(
                 "Conditional sliced score matching is not supported (random "

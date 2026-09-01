@@ -7,7 +7,22 @@ from torch import nn
 from abc import abstractmethod
 
 from torchebm.core import BaseContrastiveDivergence
-from torchebm.core.base_module import warn_once
+from torchebm._deprecation import declare_deprecation
+
+# First warned in v0.7.5; window restarted when the deprecation ledger was
+# adopted.
+_CD_OPTION_KWARGS_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="ContrastiveDivergence loss-option call kwargs",
+    since="0.8.3",
+    replacement="the energy_reg_weight/add_noise_to_real/noise_scale constructor parameters",
+    message=(
+        "Passing energy_reg_weight/add_noise_to_real/noise_scale to "
+        "ContrastiveDivergence.__call__ is deprecated; set them on the "
+        "constructor instead."
+    ),
+    removal="the _CD_OPTION_KEYS forwarding shim in ContrastiveDivergence.forward",
+)
 
 
 class ContrastiveDivergence(BaseContrastiveDivergence):
@@ -121,12 +136,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         self._check_condition(x, model_kwargs)
         model_kwargs = self._apply_cfg_dropout(model_kwargs, generator)
         if any(key in kwargs for key in self._CD_OPTION_KEYS):
-            warn_once(
-                "cd-option-kwargs",
-                "Passing energy_reg_weight/add_noise_to_real/noise_scale to "
-                "ContrastiveDivergence.__call__ is deprecated; set them on the "
-                "constructor instead.",
-            )
+            _CD_OPTION_KWARGS_DEPRECATION.warn()
 
         batch_size = x.shape[0]
         data_shape = x.shape[1:]

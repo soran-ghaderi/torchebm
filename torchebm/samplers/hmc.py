@@ -1,11 +1,11 @@
 r"""Hamiltonian Monte Carlo Sampler Module and Riemannian Manifold Hamiltonian Monte Carlo sampler."""
 
 import math
-import warnings
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
 
+from torchebm._deprecation import declare_deprecation
 from torchebm.core import (
     BaseModel,
     BaseSampler,
@@ -14,6 +14,22 @@ from torchebm.core import (
 )
 from torchebm.integrators import GeneralisedLeapfrogIntegrator
 from torchebm.integrators.integrator_utils import resolve_integrator
+
+# First warned in v0.6.2; window restarted when the deprecation ledger was
+# adopted.
+_SOLVER_ARGS_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="RiemannianManifoldHMC solver_max_iter/solver_tol/solver_check_every",
+    since="0.8.3",
+    replacement="GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) passed as integrator=",
+    message=(
+        "solver_max_iter/solver_tol/solver_check_every on "
+        "RiemannianManifoldHMC are deprecated; construct "
+        "GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) "
+        "and pass it as integrator=."
+    ),
+    removal="the solver_* parameters and their deprecated-path handling in RiemannianManifoldHMC.__init__",
+)
 
 
 class HamiltonianMonteCarlo(BaseSampler):
@@ -420,14 +436,7 @@ class RiemannianManifoldHMC(BaseSampler):
                     "arguments, not both. Set the solver options on the "
                     "GeneralisedLeapfrogIntegrator instance instead."
                 )
-            warnings.warn(
-                "solver_max_iter/solver_tol/solver_check_every on "
-                "RiemannianManifoldHMC are deprecated; construct "
-                "GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) "
-                "and pass it as integrator=.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            _SOLVER_ARGS_DEPRECATION.warn()
         if solver_kwargs_given:
             # Deprecated path (integrator= excluded above): thread the old
             # solver options into a directly constructed integrator.

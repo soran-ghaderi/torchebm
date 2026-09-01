@@ -311,7 +311,7 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             Scalar loss value.
         """
         mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs, warn_key="em-bare-model-kwargs"
+            model_kwargs, kwargs
         )
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)

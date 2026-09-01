@@ -1,6 +1,16 @@
 import pytest
 import torch
 
+from torchebm._deprecation import _WARNED_ONCE
+
+
+@pytest.fixture(autouse=True)
+def _reset_warn_once():
+    """Clear the once-per-process warning dedup before every test, so
+    pytest.warns assertions never depend on test order."""
+    _WARNED_ONCE.clear()
+    yield
+
 
 def requires_cuda(func):
     """Skip test if CUDA is not available or no NVIDIA driver is found.

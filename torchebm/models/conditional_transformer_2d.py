@@ -4,10 +4,24 @@ from typing import Optional
 
 import torch
 
-from torchebm.core import warn_once
+from torchebm._deprecation import deprecated
 from torchebm.models.dit import DiT
 
 
+@deprecated(
+    since="0.8.3",
+    replacement="torchebm.models.DiT",
+    message=(
+        "ConditionalTransformer2D is deprecated; use torchebm.models.DiT "
+        "(forward(x, cond=...) reproduces this model exactly)"
+    ),
+    removal=(
+        "torchebm/models/conditional_transformer_2d.py, its export in "
+        "torchebm/models/__init__.py, "
+        "tests/models/test_conditional_transformer_2d.py, and its entry in "
+        "tests/models/test_constructor_kwargs.py"
+    ),
+)
 class ConditionalTransformer2D(DiT):
     """Deprecated: use `DiT` instead.
 
@@ -34,11 +48,6 @@ class ConditionalTransformer2D(DiT):
         mlp_ratio: float = 4.0,
         use_sincos_pos_embed: bool = True,
     ):
-        warn_once(
-            "ConditionalTransformer2D-deprecated",
-            "ConditionalTransformer2D is deprecated; use torchebm.models.DiT "
-            "(forward(x, cond=...) reproduces this model exactly)",
-        )
         super().__init__(
             input_size=input_size,
             patch_size=patch_size,
