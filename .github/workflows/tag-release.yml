@@ -79,69 +79,13 @@ jobs:
         git tag $new_tag
         git push origin $new_tag
 
-  # CHANGELOG.md automation: every master push (PR merge) refreshes the
-  # [Unreleased] section from all commits since the last GitHub Release; a
-  # '#release' push instead promotes that range to a version section. Ranges
-  # are bounded by real releases, never by the per-push tags minted above.
-  # The bot commits carry [skip ci], so they trigger neither tags nor CI.
-  changelog:
-    if: ${{ !contains(github.event.head_commit.message, '#release') }}
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Render unreleased changes
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        pip install --quiet git-cliff
-        last=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
-        git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
-        python scripts/update_changelog.py unreleased --body body.md
-        rm body.md
-
-    - name: Commit CHANGELOG.md
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        branch: master
-        commit_message: "chore(changelog): refresh unreleased [skip ci]"
-        file_pattern: CHANGELOG.md
-
-  changelog-release:
-    needs: [update-tag]
-    if: contains(github.event.head_commit.message, '#release')
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Promote unreleased to ${{ needs.update-tag.outputs.new_tag }}
-      env:
-        GH_TOKEN: ${{ github.token }}
-        NEW_TAG: ${{ needs.update-tag.outputs.new_tag }}
-      run: |
-        pip install --quiet git-cliff
-        last=$(gh release list --json tagName --jq '.[].tagName' | grep -vx "$NEW_TAG" | head -1)
-        git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
-        python scripts/update_changelog.py release --version "$NEW_TAG" \
-          --date "$(date -u +%F)" --body body.md
-        rm body.md
-
-    - name: Commit CHANGELOG.md
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        branch: master
-        commit_message: "chore(changelog): release ${{ needs.update-tag.outputs.new_tag }} [skip ci]"
-        file_pattern: CHANGELOG.md
-
+  # CHANGELOG.md is maintained locally and lands through PRs (the master
+  # ruleset rejects direct pushes): git-cliff + scripts/update_changelog.py
+  # run on the PR branch before merge. See scripts/update_changelog.py.
+  # Every master push publishes the tag minted above to PyPI and GitHub
+  # Releases; there is no separate release trigger.
   release:
     needs: [update-tag]
-    if: contains(github.event.head_commit.message, '#release')
     runs-on: ubuntu-latest
 
     steps:
@@ -180,13 +124,31 @@ jobs:
         password: ${{ secrets.PYPI_API_TOKEN_EBM }}
         verbose: true
 
+    # The release body is the tag's own CHANGELOG.md section (commit-level
+    # detail); GitHub's generated notes (PR list + Full Changelog link) are
+    # appended below it. An empty extract (version mismatch) falls back to
+    # the generated notes alone.
+    - name: Extract release notes from CHANGELOG.md
+      env:
+        RELEASE_TAG: ${{ needs.update-tag.outputs.new_tag }}
+      run: |
+        awk -v ver="${RELEASE_TAG#v}" '
+          $0 ~ ("^## \\[" ver "\\]") {found=1; next}
+          /^## \[/ {found=0}
+          found
+        ' CHANGELOG.md > release_body.md
+
     - name: Create GitHub Release
       uses: actions/github-script@v7
       env:
         RELEASE_TAG: ${{ needs.update-tag.outputs.new_tag }}
       with:
         script: |
+          const fs = require('fs');
+          let body = '';
+          try { body = fs.readFileSync('release_body.md', 'utf8').trim(); } catch {}
           const response = await github.rest.repos.createRelease({
+            body: body,
             draft: false,
             generate_release_notes: true,
             name: process.env.RELEASE_TAG,

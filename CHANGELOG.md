@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-09-01
+
+### Other
+
+- [`f3c9672`](https://github.com/soran-ghaderi/torchebm/commit/f3c9672d6cbbe84b5476975144e997408cc7a187) - use changelog section as github release body
+
+## [0.8.3] - 2026-09-01
+
+### Other
+
+- [`0652106`](https://github.com/soran-ghaderi/torchebm/commit/06521066da5bfcb108c248186c8cee908b8fba7b) - maintain changelog locally on pr branches
+- [`a6e9309`](https://github.com/soran-ghaderi/torchebm/commit/a6e9309424292ee46595d655fa89a6d6bf989f45) - publish every master merge to pypi
+- [`336fb75`](https://github.com/soran-ghaderi/torchebm/commit/336fb7561496ada081804af82debab2b1f1e3157) - promote versioned changelog on pr branches and drop manual tag publisher
+- [`3a2a685`](https://github.com/soran-ghaderi/torchebm/commit/3a2a685eaf9bac7fb06e3bac7e909f7f28e02581) - strip only own sections so released backfills survive
+
+## [0.8.2] - 2026-08-30
+
+### Added
+
+- [`d382bb2`](https://github.com/soran-ghaderi/torchebm/commit/d382bb2d2c4f79abecfdae7cceacd389be3a9d7f) - explicit y conditioning passthrough on loss forwards (#261)
+- [`6598212`](https://github.com/soran-ghaderi/torchebm/commit/6598212b588f3aade979a5ab8621fde021c77661) - explicit y conditioning passthrough on loss forwards (#261)
+- [`665003b`](https://github.com/soran-ghaderi/torchebm/commit/665003b274f343701de5df8f8277e25661ecfe72) - classifier-free guidance label dropout with pluggable null condition (#262)
+- [`99a073c`](https://github.com/soran-ghaderi/torchebm/commit/99a073cfc3d3a03c395ea3568a85ac5fce59643d) - batched classifier-free guidance wrapper usable by every sampler (#262)
+- [`77b0e3c`](https://github.com/soran-ghaderi/torchebm/commit/77b0e3cb624a66493549c7a9558a430f4b29a9d2) - explicit y conditioning passthrough on sample (#262)
+- [`1e64121`](https://github.com/soran-ghaderi/torchebm/commit/1e641219d8ae40d087476a2da4c2d8a0498b141a) - probe that the model consumes y on the first conditional call (#263)
+- [`620d493`](https://github.com/soran-ghaderi/torchebm/commit/620d4931c1a04008d232e9d5423f4fb820cb863b) - standard conditional flow matching loss (#268)
+- [`ba785fe`](https://github.com/soran-ghaderi/torchebm/commit/ba785fe580d0457a292f9213a71f43f19cc6adc5) - reject unknown constructor kwargs with supported params and version (#269)
+
+### Changed
+
+- [`eb090ef`](https://github.com/soran-ghaderi/torchebm/commit/eb090ef68e85e8e838849b43fd35a9ab34d4f88a) - shared internal base for interpolant losses (#266)
+- [`09d532a`](https://github.com/soran-ghaderi/torchebm/commit/09d532ae9d9663f09bb32b1d73111c400ae8291e) - shared internal base for interpolant losses (#266) + t sampler and per-timestep weight hook on energy matching (#267)
+- [`47d8e3c`](https://github.com/soran-ghaderi/torchebm/commit/47d8e3ccc06aacef985ab29fed5c86ed436188e3) - shared internal base for interpolant losses (#266)
+
+## [0.8.0] - 2026-08-28
+
 ### Added
 
 - [`e9a0aaa`](https://github.com/soran-ghaderi/torchebm/commit/e9a0aaab45584d4986d23e3205d5993b75e0e37d) - add guarded process-group helpers + gloo spawn harness and fsdp2 score-matching pins
@@ -17,15 +53,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`bbef1b8`](https://github.com/soran-ghaderi/torchebm/commit/bbef1b83efa7630f1190fffa980132298be9e470) - opt-in cross-rank pcd replay buffer mixing + rank-local semantics and checkpoint contract
 - [`0211394`](https://github.com/soran-ghaderi/torchebm/commit/02113943cee5dae92066b8d8aa21c14ab81f42fa) - process-group-aware global-batch sinkhorn coupling with rank0-broadcast draws
 - [`fdfe71b`](https://github.com/soran-ghaderi/torchebm/commit/fdfe71baaaa928099243c7980b0bf916a488dc52) - fail-fast second-order guards under sharded params + fsdp2 loss parity matrix (#248)
+- [`2ac1a61`](https://github.com/soran-ghaderi/torchebm/commit/2ac1a618688b1a84ef816d2b6c31a67f996bcb84) - pluggable c(t) weight family with constant flow matching endpoint (#254)
+- [`91a824c`](https://github.com/soran-ghaderi/torchebm/commit/91a824ce2834dfee8c2b092c2179710eb75185d6) - probe that the model consumes t when time_invariant is false (#255)
+- [`27d659e`](https://github.com/soran-ghaderi/torchebm/commit/27d659e81e8958db7598bdbf5bf5f1c9fe882686) - edm lognormal t sampler and per-timestep loss weight hook (#256)
 
 ### Changed
 
 - [`aac6092`](https://github.com/soran-ghaderi/torchebm/commit/aac6092fa57594cd378ba1d8cbc0899a65aacde3) - point tests and docs at the relocated utils shim
+- [`f6a162b`](https://github.com/soran-ghaderi/torchebm/commit/f6a162b8da74838246d52c7ce919d77d4f605736) - drop unused device and dtype args from _resolve_diffusion
 
 ### Fixed
 
 - [`56e6522`](https://github.com/soran-ghaderi/torchebm/commit/56e65226f7c2a631c7dd9c154e30f5fbefed0aa6) - numpy-free tensor broadcasts + optimizer-ready grads on the functional score path (#249)
 - [`c12a58f`](https://github.com/soran-ghaderi/torchebm/commit/c12a58fbf9efb70c85aae7f623f049f9dbaa0fd3) - numpy-free tensor broadcasts + optimizer-ready grads on the functional score path, shim moved to utils (#249)
+- [`ab991d3`](https://github.com/soran-ghaderi/torchebm/commit/ab991d3877c84a70ad4d451760111b5819b088ed) - reject unknown constructor kwargs with supported params and version (#253)
+- [`dab078a`](https://github.com/soran-ghaderi/torchebm/commit/dab078a3dfed9f4e271261236470bad517f7c81c) - condition eqm fields on zeroed time and negated velocity score in flowsampler (#255)
 
 ### Performance
 
@@ -40,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`264a73f`](https://github.com/soran-ghaderi/torchebm/commit/264a73fc990b824290dbb8ab7d93c5d46b426c25) - standard software title, unified bibtex, orcid and preferred-citation
 - [`86a5c6c`](https://github.com/soran-ghaderi/torchebm/commit/86a5c6c603132980459c62a630cd52655fa43acd) - pin ema updates on identically sharded params and the dcp + rank-local checkpoint recipe
 - [`3499d43`](https://github.com/soran-ghaderi/torchebm/commit/3499d435d4a0082f997d70c9f61d8ec17a0af143) - device-generic nccl harness and 4-gpu fsdp2 training-step benchmark (#249)
+- [`b9c6030`](https://github.com/soran-ghaderi/torchebm/commit/b9c603093abfd4475afa0b5a2bba7653725fa36a) - regenerate unreleased on merges and promote on releases via git-cliff
+- [`7ee7cfd`](https://github.com/soran-ghaderi/torchebm/commit/7ee7cfdc85679e912512af7592a24707a161e30a) - regenerate 0.7.1, 0.7.5, and unreleased sections from commit history
+- [`1e0fc43`](https://github.com/soran-ghaderi/torchebm/commit/1e0fc43bf062f227d0e30f9a54fb725c88d28ab0) - pin sde integration through the noise_scale path
+- [`3a84ff6`](https://github.com/soran-ghaderi/torchebm/commit/3a84ff616f1f6b1dd2631956f98944e266a89e01) - single rendered bibtex with a drift check against citation.cff
 
 ## [0.7.5] - 2026-07-16
 
