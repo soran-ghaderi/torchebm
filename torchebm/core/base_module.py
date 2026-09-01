@@ -20,6 +20,8 @@ import warnings
 import torch
 from torch import nn
 
+from torchebm._deprecation import _WARNED_ONCE, warn_once  # compat re-exports
+
 
 def _normalize(device: torch.device) -> torch.device:
     if device.type == "cuda" and device.index == 0:
@@ -89,28 +91,6 @@ def substitute_condition(y, mask, null):
     if isinstance(null, torch.Tensor):
         return torch.where(mask, null.to(device=y.device, dtype=y.dtype), y)
     return torch.where(mask, torch.full_like(y, null), y)
-
-
-_WARNED_ONCE: set = set()
-
-
-def warn_once(
-    key: str,
-    message: str,
-    category: type = DeprecationWarning,
-    stacklevel: int = 3,
-) -> None:
-    r"""Emit a warning at most once per process, keyed by `key`.
-
-    Deprecation paths on hot code (per-step sampler loops, per-batch losses)
-    must not call `warnings.warn` every iteration: even when the filter shows a
-    warning only once, the per-call filter processing adds avoidable overhead.
-    This guard skips the call entirely after the first hit.
-    """
-    if key in _WARNED_ONCE:
-        return
-    _WARNED_ONCE.add(key)
-    warnings.warn(message, category, stacklevel=stacklevel)
 
 
 class TorchEBMModule(nn.Module):
