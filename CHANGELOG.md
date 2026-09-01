@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-09-01
+
+### Other
+
+- [`0652106`](https://github.com/soran-ghaderi/torchebm/commit/06521066da5bfcb108c248186c8cee908b8fba7b) - maintain changelog locally on pr branches
+- [`a6e9309`](https://github.com/soran-ghaderi/torchebm/commit/a6e9309424292ee46595d655fa89a6d6bf989f45) - publish every master merge to pypi
+- [`336fb75`](https://github.com/soran-ghaderi/torchebm/commit/336fb7561496ada081804af82debab2b1f1e3157) - promote versioned changelog on pr branches and drop manual tag publisher
+- [`3a2a685`](https://github.com/soran-ghaderi/torchebm/commit/3a2a685eaf9bac7fb06e3bac7e909f7f28e02581) - strip only own sections so released backfills survive
+
 ## [0.8.2] - 2026-08-30
 
 ### Added
