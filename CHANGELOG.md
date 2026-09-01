@@ -5,8 +5,6 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [0.8.4] - 2026-09-01
 
 ### Other
@@ -569,7 +567,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`6007e01`](https://github.com/soran-ghaderi/torchebm/commit/6007e017ecc02c2d508cb4492fb80c74fecfd097) - example test for ci/cd
 - [`12f1490`](https://github.com/soran-ghaderi/torchebm/commit/12f149092e5d034390b551cdcf388fb3a885498d) - add tests
 
-[Unreleased]: https://github.com/soran-ghaderi/torchebm/compare/v0.7.5...HEAD
 [0.7.5]: https://github.com/soran-ghaderi/torchebm/compare/v0.7.1...v0.7.5
 [0.7.1]: https://github.com/soran-ghaderi/torchebm/compare/v0.6.0...v0.7.1
 [0.6.0]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.8...v0.6.0
