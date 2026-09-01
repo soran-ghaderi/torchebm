@@ -1,5 +1,6 @@
 r"""Utility functions for TorchEBM."""
 
+from .ema import EMA
 from .training import (
     update_ema,
     requires_grad,
@@ -18,6 +19,7 @@ from .distributed import (
 )
 
 __all__ = [
+    "EMA",
     "update_ema",
     "requires_grad",
     "save_checkpoint",

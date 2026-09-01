@@ -21,8 +21,10 @@ from torchebm.core import (
 from torchebm.models import (
     ClassifierFreeGuidance,
     ConditionalTransformer2D,
+    DiT,
     EqMEnergy,
     InteractionModel,
+    TimeConditionedMLP,
 )
 
 
@@ -68,6 +70,22 @@ FIXED_SIGNATURE = [
             **kw,
         ),
         id="ConditionalTransformer2D",
+    ),
+    pytest.param(
+        lambda **kw: DiT(
+            input_size=4,
+            patch_size=2,
+            in_channels=1,
+            embed_dim=8,
+            depth=1,
+            num_heads=2,
+            **kw,
+        ),
+        id="DiT",
+    ),
+    pytest.param(
+        lambda **kw: TimeConditionedMLP(in_dim=2, hidden_dim=8, depth=1, **kw),
+        id="TimeConditionedMLP",
     ),
 ]
 

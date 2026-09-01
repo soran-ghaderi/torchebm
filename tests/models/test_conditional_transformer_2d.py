@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from torchebm.core.base_module import _WARNED_ONCE
 from torchebm.models.conditional_transformer_2d import ConditionalTransformer2D
 
 
@@ -17,6 +18,12 @@ def _tiny_model(**overrides):
     )
     cfg.update(overrides)
     return ConditionalTransformer2D(**cfg)
+
+
+def test_deprecation_warning():
+    _WARNED_ONCE.clear()
+    with pytest.warns(DeprecationWarning, match="DiT"):
+        _tiny_model()
 
 
 def test_conditional_transformer_shape():

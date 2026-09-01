@@ -128,6 +128,10 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
             "interpolant": "linear",
         },
     },
+    "FlowMatchingLoss": {
+        "model_type": "velocity",
+        "init_kwargs": {"interpolant": "linear"},
+    },
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without

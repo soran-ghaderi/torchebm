@@ -83,3 +83,32 @@ def test_label_embedder_dropout_raises_without_null_id():
     labels = torch.tensor([0, 1])
     with pytest.raises(RuntimeError):
         emb.maybe_drop_labels(labels)
+
+
+def test_label_embedder_null_token_without_dropout():
+    emb = LabelEmbedder(num_classes=4, out_dim=8, dropout_prob=0.0, null_token=True)
+    assert emb.null_label_id == 4
+    assert emb.embedding.num_embeddings == 5
+    labels = torch.tensor([0, 1, 2, 3])
+    out = emb.maybe_drop_labels(labels)
+    assert torch.equal(out, labels)
+
+
+def test_label_embedder_force_drop_works_without_dropout():
+    emb = LabelEmbedder(num_classes=4, out_dim=8, dropout_prob=0.0, null_token=True)
+    labels = torch.tensor([0, 1, 2, 3])
+    drop = torch.tensor([True, True, False, False])
+    dropped = emb.maybe_drop_labels(labels, force_drop_mask=drop)
+    assert dropped.tolist() == [4, 4, 2, 3]
+
+
+def test_label_embedder_force_drop_without_null_raises():
+    emb = LabelEmbedder(num_classes=4, out_dim=8, dropout_prob=0.0)
+    labels = torch.tensor([0, 1])
+    with pytest.raises(ValueError, match="null token"):
+        emb.maybe_drop_labels(labels, force_drop_mask=torch.tensor([True, False]))
+
+
+def test_label_embedder_null_token_false_with_dropout_raises():
+    with pytest.raises(ValueError, match="null token"):
+        LabelEmbedder(num_classes=4, out_dim=8, dropout_prob=0.5, null_token=False)

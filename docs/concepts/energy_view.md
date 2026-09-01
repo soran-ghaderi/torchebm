@@ -56,8 +56,8 @@ force = -energy.gradient(x)  # (64, 2), autograd-supplied
 Architecture guidance is the usual for EBMs: smooth activations (SiLU, GELU)
 keep the gradient field well behaved, and the output must remain a raw scalar
 per point (no final nonlinearity). For image-scale conditional models the
-library ships `ConditionalTransformer2D` and its components in
-`torchebm.models`.
+library ships `DiT` (with the standard size presets `dit_s_2` through
+`dit_xl_8`) and its components in `torchebm.models`.
 
 ## Analytic energies
 
