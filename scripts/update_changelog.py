@@ -10,9 +10,10 @@ touched, so manual backfills survive.
 
 Usage:
     python scripts/update_changelog.py release --version vX.Y.Z \
-        --date YYYY-MM-DD --body FILE
+        --date YYYY-MM-DD --body FILE [--link URL]
         Insert a version section at the top (replacing any [Unreleased]
-        block a historical file still carries).
+        block a historical file still carries). With --link the heading
+        becomes an inline link, e.g. to the release's compare view.
 
     python scripts/update_changelog.py strip --above vX.Y.Z
         Remove every version section newer than vX.Y.Z.
@@ -37,6 +38,7 @@ def main() -> None:
     parser.add_argument("--version", help="release mode: version (v prefix ok)")
     parser.add_argument("--date", help="release mode: YYYY-MM-DD")
     parser.add_argument("--above", help="strip mode: last released version")
+    parser.add_argument("--link", help="release mode: URL for the heading link")
     args = parser.parse_args()
     if args.mode == "release" and not (args.version and args.date and args.body):
         parser.error("release mode requires --version, --date and --body")
@@ -64,7 +66,8 @@ def main() -> None:
 
     body = pathlib.Path(args.body).read_text().strip()
     version = args.version.lstrip("v")
-    section = f"## [{version}] - {args.date}\n\n{body}\n\n"
+    title = f"[{version}]({args.link})" if args.link else f"[{version}]"
+    section = f"## {title} - {args.date}\n\n{body}\n\n"
     match = re.search(r"(?m)^## \[", text)
     insert_at = match.start() if match else len(text)
     CHANGELOG.write_text(text[:insert_at] + section + text[insert_at:])

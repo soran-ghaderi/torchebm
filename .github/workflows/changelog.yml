@@ -47,7 +47,8 @@ jobs:
         python scripts/update_changelog.py strip --above "$last"
         git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
         python scripts/update_changelog.py release --version "$next" \
-          --date "$(date -u +%F)" --body body.md
+          --date "$(date -u +%F)" --body body.md \
+          --link "https://github.com/soran-ghaderi/torchebm/compare/${last}...${next}"
         rm body.md
 
     - name: Commit CHANGELOG.md to the PR branch

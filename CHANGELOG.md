@@ -5,13 +5,13 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.4] - 2026-09-01
+## [0.8.4](https://github.com/soran-ghaderi/torchebm/compare/v0.8.3...v0.8.4) - 2026-09-01
 
 ### Other
 
 - [`f3c9672`](https://github.com/soran-ghaderi/torchebm/commit/f3c9672d6cbbe84b5476975144e997408cc7a187) - use changelog section as github release body
 
-## [0.8.3] - 2026-09-01
+## [0.8.3](https://github.com/soran-ghaderi/torchebm/compare/v0.8.2...v0.8.3) - 2026-09-01
 
 ### Other
 
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`336fb75`](https://github.com/soran-ghaderi/torchebm/commit/336fb7561496ada081804af82debab2b1f1e3157) - promote versioned changelog on pr branches and drop manual tag publisher
 - [`3a2a685`](https://github.com/soran-ghaderi/torchebm/commit/3a2a685eaf9bac7fb06e3bac7e909f7f28e02581) - strip only own sections so released backfills survive
 
-## [0.8.2] - 2026-08-30
+## [0.8.2](https://github.com/soran-ghaderi/torchebm/compare/v0.8.0...v0.8.2) - 2026-08-30
 
 ### Added
 
@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`09d532a`](https://github.com/soran-ghaderi/torchebm/commit/09d532ae9d9663f09bb32b1d73111c400ae8291e) - shared internal base for interpolant losses (#266) + t sampler and per-timestep weight hook on energy matching (#267)
 - [`47d8e3c`](https://github.com/soran-ghaderi/torchebm/commit/47d8e3ccc06aacef985ab29fed5c86ed436188e3) - shared internal base for interpolant losses (#266)
 
-## [0.8.0] - 2026-08-28
+## [0.8.0](https://github.com/soran-ghaderi/torchebm/compare/v0.7.5...v0.8.0) - 2026-08-28
 
 ### Added
 
@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`1e0fc43`](https://github.com/soran-ghaderi/torchebm/commit/1e0fc43bf062f227d0e30f9a54fb725c88d28ab0) - pin sde integration through the noise_scale path
 - [`3a84ff6`](https://github.com/soran-ghaderi/torchebm/commit/3a84ff616f1f6b1dd2631956f98944e266a89e01) - single rendered bibtex with a drift check against citation.cff
 
-## [0.7.5] - 2026-07-16
+## [0.7.5](https://github.com/soran-ghaderi/torchebm/compare/v0.7.1...v0.7.5) - 2026-07-16
 
 ### Added
 
@@ -119,7 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`8044140`](https://github.com/soran-ghaderi/torchebm/commit/80441402f2e712d0f935c7d692f4d3f9f2e34811) - lead with simulation-free, gpu-first narrative across pypi, docs, and readme
 - [`e5ce988`](https://github.com/soran-ghaderi/torchebm/commit/e5ce988dfb81edf8444f7cb7ae67824bad074261) - drop verbose inline comments from library code
 
-## [0.7.1] - 2026-07-13
+## [0.7.1](https://github.com/soran-ghaderi/torchebm/compare/v0.6.0...v0.7.1) - 2026-07-13
 
 ### Added
 
@@ -157,7 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`9de9916`](https://github.com/soran-ghaderi/torchebm/commit/9de9916ff5d390fc0016be453e18ca7c9040ebf8) - update changelog for flowsampler standardization (#170)
 - [`84ae09a`](https://github.com/soran-ghaderi/torchebm/commit/84ae09a3264374eb8a63a4323352581723455d11) - readme rewrite and 0.7.1 release notes
 
-## [0.6.0] - 2026-05-31
+## [0.6.0](https://github.com/soran-ghaderi/torchebm/compare/v0.5.8...v0.6.0) - 2026-05-31
 
 ### Added
 
@@ -174,7 +174,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [`ac75c63`](https://github.com/soran-ghaderi/torchebm/commit/ac75c6327cb2bfc235b7c1fc8a35896621372b35) - addcmul fusion + safe clamp + cache metric Cholesky + stiff-metric tests
 
-## [0.5.8] - 2026-02-17
+## [0.5.8](https://github.com/soran-ghaderi/torchebm/compare/v0.5.7...v0.5.8) - 2026-02-17
 
 ### Added
 
@@ -188,7 +188,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`fc4184c`](https://github.com/soran-ghaderi/torchebm/commit/fc4184ca414f30eaf8fecc04b6d6a310eaf38ddc) - enhance documentation for Dopri5 and Dopri8 integrators with additional equations and references
 - [`8d8f0a3`](https://github.com/soran-ghaderi/torchebm/commit/8d8f0a3c56a5c1e3c0fe8f9c64c792c69aea8b07) - update navigation structure and include new integrator classes
 
-## [0.5.7] - 2026-02-12
+## [0.5.7](https://github.com/soran-ghaderi/torchebm/compare/v0.5.6...v0.5.7) - 2026-02-12
 
 ### Changed
 
@@ -200,7 +200,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`f40e0c3`](https://github.com/soran-ghaderi/torchebm/commit/f40e0c30200fbd8c0faec0af14b6149d058767f9) - format mathematical equations in the Equilibrium Matching loss documentation
 - [`49a01bf`](https://github.com/soran-ghaderi/torchebm/commit/49a01bf721bebcc5f214ea788645df5dfa4b3221) - all tests passing for dopri8
 
-## [0.5.6] - 2026-02-12
+## [0.5.6](https://github.com/soran-ghaderi/torchebm/compare/v0.5.4...v0.5.6) - 2026-02-12
 
 ### Added
 
@@ -222,7 +222,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`0a951a2`](https://github.com/soran-ghaderi/torchebm/commit/0a951a2a7d7207bdfb6b33d4045e36a71792a9aa) - remove LLM documentation generation step from CI workflow
 - [`3b9a3d7`](https://github.com/soran-ghaderi/torchebm/commit/3b9a3d7b2a6f5def105d817aec789505ac63f428) - add new animation assets for Gaussian and circles flow
 
-## [0.5.4] - 2026-02-11
+## [0.5.4](https://github.com/soran-ghaderi/torchebm/compare/v0.5.1...v0.5.4) - 2026-02-11
 
 ### Fixed
 
@@ -236,7 +236,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`b102503`](https://github.com/soran-ghaderi/torchebm/commit/b102503b307aa177fe1e9a9875416080410c4a49) - enhance documentation for Equilibrium Matching and add integration tests for single-step scenarios
 - [`a2218e5`](https://github.com/soran-ghaderi/torchebm/commit/a2218e58c3a3f10ef54e5f4a6630cc42ddb5daff) - add LLM documentation generation and update workflows
 
-## [0.5.1] - 2025-12-29
+## [0.5.1](https://github.com/soran-ghaderi/torchebm/compare/v0.5.0...v0.5.1) - 2025-12-29
 
 ### Added
 
@@ -255,7 +255,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`0ec4e4a`](https://github.com/soran-ghaderi/torchebm/commit/0ec4e4aa06296026afd820a160c21966e1635614) - Update torchebm/losses/equilibrium_matching.py
 - [`e9a443d`](https://github.com/soran-ghaderi/torchebm/commit/e9a443d5873357a95687fbd1a3f8814999853836) - Update torchebm/losses/equilibrium_matching.py
 
-## [0.5.0] - 2025-12-23
+## [0.5.0](https://github.com/soran-ghaderi/torchebm/compare/v0.4.0...v0.5.0) - 2025-12-23
 
 ### Added
 
@@ -307,7 +307,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`ea6febe`](https://github.com/soran-ghaderi/torchebm/commit/ea6febee8950ccd62a4b409c1368b004eb7607ec) - untrack generated files and update .gitignore
 - [`d8a81f5`](https://github.com/soran-ghaderi/torchebm/commit/d8a81f55ec86278add9ce5796f5c957994d09449) - update documentation wrt this refactored code
 
-## [0.4.0] - 2025-10-10
+## [0.4.0](https://github.com/soran-ghaderi/torchebm/compare/v0.3.17...v0.4.0) - 2025-10-10
 
 ### Changed
 
@@ -324,7 +324,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [`651ac9d`](https://github.com/soran-ghaderi/torchebm/commit/651ac9dc912a6388e88781e832d026afaf91686c) - denoising score matching
 
-## [0.3.17] - 2025-08-23
+## [0.3.17](https://github.com/soran-ghaderi/torchebm/compare/v0.3.7...v0.3.17) - 2025-08-23
 
 ### Added
 
@@ -354,7 +354,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`e259f3e`](https://github.com/soran-ghaderi/torchebm/commit/e259f3ec75bedd17078bcb25561284d895a3aa0c) - Update README.md .
 - [`3fe2988`](https://github.com/soran-ghaderi/torchebm/commit/3fe2988597426226e62e9f092eae6e1c4b4cc3ca) - Create CODE_OF_CONDUCT.md
 
-## [0.3.7] - 2025-05-02
+## [0.3.7](https://github.com/soran-ghaderi/torchebm/compare/v0.3.5...v0.3.7) - 2025-05-02
 
 ### Added
 
@@ -371,7 +371,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`017245c`](https://github.com/soran-ghaderi/torchebm/commit/017245c2819561d6ce4cfab22e1fdb930ca99f72) - enhanced contrastive div functionality
 - [`5f06b08`](https://github.com/soran-ghaderi/torchebm/commit/5f06b08dd0341a62454b3533c5866e93e7f72000) - base sampler get_schedulers
 
-## [0.3.5] - 2025-04-27
+## [0.3.5](https://github.com/soran-ghaderi/torchebm/compare/v0.3.4...v0.3.5) - 2025-04-27
 
 ### Added
 
@@ -383,7 +383,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`19cdf8d`](https://github.com/soran-ghaderi/torchebm/commit/19cdf8dafc1ebce8b4b73b7246b331d2e8e4334f) - comprehensive test for schedulers
 - [`6c98550`](https://github.com/soran-ghaderi/torchebm/commit/6c985508e677d8d7337e8558eb880ba0ce99aaf5) - passing all loss tests
 
-## [0.3.4] - 2025-04-24
+## [0.3.4](https://github.com/soran-ghaderi/torchebm/compare/v0.3.0...v0.3.4) - 2025-04-24
 
 ### Added
 
@@ -409,7 +409,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`b4bf745`](https://github.com/soran-ghaderi/torchebm/commit/b4bf7453ea08ed16707023383b632d2abf9b8863) - update README.md
 - [`faee0a5`](https://github.com/soran-ghaderi/torchebm/commit/faee0a5a930078815b57f74ee08f80d6e47f511e) - fix code example - landing  page
 
-## [0.3.0] - 2025-04-18
+## [0.3.0](https://github.com/soran-ghaderi/torchebm/compare/v0.2.6...v0.3.0) - 2025-04-18
 
 ### Added
 
@@ -428,7 +428,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`c83e114`](https://github.com/soran-ghaderi/torchebm/commit/c83e11419a57bc49c0db3e969254a43d05c9b663) - contrastive div documentation
 - [`d80ffb9`](https://github.com/soran-ghaderi/torchebm/commit/d80ffb98bb7134cf6dc89a5697db5bef229f71b5) - update docs
 
-## [0.2.6] - 2025-04-13
+## [0.2.6](https://github.com/soran-ghaderi/torchebm/compare/v0.2.4...v0.2.6) - 2025-04-13
 
 ### Added
 
@@ -445,7 +445,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`f46371c`](https://github.com/soran-ghaderi/torchebm/commit/f46371c0ffb3b6b0aedf7d0fedba1b6450906e6d) - implement training an EBM
 - [`417f101`](https://github.com/soran-ghaderi/torchebm/commit/417f101c99422ac5a74204abed5dae5f00b8c345) - fix img links in examples
 
-## [0.2.4] - 2025-04-12
+## [0.2.4](https://github.com/soran-ghaderi/torchebm/releases/tag/v0.2.4) - 2025-04-12
 
 ### Added
 
@@ -566,21 +566,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`0603a18`](https://github.com/soran-ghaderi/torchebm/commit/0603a1862ec8bbbff241f2b15033585d3fa8e492) - update test for ci/cd
 - [`6007e01`](https://github.com/soran-ghaderi/torchebm/commit/6007e017ecc02c2d508cb4492fb80c74fecfd097) - example test for ci/cd
 - [`12f1490`](https://github.com/soran-ghaderi/torchebm/commit/12f149092e5d034390b551cdcf388fb3a885498d) - add tests
-
-[0.7.5]: https://github.com/soran-ghaderi/torchebm/compare/v0.7.1...v0.7.5
-[0.7.1]: https://github.com/soran-ghaderi/torchebm/compare/v0.6.0...v0.7.1
-[0.6.0]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.8...v0.6.0
-[0.5.8]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.7...v0.5.8
-[0.5.7]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.6...v0.5.7
-[0.5.6]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.4...v0.5.6
-[0.5.4]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.1...v0.5.4
-[0.5.1]: https://github.com/soran-ghaderi/torchebm/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/soran-ghaderi/torchebm/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/soran-ghaderi/torchebm/compare/v0.3.17...v0.4.0
-[0.3.17]: https://github.com/soran-ghaderi/torchebm/compare/v0.3.7...v0.3.17
-[0.3.7]: https://github.com/soran-ghaderi/torchebm/compare/v0.3.5...v0.3.7
-[0.3.5]: https://github.com/soran-ghaderi/torchebm/compare/v0.3.4...v0.3.5
-[0.3.4]: https://github.com/soran-ghaderi/torchebm/compare/v0.3.0...v0.3.4
-[0.3.0]: https://github.com/soran-ghaderi/torchebm/compare/v0.2.6...v0.3.0
-[0.2.6]: https://github.com/soran-ghaderi/torchebm/compare/v0.2.4...v0.2.6
-[0.2.4]: https://github.com/soran-ghaderi/torchebm/releases/tag/v0.2.4
