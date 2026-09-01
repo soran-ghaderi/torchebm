@@ -3,8 +3,10 @@ name: Changelog
 # Writes each PR's promoted changelog section onto the PR branch itself
 # (the master ruleset rejects direct CI pushes to master). The version is
 # the one the merge will mint: latest tag bumped patch by default,
-# #minor/#major in the PR title for bigger bumps. Reruns regenerate the
-# section from the master baseline, so the result is idempotent.
+# #minor/#major in the PR title for bigger bumps. Reruns first strip the
+# workflow's own sections (anything newer than the last GitHub Release)
+# and re-promote, so the result is idempotent while released sections,
+# including manual backfills, are never touched.
 
 on:
   pull_request:
@@ -41,8 +43,8 @@ jobs:
           *)          next="v${major}.${minor}.$((patch+1))" ;;
         esac
         echo "NEXT=${next}" >> "$GITHUB_ENV"
-        git checkout origin/master -- CHANGELOG.md
         last=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+        python scripts/update_changelog.py strip --above "$last"
         git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
         python scripts/update_changelog.py release --version "$next" \
           --date "$(date -u +%F)" --body body.md
