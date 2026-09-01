@@ -1,0 +1,58 @@
+name: Changelog
+
+# Writes each PR's promoted changelog section onto the PR branch itself
+# (the master ruleset rejects direct CI pushes to master). The version is
+# the one the merge will mint: latest tag bumped patch by default,
+# #minor/#major in the PR title for bigger bumps. Reruns regenerate the
+# section from the master baseline, so the result is idempotent.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout PR branch
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.ref }}
+        fetch-depth: 0
+
+    - name: Promote changelog to the version this merge will mint
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+      run: |
+        pip install --quiet git-cliff
+        git fetch --tags --quiet origin
+        latest=$(git describe --tags $(git rev-list --tags --max-count=1))
+        IFS='.' read -r major minor patch <<< "${latest#v}"
+        case "$PR_TITLE" in
+          *"#major"*) next="v$((major+1)).0.0" ;;
+          *"#minor"*) next="v${major}.$((minor+1)).0" ;;
+          *)          next="v${major}.${minor}.$((patch+1))" ;;
+        esac
+        echo "NEXT=${next}" >> "$GITHUB_ENV"
+        git checkout origin/master -- CHANGELOG.md
+        last=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+        git-cliff --config cliff.toml --strip all "${last}..HEAD" -o body.md
+        python scripts/update_changelog.py release --version "$next" \
+          --date "$(date -u +%F)" --body body.md
+        rm body.md
+
+    - name: Commit CHANGELOG.md to the PR branch
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "chore(changelog): promote release notes"
+        commit_author: "soran-ghaderi <22780398+soran-ghaderi@users.noreply.github.com>"
+        commit_user_name: "soran-ghaderi"
+        commit_user_email: "22780398+soran-ghaderi@users.noreply.github.com"
+        file_pattern: CHANGELOG.md
