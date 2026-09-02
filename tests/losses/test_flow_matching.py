@@ -120,7 +120,7 @@ def test_fm_equals_negated_eqm_constant_endpoint():
 
 
 def test_fm_equals_negated_eqm_true_clock_for_time_conditioned_field():
-    """FM(v) == EqM(-v, ct='constant', ct_multiplier=1, model_time='true')."""
+    """FM(v) == EqM(-v, ct='constant', ct_multiplier=1, time_invariant=False)."""
     torch.manual_seed(0)
     batch, dim = 16, 4
     v_model = LearnableTimeField(dim=dim)
@@ -131,7 +131,7 @@ def test_fm_equals_negated_eqm_true_clock_for_time_conditioned_field():
         model=Negate(v_model),
         ct="constant",
         ct_multiplier=1.0,
-        model_time="true",
+        time_invariant=False,
         t_sampler=_fixed_t(t),
     )(x1, x0=x0)
     assert torch.allclose(fm_loss, eqm_loss, atol=1e-6)
@@ -169,7 +169,7 @@ def test_fm_negate_velocity_false_is_default_path():
 
 
 def test_fm_negated_is_bitwise_eqm_constant_true_clock():
-    """FM(negate_velocity=True) == EqM(ct='constant', ct_multiplier=1, model_time='true')."""
+    """FM(negate_velocity=True) == EqM(ct='constant', ct_multiplier=1, time_invariant=False)."""
     torch.manual_seed(0)
     batch, dim = 16, 4
     model = LearnableTimeField(dim=dim)
@@ -186,7 +186,7 @@ def test_fm_negated_is_bitwise_eqm_constant_true_clock():
         model=model,
         ct="constant",
         ct_multiplier=1.0,
-        model_time="true",
+        time_invariant=False,
         t_sampler=_fixed_t(t),
     )(x1, x0=x0)
     assert torch.equal(fm_loss, eqm_loss)

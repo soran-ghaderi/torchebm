@@ -13,7 +13,7 @@ the learned velocity forward with `FlowSampler` (no ``negate_velocity``).
 
 Relation to Equilibrium Matching: ``negate_velocity=True`` regresses onto
 \(-u_t\), which is exactly ``EquilibriumMatchingLoss(ct="constant",
-ct_multiplier=1, model_time="true")``. The field-sign and clock conventions
+ct_multiplier=1, time_invariant=False)``. The field-sign and clock conventions
 of both losses are tabulated in ``docs/concepts/objectives.md``.
 """
 
