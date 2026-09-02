@@ -766,6 +766,79 @@ def test_loss_weight_fn_non_callable_raises():
         EquilibriumMatchingLoss(model=DummyModel(), loss_weight_fn=5)
 
 
+# model_time: the clock shown to the model
+# ========================================
+
+
+class TimeConditionedModel(nn.Module):
+    def forward(self, x, t=None, **kwargs):
+        return x + t.view(-1, *([1] * (x.ndim - 1)))
+
+
+def _fixed_t(t):
+    return lambda batch, *, device, dtype, generator: t.to(device=device, dtype=dtype)
+
+
+def test_model_time_default_zeroes_clock():
+    model = DummyModel()
+    EquilibriumMatchingLoss(model=model)(torch.randn(8, 4))
+    assert model.last_t.shape == (8,)
+    assert torch.equal(model.last_t, torch.zeros(8))
+
+
+def test_model_time_true_passes_sampled_t():
+    t = torch.rand(8)
+    model = DummyModel()
+    EquilibriumMatchingLoss(model=model, model_time="true", t_sampler=_fixed_t(t))(
+        torch.randn(8, 4)
+    )
+    assert torch.equal(model.last_t, t)
+
+
+def test_model_time_callable_maps_clock_elementwise():
+    t = torch.rand(8)
+    model = DummyModel()
+    EquilibriumMatchingLoss(
+        model=model, model_time=lambda t: 1.0 - t, t_sampler=_fixed_t(t)
+    )(torch.randn(8, 4))
+    assert torch.equal(model.last_t, 1.0 - t)
+
+
+def test_model_time_applies_to_conditioning_probe():
+    model = DummyModel()
+    loss_fn = EquilibriumMatchingLoss(model=model, model_time=lambda t: t + 0.25)
+    loss_fn._probe_forward(torch.randn(4, 2), {})
+    assert torch.equal(model.last_t, torch.full((4,), 0.25))
+
+
+def test_model_time_changes_loss_only_for_time_conditioned_model():
+    t = torch.rand(16)
+    x1, x0 = torch.randn(16, 4), torch.randn(16, 4)
+
+    def loss(model, model_time):
+        return EquilibriumMatchingLoss(
+            model=model, model_time=model_time, t_sampler=_fixed_t(t)
+        )(x1, x0=x0)
+
+    conditioned = TimeConditionedModel()
+    assert not torch.equal(loss(conditioned, "zero"), loss(conditioned, "true"))
+    torch.manual_seed(0)
+    invariant = LearnableModel(4)
+    assert torch.equal(loss(invariant, "zero"), loss(invariant, "true"))
+
+
+def test_model_time_invalid_raises():
+    with pytest.raises(ValueError, match="model_time must be"):
+        EquilibriumMatchingLoss(model=DummyModel(), model_time="sampled")
+
+
+def test_model_time_in_repr():
+    assert "model_time='zero'" in repr(EquilibriumMatchingLoss(model=DummyModel()))
+    assert "model_time='true'" in repr(
+        EquilibriumMatchingLoss(model=DummyModel(), model_time="true")
+    )
+
+
 # Fixture for device testing
 @pytest.fixture(params=["cpu", "cuda"])
 def device(request):
