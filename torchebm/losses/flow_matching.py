@@ -11,9 +11,10 @@ x_t, u_t = \mathrm{interpolant}(x_0, x_1, t)
 with \(x_0\) noise (or any source batch) and \(x_1\) data. Sampling integrates
 the learned velocity forward with `FlowSampler` (no ``negate_velocity``).
 
-Relation to Equilibrium Matching: with ``ct="constant"`` and
-``ct_multiplier=1`` the EqM objective is exactly this loss with the field
-negated and the time conditioning zeroed.
+Relation to Equilibrium Matching: ``negate_velocity=True`` regresses onto
+\(-u_t\), which is exactly ``EquilibriumMatchingLoss(ct="constant",
+ct_multiplier=1, model_time="true")``. The field-sign and clock conventions
+of both losses are tabulated in ``docs/concepts/objectives.md``.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
     Trains ``model(x_t, t, **model_kwargs)`` to predict the interpolant
     velocity \(u_t\). The model receives the true training time (unlike
-    `EquilibriumMatchingLoss`, whose field is time-invariant).
+    `EquilibriumMatchingLoss`, whose field is time-invariant by default).
 
     Args:
         model: Neural network predicting velocity, called as ``model(x, t)``.
@@ -51,6 +52,11 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         t_p_std: Lognormal skew scale $p_{std}$, positive. Default: 1.2.
         loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)``
             multiplied into the per-sample loss.
+        negate_velocity: Regress onto \(-u_t\) (data -> noise) instead of
+            \(u_t\), the sign the gradient-descent samplers and `EqMEnergy`
+            assume, so the trained field drops into them without a wrapper.
+            Sample it with ``FlowSampler(negate_velocity=True)``. Mirrors the
+            sampler flag of the same name. Default False.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -80,6 +86,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         t_p_mean: float = -1.2,
         t_p_std: float = 1.2,
         loss_weight_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        negate_velocity: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -99,6 +106,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             **kwargs,
         )
         self.model = model
+        self.negate_velocity = bool(negate_velocity)
 
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
         r"""Field convention for the conditioning probe: fixed mid-path time."""
@@ -181,13 +189,14 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
         t = self._sample_t(batch, generator)
         xt, ut = self.interpolant.interpolate(x0, x1, t)
+        target = -ut if self.negate_velocity else ut
 
         with self.autocast_context():
             pred = self.model(xt, t, **model_kwargs)
         if isinstance(pred, tuple):
             pred = pred[0]
 
-        loss = mean_flat((pred - ut).square())
+        loss = mean_flat((pred - target).square())
         if self.loss_weight_fn is not None:
             loss = loss * self.loss_weight_fn(t)
 
@@ -198,7 +207,8 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             f"{self.__class__.__name__}("
             f"interpolant={type(self.interpolant).__name__}, "
             f"coupling={type(self.coupling).__name__}, "
-            f"t_sampler={self.t_sampler!r})"
+            f"t_sampler={self.t_sampler!r}, "
+            f"negate_velocity={self.negate_velocity})"
         )
 
 

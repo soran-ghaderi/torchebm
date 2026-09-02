@@ -103,6 +103,22 @@ gd = GradientDescentSampler(EqMEnergy.from_loss(eqm))                 # descend 
 (implicit vs dot/l2), so the sampled energy always matches what was trained.
 `InteractionModel` must wrap an explicit energy, never the implicit adapter.
 
+The two losses differ only in the sign of the regression target and in the
+clock the model sees; each has a switch to adopt the other's convention:
+
+| Loss | Target | Clock shown to the model | Sample with |
+| --- | --- | --- | --- |
+| `FlowMatchingLoss` | `u_t` (noise -> data) | sampled `t` | `FlowSampler` |
+| `FlowMatchingLoss(negate_velocity=True)` | `-u_t` (data -> noise) | sampled `t` | `FlowSampler(negate_velocity=True)`, descent samplers via `EqMEnergy` |
+| `EquilibriumMatchingLoss` | `-u_t * c(t)` | zeros (`model_time="zero"`) | `FlowSampler(negate_velocity=True)`, `EqMEnergy` |
+| `EquilibriumMatchingLoss(model_time="true")` | `-u_t * c(t)` | sampled `t` | `FlowSampler(negate_velocity=True)` |
+
+`model_time` also accepts a callable `t -> t'` for clock schedules and
+reparametrisations; apply the same map at sampling time. With `ct="constant"`,
+`ct_multiplier=1` and `model_time="true"` the EqM objective is bit-identical to
+`FlowMatchingLoss(negate_velocity=True)`. `EqMEnergy` always evaluates the
+field at `t = 0`, so it suits time-invariant fields.
+
 **Energy matching** (arXiv:2504.10612) keeps a single time-independent scalar
 potential: an OT flow-matching warm-up shapes it as transport, then a
 contrastive phase with temperature-scheduled Langevin negatives sharpens its
