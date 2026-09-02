@@ -20,9 +20,13 @@ points from data toward noise (opposite of FM velocity).
 
 Key differences from Flow Matching:
 
-- Time-invariant: Model zeros out time conditioning internally
+- Time-invariant: the model receives a zeroed clock by default
+  (``model_time="zero"``); ``model_time="true"`` passes the sampled time
 - Gradient direction: EqM learns $(\epsilon - x)$, FM learns $(x - \epsilon)$
 - Sampling: Use ``negate_velocity=True`` with FlowSampler for ODE sampling
+
+The field-sign and clock conventions of both losses are tabulated in
+``docs/concepts/objectives.md``.
 """
 
 from __future__ import annotations
@@ -100,10 +104,11 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
             - 'truncated' (default): $\min(1, (1-t)/(1-a))$, the EqM truncated decay
             - 'linear': $1 - t$, the $a \to 0$ endpoint of the truncated dial
             - 'constant': $1$, the $a \to 1$ endpoint; with ``ct_multiplier=1``
-              this is exactly the negated Flow Matching objective
+              and ``model_time="true"`` this is exactly the negated Flow
+              Matching objective (`FlowMatchingLoss(negate_velocity=True)`)
             - a callable ``t -> c(t)`` mapping a (batch_size,) time tensor to
               weights of the same shape
-              
+
         ct_threshold: Decay threshold $a$ for ct='truncated', strictly inside
             (0, 1); the endpoints are the 'linear' and 'constant' variants.
             Decay starts after $t > a$. Default: 0.8.
@@ -112,6 +117,18 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
             is recorded on the loss (attribute and ``repr``). Default: 4.0.
         apply_dispersion: Whether to apply dispersive regularization.
         dispersion_weight: Weight for dispersive loss term.
+        model_time: Clock shown to the model at the training call and in the
+            conditioning probe:
+
+            - 'zero' (default): the EqM convention, the field is trained and
+              sampled at $t = 0$ (time-invariant)
+            - 'true': the sampled $t$ is passed, training a time-conditioned
+              field; sample it with ``FlowSampler(negate_velocity=True)``
+              (`EqMEnergy` evaluates the field at $t = 0$)
+            - a callable ``t -> t'`` mapping the (batch_size,) clock
+              elementwise, for schedules and reparametrisations; apply the
+              same map at sampling time
+
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -165,6 +182,9 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         ct_multiplier: float = 4.0,
         apply_dispersion: bool = False,
         dispersion_weight: float = 0.5,
+        model_time: Union[
+            Literal["zero", "true"], Callable[[torch.Tensor], torch.Tensor]
+        ] = "zero",
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -194,7 +214,13 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
                 f"{ct_threshold}; use ct='linear' for the threshold -> 0 "
                 "endpoint or ct='constant' for the threshold -> 1 endpoint"
             )
+        if not callable(model_time) and model_time not in ("zero", "true"):
+            raise ValueError(
+                "model_time must be 'zero', 'true', or a callable t -> t', "
+                f"got {model_time!r}"
+            )
         self.model = model
+        self.model_time = model_time
         self.prediction = prediction
         self.energy_type = energy_type
         self.loss_weight = loss_weight
@@ -204,10 +230,16 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         self.apply_dispersion = apply_dispersion
         self.dispersion_weight = dispersion_weight
 
+    def _model_t(self, t: torch.Tensor) -> torch.Tensor:
+        r"""Clock shown to the model for the sampled time `t` (see `model_time`)."""
+        if callable(self.model_time):
+            return self.model_time(t)
+        return t if self.model_time == "true" else torch.zeros_like(t)
+
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
-        r"""Field convention for the conditioning probe: zeroed time."""
+        r"""Field convention for the conditioning probe: the `model_time` clock at t = 0."""
         t0 = torch.zeros(px.shape[0], device=px.device, dtype=px.dtype)
-        return self.model(px, t0, **pmk)
+        return self.model(px, self._model_t(t0), **pmk)
 
     def _compute_ct(self, t: torch.Tensor) -> torch.Tensor:
         r"""Target scaling c(t) for the configured variant, times `ct_multiplier`."""
@@ -318,7 +350,8 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
         Implements gradient matching with EqM target:
         - Target: $(\epsilon - x) \cdot c(t) = (x_0 - x_1) \cdot c(t)$
-        - Time-invariant: the model always receives zeroed time
+        - Clock: the model receives ``model_time`` applied to the sampled
+          $t$ (zeroed by default)
 
         Args:
             x1: Data samples of shape (batch_size, ...).
@@ -382,11 +415,8 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         if self.energy_type != "none":
             xt = xt.detach().requires_grad_(True)
 
-        # EqM: zero out time for time-invariance (model still receives t for API compat)
-        t_model = torch.zeros_like(t)
-
         with self.autocast_context():
-            model_output = self.model(xt, t_model, **model_kwargs)
+            model_output = self.model(xt, self._model_t(t), **model_kwargs)
 
         if isinstance(model_output, tuple):
             model_output, act = model_output
@@ -452,7 +482,8 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
             f"interpolant={type(self.interpolant).__name__}, "
             f"coupling={type(self.coupling).__name__}, "
             f"ct={self.ct!r}, "
-            f"ct_multiplier={self.ct_multiplier})"
+            f"ct_multiplier={self.ct_multiplier}, "
+            f"model_time={self.model_time!r})"
         )
 
 

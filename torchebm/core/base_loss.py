@@ -26,7 +26,7 @@ from torchebm.core.base_module import (
 _BARE_MODEL_KWARGS_DEPRECATION = declare_deprecation(
     module=__name__,
     name="bare model-conditioning kwargs",
-    since="0.8.4",
+    since="0.8.5",
     deprecated_on="2026-08-31",
     replacement="model_kwargs={...}",
     message=(

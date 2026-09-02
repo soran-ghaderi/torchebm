@@ -47,6 +47,19 @@ class Negate(nn.Module):
         return -self.inner(x, t, **kwargs)
 
 
+class LearnableTimeField(nn.Module):
+    def __init__(self, dim=4):
+        super().__init__()
+        self.linear = nn.Linear(dim + 1, dim)
+
+    def forward(self, x, t=None, **kwargs):
+        return self.linear(torch.cat([x, t.unsqueeze(-1)], dim=-1))
+
+
+def _fixed_t(t):
+    return lambda batch, *, device, dtype, generator: t.to(device=device, dtype=dtype)
+
+
 @pytest.mark.parametrize("interpolant", ["linear", "cosine", "vp"])
 def test_fm_loss_finite_scalar(interpolant):
     loss_fn = FlowMatchingLoss(model=ConstantField(), interpolant=interpolant)
@@ -104,6 +117,101 @@ def test_fm_equals_negated_eqm_constant_endpoint():
     eqm_loss.backward()
     for g_fm, p in zip(fm_grads, v_model.parameters()):
         assert torch.allclose(g_fm, p.grad, atol=1e-6)
+
+
+def test_fm_equals_negated_eqm_true_clock_for_time_conditioned_field():
+    """FM(v) == EqM(-v, ct='constant', ct_multiplier=1, model_time='true')."""
+    torch.manual_seed(0)
+    batch, dim = 16, 4
+    v_model = LearnableTimeField(dim=dim)
+    x1, x0, t = torch.randn(batch, dim), torch.randn(batch, dim), torch.rand(batch)
+
+    fm_loss = FlowMatchingLoss(model=v_model, t_sampler=_fixed_t(t))(x1, x0=x0)
+    eqm_loss = EquilibriumMatchingLoss(
+        model=Negate(v_model),
+        ct="constant",
+        ct_multiplier=1.0,
+        model_time="true",
+        t_sampler=_fixed_t(t),
+    )(x1, x0=x0)
+    assert torch.allclose(fm_loss, eqm_loss, atol=1e-6)
+
+    zeroed = EquilibriumMatchingLoss(
+        model=Negate(v_model), ct="constant", ct_multiplier=1.0, t_sampler=_fixed_t(t)
+    )(x1, x0=x0)
+    assert not torch.allclose(fm_loss, zeroed, atol=1e-6)
+
+
+# negate_velocity
+# ===============
+
+
+def test_fm_negate_velocity_target():
+    batch, dim = 4, 3
+    x1, x0, t = torch.randn(batch, dim), torch.randn(batch, dim), torch.rand(batch)
+    loss = FlowMatchingLoss(
+        model=ConstantField(0.5), negate_velocity=True, t_sampler=_fixed_t(t)
+    )(x1, x0=x0)
+    _, ut = get_interpolant("linear").interpolate(x0, x1, t)
+    expected = mean_flat((torch.full_like(ut, 0.5) + ut).square()).mean()
+    assert torch.allclose(loss, expected, atol=1e-6)
+
+
+def test_fm_negate_velocity_false_is_default_path():
+    batch, dim = 8, 4
+    x1, x0, t = torch.randn(batch, dim), torch.randn(batch, dim), torch.rand(batch)
+    model = ConstantField(0.5)
+    default = FlowMatchingLoss(model=model, t_sampler=_fixed_t(t))(x1, x0=x0)
+    explicit = FlowMatchingLoss(
+        model=model, negate_velocity=False, t_sampler=_fixed_t(t)
+    )(x1, x0=x0)
+    assert torch.equal(default, explicit)
+
+
+def test_fm_negated_is_bitwise_eqm_constant_true_clock():
+    """FM(negate_velocity=True) == EqM(ct='constant', ct_multiplier=1, model_time='true')."""
+    torch.manual_seed(0)
+    batch, dim = 16, 4
+    model = LearnableTimeField(dim=dim)
+    x1, x0, t = torch.randn(batch, dim), torch.randn(batch, dim), torch.rand(batch)
+
+    fm_loss = FlowMatchingLoss(
+        model=model, negate_velocity=True, t_sampler=_fixed_t(t)
+    )(x1, x0=x0)
+    fm_loss.backward()
+    fm_grads = [p.grad.clone() for p in model.parameters()]
+    model.zero_grad()
+
+    eqm_loss = EquilibriumMatchingLoss(
+        model=model,
+        ct="constant",
+        ct_multiplier=1.0,
+        model_time="true",
+        t_sampler=_fixed_t(t),
+    )(x1, x0=x0)
+    assert torch.equal(fm_loss, eqm_loss)
+    eqm_loss.backward()
+    for g_fm, p in zip(fm_grads, model.parameters()):
+        assert torch.equal(g_fm, p.grad)
+
+
+def test_fm_negated_field_descends_through_eqm_energy():
+    from torchebm.models import EqMEnergy
+    from torchebm.samplers import GradientDescentSampler
+
+    field = LearnableField(dim=2)
+    FlowMatchingLoss(model=field, negate_velocity=True)(torch.randn(8, 2)).backward()
+    sampler = GradientDescentSampler(EqMEnergy(field, energy_type="implicit"), step_size=0.1)
+    out = sampler.sample(x=torch.randn(4, 2), n_steps=5)
+    assert out.shape == (4, 2)
+    assert torch.isfinite(out).all()
+
+
+def test_fm_negate_velocity_in_repr():
+    assert "negate_velocity=False" in repr(FlowMatchingLoss(model=ConstantField()))
+    assert "negate_velocity=True" in repr(
+        FlowMatchingLoss(model=ConstantField(), negate_velocity=True)
+    )
 
 
 def test_fm_model_receives_real_time():
