@@ -33,7 +33,7 @@ from torchebm.interpolants.interpolant_utils import resolve_interpolant
 _BARE_SAMPLE_KWARGS_DEPRECATION = declare_deprecation(
     module=__name__,
     name="FlowSampler.sample bare conditioning kwargs",
-    since="0.8.4",
+    since="0.8.5",
     deprecated_on="2026-08-31",
     replacement="model_kwargs={...}",
     message=(
