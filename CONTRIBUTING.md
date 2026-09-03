@@ -42,6 +42,21 @@ pip install -e ".[docs]"
 mkdocs serve
 ```
 
+## Dependencies
+
+`torch` is the only runtime dependency, and `torchebm/` imports nothing else. Data
+loaders, pretrained checkpoints, trainer loops and plotting belong to the
+application, not to the library.
+
+The optional extras (`examples`, `dev`, `docs`) serve the repository, never the
+library at runtime. A new runtime extra is justified only when a module under
+`torchebm/` needs it, and then it must:
+
+- import the package lazily at the call site, never at module import time;
+- raise an `ImportError` naming the extra to install;
+- be named after the capability it unlocks (for example `vision`), not after a
+  paper or an algorithm.
+
 ## Development Workflow
 
 1. Create a new branch from `master`.
