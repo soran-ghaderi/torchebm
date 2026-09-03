@@ -41,7 +41,7 @@ def trimmed_mean(values: torch.Tensor, trim_fraction: float) -> torch.Tensor:
     k = int(trim_fraction * n)
     if k == 0:
         return values.mean()
-    return values.sort().values[: n - k].mean()
+    return torch.topk(values, n - k, largest=False).values.mean()
 
 
 def compute_flow_weight(t: torch.Tensor, cutoff: float = 0.8) -> torch.Tensor:
