@@ -340,6 +340,21 @@ class HamiltonianMonteCarlo(BaseSampler):
         output = trajectory if return_trajectory else x
         return (output, diagnostics) if return_diagnostics else output
 
+    def __repr__(self) -> str:
+        mass_repr = (
+            self.mass
+            if self.mass is None or isinstance(self.mass, float)
+            else f"tensor{tuple(self.mass.shape)}"
+        )
+        return (
+            f"{self.__class__.__name__}("
+            f"model={type(self.model).__name__}, "
+            f"step_size={self.schedulers['step_size']!r}, "
+            f"n_leapfrog_steps={self.n_leapfrog_steps}, "
+            f"mass={mass_repr}, "
+            f"integrator={type(self.integrator).__name__})"
+        )
+
 
 class RiemannianManifoldHMC(BaseSampler):
     r"""
@@ -758,3 +773,13 @@ class RiemannianManifoldHMC(BaseSampler):
 
         output = trajectory if return_trajectory else x
         return (output, diagnostics) if return_diagnostics else output
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"model={type(self.model).__name__}, "
+            f"metric_fn={self.metric_fn!r}, "
+            f"step_size={self.schedulers['step_size']!r}, "
+            f"n_leapfrog_steps={self.n_leapfrog_steps}, "
+            f"integrator={type(self.integrator).__name__})"
+        )

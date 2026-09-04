@@ -141,6 +141,12 @@ class GradientDescentSampler(BaseSampler):
         output = trajectory if return_trajectory else x
         return (output, diagnostics) if return_diagnostics else output
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"model={type(self.model).__name__}, "
+            f"step_size={self.schedulers['step_size']!r})"
+        )
 
 
 class NesterovSampler(BaseSampler):
@@ -283,6 +289,14 @@ class NesterovSampler(BaseSampler):
 
         output = trajectory if return_trajectory else x
         return (output, diagnostics) if return_diagnostics else output
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"model={type(self.model).__name__}, "
+            f"step_size={self.schedulers['step_size']!r}, "
+            f"momentum={self.momentum})"
+        )
 
 
 __all__ = [

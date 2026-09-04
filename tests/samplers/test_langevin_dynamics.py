@@ -43,6 +43,14 @@ def test_langevin_dynamics_initialization(langevin_sampler):
     assert sampler.get_scheduled_value("noise_scale") == 1.0
 
 
+def test_langevin_dynamics_repr(langevin_sampler):
+    text = repr(langevin_sampler)
+    assert text.startswith("LangevinDynamics(")
+    assert "step_size=" in text
+    assert "noise_scale=" in text
+    assert "integrator=" in text
+
+
 def test_langevin_dynamics_initialization_invalid_params(energy_function):
     with pytest.raises(ValueError):
         LangevinDynamics(energy_function, step_size=-0.1, noise_scale=0.1)

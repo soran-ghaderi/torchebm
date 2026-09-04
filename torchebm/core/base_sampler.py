@@ -153,3 +153,6 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
                 for samplers that cannot infer the state shape.
         """
         raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(model={type(self.model).__name__})"

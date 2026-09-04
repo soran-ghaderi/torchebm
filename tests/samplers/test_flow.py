@@ -69,6 +69,21 @@ class TestFlowSampler:
         assert sampler.diffusion_form == "SBDM"
         assert sampler.diffusion_norm == 1.0
 
+    def test_repr(self, device, dtype):
+        sampler = FlowSampler(
+            MockModel(),
+            interpolant="linear",
+            prediction="velocity",
+            device=device,
+            dtype=dtype,
+        )
+        text = repr(sampler)
+        assert text.startswith("FlowSampler(")
+        assert "mode='ode'" in text
+        assert "interpolant=" in text
+        assert "prediction='velocity'" in text
+        assert "integrator=" in text
+
     def test_negate_velocity_conditions_model_on_zero_time(self, device, dtype):
         """EqM fields are time-invariant: trained on zeroed time, so sampling
         must condition the model on zeros too, not the integration clock."""

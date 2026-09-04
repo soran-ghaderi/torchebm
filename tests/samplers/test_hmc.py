@@ -185,6 +185,30 @@ def test_hmc_initialization_with_mass():
     assert hmc_tensor.mass.device.type == device
 
 
+def test_hmc_repr(hmc_sampler):
+    text = repr(hmc_sampler)
+    assert text.startswith("HamiltonianMonteCarlo(")
+    assert "step_size=" in text
+    assert "n_leapfrog_steps=" in text
+    assert "mass=" in text
+    assert "integrator=" in text
+
+
+def test_hmc_repr_with_tensor_mass():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    energy_fn = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2)).to(device)
+    tensor_mass = torch.tensor([2.0, 3.0], device=device)
+    sampler = HamiltonianMonteCarlo(
+        model=energy_fn,
+        step_size=0.1,
+        n_leapfrog_steps=10,
+        mass=tensor_mass,
+        device=device,
+    )
+    text = repr(sampler)
+    assert "mass=tensor(2,)" in text
+
+
 def test_hmc_initialization_invalid_params(energy_function):
     """Test that invalid parameters raise appropriate exceptions."""
     with pytest.raises(ValueError, match="step_size must be positive"):
@@ -965,6 +989,21 @@ def test_rmhmc_initialization():
     assert sampler.n_leapfrog_steps == 10
     # The default integrator should be the Generalised Leapfrog.
     assert type(sampler.integrator).__name__ == "GeneralisedLeapfrogIntegrator"
+
+
+def test_rmhmc_repr():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = _gaussian_target(2, device)
+    sampler = RiemannianManifoldHMC(
+        model, metric_fn=_identity_metric(2),
+        step_size=0.1, n_leapfrog_steps=10, device=device,
+    )
+    text = repr(sampler)
+    assert text.startswith("RiemannianManifoldHMC(")
+    assert "metric_fn=" in text
+    assert "step_size=" in text
+    assert "n_leapfrog_steps=" in text
+    assert "integrator=" in text
 
 
 def test_rmhmc_initialization_invalid_metric_fn():
