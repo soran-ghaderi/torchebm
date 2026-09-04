@@ -152,3 +152,6 @@ multi_line_output = 3
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["torchebm*"]
+
+[tool.setuptools.package-data]
+torchebm = ["py.typed"]
