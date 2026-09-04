@@ -76,6 +76,13 @@ def test_dopri5_custom_tolerances():
     assert integrator.max_factor == 5.0
 
 
+def test_dopri5_repr_shows_tolerances():
+    """Adaptive methods (error_weights defined) surface atol/rtol/max_steps."""
+    integrator = Dopri5Integrator(atol=1e-8, rtol=1e-5, max_steps=5000)
+    text = repr(integrator)
+    assert text == "Dopri5Integrator(atol=1e-08, rtol=1e-05, max_steps=5000)"
+
+
 @requires_cuda
 def test_dopri5_cuda():
     """Test CUDA initialization."""

@@ -71,13 +71,28 @@ class TestGradientDescentSampler:
         assert_close(samples[0, 0], torch.tensor([0.9], device=device))
         assert_close(samples[0, 1], torch.tensor([0.81], device=device))
 
+    def test_repr(self, device, dtype):
+        model = QuadraticEnergy()
+        sampler = GradientDescentSampler(model, step_size=0.1, device=device, dtype=dtype)
+        text = repr(sampler)
+        assert text.startswith("GradientDescentSampler(")
+        assert "step_size=" in text
+
 class TestNesterovSampler:
-    
+
     def test_initialization(self, device, dtype):
         model = QuadraticEnergy()
         sampler = NesterovSampler(model, step_size=0.1, momentum=0.9, device=device, dtype=dtype)
         assert sampler.momentum == 0.9
-        
+
+    def test_repr(self, device, dtype):
+        model = QuadraticEnergy()
+        sampler = NesterovSampler(model, step_size=0.1, momentum=0.9, device=device, dtype=dtype)
+        text = repr(sampler)
+        assert text.startswith("NesterovSampler(")
+        assert "step_size=" in text
+        assert "momentum=0.9" in text
+
     def test_manual_step(self, device, dtype):
         # x_0 = 1.0, v_0 = 0.0
         # mu = 0.9, eta = 0.1
