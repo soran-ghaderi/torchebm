@@ -1,7 +1,68 @@
+import math
+
 import pytest
 import torch
 
 from torchebm.models.components.embeddings import LabelEmbedder, MLPTimestepEmbedder
+
+
+def _reference_freq_embedding(t, dim, max_period=10000):
+    """Straightforward per-call computation used before the buffer was cached."""
+    half = dim // 2
+    freqs = torch.exp(
+        -math.log(max_period)
+        * torch.arange(start=0, end=half, device=t.device, dtype=torch.float32)
+        / half
+    )
+    args = t[:, None].float() * freqs[None]
+    emb = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    if dim % 2:
+        emb = torch.cat([emb, torch.zeros_like(emb[:, :1])], dim=-1)
+    return emb
+
+
+@pytest.mark.parametrize("freq_dim", [16, 128, 7])
+def test_mlp_timestep_embedder_freq_buffer_matches_recompute(freq_dim):
+    """The cached freq table must produce output identical to recomputing it."""
+    torch.manual_seed(0)
+    emb = MLPTimestepEmbedder(out_dim=32, frequency_embedding_size=freq_dim)
+    t = torch.linspace(0.0, 999.0, steps=8)
+
+    expected = emb.mlp(_reference_freq_embedding(t, freq_dim))
+    got = emb(t)
+    assert torch.allclose(got, expected, rtol=0, atol=0)
+
+
+def test_mlp_timestep_embedder_registers_nonpersistent_freq_buffer():
+    emb = MLPTimestepEmbedder(out_dim=16, frequency_embedding_size=32)
+    # Buffer is registered and enumerated by .buffers()/.named_buffers().
+    assert "freqs" in dict(emb.named_buffers())
+    assert any(b is emb.freqs for b in emb.buffers())
+    # Non-persistent: excluded from the state dict so checkpoints stay clean.
+    assert "freqs" not in emb.state_dict()
+    # Expected precomputed values.
+    expected = torch.exp(
+        -math.log(10000) * torch.arange(0, 16, dtype=torch.float32) / 16
+    )
+    assert torch.equal(emb.freqs, expected)
+
+
+def test_mlp_timestep_embedder_freq_buffer_is_not_reallocated_per_call():
+    emb = MLPTimestepEmbedder(out_dim=16, frequency_embedding_size=32)
+    freq_id = id(emb.freqs)
+    emb(torch.rand(4))
+    emb(torch.rand(6))
+    assert id(emb.freqs) == freq_id
+
+
+def test_mlp_timestep_embedder_freq_buffer_moves_with_module():
+    emb = MLPTimestepEmbedder(out_dim=16, frequency_embedding_size=32)
+    # .to(dtype) moves the buffer just like parameters.
+    emb64 = emb.to(torch.float64)
+    assert emb64.freqs.dtype == torch.float64
+    if torch.cuda.is_available():
+        emb_cuda = MLPTimestepEmbedder(out_dim=16).cuda()
+        assert emb_cuda.freqs.is_cuda
 
 
 @pytest.mark.parametrize("out_dim", [32, 64])
