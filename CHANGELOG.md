@@ -5,6 +5,17 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6](https://github.com/soran-ghaderi/torchebm/compare/v0.8.5...v0.8.6) - 2026-09-02
+
+### Added
+
+- [`0f06ff9`](https://github.com/soran-ghaderi/torchebm/commit/0f06ff97d8c554792a72d4e340be9001904dde62) - model_time option for the clock shown to the eqm model (#283)
+- [`f2eb083`](https://github.com/soran-ghaderi/torchebm/commit/f2eb08362d35aec56503cde29e52b1170a814a05) - negate_velocity option on flow matching for descent samplers (#284)
+
+### Other
+
+- [`f6eb062`](https://github.com/soran-ghaderi/torchebm/commit/f6eb062bb74cb9918eec10a81a5328bc26b9506b) - stamp since to the 0.8.5 release that shipped the warnings
+
 ## [0.8.5](https://github.com/soran-ghaderi/torchebm/compare/v0.8.4...v0.8.5) - 2026-09-01
 
 ### Added
