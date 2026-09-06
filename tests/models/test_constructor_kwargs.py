@@ -12,11 +12,14 @@ import torch.nn as nn
 from torchebm import __version__
 from torchebm.core import (
     AckleyModel,
+    BoothModel,
     DoubleWellModel,
     GaussianModel,
     HarmonicModel,
+    HimmelblauModel,
     RastriginModel,
     RosenbrockModel,
+    StyblinskiTangModel,
 )
 from torchebm.models import (
     ClassifierFreeGuidance,
@@ -44,6 +47,15 @@ CASCADING = [
     pytest.param(RosenbrockModel, lambda **kw: RosenbrockModel(**kw), id="RosenbrockModel"),
     pytest.param(AckleyModel, lambda **kw: AckleyModel(**kw), id="AckleyModel"),
     pytest.param(RastriginModel, lambda **kw: RastriginModel(**kw), id="RastriginModel"),
+    pytest.param(
+        HimmelblauModel, lambda **kw: HimmelblauModel(**kw), id="HimmelblauModel"
+    ),
+    pytest.param(BoothModel, lambda **kw: BoothModel(**kw), id="BoothModel"),
+    pytest.param(
+        StyblinskiTangModel,
+        lambda **kw: StyblinskiTangModel(**kw),
+        id="StyblinskiTangModel",
+    ),
     pytest.param(
         InteractionModel,
         lambda **kw: InteractionModel(_Potential(), sigma_w=4.0, strength=0.1, **kw),

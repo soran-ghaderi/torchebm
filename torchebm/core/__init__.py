@@ -6,12 +6,15 @@ from .base_module import TorchEBMModule, warn_once
 
 from .base_model import (
     BaseModel,
+    BoothModel,
     DoubleWellModel,
     GaussianModel,
     HarmonicModel,
+    HimmelblauModel,
     RastriginModel,
     AckleyModel,
     RosenbrockModel,
+    StyblinskiTangModel,
 )
 
 from .base_scheduler import (
@@ -49,13 +52,16 @@ __all__ = [
     # Energy functions
     "TorchEBMModule",
     "warn_once",
+    "BoothModel",
     "BaseModel",
     "DoubleWellModel",
     "GaussianModel",
     "HarmonicModel",
+    "HimmelblauModel",
     "RastriginModel",
     "AckleyModel",
     "RosenbrockModel",
+    "StyblinskiTangModel",
     # Base classes and utilities
     "BaseSampler",
     "BaseLoss",

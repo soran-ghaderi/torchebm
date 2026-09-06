@@ -326,3 +326,46 @@ class RastriginModel(BaseModel):
         return self.a * n + torch.sum(
             x**2 - self.a * torch.cos(2 * math.pi * x), dim=-1
         )
+
+
+class HimmelblauModel(BaseModel):
+    r"""Energy-based model for the two-dimensional Himmelblau function."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes \((x_1^2 + x_2 - 11)^2 + (x_1 + x_2^2 - 7)^2\)."""
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+        if x.shape[-1] != 2:
+            raise ValueError(
+                f"Himmelblau energy function requires 2 dimensions, got {x.shape[-1]}"
+            )
+
+        x1, x2 = x.unbind(dim=-1)
+        return (x1.pow(2) + x2 - 11).pow(2) + (x1 + x2.pow(2) - 7).pow(2)
+
+
+class BoothModel(BaseModel):
+    r"""Energy-based model for the two-dimensional Booth function."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes \((x_1 + 2x_2 - 7)^2 + (2x_1 + x_2 - 5)^2\)."""
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+        if x.shape[-1] != 2:
+            raise ValueError(
+                f"Booth energy function requires 2 dimensions, got {x.shape[-1]}"
+            )
+
+        x1, x2 = x.unbind(dim=-1)
+        return (x1 + 2 * x2 - 7).pow(2) + (2 * x1 + x2 - 5).pow(2)
+
+
+class StyblinskiTangModel(BaseModel):
+    r"""Energy-based model for the Styblinski-Tang function."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes \(\frac{1}{2}\sum_i(x_i^4 - 16x_i^2 + 5x_i)\)."""
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+
+        return 0.5 * (x.pow(4) - 16 * x.pow(2) + 5 * x).sum(dim=-1)
