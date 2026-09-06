@@ -13,14 +13,31 @@ class MLPTimestepEmbedder(nn.Module):
     This is a generic block (useful for EqM, diffusion, flows, etc.).
     """
 
-    def __init__(self, out_dim: int, frequency_embedding_size: int = 256):
+    def __init__(
+        self,
+        out_dim: int,
+        frequency_embedding_size: int = 256,
+        max_period: int = 10000,
+    ):
         super().__init__()
         self.frequency_embedding_size = int(frequency_embedding_size)
+        self.max_period = int(max_period)
         self.mlp = nn.Sequential(
             nn.Linear(self.frequency_embedding_size, out_dim, bias=True),
             nn.SiLU(),
             nn.Linear(out_dim, out_dim, bias=True),
         )
+        # Precompute the sinusoidal frequency table once and cache it as a
+        # non-persistent buffer. It is deterministic given the config, so it
+        # never needs to be recomputed per forward pass and moves with the
+        # module across devices/dtypes via ``.to()``/``.cuda()``.
+        half = self.frequency_embedding_size // 2
+        freqs = torch.exp(
+            -math.log(self.max_period)
+            * torch.arange(start=0, end=half, dtype=torch.float32)
+            / half
+        )
+        self.register_buffer("freqs", freqs, persistent=False)
 
     @staticmethod
     def sinusoidal_embedding(t: torch.Tensor, dim: int, max_period: int = 10000) -> torch.Tensor:
@@ -40,8 +57,12 @@ class MLPTimestepEmbedder(nn.Module):
     def forward(self, t: torch.Tensor) -> torch.Tensor:
         if t.ndim != 1:
             t = t.reshape(t.shape[0])
-        freq = self.sinusoidal_embedding(t, self.frequency_embedding_size)
-        return self.mlp(freq)
+        # Reuse the cached frequency table instead of rebuilding it each call.
+        args = t[:, None].float() * self.freqs[None]
+        emb = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+        if self.frequency_embedding_size % 2:
+            emb = torch.cat([emb, torch.zeros_like(emb[:, :1])], dim=-1)
+        return self.mlp(emb)
 
 
 class LabelEmbedder(nn.Module):
