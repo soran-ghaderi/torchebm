@@ -139,7 +139,9 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         Runs on the first conditional call: the same one-sample input under
         two distinct in-batch y values (never fabricated labels, which could
         index outside an embedding), model temporarily in eval mode,
-        gradients off. Identical nonzero outputs on a fresh model raise.
+        gradients off. Every module's training flag is restored independently,
+        preserving intentionally mixed train/eval subtrees. Identical nonzero
+        outputs on a fresh model raise.
         Identical all-zero outputs are indeterminate, the signature of a
         zero-initialized output head: adaLN-Zero models emit exactly zero
         until trained, and their y-dependence surfaces only a few optimizer
@@ -178,14 +180,17 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
             for k, v in model_kwargs.items()
             if k != "y"
         }
-        was_training = self.model.training
+        training_flags = {
+            module: module.training for module in self.model.modules()
+        }
         self.model.eval()
         try:
             with torch.no_grad():
                 out_a = self._probe_forward(px, {**pmk, "y": y[0:1]})
                 out_b = self._probe_forward(px, {**pmk, "y": y[i1 : i1 + 1]})
         finally:
-            self.model.train(was_training)
+            for module, training in training_flags.items():
+                module.training = training
         if isinstance(out_a, tuple):
             out_a = out_a[0]
         if isinstance(out_b, tuple):
