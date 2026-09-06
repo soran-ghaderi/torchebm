@@ -12,6 +12,8 @@ from .base_model import (
     RastriginModel,
     AckleyModel,
     RosenbrockModel,
+    ManyWellModel,
+    GaussianMixtureModel,
 )
 
 from .base_scheduler import (
@@ -56,6 +58,8 @@ __all__ = [
     "RastriginModel",
     "AckleyModel",
     "RosenbrockModel",
+    "ManyWellModel",
+    "GaussianMixtureModel",
     # Base classes and utilities
     "BaseSampler",
     "BaseLoss",

@@ -326,3 +326,207 @@ class RastriginModel(BaseModel):
         return self.a * n + torch.sum(
             x**2 - self.a * torch.cos(2 * math.pi * x), dim=-1
         )
+
+
+class ManyWellModel(BaseModel):
+    r"""
+    Energy-based model for the ``ManyWell`` benchmark potential.
+
+    The many-well target from the neural-sampler literature (e.g. Wu et al.,
+    2020; Midgley et al., 2022) is a product of independent 2D double-well
+    distributions. Each even-indexed coordinate ``d`` follows an asymmetric
+    double well and the following odd-indexed coordinate ``v`` a Gaussian, so
+    a ``dim``-dimensional model is the sum over ``dim / 2`` such pairs:
+
+    .. math::
+
+        E(x) = \sum_{k=0}^{dim/2 - 1} \left[
+            w_4\, x_{2k}^{4} - w_2\, x_{2k}^{2} - w_1\, x_{2k}
+            + \tfrac{1}{2} m\, x_{2k+1}^{2}
+        \right].
+
+    The default configuration (``dim=32``) reproduces the standard
+    ``ManyWell-32`` benchmark. The energy is smooth, so the autograd
+    ``gradient`` inherited from :class:`BaseModel` is exact.
+
+    Args:
+        dim (int): Dimensionality of the potential. Must be a positive even
+            number (default ``32``).
+        w4 (float): Quartic coefficient of the double-well coordinates.
+        w2 (float): Quadratic (barrier) coefficient of the double-well
+            coordinates.
+        w1 (float): Linear coefficient breaking the double-well symmetry.
+        m (float): Quadratic coefficient of the Gaussian coordinates.
+    """
+
+    def __init__(
+        self,
+        dim: int = 32,
+        w4: float = 1.0,
+        w2: float = 6.0,
+        w1: float = 0.5,
+        m: float = 1.0,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if dim < 2 or dim % 2 != 0:
+            raise ValueError(f"ManyWell dim must be a positive even number, got {dim}.")
+        self.dim = dim
+        self.w4 = w4
+        self.w2 = w2
+        self.w1 = w1
+        self.m = m
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes the many-well energy summed over coordinate pairs."""
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+        if x.ndim != 2 or x.shape[-1] != self.dim:
+            raise ValueError(
+                f"Input x expected batch_shape (batch_size, {self.dim}), but got {x.shape}"
+            )
+
+        d = x[:, 0::2]  # double-well coordinates
+        v = x[:, 1::2]  # Gaussian coordinates
+        double_well = self.w4 * d.pow(4) - self.w2 * d.pow(2) - self.w1 * d
+        gaussian = 0.5 * self.m * v.pow(2)
+        return double_well.sum(dim=-1) + gaussian.sum(dim=-1)
+
+
+class GaussianMixtureModel(BaseModel):
+    r"""
+    Energy-based model for a Gaussian mixture density.
+
+    The energy is the negative log of the (normalized) mixture density
+
+    .. math::
+
+        E(x) = -\log \sum_{k=1}^{K} \pi_k\,
+            \mathcal{N}(x \mid \mu_k, \Sigma_k),
+
+    computed in a numerically stable way with ``logsumexp``. The energy is
+    smooth, so the autograd ``gradient`` inherited from :class:`BaseModel` is
+    exact.
+
+    Args:
+        means (torch.Tensor): Component means of shape ``(K, D)``.
+        covariances (Optional[torch.Tensor]): Component covariance matrices of
+            shape ``(K, D, D)``. Defaults to identity covariance for every
+            component.
+        weights (Optional[torch.Tensor]): Mixture weights of shape ``(K,)``.
+            They are normalized to sum to one. Defaults to a uniform mixture.
+    """
+
+    def __init__(
+        self,
+        means: torch.Tensor,
+        covariances: Optional[torch.Tensor] = None,
+        weights: Optional[torch.Tensor] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if means.ndim != 2:
+            raise ValueError("means must be a 2D tensor of shape (K, D).")
+        num_components, dim = means.shape
+
+        means = means.to(dtype=self.dtype, device=self.device)
+
+        if covariances is None:
+            covariances = (
+                torch.eye(dim, dtype=self.dtype, device=self.device)
+                .unsqueeze(0)
+                .expand(num_components, dim, dim)
+                .contiguous()
+            )
+        else:
+            if covariances.shape != (num_components, dim, dim):
+                raise ValueError(
+                    f"covariances must have shape ({num_components}, {dim}, {dim}), "
+                    f"but got {tuple(covariances.shape)}."
+                )
+            covariances = covariances.to(dtype=self.dtype, device=self.device)
+
+        if weights is None:
+            weights = torch.ones(num_components, dtype=self.dtype, device=self.device)
+        else:
+            if weights.shape != (num_components,):
+                raise ValueError(
+                    f"weights must have shape ({num_components},), "
+                    f"but got {tuple(weights.shape)}."
+                )
+            weights = weights.to(dtype=self.dtype, device=self.device)
+            if torch.any(weights < 0):
+                raise ValueError("weights must be non-negative.")
+        weights = weights / weights.sum()
+
+        try:
+            precisions = torch.linalg.inv(covariances)
+        except RuntimeError as e:
+            raise ValueError(
+                f"Failed to invert a covariance matrix: {e}. Ensure they are invertible."
+            ) from e
+
+        sign, logabsdet = torch.linalg.slogdet(covariances)
+        if torch.any(sign <= 0):
+            raise ValueError("covariances must be positive definite.")
+
+        # log(pi_k) - 0.5 * (D * log(2 pi) + log|Sigma_k|)
+        log_norm = (
+            torch.log(weights) - 0.5 * dim * math.log(2 * math.pi) - 0.5 * logabsdet
+        )
+
+        self.dim = dim
+        self.register_buffer("means", means)
+        self.register_buffer("precisions", precisions)
+        self.register_buffer("log_norm", log_norm)
+
+    @classmethod
+    def gmm40(
+        cls,
+        n_components: int = 40,
+        dim: int = 2,
+        loc_scaling: float = 40.0,
+        scale: float = 1.0,
+        seed: int = 0,
+        **kwargs,
+    ) -> "GaussianMixtureModel":
+        r"""Builds the standard 40-component 2D Gaussian mixture benchmark.
+
+        Component means are drawn from ``Uniform(-loc_scaling, loc_scaling)``
+        with a fixed ``seed`` (so the target is reproducible) and each
+        component has isotropic covariance ``scale**2 * I``.
+
+        Args:
+            n_components (int): Number of mixture components (default ``40``).
+            dim (int): Dimensionality of each component (default ``2``).
+            loc_scaling (float): Half-width of the uniform range for the means.
+            scale (float): Isotropic standard deviation of every component.
+            seed (int): Seed for the generator used to draw the means.
+        """
+        generator = torch.Generator().manual_seed(seed)
+        means = (
+            torch.rand(n_components, dim, generator=generator) * 2.0 - 1.0
+        ) * loc_scaling
+        covariances = (scale**2) * torch.eye(dim).unsqueeze(0).expand(
+            n_components, dim, dim
+        ).contiguous()
+        return cls(means=means, covariances=covariances, **kwargs)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes the mixture energy \(E(x) = -\log \sum_k \pi_k \mathcal{N}(x \mid \mu_k, \Sigma_k)\)."""
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+        if x.ndim != 2 or x.shape[-1] != self.dim:
+            raise ValueError(
+                f"Input x expected batch_shape (batch_size, {self.dim}), but got {x.shape}"
+            )
+
+        x = x.to(dtype=self.dtype, device=self.means.device)
+        delta = x.unsqueeze(1) - self.means.unsqueeze(0)  # (B, K, D)
+        mahalanobis = torch.einsum(
+            "bki,kij,bkj->bk", delta, self.precisions, delta
+        )  # (B, K)
+        log_components = -0.5 * mahalanobis + self.log_norm  # (B, K)
+        return -torch.logsumexp(log_components, dim=1)
