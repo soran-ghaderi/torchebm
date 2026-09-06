@@ -53,7 +53,7 @@ from torchebm.losses import (
 _MODEL_TIME_DEPRECATION = declare_deprecation(
     module=__name__,
     name="EquilibriumMatchingLoss model_time argument",
-    since="0.8.6",
+    since="0.8.7",
     deprecated_on="2026-09-02",
     replacement="time_invariant=True ('zero') or time_invariant=False ('true')",
     message=(
