@@ -38,6 +38,26 @@ def test_mlp_timestep_embedder_gradient_flows():
     assert any((g.abs() > 0).any() for g in grads)
 
 
+def test_mlp_timestep_embedder_float32_output_is_unchanged():
+    torch.manual_seed(0)
+    emb = MLPTimestepEmbedder(out_dim=16)
+    t = torch.tensor([0.0, 0.25, 1.0, 999.0])
+    freq = emb.sinusoidal_embedding(t, emb.frequency_embedding_size)
+    expected = emb.mlp(freq)
+
+    assert torch.equal(emb(t), expected)
+
+
+def test_mlp_timestep_embedder_matches_module_dtype():
+    emb = MLPTimestepEmbedder(out_dim=16).double()
+    t = torch.tensor([0.0, 0.25, 1.0, 999.0], dtype=torch.float64)
+
+    output = emb(t)
+
+    assert output.dtype == torch.float64
+    assert torch.isfinite(output).all()
+
+
 def test_label_embedder_no_dropout_returns_embeddings():
     emb = LabelEmbedder(num_classes=10, out_dim=16, dropout_prob=0.0)
     labels = torch.randint(0, 10, (8,))
