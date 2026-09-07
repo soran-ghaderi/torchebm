@@ -5,6 +5,18 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7](https://github.com/soran-ghaderi/torchebm/compare/v0.8.6...v0.8.7) - 2026-09-07
+
+### Added
+
+- [`daa3b69`](https://github.com/soran-ghaderi/torchebm/commit/daa3b6990d474113ca867e1ad78829fe4fb8c0b7) - time_invariant replaces model_time on equilibrium matching, model_time deprecated (#283)
+
+### Other
+
+- [`2281e87`](https://github.com/soran-ghaderi/torchebm/commit/2281e8746de87a3647518a2f571462b5199dccdd) - document the runtime-dependency policy for extras
+- [`0e05861`](https://github.com/soran-ghaderi/torchebm/commit/0e05861cfd8ded1276d4e033553759a4269d7feb) - stamp model_time since to the 0.8.7 release that ships the warning
+- [`2cade3d`](https://github.com/soran-ghaderi/torchebm/commit/2cade3d27fd55de0e063a93c62c59b879fcaf174) - ship py.typed marker for PEP 561 compliance
+
 ## [0.8.6](https://github.com/soran-ghaderi/torchebm/compare/v0.8.5...v0.8.6) - 2026-09-02
 
 ### Added
