@@ -40,7 +40,9 @@ class MLPTimestepEmbedder(nn.Module):
     def forward(self, t: torch.Tensor) -> torch.Tensor:
         if t.ndim != 1:
             t = t.reshape(t.shape[0])
-        freq = self.sinusoidal_embedding(t, self.frequency_embedding_size)
+        freq = self.sinusoidal_embedding(t, self.frequency_embedding_size).to(
+            dtype=self.mlp[0].weight.dtype
+        )
         return self.mlp(freq)
 
 
