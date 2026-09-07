@@ -4,11 +4,14 @@ import torch
 from torchebm.core.base_model import (
     AckleyModel,
     BaseModel,
+    BoothModel,
     DoubleWellModel,
     GaussianModel,
     HarmonicModel,
+    HimmelblauModel,
     RastriginModel,
     RosenbrockModel,
+    StyblinskiTangModel,
 )
 
 
@@ -108,6 +111,44 @@ def test_rastrigin_energy_zero_at_origin():
     m = RastriginModel()
     x = torch.zeros(1, 3)
     assert torch.allclose(m(x), torch.zeros(1), atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "model,minimum,origin_energy",
+    [
+        (HimmelblauModel(), [3.0, 2.0], 170.0),
+        (BoothModel(), [1.0, 3.0], 74.0),
+    ],
+)
+def test_two_dimensional_landscape_batch_values(model, minimum, origin_energy):
+    x = torch.tensor([minimum, [0.0, 0.0]])
+    assert torch.allclose(model(x), torch.tensor([0.0, origin_energy]), atol=1e-6)
+
+
+@pytest.mark.parametrize("model", [HimmelblauModel(), BoothModel()])
+def test_two_dimensional_landscape_rejects_wrong_dimension(model):
+    with pytest.raises(ValueError, match="requires 2 dimensions"):
+        model(torch.randn(3, 4))
+
+
+def test_styblinski_tang_is_vectorized_over_batches():
+    model = StyblinskiTangModel()
+    x = torch.tensor([[0.0, 0.0], [1.0, -2.0]])
+    assert torch.allclose(model(x), torch.tensor([0.0, -34.0]))
+
+
+@pytest.mark.parametrize(
+    "model,x,expected_gradient",
+    [
+        (HimmelblauModel(), [1.0, -1.0], [-54.0, -2.0]),
+        (BoothModel(), [-1.0, 2.0], [-28.0, -26.0]),
+        (StyblinskiTangModel(), [1.0, -2.0], [-11.5, 18.5]),
+    ],
+)
+def test_analytic_landscape_gradient(model, x, expected_gradient):
+    x = torch.tensor([x])
+    expected = torch.tensor([expected_gradient])
+    assert torch.allclose(model.gradient(x), expected)
 
 
 def test_harmonic_gradient_linear_in_x():

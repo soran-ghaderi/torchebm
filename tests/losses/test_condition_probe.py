@@ -154,12 +154,14 @@ def test_uniform_labels_warn_and_disarm():
     assert torch.isfinite(loss_fn(torch.randn(8, 4), y=_distinct_y()))
 
 
-def test_probe_restores_training_mode():
+def test_probe_restores_per_module_training_modes():
     model = ConsumingField()
     model.train()
+    model.linear.eval()
     loss_fn = EquilibriumMatchingLoss(model=model)
     loss_fn(torch.randn(8, 4), y=_distinct_y())
     assert model.training
+    assert not model.linear.training
 
 
 def test_zero_init_output_defers_probe():

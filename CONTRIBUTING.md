@@ -42,22 +42,45 @@ pip install -e ".[docs]"
 mkdocs serve
 ```
 
+## Dependencies
+
+`torch` is the only runtime dependency, and `torchebm/` imports nothing else. Data
+loaders, pretrained checkpoints, trainer loops and plotting belong to the
+application, not to the library.
+
+The optional extras (`examples`, `dev`, `docs`) serve the repository, never the
+library at runtime. A new runtime extra is justified only when a module under
+`torchebm/` needs it, and then it must:
+
+- import the package lazily at the call site, never at module import time;
+- raise an `ImportError` naming the extra to install;
+- be named after the capability it unlocks (for example `vision`), not after a
+  paper or an algorithm.
+
 ## Development Workflow
 
-1. Create a new branch from `master`.
-2. Make your changes.
-3. Format your code.
-4. Run the test suite (`pytest tests/ -v`).
-5. Commit using Conventional Commits.
-6. Open a Pull Request linked to the relevant issue.
+1. Claim the issue. Check that nobody is assigned and no open Pull Request
+   already links it, then comment on the issue to say you are taking it.
+   Pull Requests that duplicate an earlier one for the same issue are closed.
+2. Create a new branch from `master`.
+3. Make your changes.
+4. Format your code.
+5. Run the test suite (`pytest tests/ -v`).
+6. Commit using Conventional Commits.
+7. Open a Pull Request linked to the relevant issue.
 
 ## Pull Request Checklist
 
 Before opening a Pull Request, ensure that:
 
+- No earlier open Pull Request targets the same issue
 - Tests pass (`pytest tests/ -v`)
 - Code is formatted with `black` and `isort`
 - Commit messages follow the Conventional Commits format
+- No AI attribution in commits, PR title or PR description: no
+  `Co-authored-by` trailers for AI tools, no "generated with" footers, no
+  mentions of assistants. Trailers land in the contributors graph and PR text
+  lands in the changelog; both must name people only.
 - Related issues are linked when applicable.
 
 For complete contribution instructions, please refer to the [Developer Guide](https://soran-ghaderi.github.io/torchebm/latest/developer_guide/).

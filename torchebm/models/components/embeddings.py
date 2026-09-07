@@ -13,9 +13,16 @@ class MLPTimestepEmbedder(nn.Module):
     This is a generic block (useful for EqM, diffusion, flows, etc.).
     """
 
+    freqs: torch.Tensor
+
     def __init__(self, out_dim: int, frequency_embedding_size: int = 256):
         super().__init__()
         self.frequency_embedding_size = int(frequency_embedding_size)
+        self.register_buffer(
+            "freqs",
+            self._frequency_table(self.frequency_embedding_size),
+            persistent=False,
+        )
         self.mlp = nn.Sequential(
             nn.Linear(self.frequency_embedding_size, out_dim, bias=True),
             nn.SiLU(),
@@ -23,24 +30,47 @@ class MLPTimestepEmbedder(nn.Module):
         )
 
     @staticmethod
-    def sinusoidal_embedding(t: torch.Tensor, dim: int, max_period: int = 10000) -> torch.Tensor:
-        # t: (B,)
+    def _frequency_table(
+        dim: int,
+        max_period: int = 10000,
+        *,
+        device: torch.device | None = None,
+    ) -> torch.Tensor:
         half = dim // 2
-        freqs = torch.exp(
+        return torch.exp(
             -math.log(max_period)
-            * torch.arange(start=0, end=half, device=t.device, dtype=torch.float32)
+            * torch.arange(start=0, end=half, device=device, dtype=torch.float32)
             / half
         )
-        args = t[:, None].float() * freqs[None]
+
+    @staticmethod
+    def _embed_with_frequencies(
+        t: torch.Tensor, dim: int, freqs: torch.Tensor
+    ) -> torch.Tensor:
+        args = t[:, None].to(dtype=freqs.dtype) * freqs[None]
         emb = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
             emb = torch.cat([emb, torch.zeros_like(emb[:, :1])], dim=-1)
         return emb
 
+    @staticmethod
+    def sinusoidal_embedding(
+        t: torch.Tensor, dim: int, max_period: int = 10000
+    ) -> torch.Tensor:
+        """Build a standalone sinusoidal embedding.
+
+        ``forward`` uses the module's cached frequency table; this helper retains
+        the existing stateless API for callers that only need the raw embedding.
+        """
+        freqs = MLPTimestepEmbedder._frequency_table(dim, max_period, device=t.device)
+        return MLPTimestepEmbedder._embed_with_frequencies(t, dim, freqs)
+
     def forward(self, t: torch.Tensor) -> torch.Tensor:
         if t.ndim != 1:
             t = t.reshape(t.shape[0])
-        freq = self.sinusoidal_embedding(t, self.frequency_embedding_size)
+        freq = self._embed_with_frequencies(
+            t, self.frequency_embedding_size, self.freqs
+        )
         return self.mlp(freq)
 
 
