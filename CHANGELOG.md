@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [`daa3b69`](https://github.com/soran-ghaderi/torchebm/commit/daa3b6990d474113ca867e1ad78829fe4fb8c0b7) - time_invariant replaces model_time on equilibrium matching, model_time deprecated (#283)
 
+### Fixed
+
+- [`297594a`](https://github.com/soran-ghaderi/torchebm/commit/297594a5d43e115d945a80f1ba48d365a734ac30) - respect timestep embedder dtype
+
 ### Other
 
 - [`2281e87`](https://github.com/soran-ghaderi/torchebm/commit/2281e8746de87a3647518a2f571462b5199dccdd) - document the runtime-dependency policy for extras
