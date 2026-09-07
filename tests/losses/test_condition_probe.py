@@ -164,6 +164,22 @@ def test_probe_restores_per_module_training_modes():
     assert not model.linear.training
 
 
+def test_probe_restores_per_module_training_modes_after_error():
+    model = ConsumingField()
+    model.train()
+    model.linear.eval()
+    loss_fn = EquilibriumMatchingLoss(model=model)
+
+    def fail_probe(*args, **kwargs):
+        raise RuntimeError("probe failed")
+
+    loss_fn._probe_forward = fail_probe
+    with pytest.raises(RuntimeError, match="probe failed"):
+        loss_fn._check_condition(torch.randn(8, 4), {"y": _distinct_y()})
+    assert model.training
+    assert not model.linear.training
+
+
 def test_zero_init_output_defers_probe():
     model = ZeroInitField(consumes_y=True)
     loss_fn = FlowMatchingLoss(model=model)
