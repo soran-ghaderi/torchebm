@@ -20,6 +20,7 @@ Example:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Optional, Sequence
 
@@ -44,7 +45,7 @@ def profile_context(
     row_limit: int = 20,
     export_trace: Optional[str] = None,
     print_table: bool = True,
-):
+) -> Iterator[profile]:
     r"""Context manager for profiling TorchEBM operations.
 
     Wraps ``torch.profiler.profile`` with automatic CUDA sync, table printing,
@@ -63,7 +64,7 @@ def profile_context(
         print_table: Whether to print the summary table on exit.
 
     Yields:
-        ``torch.profiler.profile`` instance for advanced access.
+        torch.profiler.profile: Profiler instance for advanced access.
     """
     if activities is None:
         activities = _default_activities()

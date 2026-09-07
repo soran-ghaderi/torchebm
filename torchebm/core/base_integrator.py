@@ -59,8 +59,8 @@ class BaseIntegrator(TorchEBMModule, ABC):
         Args:
             state: Mapping containing required tensors (e.g., {'x': ..., 'p': ...}).
             step_size: Step size for the integration.
-            *args: Additional positional arguments specific to the integrator.
-            **kwargs: Additional keyword arguments specific to the integrator.
+            *args (Any): Additional positional arguments specific to the integrator.
+            **kwargs (Any): Additional keyword arguments specific to the integrator.
 
         Returns:
             Updated state dict with the same keys as the input `state`.
@@ -83,8 +83,8 @@ class BaseIntegrator(TorchEBMModule, ABC):
             state: Mapping containing required tensors (e.g., {'x': ..., 'p': ...}).
             step_size: Step size for the integration.
             n_steps: The number of integration steps to perform.
-            *args: Additional positional arguments specific to the integrator.
-            **kwargs: Additional keyword arguments specific to the integrator.
+            *args (Any): Additional positional arguments specific to the integrator.
+            **kwargs (Any): Additional keyword arguments specific to the integrator.
 
         Returns:
             Updated state dict with the same keys as the input `state`.

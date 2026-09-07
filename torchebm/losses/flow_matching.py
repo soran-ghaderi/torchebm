@@ -127,13 +127,13 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
         Args:
             x: Data samples of shape (batch_size, ...).
-            *args: Additional positional arguments.
+            *args (Any): Additional positional arguments.
             y: Optional conditioning tensor forwarded to the model; shorthand
                 for ``model_kwargs={'y': y}``.
             x0: Optional source samples of shape (batch_size, ...). Defaults to
                 standard Gaussian noise.
             model_kwargs: Conditioning arguments forwarded to the model.
-            **kwargs: Deprecated bare model kwargs; pass ``model_kwargs={...}``.
+            **kwargs (Any): Deprecated bare model kwargs; pass ``model_kwargs={...}``.
 
         Returns:
             Scalar loss value.
