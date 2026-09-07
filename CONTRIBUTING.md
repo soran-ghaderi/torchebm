@@ -77,6 +77,10 @@ Before opening a Pull Request, ensure that:
 - Tests pass (`pytest tests/ -v`)
 - Code is formatted with `black` and `isort`
 - Commit messages follow the Conventional Commits format
+- No AI attribution in commits, PR title or PR description: no
+  `Co-authored-by` trailers for AI tools, no "generated with" footers, no
+  mentions of assistants. Trailers land in the contributors graph and PR text
+  lands in the changelog; both must name people only.
 - Related issues are linked when applicable.
 
 For complete contribution instructions, please refer to the [Developer Guide](https://soran-ghaderi.github.io/torchebm/latest/developer_guide/).

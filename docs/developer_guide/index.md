@@ -85,6 +85,11 @@ perf(integrators): cache RK buffers on device once per integrate()
 Breaking changes add a `!` after the type and a `BREAKING CHANGE:` footer.
 Keep the summary under 72 chars, imperative mood, no trailing period.
 
+No AI attribution anywhere: no `Co-authored-by` trailers for AI tools, no
+"generated with" footers, no mentions of assistants in commit messages, PR
+titles or PR descriptions. Attribution trailers land in the contributors graph;
+PR text lands in the changelog. Both must name people only.
+
 ## Before opening the PR
 
 - [ ] No earlier open PR targets the same issue
@@ -94,6 +99,7 @@ Keep the summary under 72 chars, imperative mood, no trailing period.
 - [ ] If you touched an example: `pytest -m examples tests/examples` passes
 - [ ] If performance-sensitive: benchmarked per [Performance and Benchmarking](performance.md)
 - [ ] Commit messages follow Conventional Commits
+- [ ] No AI attribution in commits, PR title or PR description
 
 The PR description should say **what** changed and **why**, and reference any
 issue it closes (`Closes #123`).
