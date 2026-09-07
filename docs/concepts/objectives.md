@@ -110,14 +110,13 @@ clock the model sees; each has a switch to adopt the other's convention:
 | --- | --- | --- | --- |
 | `FlowMatchingLoss` | `u_t` (noise -> data) | sampled `t` | `FlowSampler` |
 | `FlowMatchingLoss(negate_velocity=True)` | `-u_t` (data -> noise) | sampled `t` | `FlowSampler(negate_velocity=True)`, descent samplers via `EqMEnergy` |
-| `EquilibriumMatchingLoss` | `-u_t * c(t)` | zeros (`model_time="zero"`) | `FlowSampler(negate_velocity=True)`, `EqMEnergy` |
-| `EquilibriumMatchingLoss(model_time="true")` | `-u_t * c(t)` | sampled `t` | `FlowSampler(negate_velocity=True)` |
+| `EquilibriumMatchingLoss` | `-u_t * c(t)` | zeros (`time_invariant=True`) | `FlowSampler(negate_velocity=True)`, `EqMEnergy` |
+| `EquilibriumMatchingLoss(time_invariant=False)` | `-u_t * c(t)` | sampled `t` | `FlowSampler(negate_velocity=True)` |
 
-`model_time` also accepts a callable `t -> t'` for clock schedules and
-reparametrisations; apply the same map at sampling time. With `ct="constant"`,
-`ct_multiplier=1` and `model_time="true"` the EqM objective is bit-identical to
-`FlowMatchingLoss(negate_velocity=True)`. `EqMEnergy` always evaluates the
-field at `t = 0`, so it suits time-invariant fields.
+With `ct="constant"`, `ct_multiplier=1` and `time_invariant=False` the EqM
+objective is bit-identical to `FlowMatchingLoss(negate_velocity=True)`.
+`EqMEnergy` always evaluates the field at `t = 0`, so it suits time-invariant
+fields.
 
 **Energy matching** (arXiv:2504.10612) keeps a single time-independent scalar
 potential: an OT flow-matching warm-up shapes it as transport, then a

@@ -5,6 +5,33 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7](https://github.com/soran-ghaderi/torchebm/compare/v0.8.6...v0.8.7) - 2026-09-07
+
+### Added
+
+- [`daa3b69`](https://github.com/soran-ghaderi/torchebm/commit/daa3b6990d474113ca867e1ad78829fe4fb8c0b7) - time_invariant replaces model_time on equilibrium matching, model_time deprecated (#283)
+- [`0a383aa`](https://github.com/soran-ghaderi/torchebm/commit/0a383aa49ae070a1296de91a3d01709c17ec77ff) - add analytic energy landscapes
+
+### Fixed
+
+- [`297594a`](https://github.com/soran-ghaderi/torchebm/commit/297594a5d43e115d945a80f1ba48d365a734ac30) - respect timestep embedder dtype
+- [`b2d9261`](https://github.com/soran-ghaderi/torchebm/commit/b2d9261e168399ff3b55004b5da357aa31ef57b6) - Restore per-module training modes
+
+### Performance
+
+- [`481b877`](https://github.com/soran-ghaderi/torchebm/commit/481b877bafe5818cb3f0e458bff15aaa8e29e45a) - use topk for trimmed mean
+- [`c9f5c38`](https://github.com/soran-ghaderi/torchebm/commit/c9f5c382e1fd5a699fd481c43f5f7d4c5dec50d0) - cache timestep frequencies
+
+### Other
+
+- [`2281e87`](https://github.com/soran-ghaderi/torchebm/commit/2281e8746de87a3647518a2f571462b5199dccdd) - document the runtime-dependency policy for extras
+- [`0e05861`](https://github.com/soran-ghaderi/torchebm/commit/0e05861cfd8ded1276d4e033553759a4269d7feb) - stamp model_time since to the 0.8.7 release that ships the warning
+- [`2cade3d`](https://github.com/soran-ghaderi/torchebm/commit/2cade3d27fd55de0e063a93c62c59b879fcaf174) - ship py.typed marker for PEP 561 compliance
+- [`809fd4e`](https://github.com/soran-ghaderi/torchebm/commit/809fd4e2882f76279d5be6047ef86c482fd46415) - fix implicit solver parameter docs
+- [`4fcd16f`](https://github.com/soran-ghaderi/torchebm/commit/4fcd16f4f8ccddbc21a32004c1812f9891d1ec4f) - claim an issue before opening a pr
+- [`41251a3`](https://github.com/soran-ghaderi/torchebm/commit/41251a350992e22c449ee015db619b0e6fdad40f) - cover profiling helpers
+- [`c58884a`](https://github.com/soran-ghaderi/torchebm/commit/c58884a942164f0e65e1201e3374d58a3aabcc7a) - no third-party tools/bots atrtibution in commits and prs
+
 ## [0.8.6](https://github.com/soran-ghaderi/torchebm/compare/v0.8.5...v0.8.6) - 2026-09-02
 
 ### Added

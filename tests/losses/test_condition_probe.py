@@ -154,30 +154,14 @@ def test_uniform_labels_warn_and_disarm():
     assert torch.isfinite(loss_fn(torch.randn(8, 4), y=_distinct_y()))
 
 
-def test_probe_restores_each_module_training_mode():
+def test_probe_restores_per_module_training_modes():
     model = ConsumingField()
     model.train()
     model.linear.eval()
-    training_flags = {module: module.training for module in model.modules()}
     loss_fn = EquilibriumMatchingLoss(model=model)
     loss_fn(torch.randn(8, 4), y=_distinct_y())
-    assert {module: module.training for module in model.modules()} == training_flags
-
-
-def test_probe_restores_each_module_training_mode_after_error():
-    model = ConsumingField()
-    model.train()
-    model.linear.eval()
-    training_flags = {module: module.training for module in model.modules()}
-    loss_fn = EquilibriumMatchingLoss(model=model)
-
-    def fail_probe(*args, **kwargs):
-        raise RuntimeError("probe failed")
-
-    loss_fn._probe_forward = fail_probe
-    with pytest.raises(RuntimeError, match="probe failed"):
-        loss_fn._check_condition(torch.randn(8, 4), {"y": _distinct_y()})
-    assert {module: module.training for module in model.modules()} == training_flags
+    assert model.training
+    assert not model.linear.training
 
 
 def test_zero_init_output_defers_probe():

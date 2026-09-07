@@ -766,8 +766,8 @@ def test_loss_weight_fn_non_callable_raises():
         EquilibriumMatchingLoss(model=DummyModel(), loss_weight_fn=5)
 
 
-# model_time: the clock shown to the model
-# ========================================
+# time_invariant: the clock shown to the model
+# ============================================
 
 
 class TimeConditionedModel(nn.Module):
@@ -779,63 +779,64 @@ def _fixed_t(t):
     return lambda batch, *, device, dtype, generator: t.to(device=device, dtype=dtype)
 
 
-def test_model_time_default_zeroes_clock():
+def test_time_invariant_default_zeroes_clock():
     model = DummyModel()
     EquilibriumMatchingLoss(model=model)(torch.randn(8, 4))
     assert model.last_t.shape == (8,)
     assert torch.equal(model.last_t, torch.zeros(8))
 
 
-def test_model_time_true_passes_sampled_t():
-    t = torch.rand(8)
-    model = DummyModel()
-    EquilibriumMatchingLoss(model=model, model_time="true", t_sampler=_fixed_t(t))(
-        torch.randn(8, 4)
-    )
-    assert torch.equal(model.last_t, t)
-
-
-def test_model_time_callable_maps_clock_elementwise():
+def test_time_conditioned_passes_sampled_t():
     t = torch.rand(8)
     model = DummyModel()
     EquilibriumMatchingLoss(
-        model=model, model_time=lambda t: 1.0 - t, t_sampler=_fixed_t(t)
+        model=model, time_invariant=False, t_sampler=_fixed_t(t)
     )(torch.randn(8, 4))
-    assert torch.equal(model.last_t, 1.0 - t)
+    assert torch.equal(model.last_t, t)
 
 
-def test_model_time_applies_to_conditioning_probe():
+@pytest.mark.parametrize("time_invariant", [True, False])
+def test_conditioning_probe_always_at_zero_time(time_invariant):
     model = DummyModel()
-    loss_fn = EquilibriumMatchingLoss(model=model, model_time=lambda t: t + 0.25)
+    loss_fn = EquilibriumMatchingLoss(model=model, time_invariant=time_invariant)
     loss_fn._probe_forward(torch.randn(4, 2), {})
-    assert torch.equal(model.last_t, torch.full((4,), 0.25))
+    assert torch.equal(model.last_t, torch.zeros(4))
 
 
-def test_model_time_changes_loss_only_for_time_conditioned_model():
+def test_time_invariant_changes_loss_only_for_time_conditioned_model():
     t = torch.rand(16)
     x1, x0 = torch.randn(16, 4), torch.randn(16, 4)
 
-    def loss(model, model_time):
+    def loss(model, time_invariant):
         return EquilibriumMatchingLoss(
-            model=model, model_time=model_time, t_sampler=_fixed_t(t)
+            model=model, time_invariant=time_invariant, t_sampler=_fixed_t(t)
         )(x1, x0=x0)
 
     conditioned = TimeConditionedModel()
-    assert not torch.equal(loss(conditioned, "zero"), loss(conditioned, "true"))
+    assert not torch.equal(loss(conditioned, True), loss(conditioned, False))
     torch.manual_seed(0)
     invariant = LearnableModel(4)
-    assert torch.equal(loss(invariant, "zero"), loss(invariant, "true"))
+    assert torch.equal(loss(invariant, True), loss(invariant, False))
+
+
+@pytest.mark.parametrize("model_time, expected", [("zero", True), ("true", False)])
+def test_model_time_maps_to_time_invariant_with_warning(model_time, expected):
+    from torchebm._deprecation import TorchEBMDeprecationWarning
+
+    with pytest.warns(TorchEBMDeprecationWarning, match="time_invariant"):
+        loss_fn = EquilibriumMatchingLoss(model=DummyModel(), model_time=model_time)
+    assert loss_fn.time_invariant is expected
 
 
 def test_model_time_invalid_raises():
-    with pytest.raises(ValueError, match="model_time must be"):
-        EquilibriumMatchingLoss(model=DummyModel(), model_time="sampled")
+    with pytest.raises(ValueError, match="use time_invariant"):
+        EquilibriumMatchingLoss(model=DummyModel(), model_time=lambda t: t)
 
 
-def test_model_time_in_repr():
-    assert "model_time='zero'" in repr(EquilibriumMatchingLoss(model=DummyModel()))
-    assert "model_time='true'" in repr(
-        EquilibriumMatchingLoss(model=DummyModel(), model_time="true")
+def test_time_invariant_in_repr():
+    assert "time_invariant=True" in repr(EquilibriumMatchingLoss(model=DummyModel()))
+    assert "time_invariant=False" in repr(
+        EquilibriumMatchingLoss(model=DummyModel(), time_invariant=False)
     )
 
 
