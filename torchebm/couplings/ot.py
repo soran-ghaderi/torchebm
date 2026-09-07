@@ -271,13 +271,14 @@ class SinkhornCoupling(BaseCostCoupling):
     Args:
         reg: Entropic regularization strength.
         n_iters: Number of Sinkhorn iterations.
-        process_group: When set, couple globally over the pooled batches of
-            every rank in the group: both batches are all_gathered, every
-            rank solves the identical pooled problem, the row-conditional
-            draw is broadcast from rank 0 (per-rank generators cannot
-            desynchronize it), and each rank keeps its own rows, paired
-            against targets from any rank. This shrinks the minibatch-OT
-            bias at fixed per-rank batch size, at the price of a
+        process_group (Optional[torch.distributed.ProcessGroup]): When set,
+            couple globally over the pooled batches of every rank in the
+            group: both batches are all_gathered, every rank solves the
+            identical pooled problem, the row-conditional draw is broadcast
+            from rank 0 (per-rank generators cannot desynchronize it), and
+            each rank keeps its own rows, paired against targets from any
+            rank. This shrinks the minibatch-OT bias at fixed per-rank batch
+            size, at the price of a
             \((\text{world\_size} \times \text{batch})^2\) cost matrix
             materialized on every rank. Requires equal batch sizes per rank,
             and `couple` becomes a collective every rank must enter

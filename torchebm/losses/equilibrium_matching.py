@@ -318,7 +318,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
         Args:
             x: Data samples of shape (batch_size, ...).
-            *args: Additional positional arguments.
+            *args (Any): Additional positional arguments.
             y: Optional conditioning tensor (class labels, embeddings, ...)
                 forwarded to the model as ``model(x, t, y=y)``; shorthand for
                 ``model_kwargs={'y': y}``. ``None`` keeps the unconditional path.
@@ -327,7 +327,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
                 distribution for arbitrary source-to-target transport.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. ``None`` (default) is the unconditional path.
-            **kwargs: Deprecated. Bare keyword arguments are still forwarded to
+            **kwargs (Any): Deprecated. Bare keyword arguments are still forwarded to
                 the model for one release but emit a ``DeprecationWarning``; pass
                 ``model_kwargs={...}`` instead.
 
