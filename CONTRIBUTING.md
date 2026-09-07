@@ -59,17 +59,21 @@ library at runtime. A new runtime extra is justified only when a module under
 
 ## Development Workflow
 
-1. Create a new branch from `master`.
-2. Make your changes.
-3. Format your code.
-4. Run the test suite (`pytest tests/ -v`).
-5. Commit using Conventional Commits.
-6. Open a Pull Request linked to the relevant issue.
+1. Claim the issue. Check that nobody is assigned and no open Pull Request
+   already links it, then comment on the issue to say you are taking it.
+   Pull Requests that duplicate an earlier one for the same issue are closed.
+2. Create a new branch from `master`.
+3. Make your changes.
+4. Format your code.
+5. Run the test suite (`pytest tests/ -v`).
+6. Commit using Conventional Commits.
+7. Open a Pull Request linked to the relevant issue.
 
 ## Pull Request Checklist
 
 Before opening a Pull Request, ensure that:
 
+- No earlier open Pull Request targets the same issue
 - Tests pass (`pytest tests/ -v`)
 - Code is formatted with `black` and `isort`
 - Commit messages follow the Conventional Commits format
