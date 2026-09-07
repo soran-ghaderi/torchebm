@@ -58,6 +58,27 @@ def test_mlp_timestep_embedder_matches_module_dtype():
     assert torch.isfinite(output).all()
 
 
+def test_mlp_timestep_embedder_caches_frequencies():
+    emb = MLPTimestepEmbedder(out_dim=16, frequency_embedding_size=8)
+    expected = torch.tensor([1.0, 0.1, 0.01, 0.001])
+
+    assert torch.allclose(emb.freqs, expected)
+
+
+def test_mlp_timestep_embedder_frequency_buffer_tracks_dtype():
+    emb = MLPTimestepEmbedder(out_dim=16, frequency_embedding_size=8).double()
+
+    assert emb.freqs.dtype == torch.float64
+    assert emb(torch.tensor([0.0, 0.25], dtype=torch.float64)).dtype == torch.float64
+
+
+def test_mlp_timestep_embedder_frequency_buffer_is_not_persistent():
+    emb = MLPTimestepEmbedder(out_dim=16, frequency_embedding_size=8)
+
+    assert "freqs" in dict(emb.named_buffers())
+    assert "freqs" not in emb.state_dict()
+
+
 def test_label_embedder_no_dropout_returns_embeddings():
     emb = LabelEmbedder(num_classes=10, out_dim=16, dropout_prob=0.0)
     labels = torch.randint(0, 10, (8,))
