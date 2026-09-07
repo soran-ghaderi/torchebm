@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`809fd4e`](https://github.com/soran-ghaderi/torchebm/commit/809fd4e2882f76279d5be6047ef86c482fd46415) - fix implicit solver parameter docs
 - [`4fcd16f`](https://github.com/soran-ghaderi/torchebm/commit/4fcd16f4f8ccddbc21a32004c1812f9891d1ec4f) - claim an issue before opening a pr
 - [`41251a3`](https://github.com/soran-ghaderi/torchebm/commit/41251a350992e22c449ee015db619b0e6fdad40f) - cover profiling helpers
+- [`c58884a`](https://github.com/soran-ghaderi/torchebm/commit/c58884a942164f0e65e1201e3374d58a3aabcc7a) - no third-party tools/bots atrtibution in commits and prs
 
 ## [0.8.6](https://github.com/soran-ghaderi/torchebm/compare/v0.8.5...v0.8.6) - 2026-09-02
 
