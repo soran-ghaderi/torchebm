@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`0e05861`](https://github.com/soran-ghaderi/torchebm/commit/0e05861cfd8ded1276d4e033553759a4269d7feb) - stamp model_time since to the 0.8.7 release that ships the warning
 - [`2cade3d`](https://github.com/soran-ghaderi/torchebm/commit/2cade3d27fd55de0e063a93c62c59b879fcaf174) - ship py.typed marker for PEP 561 compliance
 - [`809fd4e`](https://github.com/soran-ghaderi/torchebm/commit/809fd4e2882f76279d5be6047ef86c482fd46415) - fix implicit solver parameter docs
+- [`4fcd16f`](https://github.com/soran-ghaderi/torchebm/commit/4fcd16f4f8ccddbc21a32004c1812f9891d1ec4f) - claim an issue before opening a pr
 
 ## [0.8.6](https://github.com/soran-ghaderi/torchebm/compare/v0.8.5...v0.8.6) - 2026-09-02
 
