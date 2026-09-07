@@ -10,11 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - [`daa3b69`](https://github.com/soran-ghaderi/torchebm/commit/daa3b6990d474113ca867e1ad78829fe4fb8c0b7) - time_invariant replaces model_time on equilibrium matching, model_time deprecated (#283)
+- [`0a383aa`](https://github.com/soran-ghaderi/torchebm/commit/0a383aa49ae070a1296de91a3d01709c17ec77ff) - add analytic energy landscapes
 
 ### Fixed
 
 - [`297594a`](https://github.com/soran-ghaderi/torchebm/commit/297594a5d43e115d945a80f1ba48d365a734ac30) - respect timestep embedder dtype
 - [`b2d9261`](https://github.com/soran-ghaderi/torchebm/commit/b2d9261e168399ff3b55004b5da357aa31ef57b6) - Restore per-module training modes
+
+### Performance
+
+- [`481b877`](https://github.com/soran-ghaderi/torchebm/commit/481b877bafe5818cb3f0e458bff15aaa8e29e45a) - use topk for trimmed mean
+- [`c9f5c38`](https://github.com/soran-ghaderi/torchebm/commit/c9f5c382e1fd5a699fd481c43f5f7d4c5dec50d0) - cache timestep frequencies
 
 ### Other
 
