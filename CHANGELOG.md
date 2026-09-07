@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - [`297594a`](https://github.com/soran-ghaderi/torchebm/commit/297594a5d43e115d945a80f1ba48d365a734ac30) - respect timestep embedder dtype
+- [`b2d9261`](https://github.com/soran-ghaderi/torchebm/commit/b2d9261e168399ff3b55004b5da357aa31ef57b6) - Restore per-module training modes
 
 ### Other
 
