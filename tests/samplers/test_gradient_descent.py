@@ -76,7 +76,7 @@ class TestGradientDescentSampler:
         sampler = GradientDescentSampler(model, step_size=0.1, device=device, dtype=dtype)
         text = repr(sampler)
         assert text.startswith("GradientDescentSampler(")
-        assert "step_size=" in text
+        assert "step_size=0.1" in text
 
 class TestNesterovSampler:
 
@@ -90,7 +90,7 @@ class TestNesterovSampler:
         sampler = NesterovSampler(model, step_size=0.1, momentum=0.9, device=device, dtype=dtype)
         text = repr(sampler)
         assert text.startswith("NesterovSampler(")
-        assert "step_size=" in text
+        assert "step_size=0.1" in text
         assert "momentum=0.9" in text
 
     def test_manual_step(self, device, dtype):

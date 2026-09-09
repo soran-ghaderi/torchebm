@@ -349,7 +349,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         return (
             f"{self.__class__.__name__}("
             f"model={type(self.model).__name__}, "
-            f"step_size={self.schedulers['step_size']!r}, "
+            f"step_size={self.get_scheduled_value('step_size')}, "
             f"n_leapfrog_steps={self.n_leapfrog_steps}, "
             f"mass={mass_repr}, "
             f"integrator={type(self.integrator).__name__})"
@@ -775,11 +775,14 @@ class RiemannianManifoldHMC(BaseSampler):
         return (output, diagnostics) if return_diagnostics else output
 
     def __repr__(self) -> str:
+        metric_fn_name = getattr(
+            self.metric_fn, "__name__", type(self.metric_fn).__name__
+        )
         return (
             f"{self.__class__.__name__}("
             f"model={type(self.model).__name__}, "
-            f"metric_fn={self.metric_fn!r}, "
-            f"step_size={self.schedulers['step_size']!r}, "
+            f"metric_fn={metric_fn_name}, "
+            f"step_size={self.get_scheduled_value('step_size')}, "
             f"n_leapfrog_steps={self.n_leapfrog_steps}, "
             f"integrator={type(self.integrator).__name__})"
         )

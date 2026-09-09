@@ -188,10 +188,10 @@ def test_hmc_initialization_with_mass():
 def test_hmc_repr(hmc_sampler):
     text = repr(hmc_sampler)
     assert text.startswith("HamiltonianMonteCarlo(")
-    assert "step_size=" in text
-    assert "n_leapfrog_steps=" in text
-    assert "mass=" in text
-    assert "integrator=" in text
+    assert "step_size=0.1" in text
+    assert "n_leapfrog_steps=10" in text
+    assert "mass=None" in text
+    assert "integrator=LeapfrogIntegrator" in text
 
 
 def test_hmc_repr_with_tensor_mass():
@@ -1000,10 +1000,10 @@ def test_rmhmc_repr():
     )
     text = repr(sampler)
     assert text.startswith("RiemannianManifoldHMC(")
-    assert "metric_fn=" in text
-    assert "step_size=" in text
-    assert "n_leapfrog_steps=" in text
-    assert "integrator=" in text
+    assert "metric_fn=metric_fn" in text
+    assert "step_size=0.1" in text
+    assert "n_leapfrog_steps=10" in text
+    assert "integrator=GeneralisedLeapfrogIntegrator" in text
 
 
 def test_rmhmc_initialization_invalid_metric_fn():

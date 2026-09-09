@@ -80,9 +80,9 @@ class TestFlowSampler:
         text = repr(sampler)
         assert text.startswith("FlowSampler(")
         assert "mode='ode'" in text
-        assert "interpolant=" in text
+        assert "interpolant=LinearInterpolant" in text
         assert "prediction='velocity'" in text
-        assert "integrator=" in text
+        assert "integrator=Dopri5Integrator" in text
 
     def test_negate_velocity_conditions_model_on_zero_time(self, device, dtype):
         """EqM fields are time-invariant: trained on zeroed time, so sampling

@@ -46,9 +46,9 @@ def test_langevin_dynamics_initialization(langevin_sampler):
 def test_langevin_dynamics_repr(langevin_sampler):
     text = repr(langevin_sampler)
     assert text.startswith("LangevinDynamics(")
-    assert "step_size=" in text
-    assert "noise_scale=" in text
-    assert "integrator=" in text
+    assert "step_size=0.005" in text
+    assert "noise_scale=1.0" in text
+    assert "integrator=EulerMaruyamaIntegrator" in text
 
 
 def test_langevin_dynamics_initialization_invalid_params(energy_function):

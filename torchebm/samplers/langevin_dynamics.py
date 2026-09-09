@@ -196,7 +196,7 @@ class LangevinDynamics(BaseSampler):
         return (
             f"{self.__class__.__name__}("
             f"model={type(self.model).__name__}, "
-            f"step_size={self.schedulers['step_size']!r}, "
-            f"noise_scale={self.schedulers['noise_scale']!r}, "
+            f"step_size={self.get_scheduled_value('step_size')}, "
+            f"noise_scale={self.get_scheduled_value('noise_scale')}, "
             f"integrator={type(self.integrator).__name__})"
         )
