@@ -649,5 +649,15 @@ class FlowSampler(BaseSampler):
             - torch.sum(z.square(), dim=tuple(range(1, z.ndim))) / 2.0
         )
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"model={type(self.model).__name__}, "
+            f"mode={self.mode!r}, "
+            f"interpolant={type(self.interpolant).__name__}, "
+            f"prediction={self.prediction_type.name.lower()!r}, "
+            f"integrator={type(self.integrator).__name__})"
+        )
+
 
 __all__ = ["FlowSampler", "PredictionType"]

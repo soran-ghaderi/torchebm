@@ -88,6 +88,21 @@ def test_safe_mode_zeroes_nans(integrator):
     assert torch.isfinite(result["p"]).all()
 
 
+def test_leapfrog_repr_has_no_hyperparameters():
+    assert repr(LeapfrogIntegrator(device=device)) == "LeapfrogIntegrator()"
+
+
+def test_generalised_leapfrog_repr_shows_solver_hyperparameters():
+    integ = GeneralisedLeapfrogIntegrator(
+        device=device, solver_max_iter=4, solver_tol=1e-3, solver_check_every=2,
+    )
+    text = repr(integ)
+    assert text.startswith("GeneralisedLeapfrogIntegrator(")
+    assert "solver_max_iter=4" in text
+    assert "solver_tol=0.001" in text
+    assert "solver_check_every=2" in text
+
+
 def test_safe_mode_clamps_extreme_forces():
     integ = LeapfrogIntegrator(device=device)
     state = _make_state()

@@ -491,3 +491,11 @@ class GeneralisedLeapfrogIntegrator(BaseSymplecticIntegrator):
             x, p = x_new, p_new
 
         return {"x": x, "p": p}
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"solver_max_iter={self.solver_max_iter}, "
+            f"solver_tol={self.solver_tol}, "
+            f"solver_check_every={self.solver_check_every})"
+        )
