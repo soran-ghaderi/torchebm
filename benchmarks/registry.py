@@ -120,6 +120,12 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "returns_tuple": True,
         "init_kwargs": {"k_steps": 10, "persistent": False},
     },
+    "PersistentContrastiveDivergence": {
+        "model_type": "ebm",
+        "needs_sampler": True,
+        "returns_tuple": True,
+        "init_kwargs": {"k_steps": 10},
+    },
     "EquilibriumMatchingLoss": {
         "model_type": "velocity",
         "init_kwargs": {
@@ -138,9 +144,6 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         # the expensive Langevin negative-sampling chains.
         "init_kwargs": {"lambda_cd": 0.0},
     },
-    # Stubs — skip
-    "PersistentContrastiveDivergence": {"skip": True},
-    "ParallelTemperingCD": {"skip": True},
     # ── Samplers ──
     "LangevinDynamics": {
         "model_type": "ebm_double_well",
