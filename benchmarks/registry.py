@@ -140,7 +140,6 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     # Stubs — skip
     "PersistentContrastiveDivergence": {"skip": True},
-    "ParallelTemperingCD": {"skip": True},
     # ── Samplers ──
     "LangevinDynamics": {
         "model_type": "ebm_double_well",

@@ -6,7 +6,6 @@ __all__ = [
     # Contrastive Divergence
     "ContrastiveDivergence",
     "PersistentContrastiveDivergence",
-    "ParallelTemperingCD",
     # Score Matching
     "ScoreMatching",
     "DenoisingScoreMatching",
@@ -29,7 +28,6 @@ __all__ = [
 _LAZY_IMPORTS = {
     "ContrastiveDivergence": ".contrastive_divergence",
     "PersistentContrastiveDivergence": ".contrastive_divergence",
-    "ParallelTemperingCD": ".contrastive_divergence",
     "ScoreMatching": ".score_matching",
     "DenoisingScoreMatching": ".score_matching",
     "SlicedScoreMatching": ".score_matching",

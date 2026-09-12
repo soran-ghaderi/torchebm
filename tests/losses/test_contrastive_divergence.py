@@ -1,4 +1,12 @@
 import pytest
+
+def test_parallel_tempering_cd_removed():
+    import torchebm.losses as losses
+
+    assert "ParallelTemperingCD" not in losses.__all__
+
+    with pytest.raises(AttributeError):
+        losses.ParallelTemperingCD
 import torch
 import torch.nn as nn
 import numpy as np
@@ -9,7 +17,6 @@ from torchebm.samplers import LangevinDynamics
 from torchebm.losses import (
     ContrastiveDivergence,
     PersistentContrastiveDivergence,
-    ParallelTemperingCD,
 )
 from tests.conftest import requires_cuda
 
