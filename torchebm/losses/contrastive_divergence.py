@@ -261,22 +261,3 @@ class PersistentContrastiveDivergence(BaseContrastiveDivergence):
     #     # Return a subset of the buffer as negative samples
     #     idx = torch.randint(0, self.buffer_size, (x_pos.batch_shape[0],))
     #     return self.buffer[idx]
-
-
-class ParallelTemperingCD(BaseContrastiveDivergence):
-    def __init__(self, temps=[1.0, 0.5], k=5):
-        super().__init__(k)
-        self.temps = temps  # List of temperatures
-
-    # def sample(self, energy_model, x_pos):
-    #     chains = [x_pos.detach().clone() for _ in self.temps]
-    #     for _ in range(self.k_steps):
-    #         # Run Gibbs steps at each temperature
-    #         for i, temp in enumerate(self.temps):
-    #             chains[i] = energy_model.gibbs_step(chains[i], temp=temp)
-    #
-    #         # Swap states between chains (temperature exchange)
-    #         swap_idx = torch.randint(0, len(self.temps) - 1, (1,))
-    #         chains[swap_idx], chains[swap_idx + 1] = chains[swap_idx + 1], chains[swap_idx]
-    #
-    #     return chains[0]  # Return samples from the highest-temperature chain
