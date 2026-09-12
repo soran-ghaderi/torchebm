@@ -9,7 +9,6 @@ from torchebm.samplers import LangevinDynamics
 from torchebm.losses import (
     ContrastiveDivergence,
     PersistentContrastiveDivergence,
-    ParallelTemperingCD,
 )
 from tests.conftest import requires_cuda
 
@@ -277,6 +276,28 @@ def test_contrastive_divergence_initialization(energy_function, sampler, device)
     assert cd.energy_reg_weight == 0.002
     assert cd.device == device
     assert cd.replay_buffer is None
+
+
+def test_persistent_contrastive_divergence_runs_training_step(energy_function, sampler):
+    device = sampler.device
+    energy_function = energy_function.to(device)
+    cd = PersistentContrastiveDivergence(
+        model=energy_function,
+        sampler=sampler,
+        k_steps=2,
+        buffer_size=20,
+        init_steps=2,
+        device=device,
+    )
+    x = torch.randn(5, 2, device=device)
+
+    loss, samples = cd(x)
+
+    assert cd.persistent is True
+    assert cd.buffer_initialized is True
+    assert cd.replay_buffer.shape == (20, 2)
+    assert loss.shape == torch.Size([])
+    assert samples.shape == x.shape
 
 
 def test_contrastive_divergence_forward(cd_loss):
