@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [`fe75366`](https://github.com/soran-ghaderi/torchebm/commit/fe75366af2fc42d2b4a34b2e082b468ad9aa458e) - add rules to the contribution.md
 - [`0c1d5e0`](https://github.com/soran-ghaderi/torchebm/commit/0c1d5e0907a53c7d9bed2ce4dabc2b89cc9952d5) - cover probe error cleanup
+- [`ec719d9`](https://github.com/soran-ghaderi/torchebm/commit/ec719d960791ba3467a951d156a354e100f0ec3b) - add coding style and rules
 
 ## [0.8.7](https://github.com/soran-ghaderi/torchebm/compare/v0.8.6...v0.8.7) - 2026-09-07
 
