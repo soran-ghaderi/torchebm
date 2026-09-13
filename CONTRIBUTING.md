@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to TorchEBM! We welcome contributions of all kinds, including bug fixes, documentation improvements, new examples, performance enhancements, and new features. Whether you're fixing a bug, improving documentation, or adding a new feature, we're happy to have your contribution.
 
+> ⭐ If TorchEBM is useful for your work, please consider starring the repository. It is the main way people discover the project.
+
 ## Before You Start
 
 Please read the Developer Guide before making any changes:
@@ -69,11 +71,29 @@ library at runtime. A new runtime extra is justified only when a module under
 6. Commit using Conventional Commits.
 7. Open a Pull Request linked to the relevant issue.
 
+## Coding Style and Rules
+
+- Surgical diffs only. Do not reformat, reorder imports, or touch lines unrelated to the issue you are closing.
+- Docs are MkDocs, not Sphinx. Google-style docstrings with `r"""`.  LaTeX is \( \) inline and \[ \] block. No `.. math::`, no `:class:`.
+- Avoid excessive inline commenting or verbose docstrings
+- Type annotations go in the signature, not the docstring.
+- Never modify base classes unless the issue names one.
+- Never add external dependency
+- Every tensor op in its maximally optimized form. No host syncs (`.item()`, `.cpu()`, Python `and`/`or` on tensors) in hot paths.
+- If you are adding something new, avoid parallel implementation, reuse existing code when available. avoid redundancy and non-necessary verbosity with codes and docstrings.
+- Never touch GitHub workflows, CI/CD, and yml files.
+- Ensure all tests are passing.
+- Ensure you write tests using pytest for your code in the same style and convention as the rest of TorchEBM tests. 
+# Note
+
+- If you notice something adjacent while working (a bug, a missing test, an unclear docstring), do not expand this PR. Open a separate issue using the same format: terse scope, then a `Done when:` line. Link it from your PR. Very brief message and use appropriate existing labels on the repo.
+
+
 ## Pull Request Checklist
 
 Before opening a Pull Request, ensure that:
 
-- No earlier open Pull Request targets the same issue
+- No earlier open Pull Request targets the same issue (Please check PR messages and ensure others haven't targeted this issue, unless you find a mistake in their PR and you fix it which you should do so via the same opened PR. https://github.com/soran-ghaderi/torchebm/pulls)
 - Tests pass (`pytest tests/ -v`)
 - Code is formatted with `black` and `isort`
 - Commit messages follow the Conventional Commits format
@@ -83,4 +103,10 @@ Before opening a Pull Request, ensure that:
   lands in the changelog; both must name people only.
 - Related issues are linked when applicable.
 
+
 For complete contribution instructions, please refer to the [Developer Guide](https://soran-ghaderi.github.io/torchebm/latest/developer_guide/).
+
+
+## Support the project
+
+Beyond code, the most useful things you can do are to star the repository, open an issue when something is unclear or broken, and cite TorchEBM if it supports published work (see `CITATION.cff`).

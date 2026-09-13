@@ -5,6 +5,24 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.8](https://github.com/soran-ghaderi/torchebm/compare/v0.8.7...v0.8.8) - 2026-09-13
+
+### Added
+
+- [`6579e27`](https://github.com/soran-ghaderi/torchebm/commit/6579e27b8bb0c3d0df6ecf19e7674c9050a67ac5) - add config-revealing reprs to samplers and integrators
+
+### Fixed
+
+- [`bd49c7e`](https://github.com/soran-ghaderi/torchebm/commit/bd49c7e21a543d411e8e7b9268a65a3c2e4a39c0) - render scheduled values and callable names in reprs
+- [`3751d71`](https://github.com/soran-ghaderi/torchebm/commit/3751d71cdc60f49e288ea7f729e94faa93f79378) - restore nested module training flags
+- [`cf29f3b`](https://github.com/soran-ghaderi/torchebm/commit/cf29f3b98f52bd3786fd03746e77ea48b926d3a3) - repair contrastive divergence exports
+
+### Other
+
+- [`fe75366`](https://github.com/soran-ghaderi/torchebm/commit/fe75366af2fc42d2b4a34b2e082b468ad9aa458e) - add rules to the contribution.md
+- [`0c1d5e0`](https://github.com/soran-ghaderi/torchebm/commit/0c1d5e0907a53c7d9bed2ce4dabc2b89cc9952d5) - cover probe error cleanup
+- [`ec719d9`](https://github.com/soran-ghaderi/torchebm/commit/ec719d960791ba3467a951d156a354e100f0ec3b) - add coding style and rules
+
 ## [0.8.7](https://github.com/soran-ghaderi/torchebm/compare/v0.8.6...v0.8.7) - 2026-09-07
 
 ### Added

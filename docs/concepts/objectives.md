@@ -34,10 +34,8 @@ loss, negatives = cd(batch)
 
 `persistent=True` switches to PCD: negatives resume from a replay buffer
 instead of restarting at the data, so chains explore the model distribution
-across updates. `ParallelTemperingCD` runs chains at several temperatures and
-swaps them, for multimodal targets where single-temperature chains get stuck.
-CD trains slowly per step (an inner MCMC loop) but yields a genuine energy
-with meaningful level sets.
+across updates. CD trains slowly per step (an inner MCMC loop) but yields a
+genuine energy with meaningful level sets.
 
 ## Simulation-free: score matching
 
