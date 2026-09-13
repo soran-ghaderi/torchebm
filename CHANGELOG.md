@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.8](https://github.com/soran-ghaderi/torchebm/compare/v0.8.7...v0.8.8) - 2026-09-13
 
+### Added
+
+- [`6579e27`](https://github.com/soran-ghaderi/torchebm/commit/6579e27b8bb0c3d0df6ecf19e7674c9050a67ac5) - add config-revealing reprs to samplers and integrators
+
+### Fixed
+
+- [`bd49c7e`](https://github.com/soran-ghaderi/torchebm/commit/bd49c7e21a543d411e8e7b9268a65a3c2e4a39c0) - render scheduled values and callable names in reprs
+
 ### Other
 
 - [`fe75366`](https://github.com/soran-ghaderi/torchebm/commit/fe75366af2fc42d2b4a34b2e082b468ad9aa458e) - add rules to the contribution.md
