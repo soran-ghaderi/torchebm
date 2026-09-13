@@ -90,7 +90,7 @@ jobs:
           cat mkdocs.yml | grep -E "site_dir|docs_dir" || echo "No site_dir or docs_dir specified in mkdocs.yml"
           
           # First build the documentation to generate the site directory
-          mkdocs build -v
+          mkdocs build -v --strict
           
           # Check the output directory after build
           echo "Directories after build:"

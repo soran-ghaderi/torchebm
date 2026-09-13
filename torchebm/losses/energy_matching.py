@@ -264,7 +264,7 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
 
         Args:
             x: Data samples of shape (batch_size, ...).
-            *args: Additional positional arguments.
+            *args (Any): Additional positional arguments.
             y: Optional conditioning tensor forwarded to the potential as
                 ``y=``; shorthand for ``model_kwargs={'y': y}``. ``None`` keeps
                 the unconditional path.
@@ -274,7 +274,7 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the potential on both the positive and negative (Langevin) paths.
                 ``None`` (default) is the unconditional path.
-            **kwargs: Deprecated. Bare keyword arguments are still forwarded to
+            **kwargs (Any): Deprecated. Bare keyword arguments are still forwarded to
                 the model for one release but emit a ``DeprecationWarning``; pass
                 ``model_kwargs={...}`` instead.
 
@@ -302,10 +302,10 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
 
         Args:
             x: Data samples of shape (batch_size, ...).
-            *args: Additional positional arguments.
+            *args (Any): Additional positional arguments.
             x0: Optional source samples (see `forward`).
             model_kwargs: Conditioning arguments forwarded to the potential.
-            **kwargs: Deprecated bare model kwargs (see `forward`).
+            **kwargs (Any): Deprecated bare model kwargs (see `forward`).
 
         Returns:
             Scalar loss value.

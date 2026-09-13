@@ -440,7 +440,7 @@ class FlowSampler(BaseSampler):
             generator: RNG for the initial state and, in SDE mode, the per-step
                 diffusion noise; the global RNG when ``None``. ODE mode is
                 deterministic once the initial state is fixed.
-            **legacy_model_kwargs: Deprecated. Passing conditioning as bare
+            **legacy_model_kwargs (Any): Deprecated. Passing conditioning as bare
                 keyword arguments still works for one release but emits a
                 ``DeprecationWarning``; pass ``model_kwargs={...}`` instead. When
                 both are given, keys in the explicit dict win.
