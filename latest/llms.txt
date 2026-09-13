@@ -1,0 +1,51 @@
+# TorchEBM
+
+> Simulation-free, GPU-first generative modeling in PyTorch: composable primitives for scalable, stable training of modern energy-based models, diffusion, flow matching, and Schrödinger bridges.
+
+TorchEBM is a PyTorch library for simulation-free, GPU-first generative
+modeling: scalable, stable training of modern energy-based models, diffusion,
+flow matching, and Schrödinger bridges. Energy-based models define probability
+distributions through a scalar energy function, with lower energy meaning
+higher probability. This formulation is general enough that much of modern
+generative modeling, from MCMC sampling and score matching to simulation-free
+transport along probability paths, factors into the same components: a field,
+a probability path, a coupling, an objective, and an integrator. TorchEBM
+implements these components as composable, high-throughput PyTorch primitives,
+so simulation-free objectives (flow matching, equilibrium matching, denoising
+score matching) and sampling-based objectives (contrastive divergence with
+Langevin or HMC negatives) are unified under one library.
+
+Key components:
+- Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, FlowSampler
+- Losses: ContrastiveDivergence, ScoreMatching, EquilibriumMatchingLoss, EnergyMatchingLoss
+- Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
+- Couplings: IndependentCoupling, SinkhornCoupling, ExactOTCoupling, ReflowCoupling
+- Integrators: EulerMaruyama, Heun, RK4, Dopri5, Leapfrog, GeneralisedLeapfrog
+- Models: ConditionalTransformer2D, neural network components
+- Datasets: TwoMoons, EightGaussians, SwissRoll, and more synthetic benchmarks
+
+
+## Getting Started
+
+- [Home](https://soran-ghaderi.github.io/torchebm/latest/index.md): Main documentation page for TorchEBM
+- [Getting Started](https://soran-ghaderi.github.io/torchebm/latest/getting_started/index.md): Installation and first workflows
+
+## Concepts
+
+- [Design and Scope](https://soran-ghaderi.github.io/torchebm/latest/concepts/design/index.md): The unifying abstraction and method taxonomy
+- [The Energy-Based View](https://soran-ghaderi.github.io/torchebm/latest/concepts/energy_view/index.md): Energies, scores, and the model contract
+- [Sampling and Integration](https://soran-ghaderi.github.io/torchebm/latest/concepts/sampling/index.md): MCMC, flow sampling, and integrators
+- [Learning Objectives](https://soran-ghaderi.github.io/torchebm/latest/concepts/objectives/index.md): Training objectives from CD to energy matching
+- [Interpolants and Couplings](https://soran-ghaderi.github.io/torchebm/latest/concepts/transport/index.md): Interpolants and couplings
+
+## API Reference
+
+- [core](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/core/index.md): Core base classes
+- [samplers](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/samplers/index.md): Sampling algorithms
+- [losses](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/losses/index.md): Training objectives
+- [interpolants](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/interpolants/index.md): Interpolation schemes
+- [couplings](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/couplings/index.md): Couplings
+- [integrators](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/integrators/index.md): Numerical integrators
+- [models](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/models/index.md): Neural network architectures
+- [datasets](https://soran-ghaderi.github.io/torchebm/latest/api/torchebm/datasets/index.md): Data generators
+
