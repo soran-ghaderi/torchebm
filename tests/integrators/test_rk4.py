@@ -56,6 +56,12 @@ def test_rk4_no_adaptive_params():
     assert integrator.fsal is False
 
 
+def test_rk4_repr_has_no_hyperparameters():
+    """Fixed-step methods carry no tunable config, so the repr is bare."""
+    assert repr(RK4Integrator()) == "RK4Integrator()"
+    assert repr(RK438Integrator()) == "RK438Integrator()"
+
+
 @requires_cuda
 def test_rk4_cuda():
     integrator = RK4Integrator(device="cuda", dtype=torch.float32)

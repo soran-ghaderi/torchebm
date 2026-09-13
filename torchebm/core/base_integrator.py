@@ -91,6 +91,9 @@ class BaseIntegrator(TorchEBMModule, ABC):
         """
         raise NotImplementedError
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}()"
+
 
 class BaseRungeKuttaIntegrator(BaseIntegrator):
     r"""Abstract base class for explicit Runge-Kutta ODE integrators.
@@ -622,6 +625,15 @@ class BaseRungeKuttaIntegrator(BaseIntegrator):
         h = min(step_size.item(), t_end - t_start, self.max_step_size)
         x = self._adaptive_integrate(x, drift_fn, t_start, t_end, h)
         return {"x": x}
+
+    def __repr__(self) -> str:
+        if self.error_weights is not None:
+            return (
+                f"{self.__class__.__name__}("
+                f"atol={self.atol}, rtol={self.rtol}, "
+                f"max_steps={self.max_steps})"
+            )
+        return f"{self.__class__.__name__}()"
 
 
 class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):

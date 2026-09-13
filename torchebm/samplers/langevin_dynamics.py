@@ -191,3 +191,12 @@ class LangevinDynamics(BaseSampler):
 
         output = trajectory if return_trajectory else x
         return (output, diagnostics) if return_diagnostics else output
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"model={type(self.model).__name__}, "
+            f"step_size={self.get_scheduled_value('step_size')}, "
+            f"noise_scale={self.get_scheduled_value('noise_scale')}, "
+            f"integrator={type(self.integrator).__name__})"
+        )
