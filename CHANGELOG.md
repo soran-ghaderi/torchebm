@@ -14,10 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - [`bd49c7e`](https://github.com/soran-ghaderi/torchebm/commit/bd49c7e21a543d411e8e7b9268a65a3c2e4a39c0) - render scheduled values and callable names in reprs
+- [`3751d71`](https://github.com/soran-ghaderi/torchebm/commit/3751d71cdc60f49e288ea7f729e94faa93f79378) - restore nested module training flags
 
 ### Other
 
 - [`fe75366`](https://github.com/soran-ghaderi/torchebm/commit/fe75366af2fc42d2b4a34b2e082b468ad9aa458e) - add rules to the contribution.md
+- [`0c1d5e0`](https://github.com/soran-ghaderi/torchebm/commit/0c1d5e0907a53c7d9bed2ce4dabc2b89cc9952d5) - cover probe error cleanup
 
 ## [0.8.7](https://github.com/soran-ghaderi/torchebm/compare/v0.8.6...v0.8.7) - 2026-09-07
 
