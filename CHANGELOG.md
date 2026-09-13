@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [`bd49c7e`](https://github.com/soran-ghaderi/torchebm/commit/bd49c7e21a543d411e8e7b9268a65a3c2e4a39c0) - render scheduled values and callable names in reprs
 - [`3751d71`](https://github.com/soran-ghaderi/torchebm/commit/3751d71cdc60f49e288ea7f729e94faa93f79378) - restore nested module training flags
+- [`cf29f3b`](https://github.com/soran-ghaderi/torchebm/commit/cf29f3b98f52bd3786fd03746e77ea48b926d3a3) - repair contrastive divergence exports
 
 ### Other
 
