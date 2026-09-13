@@ -73,13 +73,17 @@ library at runtime. A new runtime extra is justified only when a module under
 
 ## Coding Style and Rules
 
-- Surgical diffs only. Do not reformat, reorder imports, or touch   lines unrelated to the issue you are closing.
+- Surgical diffs only. Do not reformat, reorder imports, or touch lines unrelated to the issue you are closing.
 - Docs are MkDocs, not Sphinx. Google-style docstrings with `r"""`.  LaTeX is \( \) inline and \[ \] block. No `.. math::`, no `:class:`.
+- Avoid excessive inline commenting or verbose docstrings
 - Type annotations go in the signature, not the docstring.
 - Never modify base classes unless the issue names one.
+- Never add external dependency
 - Every tensor op in its maximally optimized form. No host syncs (`.item()`, `.cpu()`, Python `and`/`or` on tensors) in hot paths.
 - If you are adding something new, avoid parallel implementation, reuse existing code when available. avoid redundancy and non-necessary verbosity with codes and docstrings.
-
+- Never touch GitHub workflows, CI/CD, and yml files.
+- Ensure all tests are passing.
+- Ensure you write tests using pytest for your code in the same style and convention as the rest of TorchEBM tests. 
 # Note
 
 - If you notice something adjacent while working (a bug, a missing test, an unclear docstring), do not expand this PR. Open a separate issue using the same format: terse scope, then a `Done when:` line. Link it from your PR. Very brief message and use appropriate existing labels on the repo.
