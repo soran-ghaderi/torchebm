@@ -362,7 +362,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
         score = self.compute_score(x_perturbed, model_kwargs=mk)
 
-        target_score = -noise / (self.noise_scale**2)
+        target_score = noise / (self.noise_scale**2)
 
         loss = (
             0.5
@@ -603,4 +603,3 @@ class SlicedScoreMatching(BaseScoreMatching):
         term2 = term2.view(self.n_projections, -1).mean(dim=0)
         return (term1 + term2).mean()
 
-    
