@@ -296,6 +296,29 @@ class TestDatasetSpecifics:
                 if cell_counts[i, j] > 50:  # Arbitrary threshold for "has points"
                     assert cell_counts[i + 1, j] < 50 or cell_counts[i, j + 1] < 50
 
+    def test_checkerboard_noise_zero(self):
+        """Test that noise=0 keeps samples in valid checkerboard cells."""
+        dataset = CheckerboardDataset(
+            n_samples=10000, range_limit=3.0, noise=0.0, seed=42
+        )
+        data = dataset.get_data()
+
+        cell_sum = torch.floor(data[:, 0]) + torch.floor(data[:, 1])
+
+        assert torch.all(cell_sum % 2 != 0)
+
+    def test_checkerboard_noise_blurs_boundaries(self):
+        """Test that positive noise can move samples across cell boundaries."""
+        dataset = CheckerboardDataset(
+            n_samples=10000, range_limit=3.0, noise=0.1, seed=42
+        )
+        data = dataset.get_data()
+
+        cell_sum = torch.floor(data[:, 0]) + torch.floor(data[:, 1])
+        invalid_count = torch.sum(cell_sum % 2 == 0)
+
+        assert invalid_count > 0
+
     def test_grid_dimensions(self):
         """Test that GridDataset creates a grid with expected dimensions."""
         n_dim = 15
