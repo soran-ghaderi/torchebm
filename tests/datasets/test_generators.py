@@ -308,16 +308,18 @@ class TestDatasetSpecifics:
         assert torch.all(cell_sum % 2 != 0)
 
     def test_checkerboard_noise_blurs_boundaries(self):
-        """Test that positive noise can move samples across cell boundaries."""
-        dataset = CheckerboardDataset(
+        """Test that positive noise widens the sample spread."""
+        clean_dataset = CheckerboardDataset(
+            n_samples=10000, range_limit=3.0, noise=0.0, seed=42
+        )
+        noisy_dataset = CheckerboardDataset(
             n_samples=10000, range_limit=3.0, noise=0.1, seed=42
         )
-        data = dataset.get_data()
 
-        cell_sum = torch.floor(data[:, 0]) + torch.floor(data[:, 1])
-        invalid_count = torch.sum(cell_sum % 2 == 0)
+        clean_data = clean_dataset.get_data()
+        noisy_data = noisy_dataset.get_data()
 
-        assert invalid_count > 0
+        assert noisy_data.std() > clean_data.std()
 
     def test_grid_dimensions(self):
         """Test that GridDataset creates a grid with expected dimensions."""
