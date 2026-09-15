@@ -5,7 +5,11 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.9](https://github.com/soran-ghaderi/torchebm/compare/v0.8.8...v0.8.9) - 2026-09-14
+## [0.8.9](https://github.com/soran-ghaderi/torchebm/compare/v0.8.8...v0.8.9) - 2026-09-15
+
+### Fixed
+
+- [`9e28deb`](https://github.com/soran-ghaderi/torchebm/commit/9e28debcaab9165426d1dfe8b99d6afa866a5d5d) - align denoising score target with energy gradient
 
 ### Other
 
