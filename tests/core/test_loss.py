@@ -1,17 +1,18 @@
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from torch import nn
 
+from tests.conftest import requires_cuda
 from torchebm.core import (
-    BaseLoss,
     BaseContrastiveDivergence,
+    BaseLoss,
     BaseModel,
     BaseSampler,
+    GaussianModel,
 )
-from torchebm.core import GaussianModel
+from torchebm.losses import FlowMatchingLoss
 from torchebm.samplers import LangevinDynamics
-from tests.conftest import requires_cuda
 
 
 class MockLoss(BaseLoss):
@@ -102,6 +103,35 @@ def test_base_loss_initialization():
     loss = MockLoss()
     assert isinstance(loss, BaseLoss)
     assert isinstance(loss, nn.Module)
+
+
+def test_flow_matching_loss_owns_and_propagates_to_model():
+    model = nn.Linear(2, 2)
+    loss = FlowMatchingLoss(model=model)
+
+    assert loss.model is model
+    assert list(loss.parameters()) == list(model.parameters())
+
+    loss.eval()
+    assert not model.training
+
+    loss.to(dtype=torch.float64)
+    assert loss.dtype == torch.float64
+    assert model.weight.dtype == torch.float64
+
+    restored = FlowMatchingLoss(model=nn.Linear(2, 2)).to(dtype=torch.float64)
+    restored.load_state_dict(loss.state_dict(), strict=True)
+    assert torch.equal(restored.model.weight, model.weight)
+    assert torch.equal(restored.model.bias, model.bias)
+
+
+def test_flow_matching_forward_dispatches_to_subclass_compute_loss():
+    class CustomFlowMatchingLoss(FlowMatchingLoss):
+        def compute_loss(self, x, *args, **kwargs):
+            return x.new_tensor(7.0)
+
+    loss = CustomFlowMatchingLoss(model=nn.Linear(2, 2))
+    assert loss(torch.randn(4, 2)).item() == 7.0
 
 
 def test_base_loss_forward():

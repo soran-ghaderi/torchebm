@@ -402,7 +402,12 @@ class CheckerboardDataset(BaseSyntheticDataset):
     Args:
         n_samples (int): The target number of samples.
         range_limit (float): Defines the square region `[-lim, lim] x [-lim, lim]`.
-        noise (float): Small Gaussian noise added to the points.
+        noise (float): Gaussian noise added after checkerboard rejection.
+            Noise blurs cell boundaries and can move a small fraction of
+            points into adjacent cells. With noise=0.01, approximately
+            1.45% of points can cross a cell boundary. Cells have size
+            1.0 because they are defined using torch.floor(), so
+            range_limit controls the number of cells rather than cell size.
         device (Optional[Union[str, torch.device]]): The device for the tensor.
         dtype (torch.dtype): The data type for the tensor.
         seed (Optional[int]): A random seed for reproducibility.
@@ -412,7 +417,7 @@ class CheckerboardDataset(BaseSyntheticDataset):
         self,
         n_samples: int = 2000,
         range_limit: float = 4.0,
-        noise: float = 0.01,
+        noise: float = 0.0,
         device: Optional[Union[str, torch.device]] = None,
         dtype: torch.dtype = torch.float32,
         seed: Optional[int] = None,

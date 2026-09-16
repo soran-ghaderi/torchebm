@@ -3,7 +3,11 @@ import torch
 import torch.nn as nn
 
 from torchebm.core import BaseModel
-from torchebm.losses import DenoisingScoreMatching
+from torchebm.losses import (
+    DenoisingScoreMatching,
+    ScoreMatching,
+    SlicedScoreMatching,
+)
 
 
 class QuadraticEnergyND(BaseModel):
@@ -26,6 +30,17 @@ class MLPEnergy(BaseModel):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x).squeeze(-1)
+
+
+class ScaledQuadraticEnergy(BaseModel):
+    """E(x) = scale / 2 * ||x||^2 with a trainable scale."""
+
+    def __init__(self):
+        super().__init__()
+        self.scale = nn.Parameter(torch.zeros(()))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return 0.5 * self.scale * x.square().flatten(1).sum(dim=1)
 
 
 @pytest.fixture(
@@ -121,5 +136,27 @@ def test_dsm_noise_scale_behavior():
     assert torch.isfinite(loss_large)
     # With same random seed for noise, the two should generally differ when sigma changes
     assert abs(loss_small.item() - loss_large.item()) > 1e-8
+
+
+@pytest.mark.parametrize(
+    ("loss_factory", "uses_generator"),
+    [
+        (lambda model: ScoreMatching(model=model, hessian_method="exact"), False),
+        (lambda model: DenoisingScoreMatching(model=model, noise_scale=0.2), True),
+        (lambda model: SlicedScoreMatching(model=model, n_projections=4), True),
+    ],
+    ids=["score-matching", "denoising-score-matching", "sliced-score-matching"],
+)
+def test_score_matching_variants_learn_positive_quadratic_energy(
+    loss_factory, uses_generator
+):
+    model = ScaledQuadraticEnergy()
+    loss_fn = loss_factory(model)
+    x = torch.randn(4096, 2, generator=torch.Generator().manual_seed(1))
+    kwargs = {"generator": torch.Generator().manual_seed(2)} if uses_generator else {}
+
+    loss_fn(x, **kwargs).backward()
+
+    assert model.scale.grad < 0
 
 
