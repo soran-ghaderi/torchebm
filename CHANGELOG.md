@@ -5,7 +5,7 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.9](https://github.com/soran-ghaderi/torchebm/compare/v0.8.8...v0.8.9) - 2026-09-15
+## [0.8.9](https://github.com/soran-ghaderi/torchebm/compare/v0.8.8...v0.8.9) - 2026-09-16
 
 ### Fixed
 
@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [`8c52567`](https://github.com/soran-ghaderi/torchebm/commit/8c52567ad5d7dfed42337f1c4a6bcf785b0f6292) - Fix checkerboard noise behavior
 - [`5fcfc90`](https://github.com/soran-ghaderi/torchebm/commit/5fcfc90ac63eed96998bef3afa03bcd34ee86ad3) - Test checkerboard noise spread
+- [`bec46b0`](https://github.com/soran-ghaderi/torchebm/commit/bec46b0df1e699a06d305bccc2529a5c086f80bc) - cover FlowMatchingLoss module behavior
 
 ## [0.8.8](https://github.com/soran-ghaderi/torchebm/compare/v0.8.7...v0.8.8) - 2026-09-13
 
