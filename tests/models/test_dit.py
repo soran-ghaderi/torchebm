@@ -77,6 +77,21 @@ def test_unconditional_has_no_label_table():
     assert _tiny().y_embedder is None
 
 
+def test_uncond_pins_model_clock_to_zero_in_float64():
+    torch.manual_seed(0)
+    model = _tiny(uncond=True).double()
+    reference = _tiny(uncond=False).double()
+    reference.load_state_dict(model.state_dict())
+    with torch.no_grad():
+        model.head.proj.weight.normal_()
+        model.head.modulation[-1].weight.normal_()
+        reference.load_state_dict(model.state_dict())
+    x = torch.randn(2, 3, 8, 8, dtype=torch.float64)
+    y = model(x, torch.tensor([0.25, 0.75], dtype=torch.float64))
+    expected = reference(x, torch.zeros(2, dtype=torch.float64))
+    assert torch.equal(y, expected)
+
+
 def test_label_table_always_has_null_row():
     model = _tiny(num_classes=10)
     assert isinstance(model.y_embedder, LabelEmbedder)

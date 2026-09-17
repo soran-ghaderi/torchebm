@@ -3,8 +3,44 @@ import torch
 from torch import nn
 
 from torchebm.core import BaseModel, TemperatureScheduler
+from torchebm.models import FixedTime
 from torchebm.models.wrappers import ClassifierFreeGuidance, InteractionModel
 from torchebm.samplers import LangevinDynamics
+
+
+class _TimeRecorder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = nn.Parameter(torch.tensor(2.0))
+        self.seen_t = None
+
+    def forward(self, x, t, scale=1.0):
+        self.seen_t = t
+        return x * self.weight * scale + t[:, None]
+
+
+def test_fixed_time_ignores_caller_clock_and_forwards_kwargs():
+    model = _TimeRecorder().double()
+    wrapped = FixedTime(model, 0.25)
+    x = torch.ones(3, 2, dtype=torch.float64)
+
+    out = wrapped(x, torch.tensor([0.1, 0.5, 0.9]), scale=3.0)
+
+    assert torch.equal(model.seen_t, torch.full((3,), 0.25, dtype=torch.float64))
+    assert torch.equal(out, torch.full_like(x, 6.25))
+    assert wrapped.model is model
+
+
+def test_fixed_time_builds_batch_clock_when_caller_omits_it():
+    model = _TimeRecorder()
+    out = FixedTime(model, 0.0)(torch.ones(4, 2))
+    assert out.shape == (4, 2)
+    assert torch.equal(model.seen_t, torch.zeros(4))
+
+
+def test_fixed_time_rejects_non_scalar_clock():
+    with pytest.raises(ValueError, match="scalar"):
+        FixedTime(_TimeRecorder(), torch.tensor([0.0, 1.0]))
 
 
 class _DummyBase(nn.Module):
