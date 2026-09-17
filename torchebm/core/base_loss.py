@@ -408,6 +408,16 @@ class BaseInterpolantLoss(BaseLoss):
         terms = self.training_losses(
             x, model_kwargs=mk, x0=x0, generator=generator
         )
+        target = terms.get("target")
+        if target is not None:
+            from torchebm.losses.functional import weighted_mse_loss
+
+            return weighted_mse_loss(
+                terms["pred"],
+                target,
+                weights=terms.get("weights"),
+                loss_weights=terms.get("loss_weights"),
+            )
         loss = terms["loss"]
         weights = terms.get("weights")
         if weights is not None:

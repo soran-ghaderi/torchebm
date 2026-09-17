@@ -26,7 +26,7 @@ from torch import nn
 
 from torchebm.core import BaseCoupling, BaseInterpolant, BaseScheduler
 from torchebm.core.base_loss import BaseInterpolantLoss
-from torchebm.losses import mean_flat
+from torchebm.losses.functional import prepare_flow_matching, weighted_mse_loss
 
 
 class FlowMatchingLoss(BaseInterpolantLoss):
@@ -173,34 +173,39 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             model_kwargs = {}
 
         x1 = x1.to(device=self.device, dtype=self.dtype)
-        batch = x1.shape[0]
-
-        if x0 is None:
-            x0 = torch.randn_like(x1, generator=generator)
-        else:
-            x0 = x0.to(device=self.device, dtype=self.dtype)
-            if x0.shape != x1.shape:
-                raise ValueError(
-                    f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
-                )
-
-        coupled = self.coupling(x0, x1, generator=generator, **model_kwargs)
-        x0, x1 = coupled
-
-        t = self._sample_t(batch, generator)
-        xt, ut = self.interpolant.interpolate(x0, x1, t)
-        target = -ut if self.negate_velocity else ut
+        batch = prepare_flow_matching(
+            x1,
+            interpolant=self.interpolant,
+            coupling=self.coupling,
+            x0=x0,
+            generator=generator,
+            model_kwargs=model_kwargs,
+            sample_t=self._sample_t,
+            negate_velocity=self.negate_velocity,
+        )
 
         with self.autocast_context():
-            pred = self.model(xt, t, **model_kwargs)
+            pred = self.model(batch.xt, batch.model_time, **model_kwargs)
         if isinstance(pred, tuple):
             pred = pred[0]
 
-        loss = mean_flat((pred - target).square())
-        if self.loss_weight_fn is not None:
-            loss = loss * self.loss_weight_fn(t)
+        loss_weights = (
+            None if self.loss_weight_fn is None else self.loss_weight_fn(batch.t)
+        )
+        loss = weighted_mse_loss(
+            pred,
+            batch.target,
+            loss_weights=loss_weights,
+            reduction="none",
+        )
 
-        return {"loss": loss, "pred": pred, "weights": coupled.weights}
+        return {
+            "loss": loss,
+            "pred": pred,
+            "target": batch.target,
+            "weights": batch.weights,
+            "loss_weights": loss_weights,
+        }
 
     def __repr__(self) -> str:
         return (
