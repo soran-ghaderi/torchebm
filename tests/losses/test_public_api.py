@@ -21,6 +21,13 @@ def test_all_public_loss_classes_can_be_constructed():
         "EquilibriumMatchingLoss": lambda: losses.EquilibriumMatchingLoss(model),
         "FlowMatchingLoss": lambda: losses.FlowMatchingLoss(model),
         "EnergyMatchingLoss": lambda: losses.EnergyMatchingLoss(model),
+        "NoiseContrastiveEstimation": lambda: losses.NoiseContrastiveEstimation(model),
+        "GaussianNoise": lambda: losses.GaussianNoise(),
+        "GaussianMixtureNoise": lambda: losses.GaussianMixtureNoise(
+            weights=torch.tensor([0.5, 0.5]),
+            locs=torch.tensor([[0.0, 0.0], [1.0, 1.0]]),
+            scales=torch.tensor([[1.0, 1.0], [1.0, 1.0]]),
+        ),
     }
     public_classes = {
         name for name in losses.__all__ if inspect.isclass(getattr(losses, name))
