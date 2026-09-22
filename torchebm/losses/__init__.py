@@ -16,6 +16,10 @@ __all__ = [
     "FlowMatchingLoss",
     # Energy Matching
     "EnergyMatchingLoss",
+    # Noise-Contrastive Estimation
+    "NoiseContrastiveEstimation",
+    "GaussianNoise",
+    "GaussianMixtureNoise",
     # Utilities
     "mean_flat",
     "get_interpolant",
@@ -34,6 +38,9 @@ _LAZY_IMPORTS = {
     "EquilibriumMatchingLoss": ".equilibrium_matching",
     "FlowMatchingLoss": ".flow_matching",
     "EnergyMatchingLoss": ".energy_matching",
+    "NoiseContrastiveEstimation": ".noise_contrastive_estimation",
+    "GaussianNoise": ".noise_contrastive_estimation",
+    "GaussianMixtureNoise": ".noise_contrastive_estimation",
     "mean_flat": ".loss_utils",
     "get_interpolant": ".loss_utils",
     "trimmed_mean": ".loss_utils",
