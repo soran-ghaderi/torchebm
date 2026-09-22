@@ -224,3 +224,68 @@ def test_nce_recovers_toy_gaussian_energy():
     assert abs(recovered_w - 1.0) < 0.35, f"Expected w ~ 1.0, got {recovered_w}"
     expected_c = -0.5 * math.log(2.0 * math.pi)
     assert abs(recovered_c - expected_c) < 0.45, f"Expected c ~ {expected_c}, got {recovered_c}"
+
+
+def test_nce_with_torch_multivariate_normal():
+    r"""Verify NCE correctly handles PyTorch MultivariateNormal distributions without shape inflation."""
+    class DimensionCheckingModel(nn.Module):
+        def forward(self, x):
+            assert x.ndim == 2, f"Expected 2D input (B, D), got shape {x.shape}"
+            assert x.shape[-1] == 2, f"Expected last dim 2, got {x.shape[-1]}"
+            return (x ** 2).sum(dim=-1)
+
+    dist = torch.distributions.MultivariateNormal(torch.zeros(2), torch.eye(2))
+    model = DimensionCheckingModel()
+    loss_fn = NoiseContrastiveEstimation(model=model, noise_distribution=dist)
+
+    x = torch.randn(10, 2)
+    loss = loss_fn(x)
+    assert torch.isfinite(loss)
+    assert loss.ndim == 0
+
+
+def test_nce_with_harmonic_model_docstring_example():
+    r"""Verify the public docstring example works as written."""
+    from torchebm.core import HarmonicModel
+    model = HarmonicModel()
+    noise = GaussianNoise(loc=0.0, scale=1.0)
+    loss_fn = NoiseContrastiveEstimation(model=model, noise_distribution=noise)
+
+    x = torch.randn(32, 2)
+    loss = loss_fn(x)
+    assert torch.isfinite(loss)
+    assert loss.ndim == 0
+
+
+def test_nce_non_finite_log_prob_raises():
+    r"""Verify that non-finite log-probabilities from noise distributions raise ValueError."""
+    class BadNoise:
+        def sample(self, shape):
+            return torch.randn(shape)
+
+        def log_prob(self, x):
+            lp = torch.full((x.shape[0],), float("nan"))
+            return lp
+
+    model = QuadraticModel()
+    loss_fn = NoiseContrastiveEstimation(model=model, noise_distribution=BadNoise())
+    x = torch.randn(10, 2)
+
+    with pytest.raises(ValueError, match="noise distribution log_prob returned non-finite values"):
+        loss_fn(x)
+
+
+def test_nce_scalar_energy_single_sample():
+    r"""Verify that single-sample inputs (batch_size=1) with 0-d scalar model outputs work."""
+    class ScalarModel(nn.Module):
+        def forward(self, x):
+            # Returns a 0-d scalar if input has 1 sample, or 1-d otherwise
+            return (x ** 2).sum()
+
+    model = ScalarModel()
+    loss_fn = NoiseContrastiveEstimation(model=model, noise_ratio=1.0)
+    x = torch.randn(1, 2)
+    loss = loss_fn(x)
+    assert torch.isfinite(loss)
+    assert loss.ndim == 0
+

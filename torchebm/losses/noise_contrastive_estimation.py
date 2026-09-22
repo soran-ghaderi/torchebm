@@ -248,10 +248,10 @@ class NoiseContrastiveEstimation(BaseLoss):
     Example:
         ```python
         import torch
-        from torchebm.core import QuadraticModel
+        from torchebm.core import HarmonicModel
         from torchebm.losses import GaussianNoise, NoiseContrastiveEstimation
 
-        model = QuadraticModel()
+        model = HarmonicModel()
         noise = GaussianNoise(loc=0.0, scale=1.0)
         loss_fn = NoiseContrastiveEstimation(model=model, noise_distribution=noise)
 
@@ -308,11 +308,72 @@ class NoiseContrastiveEstimation(BaseLoss):
     @staticmethod
     def _eval_log_prob(dist: Any, samples: torch.Tensor) -> torch.Tensor:
         lp = dist.log_prob(samples)
+        if not torch.isfinite(lp).all():
+            raise ValueError("noise distribution log_prob returned non-finite values (NaN or Inf)")
         if lp.ndim > 1:
             lp = lp.flatten(1).sum(dim=1)
         elif lp.ndim == 0:
             lp = lp.expand(samples.shape[0])
         return lp.to(device=samples.device, dtype=samples.dtype)
+
+    def _sample_noise(self, target_shape: tuple[int, ...]) -> torch.Tensor:
+        r"""Sample noise matching target_shape (batch_size, *feature_dims)."""
+        n_noise = target_shape[0]
+        feature_shape = target_shape[1:]
+
+        # Case 1: If distribution has event_shape matching feature_shape (e.g. PyTorch MultivariateNormal)
+        if (
+            hasattr(self.noise_distribution, "event_shape")
+            and tuple(self.noise_distribution.event_shape) == feature_shape
+        ):
+            try:
+                return self.noise_distribution.sample((n_noise,))
+            except TypeError:
+                return self.noise_distribution.sample(n_noise)
+
+        # Case 2: If distribution has batch_shape + event_shape matching feature_shape
+        if (
+            hasattr(self.noise_distribution, "batch_shape")
+            and hasattr(self.noise_distribution, "event_shape")
+            and tuple(self.noise_distribution.batch_shape) + tuple(self.noise_distribution.event_shape) == feature_shape
+        ):
+            try:
+                return self.noise_distribution.sample((n_noise,))
+            except TypeError:
+                return self.noise_distribution.sample(n_noise)
+
+        # Case 3: Try sampling with full target_shape
+        try:
+            samples = self.noise_distribution.sample(target_shape)
+            if samples.shape == target_shape:
+                return samples
+            if samples.ndim == 1 + 2 * len(feature_shape) and samples.shape[1:1 + len(feature_shape)] == feature_shape:
+                try:
+                    s = self.noise_distribution.sample((n_noise,))
+                    if s.shape == target_shape:
+                        return s
+                except Exception:
+                    pass
+        except (TypeError, ValueError):
+            pass
+
+        # Case 4: Try sampling with (n_noise,)
+        try:
+            samples = self.noise_distribution.sample((n_noise,))
+            if samples.shape == target_shape:
+                return samples
+        except (TypeError, ValueError):
+            pass
+
+        # Case 5: Try sampling with integer n_noise
+        try:
+            samples = self.noise_distribution.sample(n_noise)
+            if samples.shape == target_shape:
+                return samples
+        except (TypeError, ValueError):
+            pass
+
+        return self.noise_distribution.sample(target_shape)
 
     def forward(
         self,
@@ -350,10 +411,7 @@ class NoiseContrastiveEstimation(BaseLoss):
         n_data = x.shape[0]
         if noise_samples is None:
             n_noise = max(1, int(round(n_data * self.noise_ratio)))
-            try:
-                noise_samples = self.noise_distribution.sample((n_noise, *x.shape[1:]))
-            except TypeError:
-                noise_samples = self.noise_distribution.sample(n_noise)
+            noise_samples = self._sample_noise((n_noise, *x.shape[1:]))
         else:
             n_noise = noise_samples.shape[0]
 
@@ -365,8 +423,17 @@ class NoiseContrastiveEstimation(BaseLoss):
 
         if e_data.ndim > 1:
             e_data = e_data.flatten(1).sum(dim=1)
+        elif e_data.ndim == 0:
+            e_data = e_data.unsqueeze(0)
+        else:
+            e_data = e_data.view(-1)
+
         if e_noise.ndim > 1:
             e_noise = e_noise.flatten(1).sum(dim=1)
+        elif e_noise.ndim == 0:
+            e_noise = e_noise.unsqueeze(0)
+        else:
+            e_noise = e_noise.view(-1)
 
         # Evaluate noise distribution log-probabilities
         log_pn_data = self._eval_log_prob(self.noise_distribution, x)
