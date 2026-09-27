@@ -302,3 +302,4 @@ extra_javascript:
   - javascripts/mathjax.js
   - path: javascripts/cards-clickable.js
     defer: true
+

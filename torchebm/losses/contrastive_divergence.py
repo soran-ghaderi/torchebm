@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from abc import abstractmethod
 
-from torchebm.core import BaseContrastiveDivergence, BaseSampler
+from torchebm.core import BaseContrastiveDivergence, BaseSampler, BaseModel
 from torchebm._deprecation import declare_deprecation
 
 # First warned in v0.7.5; window restarted when the deprecation ledger was
@@ -65,7 +65,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
     def __init__(
         self,
-        model: nn.Module,
+        model: BaseModel,
         sampler: BaseSampler,
         k_steps: int = 10,
         persistent: bool = False,
@@ -76,7 +76,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         add_noise_to_real: bool = False,
         noise_scale: float = 1e-4,
         dtype: torch.dtype = torch.float32,
-        device: Union[str, torch.device] = torch.device("cpu"),
+        device: Optional[Union[str, torch.device]] = torch.device("cpu"),
         *args,
         **kwargs,
     ) -> None:
