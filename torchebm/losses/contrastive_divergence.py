@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from abc import abstractmethod
 
-from torchebm.core import BaseContrastiveDivergence
+from torchebm.core import BaseContrastiveDivergence, BaseSampler, BaseModel
 from torchebm._deprecation import declare_deprecation
 
 # First warned in v0.7.5; window restarted when the deprecation ledger was
@@ -42,6 +42,10 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         init_steps: Number of MCMC steps to warm up the buffer.
         new_sample_ratio: Fraction of new random samples for PCD chains.
         energy_reg_weight: Weight for energy regularization term.
+        add_noise_to_real: Whether to perturb positive samples before
+            evaluating their energy.
+        noise_scale: Standard deviation of the optional positive-sample
+            perturbation.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -61,21 +65,21 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
     def __init__(
         self,
-        model,
-        sampler,
-        k_steps=10,
-        persistent=False,
-        buffer_size=10000,
-        init_steps=100,
-        new_sample_ratio=0.05,
-        energy_reg_weight=0.001,
-        add_noise_to_real=False,
-        noise_scale=1e-4,
-        dtype=torch.float32,
-        device=torch.device("cpu"),
+        model: BaseModel,
+        sampler: BaseSampler,
+        k_steps: int = 10,
+        persistent: bool = False,
+        buffer_size: int = 10000,
+        init_steps: int = 100,
+        new_sample_ratio: float = 0.05,
+        energy_reg_weight: float = 0.001,
+        add_noise_to_real: bool = False,
+        noise_scale: float = 1e-4,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[Union[str, torch.device]] = torch.device("cpu"),
         *args,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             model=model,
             sampler=sampler,

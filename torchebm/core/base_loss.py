@@ -5,7 +5,7 @@ Base Loss Classes for Energy-Based Models
 import logging
 import warnings
 from abc import abstractmethod, ABC
-from typing import Tuple, Union, Optional, Dict, Any, Callable
+from typing import Tuple, Union, Optional, Dict, Any, Callable, TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -20,6 +20,10 @@ from torchebm.core.base_module import (
     _unexpected_init_args_message,
     substitute_condition,
 )
+
+if TYPE_CHECKING:
+    from torchebm.core.base_coupling import BaseCoupling
+    from torchebm.core.base_interpolant import BaseInterpolant
 
 # First warned in v0.7.5; window restarted when the deprecation ledger was
 # adopted.
@@ -329,8 +333,8 @@ class BaseInterpolantLoss(BaseLoss):
 
     def __init__(
         self,
-        interpolant="linear",
-        coupling=None,
+        interpolant: Union[str, "BaseInterpolant"] = "linear",
+        coupling: Optional[Union[str, "BaseCoupling"]] = None,
         train_eps: Union[float, "BaseScheduler"] = 0.0,
         t_sampler: Union[str, Callable[..., torch.Tensor]] = "uniform",
         t_p_mean: float = -1.2,
