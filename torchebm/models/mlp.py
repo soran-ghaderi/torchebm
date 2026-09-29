@@ -63,6 +63,9 @@ class TimeConditionedMLP(_ConditionalBackbone):
             ``None`` builds an `MLPTimestepEmbedder`.
         y_embedder: Module mapping labels to ``(B, cond_dim)``. Mutually
             exclusive with ``num_classes``/``class_dropout_prob``.
+        prediction_type: What ``forward`` returns: ``"velocity"`` (default),
+            ``"score"``, or ``"epsilon"``. A declaration for consumers; the
+            computation is unchanged.
 
     Example:
         ```python
@@ -89,6 +92,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
         class_dropout_prob: float = 0.0,
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
+        prediction_type: str = "velocity",
     ):
         if in_dim <= 0:
             raise ValueError(f"in_dim must be positive, got {in_dim}")
@@ -112,6 +116,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
             class_dropout_prob=class_dropout_prob,
             t_embedder=t_embedder,
             y_embedder=y_embedder,
+            prediction_type=prediction_type,
         )
         self.in_dim = int(in_dim)
         self.out_dim = int(out_dim) if out_dim is not None else self.in_dim

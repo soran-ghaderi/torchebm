@@ -2,10 +2,11 @@ import math
 from abc import ABC, abstractmethod
 import torch
 from torch import nn
-from typing import Optional, Union
+from typing import Any, Optional, Tuple, Union
 
 from torchebm.core import TorchEBMModule
 from torchebm.core.base_module import _unexpected_init_args_message
+from torchebm.models.functional import energy_gradient
 
 
 class BaseModel(TorchEBMModule, ABC):
@@ -18,7 +19,20 @@ class BaseModel(TorchEBMModule, ABC):
 
     Subclasses must implement the `forward(x)` method and can optionally
     override the `gradient(x)` method for analytical gradients.
+
+    Calling the model returns the output selected by `prediction_type`:
+
+    - ``"energy"`` (default): the energy \(E(x)\), shape (batch_size,).
+    - ``"score"``: the score \(-\nabla_x E(x)\), shape of `x`.
+    - ``("energy", "score")``: both, from a single forward pass.
+
+    Args:
+        dtype: Data type for computations.
+        device: Device for computations.
+        prediction_type: Output of the model call; keyword-only.
     """
+
+    prediction_type: Union[str, Tuple[str, str]] = "energy"
 
     #: When True, the default autograd `gradient` computes in float32 regardless
     #: of the input dtype (the historical behavior). Default False respects the
@@ -32,6 +46,7 @@ class BaseModel(TorchEBMModule, ABC):
         dtype: torch.dtype = torch.float32,
         device=None,
         *args,
+        prediction_type: Union[str, Tuple[str, str]] = "energy",
         **kwargs,
     ):
         """Initializes the BaseModel base class.
@@ -40,12 +55,20 @@ class BaseModel(TorchEBMModule, ABC):
             TypeError: If constructor arguments remain that no class in the
                 model's MRO binds; the message lists the supported parameters
                 and the installed torchebm version.
+            ValueError: If `prediction_type` is not ``"energy"``, ``"score"``,
+                or ``("energy", "score")``.
         """
         if args or kwargs:
             raise TypeError(
                 _unexpected_init_args_message(type(self), args, kwargs, BaseModel)
             )
+        if prediction_type not in ("energy", "score", ("energy", "score")):
+            raise ValueError(
+                "prediction_type must be 'energy', 'score', or ('energy', 'score'), "
+                f"got {prediction_type!r}"
+            )
         super().__init__(dtype=dtype, device=device)
+        self.prediction_type = prediction_type
 
     # @property
     # def device(self) -> torch.device:
@@ -70,6 +93,48 @@ class BaseModel(TorchEBMModule, ABC):
             torch.Tensor: Tensor of scalar energy values with shape (batch_size,).
         """
         pass
+
+    def __call__(
+        self, x: torch.Tensor, *args: Any, **kwargs: Any
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        r"""Return the output selected by `prediction_type`.
+
+        The score is computed by autograd through `forward`. Under grad mode it
+        keeps its graph (``create_graph=True``), so a loss on the score trains
+        the model; under `torch.no_grad()` it is detached. `force_fp32_gradient`
+        applies as in `gradient`.
+
+        Args:
+            x: Input tensor of shape (batch_size, *input_dims).
+            *args: Positional arguments forwarded to `forward`.
+            **kwargs: Keyword arguments forwarded to `forward` (e.g. ``y=``).
+
+        Returns:
+            The energy, the score, or the tuple ``(energy, score)``.
+
+        Raises:
+            RuntimeError: If a score is requested under `torch.inference_mode()`,
+                where autograd is unavailable.
+        """
+        if self.prediction_type == "energy":
+            return super().__call__(x, *args, **kwargs)
+        if torch.is_inference_mode_enabled():
+            raise RuntimeError(
+                "prediction_type='score' needs autograd; call the model under "
+                "torch.no_grad() instead of torch.inference_mode()"
+            )
+        create_graph = torch.is_grad_enabled()
+        with torch.enable_grad():
+            if not x.requires_grad:
+                x = x.detach().requires_grad_(True)
+            inputs = x.float() if self.force_fp32_gradient else x
+            energy = super().__call__(inputs, *args, **kwargs)
+            score = -energy_gradient(energy, x, create_graph=create_graph)
+        if not create_graph:
+            energy, score = energy.detach(), score.detach()
+        if self.prediction_type == "score":
+            return score
+        return energy, score
 
     def gradient(
         self, x: torch.Tensor, model_kwargs: Optional[dict] = None

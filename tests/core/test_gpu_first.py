@@ -71,6 +71,15 @@ def test_force_fp32_gradient_computes_in_fp32():
     assert g.dtype == torch.float64  # return dtype is always the input dtype
 
 
+def test_force_fp32_gradient_applies_to_score_prediction():
+    model = DtypeRecordingEnergy()
+    model.prediction_type = "score"
+    model.force_fp32_gradient = True
+    score = model(torch.randn(5, 3, dtype=torch.float64))
+    assert model.seen_dtype == torch.float32
+    assert score.dtype == torch.float64
+
+
 # --------------------------------------------------------------------------- #
 # 2. trainer metrics are device tensors, epoch syncs once
 # --------------------------------------------------------------------------- #

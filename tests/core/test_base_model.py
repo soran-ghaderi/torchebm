@@ -156,3 +156,83 @@ def test_harmonic_gradient_linear_in_x():
     x = torch.randn(4, 3)
     g = m.gradient(x)
     assert torch.allclose(g, 2.0 * x, atol=1e-5)
+
+
+class TrainableQuadratic(BaseModel):
+    r"""E(x) = 0.5 * scale * w * ||x||^2, so the score is -scale * w * x."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.w = torch.nn.Parameter(torch.tensor(2.0))
+
+    def forward(self, x, scale=1.0):
+        return 0.5 * scale * self.w * x.square().sum(dim=-1)
+
+
+def test_prediction_type_defaults_to_energy():
+    m = TrainableQuadratic()
+    x = torch.randn(4, 3)
+    assert m.prediction_type == "energy"
+    assert torch.equal(m(x), m.forward(x))
+
+
+def test_score_prediction_is_negative_energy_gradient():
+    x = torch.randn(4, 3)
+    score = HarmonicModel(k=2.0, prediction_type="score")(x)
+    assert torch.allclose(score, -HarmonicModel(k=2.0).gradient(x))
+
+
+def test_energy_and_score_prediction_returns_both():
+    m = TrainableQuadratic(prediction_type=("energy", "score"))
+    x = torch.randn(4, 3)
+    energy, score = m(x)
+    assert torch.allclose(energy, x.square().sum(dim=-1))
+    assert torch.allclose(score, -2.0 * x)
+
+
+def test_score_forwards_model_kwargs():
+    m = TrainableQuadratic(prediction_type="score")
+    x = torch.randn(4, 3)
+    assert torch.allclose(m(x, scale=3.0), -6.0 * x)
+
+
+def test_score_trains_the_model_under_grad_mode():
+    m = TrainableQuadratic(prediction_type="score")
+    x = torch.randn(4, 3)
+    m(x).sum().backward()
+    assert torch.allclose(m.w.grad, -x.sum())
+    assert not x.requires_grad
+
+
+def test_score_keeps_graph_to_input_that_requires_grad():
+    m = TrainableQuadratic(prediction_type="score")
+    x = torch.randn(4, 3, requires_grad=True)
+    (divergence,) = torch.autograd.grad(m(x).sum(), x)
+    assert torch.allclose(divergence, torch.full_like(x, -2.0))
+
+
+def test_score_is_detached_under_no_grad():
+    m = TrainableQuadratic(prediction_type=("energy", "score"))
+    with torch.no_grad():
+        energy, score = m(torch.randn(4, 3))
+    assert not energy.requires_grad
+    assert not score.requires_grad
+
+
+def test_score_prediction_rejects_inference_mode():
+    m = TrainableQuadratic(prediction_type="score")
+    with torch.inference_mode(), pytest.raises(RuntimeError, match="no_grad"):
+        m(torch.randn(4, 3))
+
+
+@pytest.mark.parametrize("prediction_type", ["velocity", ("score", "energy"), "bogus"])
+def test_invalid_prediction_type_raises(prediction_type):
+    with pytest.raises(ValueError, match="prediction_type"):
+        TrainableQuadratic(prediction_type=prediction_type)
+
+
+def test_model_without_prediction_type_attribute_is_energy_model():
+    m = TrainableQuadratic(prediction_type="score")
+    del m.prediction_type
+    x = torch.randn(4, 3)
+    assert torch.equal(m(x), m.forward(x))

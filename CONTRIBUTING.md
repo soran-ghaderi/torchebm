@@ -71,6 +71,11 @@ library at runtime. A new runtime extra is justified only when a module under
 6. Commit using Conventional Commits.
 7. Open a Pull Request linked to the relevant issue.
 
+## Very Important Rules
+- Contributors must not touch the core modules (anything under the `core` package)
+- Contributors must not change API. Everything must follow the same standard as other existing TorchEBM modules.
+
+
 ## Coding Style and Rules
 
 - Surgical diffs only. Do not reformat, reorder imports, or touch lines unrelated to the issue you are closing.

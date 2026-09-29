@@ -108,6 +108,9 @@ class DiT(_ConditionalBackbone):
             reuses ``num_heads``.
         pos_embed: Positional embedding kind: ``"sincos"`` (fixed 2D
             sin/cos, default), ``"learnable"``, or ``None`` for none.
+        prediction_type: What ``forward`` returns: ``"velocity"`` (default),
+            ``"score"``, or ``"epsilon"``. A declaration for consumers; the
+            computation is unchanged.
 
     Example:
         ```python
@@ -142,6 +145,7 @@ class DiT(_ConditionalBackbone):
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
         pos_embed: Optional[str] = "sincos",
+        prediction_type: str = "velocity",
     ):
         if isinstance(input_size, int):
             size = (int(input_size), int(input_size))
@@ -168,6 +172,7 @@ class DiT(_ConditionalBackbone):
             class_dropout_prob=class_dropout_prob,
             t_embedder=t_embedder,
             y_embedder=y_embedder,
+            prediction_type=prediction_type,
         )
 
         self.input_size = size
