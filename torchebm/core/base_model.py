@@ -121,13 +121,9 @@ class BaseModel(TorchEBMModule, ABC):
                     "input `x` in a differentiable way."
                 )
 
-            grad = torch.autograd.grad(
-                outputs=energy,
-                inputs=x_for_grad,
-                grad_outputs=torch.ones_like(energy, device=energy.device),
-                create_graph=False,  # false for standard grad computation
-                retain_graph=None,  # since create_graph=False, let PyTorch decide
-            )[0]
+            from torchebm.models.functional import energy_gradient
+
+            grad = energy_gradient(energy, x_for_grad)
 
         if grad is None:
             raise RuntimeError(
