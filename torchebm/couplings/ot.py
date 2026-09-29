@@ -295,7 +295,12 @@ class SinkhornCoupling(BaseCostCoupling):
 
     _supports_process_group = True
 
-    def __init__(self, reg: float = 0.05, n_iters: int = 100, process_group=None):
+    def __init__(
+        self,
+        reg: float = 0.05,
+        n_iters: int = 100,
+        process_group: Optional["torch.distributed.ProcessGroup"] = None,
+    ):
         super().__init__(process_group=process_group)
         if reg <= 0:
             raise ValueError(f"reg must be positive, got {reg}")

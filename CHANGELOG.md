@@ -5,6 +5,18 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.10](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.8.10) - 2026-09-29
+
+### Added
+
+- [`bc41ec9`](https://github.com/soran-ghaderi/torchebm/commit/bc41ec9238cf7fd8321f356938fabe8e4af5cca0) - expose differentiable energy gradient
+
+### Other
+
+- [`6e2c012`](https://github.com/soran-ghaderi/torchebm/commit/6e2c012e9e7f99504b41c388a74637e54c6bf009) - eliminate Griffe API warnings
+- [`27b3623`](https://github.com/soran-ghaderi/torchebm/commit/27b3623f27ae51811de183a78a60938d65b51867) - address Griffe review feedback
+- [`5280391`](https://github.com/soran-ghaderi/torchebm/commit/52803915b3cbae90c3fa21b0dffa489e53ffd579) - address remaining Griffe review nits
+
 ## [0.8.9](https://github.com/soran-ghaderi/torchebm/compare/v0.8.8...v0.8.9) - 2026-09-16
 
 ### Fixed
