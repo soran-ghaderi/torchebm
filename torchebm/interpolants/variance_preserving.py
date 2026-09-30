@@ -26,6 +26,8 @@ class VariancePreservingInterpolant(BaseInterpolant):
     Args:
         sigma_min: Minimum noise level (default: 0.1).
         sigma_max: Maximum noise level (default: 20.0).
+        prediction_type: Regression target returned by the call: ``"velocity"``
+            (default), ``"epsilon"``, or ``"sample"``.
 
     Example:
         ```python
@@ -40,7 +42,14 @@ class VariancePreservingInterpolant(BaseInterpolant):
         ```
     """
 
-    def __init__(self, sigma_min: float = 0.1, sigma_max: float = 20.0):
+    def __init__(
+        self,
+        sigma_min: float = 0.1,
+        sigma_max: float = 20.0,
+        *,
+        prediction_type: str = "velocity",
+    ):
+        super().__init__(prediction_type=prediction_type)
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 
