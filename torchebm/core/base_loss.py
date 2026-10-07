@@ -17,6 +17,8 @@ from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
 from torchebm._deprecation import declare_deprecation
 from torchebm.core.base_module import (
+    _dtensor_type,
+    _has_dtensor_params,
     _unexpected_init_args_message,
     substitute_condition,
 )
@@ -41,22 +43,6 @@ _BARE_MODEL_KWARGS_DEPRECATION = declare_deprecation(
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _dtensor_type():
-    try:
-        from torch.distributed.tensor import DTensor
-    except ImportError:
-        return None
-    return DTensor
-
-
-def _has_dtensor_params(module: nn.Module) -> bool:
-    r"""Whether the module's parameters are sharded DTensors (e.g. FSDP2)."""
-    dtensor = _dtensor_type()
-    return dtensor is not None and isinstance(
-        next(module.parameters(), None), dtensor
-    )
 
 
 class BaseLoss(Schedulable, TorchEBMModule, ABC):

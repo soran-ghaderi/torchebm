@@ -13,6 +13,7 @@ provided here as a thin compatibility shim. They will move to a dedicated
 `AMPConfig` utility in a follow-up release.
 """
 
+import functools
 from contextlib import nullcontext
 from typing import Optional, Union, Callable
 import warnings
@@ -27,6 +28,23 @@ def _normalize(device: torch.device) -> torch.device:
     if device.type == "cuda" and device.index == 0:
         return torch.device("cuda")
     return device
+
+
+@functools.cache
+def _dtensor_type():
+    try:
+        from torch.distributed.tensor import DTensor
+    except ImportError:
+        return None
+    return DTensor
+
+
+def _has_dtensor_params(module: nn.Module) -> bool:
+    r"""Whether the module's parameters are sharded DTensors (e.g. FSDP2)."""
+    dtensor = _dtensor_type()
+    return dtensor is not None and isinstance(
+        next(module.parameters(), None), dtensor
+    )
 
 
 def _unexpected_init_args_message(cls, args, kwargs, stop_at: type) -> str:

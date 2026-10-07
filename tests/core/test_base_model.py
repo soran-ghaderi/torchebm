@@ -231,6 +231,23 @@ def test_invalid_prediction_type_raises(prediction_type):
         TrainableQuadratic(prediction_type=prediction_type)
 
 
+def test_functional_model_is_held_as_structure_only():
+    with torch.device("meta"):
+        template = TrainableQuadratic()
+    m = TrainableQuadratic(prediction_type="score", functional_model=template)
+    assert list(m.children()) == []
+    assert len(list(m.parameters())) == 1
+    assert m.state_dict().keys() == {"w"}
+
+
+def test_functional_model_must_be_an_energy_model():
+    with pytest.raises(ValueError, match="functional_model"):
+        TrainableQuadratic(
+            prediction_type="score",
+            functional_model=TrainableQuadratic(prediction_type="score"),
+        )
+
+
 def test_model_without_prediction_type_attribute_is_energy_model():
     m = TrainableQuadratic(prediction_type="score")
     del m.prediction_type

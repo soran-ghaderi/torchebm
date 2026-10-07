@@ -5,8 +5,35 @@ from torch import nn
 from typing import Any, Optional, Tuple, Union
 
 from torchebm.core import TorchEBMModule
-from torchebm.core.base_module import _unexpected_init_args_message
+from torchebm.core.base_module import (
+    _has_dtensor_params,
+    _unexpected_init_args_message,
+)
 from torchebm.models.functional import energy_gradient
+
+
+def _local_shard(value: torch.Tensor, mesh) -> torch.Tensor:
+    r"""Local ``Shard(0)`` piece of a DTensor with data-parallel gradient scale.
+
+    The backward of the parameter all-gather sums the per-rank contributions,
+    so a local-mean loss would give the cross-rank sum. Scaling the gradient by
+    ``1 / world_size`` while keeping the forward value exact makes it the
+    global-batch mean, the convention of gradient-averaging data parallelism.
+    """
+    from torch.distributed.tensor import Shard
+
+    if value.placements != (Shard(0),):
+        value = value.redistribute(mesh, [Shard(0)])
+    local = value.to_local()
+    scale = 1.0 / mesh.size()
+    return local * scale + local.detach() * (1.0 - scale)
+
+
+def _restore_gradient_placement(param: torch.Tensor) -> None:
+    r"""Reduce-scatter a ``Partial`` gradient to the parameter's placements."""
+    grad = param.grad
+    if tuple(grad.placements) != tuple(param.placements):
+        param.grad = grad.redistribute(param.device_mesh, param.placements)
 
 
 class BaseModel(TorchEBMModule, ABC):
@@ -30,6 +57,11 @@ class BaseModel(TorchEBMModule, ABC):
         dtype: Data type for computations.
         device: Device for computations.
         prediction_type: Output of the model call; keyword-only.
+        functional_model: Hook-free instance of the same architecture, used by
+            `torch.func.functional_call` to train through the score when the
+            parameters are FSDP2 (DTensor) shards; its own parameters are never
+            used, so build it on the meta device. Held as structure only, not
+            registered as a submodule. Keyword-only.
     """
 
     prediction_type: Union[str, Tuple[str, str]] = "energy"
@@ -47,6 +79,7 @@ class BaseModel(TorchEBMModule, ABC):
         device=None,
         *args,
         prediction_type: Union[str, Tuple[str, str]] = "energy",
+        functional_model: Optional[nn.Module] = None,
         **kwargs,
     ):
         """Initializes the BaseModel base class.
@@ -56,7 +89,8 @@ class BaseModel(TorchEBMModule, ABC):
                 model's MRO binds; the message lists the supported parameters
                 and the installed torchebm version.
             ValueError: If `prediction_type` is not ``"energy"``, ``"score"``,
-                or ``("energy", "score")``.
+                or ``("energy", "score")``, or if `functional_model` is not an
+                energy model.
         """
         if args or kwargs:
             raise TypeError(
@@ -67,8 +101,12 @@ class BaseModel(TorchEBMModule, ABC):
                 "prediction_type must be 'energy', 'score', or ('energy', 'score'), "
                 f"got {prediction_type!r}"
             )
+        if getattr(functional_model, "prediction_type", "energy") != "energy":
+            raise ValueError("functional_model must have prediction_type='energy'")
         super().__init__(dtype=dtype, device=device)
         self.prediction_type = prediction_type
+        object.__setattr__(self, "_functional_model", functional_model)
+        self._gradient_placement_hooks_registered = False
 
     # @property
     # def device(self) -> torch.device:
@@ -104,6 +142,13 @@ class BaseModel(TorchEBMModule, ABC):
         the model; under `torch.no_grad()` it is detached. `force_fp32_gradient`
         applies as in `gradient`.
 
+        Note:
+            Training through the score is a second-order backward. Under DDP it
+            is exact with the default ``static_graph=False`` when every parameter
+            receives a gradient: build the energy head without an output bias,
+            which the score does not depend on. Under FSDP2 it runs through
+            `functional_model` (see `_sharded_energy_and_score`).
+
         Args:
             x: Input tensor of shape (batch_size, *input_dims).
             *args: Positional arguments forwarded to `forward`.
@@ -114,7 +159,8 @@ class BaseModel(TorchEBMModule, ABC):
 
         Raises:
             RuntimeError: If a score is requested under `torch.inference_mode()`,
-                where autograd is unavailable.
+                where autograd is unavailable, or under grad mode with FSDP2
+                (DTensor) parameters and no `functional_model`.
         """
         if self.prediction_type == "energy":
             return super().__call__(x, *args, **kwargs)
@@ -124,17 +170,86 @@ class BaseModel(TorchEBMModule, ABC):
                 "torch.no_grad() instead of torch.inference_mode()"
             )
         create_graph = torch.is_grad_enabled()
-        with torch.enable_grad():
-            if not x.requires_grad:
-                x = x.detach().requires_grad_(True)
-            inputs = x.float() if self.force_fp32_gradient else x
-            energy = super().__call__(inputs, *args, **kwargs)
-            score = -energy_gradient(energy, x, create_graph=create_graph)
-        if not create_graph:
-            energy, score = energy.detach(), score.detach()
+        if create_graph and _has_dtensor_params(self):
+            energy, score = self._sharded_energy_and_score(x, args, kwargs)
+        else:
+            with torch.enable_grad():
+                if not x.requires_grad:
+                    x = x.detach().requires_grad_(True)
+                inputs = x.float() if self.force_fp32_gradient else x
+                energy = super().__call__(inputs, *args, **kwargs)
+                score = -energy_gradient(energy, x, create_graph=create_graph)
+            if not create_graph:
+                energy, score = energy.detach(), score.detach()
         if self.prediction_type == "score":
             return score
         return energy, score
+
+    def _sharded_energy_and_score(
+        self, x: torch.Tensor, args: tuple, kwargs: dict
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        r"""Energy and score through differentiable DTensor collectives.
+
+        FSDP2's hooks reshard parameter storage after the first backward, so
+        they cannot run the second-order backward that trains through the
+        score. The forward runs instead through `torch.func.functional_call` on
+        the hook-free `functional_model` with this model's sharded parameters:
+        the parameter all-gathers are differentiable DTensor redistributions
+        that stay alive until both backwards are done. The local batch is a
+        ``Shard(0)`` leaf, so the second-order backward is exact across ranks.
+
+        Returns:
+            Local shards of ``(energy, score)`` whose gradients follow the
+            global-batch-mean convention of data-parallel training (see
+            `_local_shard`). Parameter gradients are redistributed to the
+            parameter placements on accumulation, the reduce-scatter FSDP's
+            hooks would have run.
+
+        Raises:
+            RuntimeError: If `functional_model` was not given.
+            NotImplementedError: If the device mesh is not 1-D.
+        """
+        if self._functional_model is None:
+            raise RuntimeError(
+                "Training through prediction_type='score' with FSDP-managed "
+                "(DTensor) parameters needs functional_model=<hook-free instance "
+                "of the same architecture, built on the meta device>."
+            )
+        from torch.distributed.tensor import DTensor, Replicate, Shard
+
+        params = dict(self.named_parameters())
+        mesh = next(iter(params.values())).device_mesh
+        if mesh.ndim != 1:
+            raise NotImplementedError(
+                f"Training through the score supports 1-D device meshes, got {mesh.ndim}-D."
+            )
+        batch = x.shape[0]
+
+        def on_mesh(value, placement):
+            if not torch.is_tensor(value) or isinstance(value, DTensor):
+                return value
+            return DTensor.from_local(value, mesh, [placement], run_check=False)
+
+        def batch_aligned(value):
+            if torch.is_tensor(value) and value.ndim > 0 and value.shape[0] == batch:
+                return on_mesh(value, Shard(0))
+            return on_mesh(value, Replicate())
+
+        buffers = {name: on_mesh(b, Replicate()) for name, b in self.named_buffers()}
+        leaf = on_mesh(x.detach(), Shard(0)).requires_grad_(True)
+        inputs = leaf.float() if self.force_fp32_gradient else leaf
+        energy = torch.func.functional_call(
+            self._functional_model,
+            {**params, **buffers},
+            (inputs, *map(batch_aligned, args)),
+            kwargs={k: batch_aligned(v) for k, v in kwargs.items()},
+        )
+        score = -energy_gradient(energy, leaf, create_graph=True)
+        if not self._gradient_placement_hooks_registered:
+            for param in params.values():
+                param.register_post_accumulate_grad_hook(_restore_gradient_placement)
+            self._gradient_placement_hooks_registered = True
+        return _local_shard(energy, mesh), _local_shard(score, mesh)
 
     def gradient(
         self, x: torch.Tensor, model_kwargs: Optional[dict] = None
