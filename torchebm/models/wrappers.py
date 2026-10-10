@@ -9,6 +9,40 @@ from torchebm.core import BaseModel, BaseScheduler, Schedulable
 from torchebm.core.base_module import substitute_condition
 
 
+class FixedTime(BaseModel):
+    r"""Evaluate a time-conditioned model at one fixed clock value.
+
+    The caller's timestep is deliberately ignored. This is useful when a
+    field was trained with a pinned model clock but is consumed by samplers
+    that still pass their integration time to ``model(x, t)``.
+
+    Args:
+        model: Module called as ``model(x, t, **kwargs)``.
+        t: Scalar clock value presented to ``model`` on every call.
+    """
+
+    def __init__(self, model: nn.Module, t: Union[int, float, torch.Tensor]):
+        super().__init__()
+        if isinstance(t, torch.Tensor):
+            if t.numel() != 1:
+                raise ValueError(f"t must be a scalar, got shape {tuple(t.shape)}")
+            t = t.item()
+        self.model = model
+        self.t = float(t)
+
+    def forward(
+        self, x: torch.Tensor, t: Optional[torch.Tensor] = None, **kwargs
+    ) -> torch.Tensor:
+        fixed_t = torch.full((x.shape[0],), self.t, device=x.device, dtype=x.dtype)
+        return self.model(x, fixed_t, **kwargs)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(model={type(self.model).__name__}, "
+            f"t={self.t!r})"
+        )
+
+
 class ClassifierFreeGuidance(BaseModel):
     r"""Classifier-free guidance in one batched forward.
 
