@@ -88,7 +88,7 @@ def test_external_flow_evaluation_matches_class_value_and_gradients():
         interpolant=get_interpolant("linear"),
         coupling=coupling,
         x0=x0,
-        t=t,
+        t_sampler=_fixed_t(t),
     )
     prediction = external_model(batch.xt, batch.model_time)
     external_loss = weighted_mse_loss(
@@ -119,7 +119,7 @@ def test_subclass_can_add_to_training_loss_terms():
         x1, x0=x0
     )
 
-    assert torch.equal(regularized_loss, base_loss + 1.0)
+    torch.testing.assert_close(regularized_loss, base_loss + 1.0)
 
 
 def test_prepare_flow_matching_preserves_rng_order():

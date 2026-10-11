@@ -144,12 +144,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x,
-                *args,
-                x0=x0,
-                model_kwargs=model_kwargs,
-                generator=generator,
-                **kwargs,
+                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
             )
         return loss
 
@@ -187,7 +182,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             x0=x0,
             generator=generator,
             model_kwargs=model_kwargs,
-            t_sampler=self._sample_t,
+            t_sampler=self._time_sampler,
             negate_velocity=self.negate_velocity,
         )
 
@@ -213,6 +208,17 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             "weights": batch.weights,
             "loss_weights": loss_weights,
         }
+
+    def _time_sampler(
+        self,
+        batch: int,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+        generator: Optional[torch.Generator],
+    ) -> torch.Tensor:
+        r"""Draw training times with the public ``t_sampler`` call signature."""
+        return self._sample_t(batch, generator)
 
     def __repr__(self) -> str:
         return (

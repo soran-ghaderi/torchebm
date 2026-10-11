@@ -41,9 +41,7 @@ def prepare_flow_matching(
     t: Optional[torch.Tensor] = None,
     generator: Optional[torch.Generator] = None,
     model_kwargs: Optional[Mapping[str, Any]] = None,
-    t_sampler: Optional[
-        Callable[[int, Optional[torch.Generator]], torch.Tensor]
-    ] = None,
+    t_sampler: Optional[Callable[..., torch.Tensor]] = None,
     negate_velocity: bool = False,
 ) -> MatchingBatch:
     r"""Prepare a conditional flow-matching batch without evaluating a model.
@@ -61,9 +59,10 @@ def prepare_flow_matching(
         t: Optional explicit interpolation times of shape ``(batch,)``.
         generator: Generator shared by source, coupling, and time draws.
         model_kwargs: Optional conditioning forwarded to the coupling.
-        t_sampler: Optional configured time sampler called after coupling as
-            ``t_sampler(batch, generator)``. When omitted, times are drawn
-            uniformly on ``[0, 1)``.
+        t_sampler: Optional time sampler called after coupling as
+            ``t_sampler(batch, device=, dtype=, generator=)``, the same
+            convention as the loss classes' ``t_sampler``. When omitted, times
+            are drawn uniformly on ``[0, 1)``.
         negate_velocity: Use ``-ut`` rather than ``ut`` as the target.
 
     Returns:
@@ -93,7 +92,7 @@ def prepare_flow_matching(
                 generator=generator,
             )
         else:
-            t = t_sampler(batch, generator)
+            t = t_sampler(batch, device=x1.device, dtype=x1.dtype, generator=generator)
     else:
         t = t.to(device=x1.device, dtype=x1.dtype)
 
