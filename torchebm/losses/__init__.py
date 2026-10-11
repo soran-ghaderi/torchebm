@@ -49,4 +49,8 @@ def __getattr__(name: str):
 
         module = importlib.import_module(_LAZY_IMPORTS[name], __package__)
         return getattr(module, name)
+    if name == "functional":
+        import importlib
+
+        return importlib.import_module(".functional", __package__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

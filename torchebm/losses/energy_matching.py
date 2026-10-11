@@ -61,10 +61,9 @@ from torchebm.core import (
     TemperatureScheduler,
 )
 from torchebm.core.base_loss import BaseInterpolantLoss, _has_dtensor_params
-from torchebm.losses.loss_utils import (
-    compute_flow_weight,
-    mean_flat,
-    trimmed_mean,
+from torchebm.losses.functional import (
+    contrastive_divergence_loss,
+    energy_matching_loss,
 )
 from torchebm.samplers import LangevinDynamics
 
@@ -469,8 +468,9 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             energy.sum(), xt, create_graph=self.model.training
         )[0]
 
-        w = compute_flow_weight(t, cutoff=self.flow_weight_cutoff)
-        per_pair = w * mean_flat((-grad - ut).square())
+        per_pair = energy_matching_loss(
+            -grad, ut, t, flow_weight_cutoff=self.flow_weight_cutoff, reduction="none"
+        )
         if self.loss_weight_fn is not None:
             per_pair = per_pair * self.loss_weight_fn(t)
         if coupled.weights is not None:
@@ -497,8 +497,8 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             with self.autocast_context():
                 pos_energy = self.model(x1, **model_kwargs)
                 neg_energy = self.model(negatives, **neg_model_kwargs)
-            cd_value = pos_energy.mean() - trimmed_mean(
-                neg_energy, self.cd_trim_fraction
+            cd_value = contrastive_divergence_loss(
+                pos_energy, neg_energy, trim_fraction=self.cd_trim_fraction
             )
             cd_loss = lambda_cd * cd_value
             if self.cd_clamp is not None:

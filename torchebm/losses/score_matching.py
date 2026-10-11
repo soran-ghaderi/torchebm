@@ -10,6 +10,11 @@ from torch.func import grad as func_grad, vmap, jacrev
 
 
 from torchebm.core import BaseModel, BaseScoreMatching
+from torchebm.losses.functional import (
+    denoising_score_matching_loss,
+    score_matching_loss,
+    sliced_score_matching_loss,
+)
 # from torchebm.core.base_loss import BaseScoreMatching
 
 
@@ -191,8 +196,7 @@ class ScoreMatching(BaseScoreMatching):
         score = vmap(score_fn)(x_flat)
         laplacian = vmap(laplacian_fn)(x_flat)
 
-        term1 = 0.5 * score.square().sum(dim=-1)
-        return (term1 + laplacian).mean()
+        return score_matching_loss(score, laplacian)
 
     def _approx_score_matching(
         self,
@@ -364,14 +368,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
         target_score = noise / (self.noise_scale**2)
 
-        loss = (
-            0.5
-            * torch.sum(
-                (score - target_score) ** 2, dim=list(range(1, len(x.shape)))
-            ).mean()
-        )
-
-        return loss
+        return denoising_score_matching_loss(score, target_score)
 
 
 class SlicedScoreMatching(BaseScoreMatching):
@@ -552,18 +549,10 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         logp = (-self.model(dup_x)).sum()
         grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
-        v_score = torch.sum(grad1 * n_vectors, dim=-1)
-        term1 = 0.5 * v_score.square()
 
-        grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[0]
-        term2 = torch.sum(n_vectors * grad_v, dim=-1)
-
-        term1 = term1.view(self.n_projections, -1).mean(dim=0)
-        term2 = term2.view(self.n_projections, -1).mean(dim=0)
-
-        loss = term2 + term1
-
-        return loss.mean()
+        return sliced_score_matching_loss(
+            grad1, dup_x, n_vectors, n_projections=self.n_projections
+        )
 
     def _functional_sliced_loss(
         self, dup_x: torch.Tensor, generator: Optional[torch.Generator] = None

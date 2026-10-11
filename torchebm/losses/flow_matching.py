@@ -26,7 +26,7 @@ from torch import nn
 
 from torchebm.core import BaseCoupling, BaseInterpolant, BaseScheduler
 from torchebm.core.base_loss import BaseInterpolantLoss
-from torchebm.losses import mean_flat
+from torchebm.losses.functional import flow_matching_loss
 
 
 class FlowMatchingLoss(BaseInterpolantLoss):
@@ -196,9 +196,8 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         if isinstance(pred, tuple):
             pred = pred[0]
 
-        loss = mean_flat((pred - target).square())
-        if self.loss_weight_fn is not None:
-            loss = loss * self.loss_weight_fn(t)
+        weight = self.loss_weight_fn(t) if self.loss_weight_fn is not None else None
+        loss = flow_matching_loss(pred, target, weight=weight, reduction="none")
 
         return {"loss": loss, "pred": pred, "weights": coupled.weights}
 

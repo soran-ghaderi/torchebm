@@ -8,6 +8,7 @@ from abc import abstractmethod
 
 from torchebm.core import BaseContrastiveDivergence, BaseSampler, BaseModel
 from torchebm._deprecation import declare_deprecation
+from torchebm.losses.functional import contrastive_divergence_loss
 
 # First warned in v0.7.5; window restarted when the deprecation ledger was
 # adopted.
@@ -221,21 +222,11 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
             pred_x_energy = self.model(pred_x, **mk)
 
-        # Compute mean energies with improved numerical stability
-        mean_x_energy = torch.mean(x_energy)
-        mean_pred_energy = torch.mean(pred_x_energy)
-
-        # Basic contrastive divergence loss: E[data] - E[model]
-        loss = mean_x_energy - mean_pred_energy
-
-        # Optional: Regularization to prevent energies from becoming too large
-        # This helps with stability especially in the early phases of training
-        energy_reg_weight = kwargs.get("energy_reg_weight", self.energy_reg_weight)
-        if energy_reg_weight > 0:
-            energy_reg = energy_reg_weight * (
-                torch.mean(x_energy**2) + torch.mean(pred_x_energy**2)
-            )
-            loss = loss + energy_reg
+        loss = contrastive_divergence_loss(
+            x_energy,
+            pred_x_energy,
+            energy_reg_weight=kwargs.get("energy_reg_weight", self.energy_reg_weight),
+        )
 
         # Sync-free NaN/Inf guard: substitute a small constant on-device when
         # the loss is non-finite. Avoids the per-step CPU sync that

@@ -44,6 +44,7 @@ from torchebm.core import (
 )
 from torchebm.core.base_loss import BaseInterpolantLoss, _has_dtensor_params
 from torchebm._deprecation import declare_deprecation
+from torchebm.losses.functional import equilibrium_matching_loss
 from torchebm.losses import (
     mean_flat,
     compute_eqm_ct,
@@ -413,8 +414,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         # For VP/cosine, ut encodes the schedule-specific velocity coefficients.
         # Sampling with negate_velocity=True recovers the positive velocity ut*c(t).
         ct = self._compute_ct(t)
-        ct = ct.view(batch, *([1] * (xt.ndim - 1)))
-        target = -ut * ct
+        target = -ut
 
         # For explicit energy, we need gradients w.r.t. xt
         if self.energy_type != "none":
@@ -444,13 +444,17 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         if self.prediction == "velocity":
             if self.energy_type == "none":
                 # Implicit EqM: model directly predicts gradient field
-                terms["loss"] = mean_flat((model_output - target).square())
+                terms["loss"] = equilibrium_matching_loss(
+                    model_output, target, ct, reduction="none"
+                )
             else:
                 # Explicit EqM-E: compute gradient of energy function
                 grad, energy = self._compute_explicit_energy_gradient(
                     xt, model_output, training=self.model.training
                 )
-                terms["loss"] = mean_flat((grad - target).square())
+                terms["loss"] = equilibrium_matching_loss(
+                    grad, target, ct, reduction="none"
+                )
                 terms["energy"] = energy
         else:
             # Score or noise prediction with optional weighting
