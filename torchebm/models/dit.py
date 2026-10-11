@@ -108,6 +108,9 @@ class DiT(_ConditionalBackbone):
             reuses ``num_heads``.
         pos_embed: Positional embedding kind: ``"sincos"`` (fixed 2D
             sin/cos, default), ``"learnable"``, or ``None`` for none.
+        uncond: Pin the model timestep to zero in ``forward``, matching the
+            unconditional EqM reference model while preserving other
+            conditioning inputs. Default is ``False``.
 
     Example:
         ```python
@@ -142,6 +145,7 @@ class DiT(_ConditionalBackbone):
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
         pos_embed: Optional[str] = "sincos",
+        uncond: bool = False,
     ):
         if isinstance(input_size, int):
             size = (int(input_size), int(input_size))
@@ -181,6 +185,7 @@ class DiT(_ConditionalBackbone):
         self.head_dim = int(head_dim) if head_dim is not None else self.embed_dim
         self.head_depth = int(head_depth)
         self.pos_embed_type = pos_embed
+        self.uncond = bool(uncond)
 
         self.patch_embed = ConvPatchEmbed2d(
             in_channels=self.in_channels, embed_dim=self.embed_dim, patch_size=p
@@ -284,6 +289,9 @@ class DiT(_ConditionalBackbone):
         Returns:
             torch.Tensor: Output of shape ``(B, out_channels, H, W)``.
         """
+        if self.uncond:
+            dtype = t.dtype if t is not None and t.is_floating_point() else x.dtype
+            t = torch.zeros(x.shape[0], device=x.device, dtype=dtype)
         c = self._condition(t, y, cond)
         if tuple(x.shape[-2:]) != self.input_size:
             raise ValueError(

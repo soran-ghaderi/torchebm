@@ -222,6 +222,8 @@ plugins:
           heading_level: 1
           show_symbol_type_heading: true
           show_symbol_type_toc: true
+          docstring_options:
+            warn_missing_types: false
       api_root_uri: "api"
 
   - meta

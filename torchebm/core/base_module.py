@@ -14,7 +14,7 @@ provided here as a thin compatibility shim. They will move to a dedicated
 """
 
 from contextlib import nullcontext
-from typing import Optional, Union
+from typing import Optional, Union, Callable
 import warnings
 
 import torch
@@ -68,7 +68,16 @@ def _unexpected_init_args_message(cls, args, kwargs, stop_at: type) -> str:
     )
 
 
-def substitute_condition(y, mask, null):
+def substitute_condition(
+    y: torch.Tensor,
+    mask: torch.Tensor,
+    null: Union[
+        int,
+        float,
+        torch.Tensor,
+        Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    ],
+) -> torch.Tensor:
     r"""Replace conditioning rows selected by `mask` with the null condition.
 
     Shared semantics for classifier-free-guidance label dropout (losses) and
@@ -83,7 +92,7 @@ def substitute_condition(y, mask, null):
             callable ``(y, mask) -> y``.
 
     Returns:
-        Tensor of y's shape with masked rows nulled.
+        torch.Tensor: Tensor of y's shape with masked rows nulled.
     """
     if callable(null):
         return null(y, mask)
