@@ -4,7 +4,12 @@ import pytest
 import torch
 
 from torchebm.core.base_interpolant import BaseInterpolant, expand_t_like_x
-from torchebm.interpolants import LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
+from torchebm.interpolants import (
+    LinearInterpolant,
+    CosineInterpolant,
+    VariancePreservingInterpolant,
+    VarianceExplodingInterpolant,
+)
 from tests.conftest import requires_cuda
 
 
@@ -119,6 +124,7 @@ def test_default_d_alpha_alpha_ratio():
     LinearInterpolant,
     CosineInterpolant,
     VariancePreservingInterpolant,
+    VarianceExplodingInterpolant,
 ])
 def any_interpolant(request):
     """Fixture providing all interpolant types."""

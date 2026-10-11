@@ -7,6 +7,7 @@ _INTERPOLANT_NAMES = {
     "linear": "LinearInterpolant",
     "cosine": "CosineInterpolant",
     "vp": "VariancePreservingInterpolant",
+    "ve": "VarianceExplodingInterpolant",
 }
 
 
@@ -14,7 +15,7 @@ def get_interpolant(interpolant_type: str) -> BaseInterpolant:
     r"""Get interpolant instance by name.
 
     Args:
-        interpolant_type: One of 'linear', 'cosine', or 'vp'.
+        interpolant_type: One of 'linear', 'cosine', 'vp', or 've'.
 
     Returns:
         Interpolant instance.

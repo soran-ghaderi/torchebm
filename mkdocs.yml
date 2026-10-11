@@ -145,7 +145,7 @@ plugins:
         Key components:
         - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, FlowSampler
         - Losses: ContrastiveDivergence, ScoreMatching, EquilibriumMatchingLoss, EnergyMatchingLoss
-        - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
+        - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant, VarianceExplodingInterpolant
         - Couplings: IndependentCoupling, SinkhornCoupling, ExactOTCoupling, ReflowCoupling
         - Integrators: EulerMaruyama, Heun, RK4, Dopri5, Leapfrog, GeneralisedLeapfrog
         - Models: ConditionalTransformer2D, neural network components
