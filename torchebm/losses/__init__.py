@@ -16,6 +16,9 @@ __all__ = [
     "FlowMatchingLoss",
     # Energy Matching
     "EnergyMatchingLoss",
+    # Functional API
+    "prepare_flow_matching",
+    "weighted_mse_loss",
     # Utilities
     "mean_flat",
     "get_interpolant",
@@ -34,6 +37,8 @@ _LAZY_IMPORTS = {
     "EquilibriumMatchingLoss": ".equilibrium_matching",
     "FlowMatchingLoss": ".flow_matching",
     "EnergyMatchingLoss": ".energy_matching",
+    "prepare_flow_matching": ".functional",
+    "weighted_mse_loss": ".functional",
     "mean_flat": ".loss_utils",
     "get_interpolant": ".loss_utils",
     "trimmed_mean": ".loss_utils",
