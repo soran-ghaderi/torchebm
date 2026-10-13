@@ -8,6 +8,7 @@ from .training import (
     load_checkpoint,
 )
 from .profiling import profile_context
+from .replay_buffer import ReplayBuffer
 from .distributed import (
     is_distributed,
     get_rank,
@@ -25,6 +26,7 @@ __all__ = [
     "save_checkpoint",
     "load_checkpoint",
     "profile_context",
+    "ReplayBuffer",
     "is_distributed",
     "get_rank",
     "get_world_size",
