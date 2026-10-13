@@ -21,6 +21,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 import torch
 import torch.nn as nn
 
+from torchebm.couplings import resolve_coupling
+from torchebm.interpolants import LinearInterpolant
+
 
 # ---------------------------------------------------------------------------
 # Spec dataclass — one per benchmarked component
@@ -44,6 +47,8 @@ class BenchSpec:
     needs_sampler: bool = False  # losses: needs an MCMC sampler
     needs_grad: bool = False  # losses: x.requires_grad_(True)
     returns_tuple: bool = False  # loss forward returns (loss, extras)
+    criterion: bool = False  # losses: standard training step on model outputs
+    prediction_type: str = "energy"  # losses: output of the benchmark energy model
     max_dim: Optional[int] = None  # cap dim for O(dim²) methods
     max_batch: Optional[int] = None  # cap batch_size
     # -- custom benchmark function --
@@ -126,23 +131,59 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "returns_tuple": True,
         "init_kwargs": {"k_steps": 10},
     },
+    # Criteria on model outputs: the standard training step with the same
+    # work as the legacy entry above (CD-10 negatives, exact score matching
+    # capped like score_matching_exact, 5 projections, phase-1 EM).
+    "ContrastiveDivergenceLoss": {"model_type": "ebm", "criterion": True},
+    "ScoreMatchingLoss": {
+        "model_type": "ebm",
+        "criterion": True,
+        "max_dim": 16,
+        "max_batch": 128,
+    },
+    "DenoisingScoreMatchingLoss": {
+        "model_type": "ebm",
+        "prediction_type": "score",
+        "criterion": True,
+    },
+    "SlicedScoreMatchingLoss": {
+        "model_type": "ebm",
+        "prediction_type": "score",
+        "criterion": True,
+        "init_kwargs": {"n_projections": 5},
+    },
     "EquilibriumMatchingLoss": {
         "model_type": "velocity",
-        "init_kwargs": {
-            "prediction": "velocity",
-            "energy_type": "none",
-            "interpolant": "linear",
+        "variants": {
+            "EquilibriumMatchingLoss": {
+                "init_kwargs": {
+                    "prediction": "velocity",
+                    "energy_type": "none",
+                    "interpolant": "linear",
+                },
+            },
+            "equilibrium_matching_criterion": {"criterion": True},
         },
     },
     "FlowMatchingLoss": {
         "model_type": "velocity",
-        "init_kwargs": {"interpolant": "linear"},
+        "variants": {
+            "FlowMatchingLoss": {"init_kwargs": {"interpolant": "linear"}},
+            "flow_matching_criterion": {"criterion": True},
+        },
     },
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
         # the expensive Langevin negative-sampling chains.
         "init_kwargs": {"lambda_cd": 0.0},
+        "variants": {
+            "EnergyMatchingLoss": {},
+            "energy_matching_criterion": {
+                "criterion": True,
+                "prediction_type": "score",
+            },
+        },
     },
     # ── Samplers ──
     "LangevinDynamics": {
@@ -338,6 +379,8 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
         needs_sampler=overrides.get("needs_sampler", False),
         needs_grad=overrides.get("needs_grad", False),
         returns_tuple=overrides.get("returns_tuple", False),
+        criterion=overrides.get("criterion", False),
+        prediction_type=overrides.get("prediction_type", "energy"),
         max_dim=overrides.get("max_dim"),
         max_batch=overrides.get("max_batch"),
         bench_fn=overrides.get("bench_fn"),
@@ -376,6 +419,9 @@ _STEP_SIZE = 1e-3
 _DIFFUSION_COEFF = 0.1
 _BARRIER_HEIGHT = 2.0
 _CD_STEP_SIZE = 1e-2
+_CD_K_STEPS = 10
+_DSM_NOISE_SCALE = 1e-2
+_EM_SIGMA = 0.1
 _MLP_HIDDEN = 128
 
 
@@ -417,12 +463,12 @@ class _MLPVelocity(nn.Module):
         return self.net(xt).view_as(x)
 
 
-def _wrap_ebm(net, device, dtype):
+def _wrap_ebm(net, device, dtype, prediction_type="energy"):
     from torchebm.core.base_model import BaseModel
 
     class _W(BaseModel):
         def __init__(self, n, d, dt):
-            super().__init__(dtype=dt)
+            super().__init__(dtype=dt, prediction_type=prediction_type)
             self.net = n
             self._device = d
             self.to(d)
@@ -588,6 +634,115 @@ def build_interpolant_bench(
     return fn, info
 
 
+def _path_sample(path, x, device, dtype, coupling=None):
+    x0 = torch.randn_like(x)
+    if coupling is not None:
+        x0, x = coupling(x0, x)
+    t = torch.rand(x.shape[0], device=device, dtype=dtype)
+    x_t, u_t = path(x0, x, t)
+    return x_t, u_t, t
+
+
+def _step_contrastive_divergence(criterion, model, x, device, dtype):
+    from torchebm.samplers.langevin_dynamics import LangevinDynamics
+
+    sampler = LangevinDynamics(
+        model=model, step_size=_CD_STEP_SIZE, device=device, dtype=dtype
+    )
+
+    def step():
+        x_neg = sampler.sample(x=x, n_steps=_CD_K_STEPS)
+        return criterion(model(x), model(x_neg))
+
+    return step
+
+
+def _step_score_matching(criterion, model, x, device, dtype):
+    from torch.func import grad, jacrev, vmap
+
+    score_fn = grad(lambda x_i: -model(x_i.unsqueeze(0)).squeeze())
+
+    def divergence_fn(x_i):
+        return jacrev(score_fn)(x_i).diagonal().sum()
+
+    def step():
+        x_in = x.detach().requires_grad_(True)
+        return criterion(vmap(score_fn)(x_in), vmap(divergence_fn)(x_in))
+
+    return step
+
+
+def _step_denoising_score_matching(criterion, model, x, device, dtype):
+    def step():
+        noise = torch.randn_like(x) * _DSM_NOISE_SCALE
+        return criterion(model(x + noise), -noise / _DSM_NOISE_SCALE**2)
+
+    return step
+
+
+def _step_sliced_score_matching(criterion, model, x, device, dtype):
+    x_tiled = x.repeat(criterion.n_projections, 1)
+
+    def step():
+        x_in = x_tiled.detach().requires_grad_(True)
+        return criterion(model(x_in), x_in)
+
+    return step
+
+
+def _step_flow_matching(criterion, model, x, device, dtype):
+    path = LinearInterpolant()
+
+    def step():
+        x_t, u_t, t = _path_sample(path, x, device, dtype)
+        return criterion(model(x_t, t), u_t)
+
+    return step
+
+
+def _step_equilibrium_matching(criterion, model, x, device, dtype):
+    path = LinearInterpolant()
+
+    def step():
+        x_t, u_t, t = _path_sample(path, x, device, dtype)
+        return criterion(model(x_t, torch.zeros_like(t)), u_t, t)
+
+    return step
+
+
+def _step_energy_matching(criterion, model, x, device, dtype):
+    path = LinearInterpolant()
+    coupling = resolve_coupling("ot", default="ot", owner="benchmark")
+
+    def step():
+        x_t, u_t, t = _path_sample(path, x, device, dtype, coupling)
+        x_t = x_t + _EM_SIGMA * torch.randn_like(x_t)
+        return criterion(model(x_t), u_t, t)
+
+    return step
+
+
+_CRITERION_STEPS = {
+    "ContrastiveDivergenceLoss": _step_contrastive_divergence,
+    "ScoreMatchingLoss": _step_score_matching,
+    "DenoisingScoreMatchingLoss": _step_denoising_score_matching,
+    "SlicedScoreMatchingLoss": _step_sliced_score_matching,
+    "FlowMatchingLoss": _step_flow_matching,
+    "EquilibriumMatchingLoss": _step_equilibrium_matching,
+    "EnergyMatchingLoss": _step_energy_matching,
+}
+
+
+def _loss_info(spec, eff_bs, eff_dim, net):
+    return {
+        "module": spec.module,
+        "batch_size": eff_bs,
+        "dim": eff_dim,
+        "n_params": sum(p.numel() for p in net.parameters()),
+        "includes_backward": True,
+    }
+
+
 def build_loss_bench(
     spec: BenchSpec,
     dim: int,
@@ -602,12 +757,32 @@ def build_loss_bench(
     # Build model
     if spec.model_type == "ebm":
         net = _MLPEnergy(eff_dim).to(device, dtype)
-        model = _wrap_ebm(net, device, dtype)
+        model = _wrap_ebm(net, device, dtype, spec.prediction_type)
     elif spec.model_type == "velocity":
         net = _MLPVelocity(eff_dim).to(device, dtype)
         model = net
     else:
         raise ValueError(f"Unknown model_type {spec.model_type!r} for loss {spec.name}")
+
+    if spec.criterion:
+        criterion = spec.cls(device=device, dtype=dtype, **spec.init_kwargs)
+        x = _make_data(eff_bs, eff_dim, device, dtype)
+        step = _CRITERION_STEPS[spec.cls.__name__](criterion, model, x, device, dtype)
+
+        def fn():
+            step().backward()
+            net.zero_grad()
+
+        def _quality_fn():
+            loss_val = step().detach()
+            return {
+                "loss_value": round(loss_val.item(), 6),
+                "loss_is_finite": bool(torch.isfinite(loss_val).item()),
+            }
+
+        info = _loss_info(spec, eff_bs, eff_dim, net)
+        info["_quality_fn"] = _quality_fn
+        return fn, info
 
     # Build loss
     init_kw: Dict[str, Any] = {"device": device, "dtype": dtype, **spec.init_kwargs}
@@ -642,13 +817,7 @@ def build_loss_bench(
             loss.backward()
             net.zero_grad()
 
-    info = {
-        "module": spec.module,
-        "batch_size": eff_bs,
-        "dim": eff_dim,
-        "n_params": sum(p.numel() for p in net.parameters()),
-        "includes_backward": True,
-    }
+    info = _loss_info(spec, eff_bs, eff_dim, net)
 
     # Loss sanity check (run once, not timed)
     _loss_fn_q = loss_fn
