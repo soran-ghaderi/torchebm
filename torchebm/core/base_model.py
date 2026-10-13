@@ -11,6 +11,11 @@ from torchebm.core.base_module import (
 )
 from torchebm.models.functional import energy_gradient
 
+try:
+    from torch.distributed.tensor import DTensor, Replicate, Shard
+except ImportError:
+    DTensor = Replicate = Shard = None
+
 
 def _local_shard(value: torch.Tensor, mesh) -> torch.Tensor:
     r"""Local ``Shard(0)`` piece of a DTensor with data-parallel gradient scale.
@@ -20,8 +25,6 @@ def _local_shard(value: torch.Tensor, mesh) -> torch.Tensor:
     ``1 / world_size`` while keeping the forward value exact makes it the
     global-batch mean, the convention of gradient-averaging data parallelism.
     """
-    from torch.distributed.tensor import Shard
-
     if value.placements != (Shard(0),):
         value = value.redistribute(mesh, [Shard(0)])
     local = value.to_local()
@@ -215,8 +218,6 @@ class BaseModel(TorchEBMModule, ABC):
                 "(DTensor) parameters needs functional_model=<hook-free instance "
                 "of the same architecture, built on the meta device>."
             )
-        from torch.distributed.tensor import DTensor, Replicate, Shard
-
         params = dict(self.named_parameters())
         mesh = next(iter(params.values())).device_mesh
         if mesh.ndim != 1:
