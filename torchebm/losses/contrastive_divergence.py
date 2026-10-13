@@ -6,8 +6,8 @@ import torch
 from torch import nn
 from abc import abstractmethod
 
-from torchebm.core import BaseContrastiveDivergence, BaseSampler, BaseModel
-from torchebm._deprecation import declare_deprecation
+from torchebm.core import BaseContrastiveDivergence, BaseLoss, BaseSampler, BaseModel
+from torchebm._deprecation import declare_deprecation, deprecated
 from torchebm.losses.functional import contrastive_divergence_loss
 
 # First warned in v0.7.5; window restarted when the deprecation ledger was
@@ -27,6 +27,93 @@ _CD_OPTION_KWARGS_DEPRECATION = declare_deprecation(
 )
 
 
+class ContrastiveDivergenceLoss(BaseLoss):
+    r"""Contrastive divergence criterion on the energies of data and model samples.
+
+    \[
+    L = \mathbb{E}[E(x^+)] - \widetilde{\mathbb{E}}[E(x^-)]
+        + \lambda \left(\mathbb{E}[E(x^+)^2] + \mathbb{E}[E(x^-)^2]\right)
+    \]
+
+    The negatives \(x^-\) come from a sampler in the training loop, as the
+    generator's output does in a GAN step; `torchebm.utils.ReplayBuffer`
+    keeps them persistent. See `contrastive_divergence_loss`.
+
+    Args:
+        energy_reg_weight: Weight \(\lambda\) of the squared-energy penalty.
+        trim_fraction: Fraction of the largest negative energies dropped from
+            their mean, in [0, 1) (the robust statistic of Energy Matching).
+        clamp: Floor \(-c\) applied to the loss; ``None`` (default) disables it.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        criterion = ContrastiveDivergenceLoss()
+        x_neg = sampler.sample(x=buffer.sample(len(x)), n_steps=10)
+        buffer.add(x_neg)
+        loss = criterion(energy(x), energy(x_neg))
+        ```
+    """
+
+    def __init__(
+        self,
+        energy_reg_weight: float = 0.0,
+        trim_fraction: float = 0.0,
+        clamp: Optional[float] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if energy_reg_weight < 0:
+            raise ValueError(
+                f"energy_reg_weight must be >= 0, got {energy_reg_weight}"
+            )
+        if not 0.0 <= trim_fraction < 1.0:
+            raise ValueError(f"trim_fraction must be in [0, 1), got {trim_fraction}")
+        if clamp is not None and clamp < 0:
+            raise ValueError(f"clamp must be >= 0 or None, got {clamp}")
+        self.energy_reg_weight = float(energy_reg_weight)
+        self.trim_fraction = float(trim_fraction)
+        self.clamp = clamp
+
+    def forward(self, positive: torch.Tensor, negative: torch.Tensor) -> torch.Tensor:
+        r"""Compute the loss from the energies of data and model samples.
+
+        Args:
+            positive: Energies of data samples, shape (batch_size,).
+            negative: Energies of model samples, shape (n,).
+
+        Returns:
+            Scalar loss.
+        """
+        loss = contrastive_divergence_loss(
+            positive,
+            negative,
+            energy_reg_weight=self.energy_reg_weight,
+            trim_fraction=self.trim_fraction,
+        )
+        if self.clamp is not None:
+            loss = loss.clamp(min=-self.clamp)
+        return loss
+
+
+@deprecated(
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="ContrastiveDivergenceLoss on the energies of data and sampled negatives",
+    message=(
+        "ContrastiveDivergence(model, sampler) is deprecated: draw negatives "
+        "with a sampler (and ReplayBuffer) in the training loop and use "
+        "ContrastiveDivergenceLoss()(energy(x), energy(x_neg)) instead."
+    ),
+    removal=(
+        "ContrastiveDivergence, PersistentContrastiveDivergence, "
+        "BaseContrastiveDivergence with its replay buffer, and their tests"
+    ),
+)
 class ContrastiveDivergence(BaseContrastiveDivergence):
     r"""
     Standard Contrastive Divergence (CD-k) loss.

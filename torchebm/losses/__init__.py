@@ -4,9 +4,13 @@ Loss functions for training energy-based models and generative models.
 
 __all__ = [
     # Contrastive Divergence
+    "ContrastiveDivergenceLoss",
     "ContrastiveDivergence",
     "PersistentContrastiveDivergence",
     # Score Matching
+    "ScoreMatchingLoss",
+    "DenoisingScoreMatchingLoss",
+    "SlicedScoreMatchingLoss",
     "ScoreMatching",
     "DenoisingScoreMatching",
     "SlicedScoreMatching",
@@ -26,8 +30,12 @@ __all__ = [
 ]
 
 _LAZY_IMPORTS = {
+    "ContrastiveDivergenceLoss": ".contrastive_divergence",
     "ContrastiveDivergence": ".contrastive_divergence",
     "PersistentContrastiveDivergence": ".contrastive_divergence",
+    "ScoreMatchingLoss": ".score_matching",
+    "DenoisingScoreMatchingLoss": ".score_matching",
+    "SlicedScoreMatchingLoss": ".score_matching",
     "ScoreMatching": ".score_matching",
     "DenoisingScoreMatching": ".score_matching",
     "SlicedScoreMatching": ".score_matching",

@@ -68,6 +68,7 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         cfg_dropout: float = 0.0,
         null_condition: Union[int, float, torch.Tensor, Callable, None] = None,
         check_conditioning: bool = True,
+        reduction: str = "mean",
         *args: Any,
         **kwargs: Any,
     ):
@@ -90,13 +91,15 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
                 raise instead of silently training an unconditional model).
                 Set False for models this probe misjudges, e.g.
                 stochastic-in-eval backbones.
+            reduction: ``"mean"``, ``"sum"``, or ``"none"``, as in
+                `torch.nn.functional`; used by the criterion signatures.
 
         Raises:
             TypeError: If constructor arguments remain that no class in the
                 loss's MRO binds; the message lists the supported parameters
                 and the installed torchebm version.
             ValueError: If ``cfg_dropout`` is outside [0, 1], or positive
-                without a `null_condition`.
+                without a `null_condition`, or if ``reduction`` is unknown.
         """
         if args or kwargs:
             raise TypeError(
@@ -106,11 +109,16 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
             raise ValueError(f"cfg_dropout must be in [0, 1], got {cfg_dropout}")
         if cfg_dropout > 0 and null_condition is None:
             raise ValueError("cfg_dropout > 0 requires null_condition")
+        if reduction not in ("mean", "sum", "none"):
+            raise ValueError(
+                f"reduction must be 'mean', 'sum', or 'none', got {reduction!r}"
+            )
         super().__init__(device=device, dtype=dtype)
         self.cfg_dropout = cfg_dropout
         self.null_condition = null_condition
         self._condition_check_pending = check_conditioning
         self._condition_probe_deferrals = 0
+        self.reduction = reduction
 
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
         r"""Model call used by the conditioning probe; energy convention."""

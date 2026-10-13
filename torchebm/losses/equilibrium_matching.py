@@ -64,9 +64,37 @@ _MODEL_TIME_DEPRECATION = declare_deprecation(
     removal="the model_time parameter of EquilibriumMatchingLoss.__init__",
 )
 
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound EquilibriumMatchingLoss",
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="EquilibriumMatchingLoss() as a criterion on model outputs",
+    message=(
+        "EquilibriumMatchingLoss(model=...) is deprecated: build the path in "
+        "the training loop and use EquilibriumMatchingLoss()(model(x_t), u_t, t) "
+        "instead."
+    ),
+    removal=(
+        "the model argument, _legacy_forward, compute_loss, training_losses, "
+        "_compute_explicit_energy_gradient, the prediction, energy_type, "
+        "loss_weight, time_invariant, dispersion and the interpolant, coupling "
+        "and time-sampling arguments of EquilibriumMatchingLoss"
+    ),
+)
+
 
 class EquilibriumMatchingLoss(BaseInterpolantLoss):
     r"""Equilibrium Matching (EqM) training loss.
+
+    Built without ``model``, the loss is a criterion on model outputs,
+    ``loss = criterion(model(x_t), u_t, t)``, which trains the field toward
+    \(c(t)\, u_t\) (noise to data) so a ``prediction_type="score"`` model
+    drops into the gradient samplers unchanged; ``ct``, ``ct_threshold``,
+    ``ct_multiplier`` and ``reduction`` apply. Built with ``model``
+    (deprecated), it runs the training step itself as described below.
 
     Implements gradient matching for learning equilibrium energy landscapes.
     Supports both implicit (vector field) and explicit (energy-based) formulations,
@@ -171,7 +199,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
     def __init__(
         self,
-        model: nn.Module,
+        model: Optional[nn.Module] = None,
         prediction: Literal["velocity", "score", "noise"] = "velocity",
         energy_type: Literal["none", "dot", "l2", "mean"] = "none",
         interpolant: Union[str, BaseInterpolant] = "linear",
@@ -233,6 +261,8 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
             _MODEL_TIME_DEPRECATION.warn()
             time_invariant = model_time == "zero"
         self.model = model
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn()
         self.time_invariant = bool(time_invariant)
         self.prediction = prediction
         self.energy_type = energy_type
@@ -305,6 +335,38 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         return grad, energy
 
     def forward(
+        self,
+        input: torch.Tensor,
+        target: Optional[torch.Tensor] = None,
+        t: Optional[torch.Tensor] = None,
+        weight: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        r"""Equilibrium matching loss on a predicted field.
+
+        Trains ``input`` toward \(c(t)\, \text{target}\).
+
+        Args:
+            input: Predicted field \(f_\theta(x_t)\), shape (batch_size, ...).
+            target: Path velocity \(u_t\) (noise to data), same shape.
+            t: Times, shape (batch_size,), for \(c(t)\).
+            weight: Per-sample weight, shape (batch_size,).
+            **kwargs: Arguments of the deprecated model-bound mode.
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        if self.model is not None:
+            return self._legacy_forward(input, **kwargs)
+        if target is None or t is None:
+            raise TypeError(
+                "EquilibriumMatchingLoss() takes (input, target, t[, weight])"
+            )
+        return equilibrium_matching_loss(
+            input, target, self._compute_ct(t), weight=weight, reduction=self.reduction
+        )
+
+    def _legacy_forward(
         self,
         x: torch.Tensor,
         *args,

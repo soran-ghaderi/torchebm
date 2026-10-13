@@ -11,6 +11,10 @@ def test_all_public_loss_classes_can_be_constructed():
     model = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
     sampler = LangevinDynamics(model=model)
     constructors = {
+        "ContrastiveDivergenceLoss": losses.ContrastiveDivergenceLoss,
+        "ScoreMatchingLoss": losses.ScoreMatchingLoss,
+        "DenoisingScoreMatchingLoss": losses.DenoisingScoreMatchingLoss,
+        "SlicedScoreMatchingLoss": losses.SlicedScoreMatchingLoss,
         "ContrastiveDivergence": lambda: losses.ContrastiveDivergence(model, sampler),
         "PersistentContrastiveDivergence": lambda: (
             losses.PersistentContrastiveDivergence(model, sampler)

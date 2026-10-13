@@ -61,15 +61,45 @@ from torchebm.core import (
     TemperatureScheduler,
 )
 from torchebm.core.base_loss import BaseInterpolantLoss, _has_dtensor_params
+from torchebm._deprecation import declare_deprecation
 from torchebm.losses.functional import (
     contrastive_divergence_loss,
     energy_matching_loss,
 )
 from torchebm.samplers import LangevinDynamics
 
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound EnergyMatchingLoss",
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="EnergyMatchingLoss() as a criterion on model outputs",
+    message=(
+        "EnergyMatchingLoss(model=...) is deprecated: build the path and draw "
+        "the negatives in the training loop and use "
+        "EnergyMatchingLoss()(score, u_t, t, positive, negative) instead."
+    ),
+    removal=(
+        "the model and sampler arguments, _legacy_forward, compute_loss, "
+        "training_losses, _sample_negatives, the Langevin, sigma and "
+        "noise_fraction arguments and the interpolant, coupling and "
+        "time-sampling arguments of EnergyMatchingLoss"
+    ),
+)
+
 
 class EnergyMatchingLoss(BaseInterpolantLoss):
     r"""Energy Matching (EM) training loss.
+
+    Built without ``model``, the loss is a criterion on model outputs,
+    ``loss = criterion(score, u_t, t)`` for the warm-up and
+    ``criterion(score, u_t, t, positive, negative)`` for the joint phase, with
+    ``score`` \(= -\nabla_x V_\theta(x_t)\) from a ``prediction_type="score"``
+    model; ``flow_weight_cutoff``, ``lambda_cd``, ``cd_trim_fraction`` and
+    ``cd_clamp`` apply. Built with ``model`` (deprecated), it runs the
+    training step itself as described below.
 
     Trains a time-independent scalar potential \(V_\theta(x)\) so that
     \(-\nabla_x V\) transports noise to data (OT flow matching) and
@@ -156,7 +186,7 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
 
     def __init__(
         self,
-        model: BaseModel,
+        model: Optional[BaseModel] = None,
         sampler: Optional[LangevinDynamics] = None,
         coupling: Union[str, BaseCoupling] = "ot",
         interpolant: Union[str, BaseInterpolant] = "linear",
@@ -204,9 +234,11 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             raise ValueError(f"langevin_dt must be positive, got {langevin_dt}")
 
         self.model = model
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn()
         self.sampler = (
             sampler
-            if sampler is not None
+            if sampler is not None or model is None
             else LangevinDynamics(
                 model=model,
                 step_size=langevin_dt,
@@ -250,6 +282,54 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
         self._register_param("lambda_cd", value)
 
     def forward(
+        self,
+        input: torch.Tensor,
+        target: Optional[torch.Tensor] = None,
+        t: Optional[torch.Tensor] = None,
+        positive: Optional[torch.Tensor] = None,
+        negative: Optional[torch.Tensor] = None,
+        weight: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        r"""Energy matching loss on the potential's gradient and energies.
+
+        The flow term regresses ``input`` \(= -\nabla_x V_\theta(x_t)\) onto
+        ``target`` under the time gate; the contrastive term, \(\lambda_{CD}\)
+        times `contrastive_divergence_loss` of the energies, joins when
+        ``positive`` and ``negative`` are given (the joint phase).
+
+        Args:
+            input: \(-\nabla_x V_\theta(x_t)\), shape (batch_size, ...), e.g.
+                the output of a ``prediction_type="score"`` model.
+            target: Displacement \(u_t\), same shape.
+            t: Times, shape (batch_size,).
+            positive: Energies \(V_\theta(x_1)\) of the data, shape (batch_size,).
+            negative: Energies of the Langevin negatives, shape (n,).
+            weight: Per-sample weight of the flow term, shape (batch_size,).
+            **kwargs: Arguments of the deprecated model-bound mode.
+
+        Returns:
+            Scalar loss.
+        """
+        if self.model is not None:
+            return self._legacy_forward(input, **kwargs)
+        if target is None or t is None:
+            raise TypeError(
+                "EnergyMatchingLoss() takes (input, target, t[, positive, negative, weight])"
+            )
+        loss = energy_matching_loss(
+            input, target, t, flow_weight_cutoff=self.flow_weight_cutoff, weight=weight
+        )
+        if positive is not None:
+            cd = self.lambda_cd * contrastive_divergence_loss(
+                positive, negative, trim_fraction=self.cd_trim_fraction
+            )
+            if self.cd_clamp is not None:
+                cd = cd.clamp(min=-self.cd_clamp)
+            loss = loss + cd
+        return loss
+
+    def _legacy_forward(
         self,
         x: torch.Tensor,
         *args,

@@ -1,11 +1,73 @@
 r"""General training utilities for TorchEBM."""
 
+import math
 from collections import OrderedDict
 from typing import Optional, Dict, Any
 from pathlib import Path
 
 import torch
 import torch.nn as nn
+
+
+def compute_density_for_timestep_sampling(
+    weighting_scheme: str,
+    batch_size: int,
+    logit_mean: float = 0.0,
+    logit_std: float = 1.0,
+    mode_scale: float = 1.29,
+    *,
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    generator: Optional[torch.Generator] = None,
+) -> torch.Tensor:
+    r"""Draw training times in \([0, 1)\) under a timestep density.
+
+    The `diffusers.training_utils` function of the same name (Esser et al.,
+    2024, "Scaling Rectified Flow Transformers"):
+
+    - ``"uniform"``: \(u \sim \mathcal{U}(0, 1)\).
+    - ``"logit_normal"``: \(u = \sigma(z)\), \(z \sim \mathcal{N}(\mu, s^2)\),
+      with ``logit_mean`` \(\mu\) and ``logit_std`` \(s\). The EDM lognormal
+      skew with location \(p_{mean}\) and scale \(p_{std}\) is the same
+      distribution with ``logit_mean=-p_mean, logit_std=p_std``.
+    - ``"mode"``: \(u \leftarrow 1 - u - s\left(\cos^2(\tfrac{\pi u}{2}) - 1
+      + u\right)\) for \(u \sim \mathcal{U}(0, 1)\) and ``mode_scale`` \(s\).
+
+    Args:
+        weighting_scheme: ``"uniform"``, ``"logit_normal"``, or ``"mode"``.
+        batch_size: Number of times to draw.
+        logit_mean: Mean \(\mu\) of the logit-normal scheme.
+        logit_std: Standard deviation \(s\) of the logit-normal scheme.
+        mode_scale: Scale \(s\) of the mode scheme.
+        device: Device of the result.
+        dtype: Data type of the result.
+        generator: RNG for the draw; the global RNG when ``None``.
+
+    Returns:
+        Tensor of shape (batch_size,).
+
+    Raises:
+        ValueError: If ``weighting_scheme`` is unknown.
+    """
+    if weighting_scheme == "logit_normal":
+        z = torch.normal(
+            logit_mean,
+            logit_std,
+            size=(batch_size,),
+            device=device,
+            dtype=dtype,
+            generator=generator,
+        )
+        return torch.sigmoid(z)
+    if weighting_scheme not in ("uniform", "mode"):
+        raise ValueError(
+            "weighting_scheme must be 'uniform', 'logit_normal', or 'mode', "
+            f"got {weighting_scheme!r}"
+        )
+    u = torch.rand(batch_size, device=device, dtype=dtype, generator=generator)
+    if weighting_scheme == "mode":
+        return 1 - u - mode_scale * (torch.cos(math.pi * u / 2) ** 2 - 1 + u)
+    return u
 
 
 @torch.no_grad()
@@ -125,6 +187,7 @@ def load_checkpoint(
 
 
 __all__ = [
+    "compute_density_for_timestep_sampling",
     "update_ema",
     "requires_grad",
     "save_checkpoint",

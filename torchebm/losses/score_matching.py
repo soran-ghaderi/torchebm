@@ -9,7 +9,8 @@ from torch import nn
 from torch.func import grad as func_grad, vmap, jacrev
 
 
-from torchebm.core import BaseModel, BaseScoreMatching
+from torchebm._deprecation import deprecated
+from torchebm.core import BaseLoss, BaseModel, BaseScoreMatching
 from torchebm.losses.functional import (
     denoising_score_matching_loss,
     score_matching_loss,
@@ -17,7 +18,201 @@ from torchebm.losses.functional import (
 )
 # from torchebm.core.base_loss import BaseScoreMatching
 
+_PROJECTION_TYPES = ("rademacher", "sphere", "gaussian")
 
+
+def _random_projections(
+    like: torch.Tensor, projection_type: str, generator: Optional[torch.Generator]
+) -> torch.Tensor:
+    r"""Projection directions shaped like ``like``.
+
+    ``"rademacher"``: random signs; ``"sphere"``: uniform on the sphere of
+    radius \(\sqrt{d}\); ``"gaussian"``: standard normal.
+    """
+    vectors = torch.randn_like(like, generator=generator)
+    if projection_type == "rademacher":
+        return vectors.sign()
+    if projection_type == "sphere":
+        return torch.nn.functional.normalize(vectors, dim=-1) * math.sqrt(
+            vectors.shape[-1]
+        )
+    return vectors
+
+
+class ScoreMatchingLoss(BaseLoss):
+    r"""Score matching criterion (Hyvärinen, 2005) on a score and its divergence.
+
+    \[
+    L = \tfrac{1}{2}\|s_\theta(x)\|^2 + \nabla_x \cdot s_\theta(x)
+    \]
+
+    The divergence is a model-side quantity: compute it with `torch.func`
+    (``vmap(jacrev(...))`` for the exact trace) or a Hutchinson estimate.
+    See `score_matching_loss`.
+
+    Args:
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        criterion = ScoreMatchingLoss()
+        loss = criterion(score, divergence)
+        ```
+    """
+
+    def forward(self, input: torch.Tensor, divergence: torch.Tensor) -> torch.Tensor:
+        r"""Compute the loss from the score and its divergence.
+
+        Args:
+            input: Score \(s_\theta(x)\), shape (batch_size, ...).
+            divergence: \(\nabla_x \cdot s_\theta(x)\), shape (batch_size,).
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        return score_matching_loss(input, divergence, self.reduction)
+
+
+class DenoisingScoreMatchingLoss(BaseLoss):
+    r"""Denoising score matching criterion (Vincent, 2011).
+
+    \[
+    L = \tfrac{1}{2}\, w\, \|s_\theta(\tilde x) - \nabla_{\tilde x} \log q(\tilde x \mid x)\|^2
+    \]
+
+    For \(\tilde x = x + \sigma \epsilon\) the kernel score is
+    \(-\epsilon / \sigma\), and ``weight`` \(= \sigma^2\) is the noise-level
+    weighting of Song and Ermon (2019). See `denoising_score_matching_loss`.
+
+    Args:
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        criterion = DenoisingScoreMatchingLoss()
+        noise = torch.randn_like(x)
+        loss = criterion(model(x + sigma * noise), -noise / sigma)
+        ```
+    """
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        target: torch.Tensor,
+        weight: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        r"""Compute the loss from the score at the perturbed input.
+
+        Args:
+            input: Score \(s_\theta(\tilde x)\), shape (batch_size, ...).
+            target: Score of the perturbation kernel, same shape.
+            weight: Per-sample weight, shape (batch_size,).
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        return denoising_score_matching_loss(input, target, weight, self.reduction)
+
+
+class SlicedScoreMatchingLoss(BaseLoss):
+    r"""Sliced score matching criterion (Song et al., 2019).
+
+    \[
+    L = \mathbb{E}_v\left[ v^\top \nabla_x \big(v^\top s_\theta(x)\big)
+        + \tfrac{1}{2} \big(v^\top s_\theta(x)\big)^2 \right]
+    \]
+
+    Projections are drawn inside the call, as `torch.nn.Dropout` draws its
+    mask. The score must be evaluated on inputs tiled ``n_projections`` times
+    and keep its graph to them. See `sliced_score_matching_loss`.
+
+    Args:
+        n_projections: Projections per sample.
+        projection_type: ``"rademacher"`` (default), ``"sphere"``, or
+            ``"gaussian"``.
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        criterion = SlicedScoreMatchingLoss(n_projections=1)
+        x_tiled = x.repeat(criterion.n_projections, 1).requires_grad_(True)
+        loss = criterion(model(x_tiled), x_tiled)
+        ```
+    """
+
+    def __init__(
+        self,
+        n_projections: int = 1,
+        projection_type: str = "rademacher",
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if n_projections < 1:
+            raise ValueError(f"n_projections must be positive, got {n_projections}")
+        if projection_type not in _PROJECTION_TYPES:
+            raise ValueError(
+                f"projection_type must be one of {_PROJECTION_TYPES}, "
+                f"got {projection_type!r}"
+            )
+        self.n_projections = int(n_projections)
+        self.projection_type = projection_type
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        x: torch.Tensor,
+        *,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        r"""Compute the loss from the score at the tiled inputs.
+
+        Args:
+            input: Score at the tiled inputs, shape
+                (n_projections * batch_size, ...), differentiable w.r.t. ``x``.
+            x: The tiled inputs, same shape, requiring grad.
+            generator: RNG for the projections; the global RNG when ``None``.
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+
+        Raises:
+            ValueError: If the batch dimension is not a multiple of
+                ``n_projections``.
+        """
+        if input.shape[0] % self.n_projections:
+            raise ValueError(
+                f"batch dimension {input.shape[0]} must be a multiple of "
+                f"n_projections={self.n_projections}"
+            )
+        projections = _random_projections(x, self.projection_type, generator)
+        return sliced_score_matching_loss(
+            input,
+            x,
+            projections,
+            n_projections=self.n_projections,
+            reduction=self.reduction,
+        )
+
+
+@deprecated(
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="ScoreMatchingLoss on the model's score and its divergence",
+    message=(
+        "ScoreMatching(model) is deprecated: compute the score and its "
+        "divergence from the model and use ScoreMatchingLoss()(score, divergence)."
+    ),
+    removal="ScoreMatching and its tests",
+)
 class ScoreMatching(BaseScoreMatching):
     r"""
     Original Score Matching loss from Hyvärinen (2005).
@@ -245,6 +440,19 @@ class ScoreMatching(BaseScoreMatching):
 
         return loss
 
+
+@deprecated(
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="DenoisingScoreMatchingLoss on the model's score at the perturbed input",
+    message=(
+        "DenoisingScoreMatching(model) is deprecated: perturb the data in the "
+        "training loop and use DenoisingScoreMatchingLoss()(model(x_noisy), target)."
+    ),
+    removal="DenoisingScoreMatching, BaseScoreMatching and their tests",
+)
 class DenoisingScoreMatching(BaseScoreMatching):
     r"""
     Denoising Score Matching (DSM) from Vincent (2011).
@@ -371,6 +579,18 @@ class DenoisingScoreMatching(BaseScoreMatching):
         return denoising_score_matching_loss(score, target_score)
 
 
+@deprecated(
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="SlicedScoreMatchingLoss on the model's score at tiled inputs",
+    message=(
+        "SlicedScoreMatching(model) is deprecated: tile the batch in the "
+        "training loop and use SlicedScoreMatchingLoss()(model(x_tiled), x_tiled)."
+    ),
+    removal="SlicedScoreMatching and its tests",
+)
 class SlicedScoreMatching(BaseScoreMatching):
     r"""
     Sliced Score Matching (SSM) from Song et al. (2019).
@@ -453,15 +673,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: A tensor of random projection vectors.
         """
-        vectors = torch.randn_like(shape, generator=generator)
-        if self.projection_type == "rademacher":
-            return vectors.sign()
-        elif self.projection_type == "sphere":
-            return torch.nn.functional.normalize(vectors, dim=-1) * math.sqrt(
-                vectors.shape[-1]
-            )
-        else:
-            return vectors
+        return _random_projections(shape, self.projection_type, generator)
 
     def forward(
         self,

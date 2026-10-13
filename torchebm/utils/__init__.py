@@ -2,6 +2,7 @@ r"""Utility functions for TorchEBM."""
 
 from .ema import EMA
 from .training import (
+    compute_density_for_timestep_sampling,
     update_ema,
     requires_grad,
     save_checkpoint,
@@ -21,6 +22,7 @@ from .distributed import (
 
 __all__ = [
     "EMA",
+    "compute_density_for_timestep_sampling",
     "update_ema",
     "requires_grad",
     "save_checkpoint",

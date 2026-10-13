@@ -27,10 +27,36 @@ from torch import nn
 from torchebm.core import BaseCoupling, BaseInterpolant, BaseScheduler
 from torchebm.core.base_loss import BaseInterpolantLoss
 from torchebm.losses.functional import flow_matching_loss
+from torchebm._deprecation import declare_deprecation
+
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound FlowMatchingLoss",
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="FlowMatchingLoss() as a criterion on model outputs",
+    message=(
+        "FlowMatchingLoss(model=...) is deprecated: build the path in the "
+        "training loop and use FlowMatchingLoss()(model(x_t, t), u_t) instead."
+    ),
+    removal=(
+        "the model argument, _legacy_forward, compute_loss, training_losses, "
+        "negate_velocity and the interpolant, coupling and time-sampling "
+        "arguments of FlowMatchingLoss"
+    ),
+)
 
 
 class FlowMatchingLoss(BaseInterpolantLoss):
     r"""Conditional Flow Matching training loss.
+
+    Built without ``model``, the loss is a criterion on model outputs,
+    ``loss = criterion(model(x_t, t), u_t)``, with ``x_t, u_t`` from an
+    interpolant and ``reduction`` as in `torch.nn`; only ``reduction`` applies.
+    Built with ``model`` (deprecated), it runs the training step itself as
+    described below.
 
     Trains ``model(x_t, t, **model_kwargs)`` to predict the interpolant
     velocity \(u_t\). The model receives the true training time (unlike
@@ -75,7 +101,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
     def __init__(
         self,
-        model: nn.Module,
+        model: Optional[nn.Module] = None,
         interpolant: Union[str, BaseInterpolant] = "linear",
         coupling: Union[str, BaseCoupling, None] = None,
         train_eps: Union[float, BaseScheduler] = 0.0,
@@ -107,6 +133,8 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         )
         self.model = model
         self.negate_velocity = bool(negate_velocity)
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn()
 
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
         r"""Field convention for the conditioning probe: fixed mid-path time."""
@@ -114,6 +142,32 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         return self.model(px, t, **pmk)
 
     def forward(
+        self,
+        input: torch.Tensor,
+        target: Optional[torch.Tensor] = None,
+        weight: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        r"""Flow matching loss on a predicted velocity.
+
+        Args:
+            input: Predicted velocity \(v_\theta(x_t, t)\), shape (batch_size, ...).
+            target: Path velocity \(u_t\), same shape.
+            weight: Per-sample weight, shape (batch_size,).
+            **kwargs: Arguments of the deprecated model-bound mode.
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        if self.model is not None:
+            return self._legacy_forward(input, **kwargs)
+        if target is None:
+            raise TypeError("FlowMatchingLoss() takes (input, target[, weight])")
+        return flow_matching_loss(
+            input, target, weight=weight, reduction=self.reduction
+        )
+
+    def _legacy_forward(
         self,
         x: torch.Tensor,
         *args,
