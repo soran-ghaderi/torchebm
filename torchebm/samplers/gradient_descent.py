@@ -10,7 +10,27 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 
+from torchebm._deprecation import declare_deprecation
 from torchebm.core import BaseModel, BaseSampler, BaseScheduler
+
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound optimization samplers",
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="Pipeline(model, sampler)",
+    message=(
+        "GradientDescentSampler(model=...), NesterovSampler(model=...) and "
+        "sample() are deprecated: construct the sampler without a model and "
+        "generate with Pipeline(model, sampler)."
+    ),
+    removal=(
+        "the model argument, sample and _require_model, and the model field of "
+        "__repr__ in GradientDescentSampler and NesterovSampler"
+    ),
+)
 
 
 class GradientDescentSampler(BaseSampler):
@@ -25,28 +45,29 @@ class GradientDescentSampler(BaseSampler):
 
     This is a deterministic optimization-based sampler that finds low-energy
     configurations by following the negative gradient of the energy function.
+    `step` consumes the score \(-\nabla_x E(x_k)\); see `BaseSampler` for the
+    step contract.
 
     Args:
-        model: Energy-based model with `gradient()` method.
+        model: Deprecated. Energy-based model sampled by `sample()`; construct
+            without it and generate with `Pipeline(model, sampler)`.
         step_size: Step size \(\eta\) or scheduler.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
         ```python
-        from torchebm.samplers import GradientDescentSampler
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.samplers import GradientDescentSampler, Pipeline
 
-        energy = DoubleWellModel()
-        sampler = GradientDescentSampler(energy, step_size=0.1)
-        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        pipe = Pipeline(DoubleWellModel(), GradientDescentSampler(step_size=0.1))
+        samples = pipe(batch_size=100, sample_shape=(2,), num_inference_steps=500)
         ```
     """
 
     def __init__(
         self,
-        model: BaseModel,
+        model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
@@ -56,7 +77,43 @@ class GradientDescentSampler(BaseSampler):
             dtype=dtype,
             device=device,
         )
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         self._register_param("step_size", step_size, positive=True)
+
+    def set_timesteps(
+        self,
+        num_inference_steps: int,
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> None:
+        r"""Build `timesteps` for `num_inference_steps` updates and reset the
+        schedulers. The entries are step indices: the model is called as
+        ``model(x)``."""
+        self.reset_schedulers()
+        self.num_inference_steps = num_inference_steps
+        self.timesteps = torch.arange(num_inference_steps, device=device)
+
+    def step(
+        self,
+        model_output: torch.Tensor,
+        timestep: torch.Tensor,
+        sample: torch.Tensor,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        r"""One gradient descent update from the score at `sample`.
+
+        Args:
+            model_output: Score \(-\nabla_x E\) at `sample`.
+            timestep: Entry of `timesteps`; unused.
+            sample: Current state.
+            generator: Unused; the update is deterministic.
+
+        Returns:
+            The next state.
+        """
+        x = torch.add(sample, model_output, alpha=self.get_scheduled_value("step_size"))
+        self.step_schedulers()
+        return x
 
     @torch.no_grad()
     def sample(
@@ -98,6 +155,7 @@ class GradientDescentSampler(BaseSampler):
         Raises:
             ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
         """
+        self._require_model()
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
@@ -165,8 +223,14 @@ class NesterovSampler(BaseSampler):
 
     where \(\mu\) is the momentum coefficient and \(\eta\) is the step size.
 
+    The model is evaluated at the lookahead point \(x_k + \mu v_k\), which
+    `scale_model_input` returns; `step` consumes the score there and keeps the
+    momentum \(v\) as internal state reset by `set_timesteps`. See
+    `BaseSampler` for the step contract.
+
     Args:
-        model: Energy-based model with `gradient()` method.
+        model: Deprecated. Energy-based model sampled by `sample()`; construct
+            without it and generate with `Pipeline(model, sampler)`.
         step_size: Step size \(\eta\) or scheduler.
         momentum: Momentum coefficient \(\mu \in [0, 1)\).
         dtype: Data type for computations.
@@ -174,19 +238,17 @@ class NesterovSampler(BaseSampler):
 
     Example:
         ```python
-        from torchebm.samplers import NesterovSampler
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.samplers import NesterovSampler, Pipeline
 
-        energy = DoubleWellModel()
-        sampler = NesterovSampler(energy, step_size=0.1, momentum=0.9)
-        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        pipe = Pipeline(DoubleWellModel(), NesterovSampler(step_size=0.1, momentum=0.9))
+        samples = pipe(batch_size=100, sample_shape=(2,), num_inference_steps=500)
         ```
     """
 
     def __init__(
         self,
-        model: BaseModel,
+        model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         momentum: float = 0.9,
         dtype: torch.dtype = torch.float32,
@@ -197,11 +259,62 @@ class NesterovSampler(BaseSampler):
             dtype=dtype,
             device=device,
         )
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         if not (0 <= momentum < 1):
             raise ValueError("momentum must be in [0, 1)")
         self.momentum = momentum
 
         self._register_param("step_size", step_size, positive=True)
+        self._momentum_buffer: Optional[torch.Tensor] = None
+
+    def set_timesteps(
+        self,
+        num_inference_steps: int,
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> None:
+        r"""Build `timesteps` for `num_inference_steps` updates, reset the
+        schedulers and the momentum. The entries are step indices: the model
+        is called as ``model(x)``."""
+        self.reset_schedulers()
+        self.num_inference_steps = num_inference_steps
+        self.timesteps = torch.arange(num_inference_steps, device=device)
+        self._momentum_buffer = None
+
+    def scale_model_input(
+        self, sample: torch.Tensor, timestep: torch.Tensor
+    ) -> torch.Tensor:
+        r"""The lookahead point \(x_k + \mu v_k\) the model is evaluated at."""
+        if self._momentum_buffer is None:
+            return sample
+        return torch.add(sample, self._momentum_buffer, alpha=self.momentum)
+
+    def step(
+        self,
+        model_output: torch.Tensor,
+        timestep: torch.Tensor,
+        sample: torch.Tensor,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        r"""One Nesterov update from the score at the lookahead point.
+
+        Args:
+            model_output: Score \(-\nabla_x E\) at `scale_model_input(sample)`.
+            timestep: Entry of `timesteps`; unused.
+            sample: Current state.
+            generator: Unused; the update is deterministic.
+
+        Returns:
+            The next state.
+        """
+        v = self._momentum_buffer
+        if v is None:
+            v = self._momentum_buffer = torch.zeros_like(sample)
+        v.mul_(self.momentum).add_(
+            model_output, alpha=self.get_scheduled_value("step_size")
+        )
+        self.step_schedulers()
+        return sample + v
 
     @torch.no_grad()
     def sample(
@@ -243,6 +356,7 @@ class NesterovSampler(BaseSampler):
         Raises:
             ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
         """
+        self._require_model()
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:

@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 
+from torchebm._deprecation import declare_deprecation
 from torchebm.core import (
     BaseModel,
     BaseSampler,
@@ -11,6 +12,24 @@ from torchebm.core import (
     BaseSDERungeKuttaIntegrator,
 )
 from torchebm.integrators.integrator_utils import resolve_integrator
+
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound LangevinDynamics",
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="Pipeline(model, LangevinDynamics(...))",
+    message=(
+        "LangevinDynamics(model=...) and sample() are deprecated: construct the "
+        "sampler without a model and generate with Pipeline(model, sampler)."
+    ),
+    removal=(
+        "the model argument, sample and _require_model, and the model field of "
+        "__repr__ in LangevinDynamics"
+    ),
+)
 
 
 class LangevinDynamics(BaseSampler):
@@ -23,8 +42,12 @@ class LangevinDynamics(BaseSampler):
     x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t
     \]
 
+    `step` consumes the score \(-\nabla_x U(x_t)\) and runs the configured
+    integrator on it; see `BaseSampler` for the step contract.
+
     Args:
-        model: Energy-based model to sample from.
+        model: Deprecated. Energy-based model sampled by `sample()`; construct
+            without it and generate with `Pipeline(model, sampler)`.
         step_size: Step size for gradient descent. Float or `BaseScheduler`.
         noise_scale: Scale of Gaussian noise injection. Float or `BaseScheduler`.
         decay: Damping coefficient (not supported).
@@ -40,19 +63,17 @@ class LangevinDynamics(BaseSampler):
 
     Example:
         ```python
-        from torchebm.samplers import LangevinDynamics
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.samplers import LangevinDynamics, Pipeline
 
-        energy = DoubleWellModel()
-        sampler = LangevinDynamics(energy, step_size=0.01, noise_scale=1.0)
-        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        pipe = Pipeline(DoubleWellModel(), LangevinDynamics(step_size=0.01))
+        samples = pipe(batch_size=100, sample_shape=(2,), num_inference_steps=500)
         ```
     """
 
     def __init__(
         self,
-        model: BaseModel,
+        model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         noise_scale: Union[float, BaseScheduler] = 1.0,
         decay: float = 0.0,
@@ -62,6 +83,8 @@ class LangevinDynamics(BaseSampler):
         integrator: Union[str, BaseSDERungeKuttaIntegrator, None] = None,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn()
 
         self._register_param("step_size", step_size, positive=True)
         self._register_param("noise_scale", noise_scale, positive=True)
@@ -78,6 +101,56 @@ class LangevinDynamics(BaseSampler):
             device=self.device,
             dtype=self.dtype,
         )
+        self.order = self.integrator.n_stages
+
+    def set_timesteps(
+        self,
+        num_inference_steps: int,
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> None:
+        r"""Build `timesteps` for `num_inference_steps` updates and reset the
+        schedulers. The entries are step indices: the update has no physical
+        time, so the model is called as ``model(x)``.
+
+        Raises:
+            NotImplementedError: If the integrator is adaptive or implicit.
+        """
+        self._check_step_integrator()
+        self.reset_schedulers()
+        self.num_inference_steps = num_inference_steps
+        self.timesteps = torch.arange(num_inference_steps * self.order, device=device)
+        self._stage = 0
+
+    def step(
+        self,
+        model_output: torch.Tensor,
+        timestep: torch.Tensor,
+        sample: torch.Tensor,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        r"""One Langevin update from the score at `sample`.
+
+        Args:
+            model_output: Score \(-\nabla_x U\) at `sample`.
+            timestep: Entry of `timesteps`; unused.
+            sample: Current state, or the stage point returned by the previous
+                call while a multi-stage update is in progress.
+            generator: RNG for the Gaussian noise; the global RNG when ``None``.
+
+        Returns:
+            The next state, or the next stage point of an unfinished update.
+        """
+        step_size = self.get_scheduled_value("step_size")
+        x = self._runge_kutta_stage(model_output, sample, step_size)
+        if self._stage:
+            return x
+        noise_scale = self.get_scheduled_value("noise_scale")
+        noise = torch.randn_like(x, generator=generator)
+        x = x + (2.0 * noise_scale**2) ** 0.5 * (noise * step_size**0.5)
+        if self.clamp is not None:
+            x = x.clamp_(*self.clamp)
+        self.step_schedulers()
+        return x
 
     @torch.no_grad()
     def sample(
@@ -125,6 +198,7 @@ class LangevinDynamics(BaseSampler):
         Raises:
             ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
         """
+        self._require_model()
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:

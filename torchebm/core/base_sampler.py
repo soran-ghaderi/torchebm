@@ -11,10 +11,27 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
     r"""
     Abstract base class for samplers.
 
+    Step contract, the `diffusers` scheduler form. A sampler constructed
+    without a model exposes
+
+    ```python
+    sampler.set_timesteps(num_inference_steps, device=None)   # builds timesteps, resets state
+    sampler.timesteps                                         # one entry per model evaluation
+    sampler.step(model_output, timestep, sample, generator=None) -> sample
+    ```
+
+    and declares what `model_output` it consumes in `prediction_type`, how
+    the model is called in `timestep_conditioned` (``model(x, t)`` or
+    ``model(x)``), and the model evaluations per update in `order`. A
+    multi-stage integrator lists every stage time in `timesteps`, and `step`
+    returns the stage points until the update completes. `scale_model_input`
+    prepares the sample the model sees, the identity unless the sampler
+    evaluates away from its state. `Pipeline` runs this loop. The HMC family
+    binds its model at construction instead and advances with `step(sample)`.
+
     Args:
-        model (nn.Module): The model to sample from. For MCMC samplers, this is
-            typically a `BaseModel` energy function; for learned samplers it may be
-            any `nn.Module`.
+        model (nn.Module): Deprecated. Model sampled by `sample()`; construct
+            without it and generate with `Pipeline(model, sampler)`.
         dtype (torch.dtype): The data type for computations.
         device (Optional[Union[str, torch.device]]): The device for computations.
 
@@ -34,14 +51,77 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         Each sampler's `sample()` docstring lists the keys it produces.
     """
 
+    #: Model output consumed by `step`: ``"score"`` or ``"velocity"``.
+    prediction_type: str = "score"
+    #: Whether the model is called as ``model(x, t)`` rather than ``model(x)``.
+    timestep_conditioned: bool = False
+    #: Model evaluations per completed update.
+    order: int = 1
+
     def __init__(
         self,
-        model: nn.Module,
+        model: Optional[nn.Module] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
         super().__init__(device=device, dtype=dtype)
         self.model = model
+        self.timesteps: Optional[torch.Tensor] = None
+        self.num_inference_steps: Optional[int] = None
+        self._stage = 0
+
+    def scale_model_input(
+        self, sample: torch.Tensor, timestep: torch.Tensor
+    ) -> torch.Tensor:
+        r"""The input the model is evaluated on for the next `step`."""
+        return sample
+
+    def _require_model(self) -> None:
+        if self.model is None:
+            raise RuntimeError(
+                f"{type(self).__name__}.sample() runs the model bound at "
+                "construction (deprecated); generate with Pipeline(model, sampler)"
+            )
+
+    def _check_step_integrator(self) -> None:
+        r"""The step contract feeds one model output per stage, so the
+        integrator must be explicit and fixed-step."""
+        integrator = self.integrator
+        if integrator.error_weights is not None or any(integrator._stage_implicit):
+            raise NotImplementedError(
+                f"{type(integrator).__name__} evaluates the model inside the "
+                "solver; set_timesteps/step need an explicit fixed-step "
+                "integrator. Call integrator.integrate(drift=lambda x, t: ...) "
+                "for adaptive or implicit solvers."
+            )
+
+    def _runge_kutta_stage(
+        self,
+        drift: torch.Tensor,
+        sample: torch.Tensor,
+        step_size: Union[float, torch.Tensor],
+    ) -> torch.Tensor:
+        r"""Feed the drift of the current stage to the explicit Runge-Kutta
+        tableau of `self.integrator`.
+
+        Returns the next stage point while the update is in progress
+        (``self._stage > 0`` afterwards) and the deterministic update
+        \(x + h \sum_i b_i k_i\) at the last stage (``self._stage == 0``).
+        """
+        a, b, _, _ = self.integrator._tableau_on(sample.device, sample.dtype)
+        i = self._stage
+        if i == 0:
+            self._stage_sample = sample
+            self._stage_drifts = sample.new_empty((a.size(0),) + sample.shape)
+        k = self._stage_drifts
+        k[i] = drift
+        if i + 1 < a.size(0):
+            self._stage = i + 1
+            return self._stage_sample + step_size * torch.einsum(
+                "i,i...->...", a[i + 1, : i + 1], k[: i + 1]
+            )
+        self._stage = 0
+        return self._stage_sample + step_size * torch.einsum("i,i...->...", b, k)
 
     def _init_state(
         self,

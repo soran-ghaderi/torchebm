@@ -179,6 +179,87 @@ class HamiltonianMonteCarlo(BaseSampler):
                 cached = self._mass_kin_view
             return 0.5 * torch.sum(p.square() / cached[1], dim=-1)
 
+    def _transition(
+        self,
+        x: torch.Tensor,
+        model_kwargs: Dict[str, Any],
+        generator: Optional[torch.Generator],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        r"""One leapfrog trajectory and Metropolis-Hastings decision.
+
+        Returns:
+            The next state and the per-chain acceptance mask.
+        """
+        current_momentum = self._initialize_momentum(x.shape, generator)
+
+        current_energy = self._model_energy(x, model_kwargs).clamp_(min=-1e10, max=1e10)
+        current_kinetic = self._compute_kinetic_energy(current_momentum).clamp_(
+            min=0.0, max=1e10
+        )
+
+        current_hamiltonian = current_energy + current_kinetic
+
+        state = {"x": x, "p": current_momentum}
+        drift = lambda x_, t_: -self._model_gradient(x_, model_kwargs)
+        proposed = self.integrator.integrate(
+            state,
+            step_size=self.get_scheduled_value("step_size"),
+            n_steps=self.n_leapfrog_steps,
+            mass=self.mass,
+            drift=drift,
+            safe=True,
+        )
+        proposed_position, proposed_momentum = proposed["x"], proposed["p"]
+
+        proposed_energy = self._model_energy(proposed_position, model_kwargs).clamp_(
+            min=-1e10, max=1e10
+        )
+        proposed_kinetic = self._compute_kinetic_energy(proposed_momentum).clamp_(
+            min=0.0, max=1e10
+        )
+
+        proposed_hamiltonian = proposed_energy + proposed_kinetic
+
+        hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
+            min=-50.0, max=50.0
+        )
+
+        # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
+        # the freshly allocated `exp` result (no `ones` tensor allocation).
+        acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
+
+        random_uniform = torch.rand(x.shape[0], device=self.device, generator=generator)
+        accepted = random_uniform < acceptance_prob
+        # `torch.where` on the broadcast accept mask: single fused kernel,
+        # no `mask*proposed + (1-mask)*x` quartet of temporaries.
+        accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
+        return torch.where(accept_view, proposed_position, x), accepted
+
+    @torch.no_grad()
+    def step(
+        self,
+        sample: torch.Tensor,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        r"""One Metropolis-Hastings transition of the bound model from `sample`.
+
+        Args:
+            sample: Current state of shape ``(n_samples, dim)``.
+            model_kwargs: Conditioning arguments forwarded to the model.
+            generator: RNG for the momentum draw and the accept/reject
+                uniforms; the global RNG when ``None``.
+
+        Returns:
+            The next state.
+        """
+        x, _ = self._transition(
+            sample, self._prepare_model_kwargs(model_kwargs), generator
+        )
+        self.step_schedulers()
+        return x
+
     @torch.no_grad()
     def sample(
         self,
@@ -268,54 +349,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
-                current_momentum = self._initialize_momentum(x.shape, generator)
-
-                current_energy = self._model_energy(x, model_kwargs).clamp_(
-                    min=-1e10, max=1e10
-                )
-                current_kinetic = self._compute_kinetic_energy(
-                    current_momentum
-                ).clamp_(min=0.0, max=1e10)
-
-                current_hamiltonian = current_energy + current_kinetic
-
-                state = {"x": x, "p": current_momentum}
-                drift = lambda x_, t_: -self._model_gradient(x_, model_kwargs)
-                proposed = self.integrator.integrate(
-                    state,
-                    step_size=self.get_scheduled_value("step_size"),
-                    n_steps=self.n_leapfrog_steps,
-                    mass=self.mass,
-                    drift=drift,
-                    safe=True,
-                )
-                proposed_position, proposed_momentum = proposed["x"], proposed["p"]
-
-                proposed_energy = self._model_energy(
-                    proposed_position, model_kwargs
-                ).clamp_(min=-1e10, max=1e10)
-                proposed_kinetic = self._compute_kinetic_energy(
-                    proposed_momentum
-                ).clamp_(min=0.0, max=1e10)
-
-                proposed_hamiltonian = proposed_energy + proposed_kinetic
-
-                hamiltonian_diff = (current_hamiltonian - proposed_hamiltonian).clamp_(
-                    min=-50.0, max=50.0
-                )
-
-                # acceptance_prob = min(1, exp(diff)); fused via in-place clamp on
-                # the freshly allocated `exp` result (no `ones` tensor allocation).
-                acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
-
-                random_uniform = torch.rand(
-                    batch_size, device=self.device, generator=generator
-                )
-                accepted = random_uniform < acceptance_prob
-                # `torch.where` on the broadcast accept mask: single fused kernel,
-                # no `mask*proposed + (1-mask)*x` quartet of temporaries.
-                accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
-                x = torch.where(accept_view, proposed_position, x)
+                x, accepted = self._transition(x, model_kwargs, generator)
 
                 if (i + 1) % thin == 0:
                     if return_trajectory:
@@ -600,6 +634,86 @@ class RiemannianManifoldHMC(BaseSampler):
             (dH_dx,) = torch.autograd.grad(H, x_grad)
         return -dH_dx
 
+    def _transition(
+        self,
+        x: torch.Tensor,
+        model_kwargs: Dict[str, Any],
+        generator: Optional[torch.Generator],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        r"""One generalised-leapfrog trajectory and Metropolis-Hastings decision.
+
+        Returns:
+            The next state and the per-chain acceptance mask.
+        """
+        L = self._metric_chol(x)
+        p = self._initialize_momentum(x, L=L, generator=generator)
+
+        current_U = self._model_energy(x, model_kwargs).clamp_(min=-1e10, max=1e10)
+        current_K = self._kinetic_energy(x, p, L=L).clamp_(min=-1e10, max=1e10)
+        current_H = current_U + current_K
+
+        proposed = self.integrator.integrate(
+            {"x": x, "p": p},
+            step_size=self.get_scheduled_value("step_size"),
+            n_steps=self.n_leapfrog_steps,
+            force=self._force,
+            velocity=self._velocity,
+            safe=True,
+        )
+        x_prop, p_prop = proposed["x"], proposed["p"]
+
+        proposed_U = self._model_energy(x_prop, model_kwargs).clamp_(
+            min=-1e10, max=1e10
+        )
+        proposed_K = self._kinetic_energy(
+            x_prop, p_prop, L=self._metric_chol(x_prop)
+        ).clamp_(min=-1e10, max=1e10)
+        proposed_H = proposed_U + proposed_K
+
+        # exp(min(0, H_current - H_proposed)) = min(1, exp(diff))
+        hamiltonian_diff = (current_H - proposed_H).clamp_(min=-50.0, max=50.0)
+        acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
+
+        # Reject NaN/Inf proposals outright (otherwise the Cholesky at
+        # the next iteration's momentum draw blows up).
+        finite_proposal = torch.isfinite(x_prop).all(dim=-1) & torch.isfinite(
+            proposed_H
+        )
+        acceptance_prob = torch.where(
+            finite_proposal, acceptance_prob, torch.zeros_like(acceptance_prob)
+        )
+
+        accepted = (
+            torch.rand(x.shape[0], device=self.device, generator=generator)
+            < acceptance_prob
+        )
+        accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
+        return torch.where(accept_view, x_prop, x), accepted
+
+    @torch.no_grad()
+    def step(
+        self,
+        sample: torch.Tensor,
+        *,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        r"""One Metropolis-Hastings transition of the bound model from `sample`.
+
+        Args:
+            sample: Current state of shape ``(n_samples, dim)``.
+            model_kwargs: Conditioning arguments forwarded to the model.
+            generator: RNG for the momentum draw and the accept/reject
+                uniforms; the global RNG when ``None``.
+
+        Returns:
+            The next state.
+        """
+        self._active_model_kwargs = self._prepare_model_kwargs(model_kwargs)
+        x, _ = self._transition(sample, self._active_model_kwargs, generator)
+        self.step_schedulers()
+        return x
+
     @torch.no_grad()
     def sample(
         self,
@@ -698,54 +812,7 @@ class RiemannianManifoldHMC(BaseSampler):
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
-                L = self._metric_chol(x)
-                p = self._initialize_momentum(x, L=L, generator=generator)
-
-                current_U = self._model_energy(x, model_kwargs).clamp_(
-                    min=-1e10, max=1e10
-                )
-                current_K = self._kinetic_energy(x, p, L=L).clamp_(
-                    min=-1e10, max=1e10
-                )
-                current_H = current_U + current_K
-
-                proposed = self.integrator.integrate(
-                    {"x": x, "p": p},
-                    step_size=self.get_scheduled_value("step_size"),
-                    n_steps=self.n_leapfrog_steps,
-                    force=self._force,
-                    velocity=self._velocity,
-                    safe=True,
-                )
-                x_prop, p_prop = proposed["x"], proposed["p"]
-
-                proposed_U = self._model_energy(x_prop, model_kwargs).clamp_(
-                    min=-1e10, max=1e10
-                )
-                proposed_K = self._kinetic_energy(
-                    x_prop, p_prop, L=self._metric_chol(x_prop)
-                ).clamp_(min=-1e10, max=1e10)
-                proposed_H = proposed_U + proposed_K
-
-                # exp(min(0, H_current - H_proposed)) = min(1, exp(diff))
-                hamiltonian_diff = (current_H - proposed_H).clamp_(min=-50.0, max=50.0)
-                acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
-
-                # Reject NaN/Inf proposals outright (otherwise the Cholesky at
-                # the next iteration's momentum draw blows up).
-                finite_proposal = torch.isfinite(x_prop).all(dim=-1) & torch.isfinite(
-                    proposed_H
-                )
-                acceptance_prob = torch.where(
-                    finite_proposal, acceptance_prob, torch.zeros_like(acceptance_prob)
-                )
-
-                accepted = (
-                    torch.rand(batch_size, device=self.device, generator=generator)
-                    < acceptance_prob
-                )
-                accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
-                x = torch.where(accept_view, x_prop, x)
+                x, accepted = self._transition(x, model_kwargs, generator)
 
                 if (i + 1) % thin == 0:
                     if return_trajectory:

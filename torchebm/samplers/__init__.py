@@ -5,6 +5,7 @@ Includes:
 - MCMC samplers (Langevin dynamics, HMC) for energy-based models
 - Gradient-based optimization samplers for energy minimization
 - Flow/diffusion samplers for trained generative models
+- Pipeline, running a model through a sampler's step contract
 """
 
 __all__ = [
@@ -18,6 +19,8 @@ __all__ = [
     # Flow/diffusion samplers
     "FlowSampler",
     "PredictionType",
+    # Generation
+    "Pipeline",
 ]
 
 _LAZY_IMPORTS = {
@@ -28,6 +31,7 @@ _LAZY_IMPORTS = {
     "NesterovSampler": ".gradient_descent",
     "FlowSampler": ".flow",
     "PredictionType": ".flow",
+    "Pipeline": ".pipeline",
 }
 
 
