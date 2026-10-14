@@ -49,6 +49,7 @@ class BenchSpec:
     returns_tuple: bool = False  # loss forward returns (loss, extras)
     criterion: bool = False  # losses: standard training step on model outputs
     prediction_type: str = "energy"  # losses: output of the benchmark energy model
+    pipeline: bool = False  # samplers: run through Pipeline(model, sampler)
     max_dim: Optional[int] = None  # cap dim for O(dim²) methods
     max_batch: Optional[int] = None  # cap batch_size
     # -- custom benchmark function --
@@ -189,6 +190,10 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "LangevinDynamics": {
         "model_type": "ebm_double_well",
         "init_kwargs": {"noise_scale": 1.0},
+        "variants": {
+            "LangevinDynamics": {},
+            "langevin_pipeline": {"pipeline": True},
+        },
     },
     "HamiltonianMonteCarlo": {
         "model_type": "ebm_double_well",
@@ -199,10 +204,20 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "needs_metric_fn": True,
         "init_kwargs": {"n_leapfrog_steps": 5, "solver_max_iter": 4},
     },
-    "GradientDescentSampler": {"model_type": "ebm_double_well"},
+    "GradientDescentSampler": {
+        "model_type": "ebm_double_well",
+        "variants": {
+            "GradientDescentSampler": {},
+            "gradient_descent_pipeline": {"pipeline": True},
+        },
+    },
     "NesterovSampler": {
         "model_type": "ebm_double_well",
         "init_kwargs": {"momentum": 0.9},
+        "variants": {
+            "NesterovSampler": {},
+            "nesterov_pipeline": {"pipeline": True},
+        },
     },
     "FlowSampler": {
         "model_type": "velocity",
@@ -220,6 +235,10 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
                     "prediction": "velocity",
                     "integrator": "dopri5",
                 },
+            },
+            "flow_sampler_euler_pipeline": {
+                "pipeline": True,
+                "init_kwargs": {"interpolant": "linear", "integrator": "euler"},
             },
         },
     },
@@ -381,6 +400,7 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
         returns_tuple=overrides.get("returns_tuple", False),
         criterion=overrides.get("criterion", False),
         prediction_type=overrides.get("prediction_type", "energy"),
+        pipeline=overrides.get("pipeline", False),
         max_dim=overrides.get("max_dim"),
         max_batch=overrides.get("max_batch"),
         bench_fn=overrides.get("bench_fn"),
@@ -855,7 +875,11 @@ def build_sampler_bench(
     if spec.model_type == "ebm_double_well":
         from torchebm.core.base_model import DoubleWellModel
 
-        model = DoubleWellModel(barrier_height=_BARRIER_HEIGHT, dtype=dtype).to(device)
+        model = DoubleWellModel(
+            barrier_height=_BARRIER_HEIGHT,
+            dtype=dtype,
+            prediction_type="score" if spec.pipeline else "energy",
+        ).to(device)
         init_kw["model"] = model
         init_kw.setdefault("step_size", _STEP_SIZE)
     elif spec.model_type == "velocity":
@@ -877,10 +901,22 @@ def build_sampler_bench(
 
         init_kw["metric_fn"] = _metric_fn
 
-    sampler = spec.cls(**init_kw)
     x0 = _make_data(bs, dim, device, dtype)
 
-    if spec.bench_fn:
+    if spec.pipeline:
+        from torchebm.samplers import Pipeline
+
+        pipe = Pipeline(init_kw.pop("model"), spec.cls(**init_kw))
+
+        def fn():
+            pipe(x0, num_inference_steps=n_steps)
+
+    else:
+        sampler = spec.cls(**init_kw)
+
+    if spec.pipeline:
+        pass
+    elif spec.bench_fn:
         method = getattr(sampler, spec.bench_fn)
         call_kwargs = {"num_steps": n_steps, **spec.bench_kwargs}
 
@@ -908,6 +944,7 @@ def build_sampler_bench(
     if (
         spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics")
         and not spec.bench_fn
+        and not spec.pipeline
     ):
         _sampler_q = sampler
         _x0_q = x0
