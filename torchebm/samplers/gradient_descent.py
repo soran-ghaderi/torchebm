@@ -20,11 +20,11 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     grace=4,
     grace_months=4,
-    replacement="Pipeline(model, sampler)",
+    replacement="sampler(model, x, num_inference_steps=...)",
     message=(
         "GradientDescentSampler(model=...), NesterovSampler(model=...) and "
         "sample() are deprecated: construct the sampler without a model and "
-        "generate with Pipeline(model, sampler)."
+        "call sampler(model, x, ...)."
     ),
     removal=(
         "the model argument, sample and _require_model, and the model field of "
@@ -46,22 +46,23 @@ class GradientDescentSampler(BaseSampler):
     This is a deterministic optimization-based sampler that finds low-energy
     configurations by following the negative gradient of the energy function.
     `step` consumes the score \(-\nabla_x E(x_k)\); see `BaseSampler` for the
-    step contract.
+    call and step contracts.
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct
-            without it and generate with `Pipeline(model, sampler)`.
+            without it and call ``sampler(model, x, ...)``.
         step_size: Step size \(\eta\) or scheduler.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
         ```python
+        import torch
         from torchebm.core import DoubleWellModel
-        from torchebm.samplers import GradientDescentSampler, Pipeline
+        from torchebm.samplers import GradientDescentSampler
 
-        pipe = Pipeline(DoubleWellModel(), GradientDescentSampler(step_size=0.1))
-        samples = pipe(batch_size=100, sample_shape=(2,), num_inference_steps=500)
+        sampler = GradientDescentSampler(step_size=0.1)
+        samples = sampler(DoubleWellModel(), torch.randn(100, 2), num_inference_steps=500)
         ```
     """
 
@@ -226,11 +227,11 @@ class NesterovSampler(BaseSampler):
     The model is evaluated at the lookahead point \(x_k + \mu v_k\), which
     `scale_model_input` returns; `step` consumes the score there and keeps the
     momentum \(v\) as internal state reset by `set_timesteps`. See
-    `BaseSampler` for the step contract.
+    `BaseSampler` for the call and step contracts.
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct
-            without it and generate with `Pipeline(model, sampler)`.
+            without it and call ``sampler(model, x, ...)``.
         step_size: Step size \(\eta\) or scheduler.
         momentum: Momentum coefficient \(\mu \in [0, 1)\).
         dtype: Data type for computations.
@@ -238,11 +239,12 @@ class NesterovSampler(BaseSampler):
 
     Example:
         ```python
+        import torch
         from torchebm.core import DoubleWellModel
-        from torchebm.samplers import NesterovSampler, Pipeline
+        from torchebm.samplers import NesterovSampler
 
-        pipe = Pipeline(DoubleWellModel(), NesterovSampler(step_size=0.1, momentum=0.9))
-        samples = pipe(batch_size=100, sample_shape=(2,), num_inference_steps=500)
+        sampler = NesterovSampler(step_size=0.1, momentum=0.9)
+        samples = sampler(DoubleWellModel(), torch.randn(100, 2), num_inference_steps=500)
         ```
     """
 

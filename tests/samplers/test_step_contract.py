@@ -7,7 +7,8 @@ import torch
 from torch import nn
 
 from torchebm._deprecation import _WARNED_ONCE, TorchEBMDeprecationWarning
-from torchebm.core import GaussianModel, HarmonicModel, LinearScheduler
+from torchebm.core import HarmonicModel, LinearScheduler
+from torchebm.integrators import BackwardEulerMaruyamaIntegrator
 from torchebm.samplers import (
     FlowSampler,
     GradientDescentSampler,
@@ -119,7 +120,9 @@ def test_flow_step_consumes_each_prediction_type():
     t = torch.tensor(0.5)
     outputs = {}
     for prediction_type in ("velocity", "score", "epsilon"):
-        sampler = FlowSampler(prediction_type=prediction_type, sample_eps=0.01)
+        sampler = FlowSampler(
+            prediction_type=prediction_type, sample_eps=0.01, integrator="euler"
+        )
         assert sampler.prediction_type == prediction_type
         sampler.set_timesteps(2)
         outputs[prediction_type] = sampler.step(torch.ones_like(x), t, x)
@@ -141,54 +144,71 @@ def test_flow_prediction_type_names_match_the_models():
     assert legacy.prediction_type == "epsilon"
 
 
-def test_flow_default_integrator_is_euler_without_a_model():
-    assert type(FlowSampler().integrator).__name__ == "EulerMaruyamaIntegrator"
+def test_flow_default_integrator_is_adaptive():
+    assert type(FlowSampler().integrator).__name__ == "Dopri5Integrator"
     assert (
         type(FlowSampler(mode="sde").integrator).__name__ == "EulerMaruyamaIntegrator"
     )
 
 
+def test_implicit_stage_repeats_its_evaluation():
+    sampler = LangevinDynamics(step_size=0.1, integrator="backward_euler_maruyama")
+    iterations = sampler.integrator.solver_max_iter
+    sampler.set_timesteps(3)
+    assert sampler.order == iterations
+    assert sampler.timesteps.shape == (3 * iterations,)
+    x = torch.randn(4, 2, generator=seeded())
+    point = sampler.step(-x, sampler.timesteps[0], x)
+    assert torch.equal(point, torch.addcmul(x, torch.tensor(0.1), -x))
+    for t in sampler.timesteps[1:iterations]:
+        point = sampler.step(-point, t, point)
+    assert sampler._stage == 0 and sampler._iteration == 0
+    assert sampler.schedulers["step_size"].step_count == 1
+
+
 @pytest.mark.parametrize(
-    "sampler",
+    "sampler, match",
     [
-        FlowSampler(integrator="dopri5"),
-        LangevinDynamics(integrator="backward_euler_maruyama"),
+        (FlowSampler(integrator="dopri5"), "fixed-step"),
+        (
+            LangevinDynamics(
+                integrator=BackwardEulerMaruyamaIntegrator(solver_check_every=1)
+            ),
+            "solver_check_every",
+        ),
     ],
-    ids=["adaptive", "implicit"],
+    ids=["adaptive", "early-exit-picard"],
 )
-def test_solver_side_integrators_are_rejected_by_set_timesteps(sampler):
-    with pytest.raises(NotImplementedError, match="integrate"):
+def test_solver_side_integrators_are_rejected_by_set_timesteps(sampler, match):
+    with pytest.raises(NotImplementedError, match=match):
         sampler.set_timesteps(4)
 
 
 def test_flow_set_timesteps_rejects_zero_steps():
     with pytest.raises(ValueError, match="positive"):
-        FlowSampler().set_timesteps(0)
+        FlowSampler(integrator="euler").set_timesteps(0)
 
 
 @pytest.mark.parametrize(
     "factory",
     [
-        lambda: HamiltonianMonteCarlo(
-            HarmonicModel(k=2.0), step_size=0.1, n_leapfrog_steps=3
-        ),
+        lambda: HamiltonianMonteCarlo(step_size=0.1, n_leapfrog_steps=3),
         lambda: RiemannianManifoldHMC(
-            HarmonicModel(k=2.0),
-            metric_fn=identity_metric,
-            step_size=0.1,
-            n_leapfrog_steps=2,
+            metric_fn=identity_metric, step_size=0.1, n_leapfrog_steps=2
         ),
     ],
     ids=["hmc", "rmhmc"],
 )
-def test_hmc_step_is_one_transition_of_sample(factory):
+def test_hmc_call_with_one_step_is_one_transition(factory):
+    model = HarmonicModel(k=2.0)
     x = torch.randn(6, 2, generator=seeded())
-    expected = factory().sample(x=x, n_steps=1, generator=seeded())
     sampler = factory()
-    actual = sampler.step(x, generator=seeded())
-    assert torch.equal(actual, expected)
+    once = sampler(model, x, num_inference_steps=1, generator=seeded())
+    assert once.shape == x.shape
     assert sampler.schedulers["step_size"].step_count == 1
     assert not hasattr(sampler, "set_timesteps")
+    twice = sampler(model, x, num_inference_steps=2, generator=seeded())
+    assert not torch.equal(once, twice)
 
 
 @pytest.mark.parametrize(
@@ -198,11 +218,13 @@ def test_hmc_step_is_one_transition_of_sample(factory):
         GradientDescentSampler(step_size=0.1),
         NesterovSampler(step_size=0.1),
         FlowSampler(),
+        HamiltonianMonteCarlo(step_size=0.1),
+        RiemannianManifoldHMC(metric_fn=identity_metric, step_size=0.1),
     ],
-    ids=["langevin", "gd", "nesterov", "flow"],
+    ids=["langevin", "gd", "nesterov", "flow", "hmc", "rmhmc"],
 )
 def test_sample_needs_a_bound_model(sampler):
-    with pytest.raises(RuntimeError, match="Pipeline"):
+    with pytest.raises(RuntimeError, match=r"sampler\(model"):
         sampler.sample(x=torch.zeros(2, 2), n_steps=1)
 
 
@@ -216,11 +238,13 @@ def test_sample_needs_a_bound_model(sampler):
         lambda: FlowSampler(prediction="velocity"),
         lambda: FlowSampler(train_eps=0.0),
         lambda: FlowSampler(negate_velocity=True),
+        lambda: HamiltonianMonteCarlo(HarmonicModel(), step_size=0.1),
+        lambda: RiemannianManifoldHMC(HarmonicModel(), metric_fn=identity_metric),
     ],
 )
 def test_model_bound_construction_warns_once(construct):
     _WARNED_ONCE.clear()
-    with pytest.warns(TorchEBMDeprecationWarning, match="Pipeline"):
+    with pytest.warns(TorchEBMDeprecationWarning, match=r"sampler\(model"):
         construct()
 
 
@@ -231,7 +255,8 @@ def test_model_bound_construction_warns_once(construct):
         lambda: GradientDescentSampler(step_size=0.1),
         lambda: NesterovSampler(step_size=0.1),
         lambda: FlowSampler(prediction_type="score", mode="sde"),
-        lambda: HamiltonianMonteCarlo(GaussianModel(torch.zeros(2), torch.eye(2))),
+        lambda: HamiltonianMonteCarlo(step_size=0.1),
+        lambda: RiemannianManifoldHMC(metric_fn=identity_metric),
     ],
 )
 def test_target_construction_is_silent(construct):

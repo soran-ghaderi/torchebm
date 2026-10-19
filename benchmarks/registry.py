@@ -49,7 +49,7 @@ class BenchSpec:
     returns_tuple: bool = False  # loss forward returns (loss, extras)
     criterion: bool = False  # losses: standard training step on model outputs
     prediction_type: str = "energy"  # losses: output of the benchmark energy model
-    pipeline: bool = False  # samplers: run through Pipeline(model, sampler)
+    call_time_model: bool = False  # samplers: sampler(model, x), no bound model
     max_dim: Optional[int] = None  # cap dim for O(dim²) methods
     max_batch: Optional[int] = None  # cap batch_size
     # -- custom benchmark function --
@@ -192,12 +192,16 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "init_kwargs": {"noise_scale": 1.0},
         "variants": {
             "LangevinDynamics": {},
-            "langevin_pipeline": {"pipeline": True},
+            "langevin_call": {"call_time_model": True},
         },
     },
     "HamiltonianMonteCarlo": {
         "model_type": "ebm_double_well",
         "init_kwargs": {"n_leapfrog_steps": 10},
+        "variants": {
+            "HamiltonianMonteCarlo": {},
+            "hmc_call": {"call_time_model": True},
+        },
     },
     "RiemannianManifoldHMC": {
         "model_type": "ebm_double_well",
@@ -208,7 +212,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "model_type": "ebm_double_well",
         "variants": {
             "GradientDescentSampler": {},
-            "gradient_descent_pipeline": {"pipeline": True},
+            "gradient_descent_call": {"call_time_model": True},
         },
     },
     "NesterovSampler": {
@@ -216,7 +220,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "init_kwargs": {"momentum": 0.9},
         "variants": {
             "NesterovSampler": {},
-            "nesterov_pipeline": {"pipeline": True},
+            "nesterov_call": {"call_time_model": True},
         },
     },
     "FlowSampler": {
@@ -236,9 +240,13 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
                     "integrator": "dopri5",
                 },
             },
-            "flow_sampler_euler_pipeline": {
-                "pipeline": True,
+            "flow_sampler_euler_call": {
+                "call_time_model": True,
                 "init_kwargs": {"interpolant": "linear", "integrator": "euler"},
+            },
+            "flow_sampler_dopri5_call": {
+                "call_time_model": True,
+                "init_kwargs": {"interpolant": "linear", "integrator": "dopri5"},
             },
         },
     },
@@ -400,7 +408,7 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
         returns_tuple=overrides.get("returns_tuple", False),
         criterion=overrides.get("criterion", False),
         prediction_type=overrides.get("prediction_type", "energy"),
-        pipeline=overrides.get("pipeline", False),
+        call_time_model=overrides.get("call_time_model", False),
         max_dim=overrides.get("max_dim"),
         max_batch=overrides.get("max_batch"),
         bench_fn=overrides.get("bench_fn"),
@@ -878,7 +886,11 @@ def build_sampler_bench(
         model = DoubleWellModel(
             barrier_height=_BARRIER_HEIGHT,
             dtype=dtype,
-            prediction_type="score" if spec.pipeline else "energy",
+            prediction_type=(
+                "score"
+                if spec.call_time_model and spec.cls.prediction_type == "score"
+                else "energy"
+            ),
         ).to(device)
         init_kw["model"] = model
         init_kw.setdefault("step_size", _STEP_SIZE)
@@ -903,18 +915,17 @@ def build_sampler_bench(
 
     x0 = _make_data(bs, dim, device, dtype)
 
-    if spec.pipeline:
-        from torchebm.samplers import Pipeline
-
-        pipe = Pipeline(init_kw.pop("model"), spec.cls(**init_kw))
+    if spec.call_time_model:
+        model = init_kw.pop("model")
+        sampler = spec.cls(**init_kw)
 
         def fn():
-            pipe(x0, num_inference_steps=n_steps)
+            sampler(model, x0, num_inference_steps=n_steps)
 
     else:
         sampler = spec.cls(**init_kw)
 
-    if spec.pipeline:
+    if spec.call_time_model:
         pass
     elif spec.bench_fn:
         method = getattr(sampler, spec.bench_fn)
@@ -944,7 +955,7 @@ def build_sampler_bench(
     if (
         spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics")
         and not spec.bench_fn
-        and not spec.pipeline
+        and not spec.call_time_model
     ):
         _sampler_q = sampler
         _x0_q = x0

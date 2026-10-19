@@ -34,9 +34,10 @@ from torchebm.losses import (
 from torchebm.samplers import (
     FlowSampler,
     GradientDescentSampler,
+    HamiltonianMonteCarlo,
     LangevinDynamics,
     NesterovSampler,
-    Pipeline,
+    RiemannianManifoldHMC,
 )
 
 pytestmark = pytest.mark.filterwarnings(
@@ -192,9 +193,16 @@ class TimeField(nn.Module):
 FLOW_PREDICTIONS = [("velocity", "velocity"), ("score", "score"), ("noise", "epsilon")]
 
 
-@pytest.mark.parametrize("integrator", ["euler_maruyama", "heun"])
+def identity_metric(x):
+    eye = torch.eye(x.shape[-1], dtype=x.dtype, device=x.device)
+    return eye.expand(x.shape[0], *eye.shape).contiguous()
+
+
+@pytest.mark.parametrize(
+    "integrator", ["euler_maruyama", "heun", "backward_euler_maruyama"]
+)
 @pytest.mark.parametrize("trajectory", [False, True])
-def test_langevin_pipeline_matches_legacy_sample(integrator, trajectory):
+def test_langevin_call_matches_legacy_sample(integrator, trajectory):
     x = torch.randn(8, 2, generator=seeded())
     kwargs = dict(
         step_size=0.1, noise_scale=0.5, clamp=(-3.0, 3.0), integrator=integrator
@@ -203,8 +211,12 @@ def test_langevin_pipeline_matches_legacy_sample(integrator, trajectory):
         x=x, n_steps=5, generator=seeded(), return_trajectory=trajectory
     )
     for model in (Quadratic(), Quadratic(prediction_type="score")):
-        target = Pipeline(model, LangevinDynamics(**kwargs))(
-            x, num_inference_steps=5, generator=seeded(), return_trajectory=trajectory
+        target = LangevinDynamics(**kwargs)(
+            model,
+            x,
+            num_inference_steps=5,
+            generator=seeded(),
+            return_trajectory=trajectory,
         )
         assert torch.equal(target, legacy)
 
@@ -214,22 +226,48 @@ def test_langevin_pipeline_matches_legacy_sample(integrator, trajectory):
     [(GradientDescentSampler, {}), (NesterovSampler, {"momentum": 0.9})],
 )
 @pytest.mark.parametrize("trajectory", [False, True])
-def test_optimization_pipeline_matches_legacy_sample(sampler_cls, kwargs, trajectory):
+def test_optimization_call_matches_legacy_sample(sampler_cls, kwargs, trajectory):
     x = torch.randn(8, 2, generator=seeded())
     legacy = sampler_cls(Quadratic(), step_size=0.1, **kwargs).sample(
         x=x, n_steps=7, return_trajectory=trajectory
     )
-    target = Pipeline(Quadratic(), sampler_cls(step_size=0.1, **kwargs))(
-        x, num_inference_steps=7, return_trajectory=trajectory
+    target = sampler_cls(step_size=0.1, **kwargs)(
+        Quadratic(), x, num_inference_steps=7, return_trajectory=trajectory
     )
     assert torch.equal(target, legacy)
 
 
-@pytest.mark.parametrize("integrator", ["euler", "midpoint", "rk4"])
+@pytest.mark.parametrize(
+    "sampler_cls, kwargs",
+    [
+        (HamiltonianMonteCarlo, {"n_leapfrog_steps": 3}),
+        (RiemannianManifoldHMC, {"n_leapfrog_steps": 2, "metric_fn": identity_metric}),
+    ],
+)
+@pytest.mark.parametrize("trajectory", [False, True])
+def test_hmc_call_matches_legacy_sample(sampler_cls, kwargs, trajectory):
+    x = torch.randn(8, 2, generator=seeded())
+    legacy = sampler_cls(Quadratic(), step_size=0.1, **kwargs).sample(
+        x=x, n_steps=5, generator=seeded(), return_trajectory=trajectory
+    )
+    for model in (Quadratic(), Quadratic(prediction_type=("energy", "score"))):
+        target = sampler_cls(step_size=0.1, **kwargs)(
+            model,
+            x,
+            num_inference_steps=5,
+            generator=seeded(),
+            return_trajectory=trajectory,
+        )
+        assert torch.equal(target, legacy)
+
+
+@pytest.mark.parametrize(
+    "integrator", ["euler", "midpoint", "rk4", "backward_euler_maruyama"]
+)
 @pytest.mark.parametrize("prediction, prediction_type", FLOW_PREDICTIONS)
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("interpolant", ["linear", "vp"])
-def test_flow_ode_pipeline_matches_legacy_sample(
+def test_flow_ode_call_matches_legacy_sample(
     integrator, prediction, prediction_type, reverse, interpolant
 ):
     torch.manual_seed(0)
@@ -241,8 +279,22 @@ def test_flow_ode_pipeline_matches_legacy_sample(
     legacy = FlowSampler(model, prediction=prediction, **kwargs).sample(
         x=x, n_steps=4, return_trajectory=True
     )
-    target = Pipeline(model, FlowSampler(prediction_type=prediction_type, **kwargs))(
-        x, num_inference_steps=4, return_trajectory=True
+    target = FlowSampler(prediction_type=prediction_type, **kwargs)(
+        model, x, num_inference_steps=4, return_trajectory=True
+    )
+    assert torch.equal(target, legacy)
+
+
+@pytest.mark.parametrize("prediction, prediction_type", FLOW_PREDICTIONS)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_flow_adaptive_call_matches_legacy_sample(prediction, prediction_type, reverse):
+    torch.manual_seed(0)
+    model = TimeField()
+    x = torch.randn(6, 2, generator=seeded())
+    kwargs = dict(sample_eps=0.01, reverse=reverse, integrator="dopri5")
+    legacy = FlowSampler(model, prediction=prediction, **kwargs).sample(x=x, n_steps=4)
+    target = FlowSampler(prediction_type=prediction_type, **kwargs)(
+        model, x, num_inference_steps=4
     )
     assert torch.equal(target, legacy)
 
@@ -251,7 +303,7 @@ def test_flow_ode_pipeline_matches_legacy_sample(
 @pytest.mark.parametrize("prediction, prediction_type", FLOW_PREDICTIONS)
 @pytest.mark.parametrize("last_step", ["Mean", "Euler", "Tweedie", None])
 @pytest.mark.parametrize("diffusion_form", ["SBDM", "sigma"])
-def test_flow_sde_pipeline_matches_legacy_sample(
+def test_flow_sde_call_matches_legacy_sample(
     integrator, prediction, prediction_type, last_step, diffusion_form
 ):
     torch.manual_seed(0)
@@ -267,8 +319,8 @@ def test_flow_sde_pipeline_matches_legacy_sample(
     legacy = FlowSampler(model, prediction=prediction, **kwargs).sample(
         x=x, n_steps=4, generator=seeded(), return_trajectory=True
     )
-    target = Pipeline(model, FlowSampler(prediction_type=prediction_type, **kwargs))(
-        x, num_inference_steps=4, generator=seeded(), return_trajectory=True
+    target = FlowSampler(prediction_type=prediction_type, **kwargs)(
+        model, x, num_inference_steps=4, generator=seeded(), return_trajectory=True
     )
     assert torch.equal(target[:, -1], legacy[:, -1])
     kept = 3 if last_step is not None else 4

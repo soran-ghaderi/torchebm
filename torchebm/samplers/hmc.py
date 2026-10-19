@@ -4,6 +4,7 @@ import math
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
+from torch import nn
 
 from torchebm._deprecation import declare_deprecation
 from torchebm.core import (
@@ -12,8 +13,73 @@ from torchebm.core import (
     BaseScheduler,
     BaseSymplecticIntegrator,
 )
+from torchebm.core.base_sampler import _score_from_energy
 from torchebm.integrators import GeneralisedLeapfrogIntegrator
 from torchebm.integrators.integrator_utils import resolve_integrator
+
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound HMC samplers",
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    grace=4,
+    grace_months=4,
+    replacement="sampler(model, x, num_inference_steps=...)",
+    message=(
+        "HamiltonianMonteCarlo(model=...), RiemannianManifoldHMC(model=...) and "
+        "sample() are deprecated: construct the sampler without a model and "
+        "call sampler(model, x, ...)."
+    ),
+    removal=(
+        "the model argument, sample, _require_model, the dim inference from "
+        "model.mean and the model field of __repr__ in HamiltonianMonteCarlo "
+        "and RiemannianManifoldHMC"
+    ),
+)
+
+
+def _energy_and_drift(
+    sampler: BaseSampler, model: nn.Module, model_kwargs: Optional[Dict[str, Any]]
+) -> Tuple[Callable[[torch.Tensor], torch.Tensor], Callable[..., torch.Tensor]]:
+    r"""Closures ``energy(x)`` and ``drift(x, t)`` (the score) from a model
+    outputting the energy, or the energy and the score.
+
+    Raises:
+        ValueError: If the model does not output the energy.
+    """
+    call = sampler._model_call(model, model_kwargs)
+    produced = getattr(model, "prediction_type", "energy")
+    if produced == "energy":
+        return (lambda x: call(x, None)), _score_from_energy(call, model)
+    if isinstance(produced, tuple) and "energy" in produced and "score" in produced:
+        e, s = produced.index("energy"), produced.index("score")
+        return (lambda x: call(x, None)[e]), (lambda x, t: call(x, t)[s])
+    raise ValueError(
+        f"{type(sampler).__name__} needs the energy for the Metropolis-Hastings "
+        f"correction; the model outputs {produced!r}"
+    )
+
+
+def _chain(
+    sampler: BaseSampler,
+    transition: Callable[[torch.Tensor], torch.Tensor],
+    sample: torch.Tensor,
+    num_inference_steps: int,
+    return_trajectory: bool,
+) -> torch.Tensor:
+    r"""Run `num_inference_steps` transitions, stepping the schedulers after each."""
+    x = sample
+    trajectory = None
+    if return_trajectory:
+        trajectory = x.new_empty((x.shape[0], num_inference_steps, *x.shape[1:]))
+    sampler.reset_schedulers()
+    for i in range(num_inference_steps):
+        x = transition(x)
+        sampler.step_schedulers()
+        if trajectory is not None:
+            trajectory[:, i] = x
+    return x if trajectory is None else trajectory
+
 
 # First warned in v0.6.2; window restarted when the deprecation ledger was
 # adopted.
@@ -42,10 +108,15 @@ class HamiltonianMonteCarlo(BaseSampler):
     Hamiltonian Monte Carlo sampler.
 
     Uses Hamiltonian dynamics with Metropolis-Hastings acceptance to sample
-    from the target distribution defined by the energy model.
+    from the target distribution defined by the energy model. The model must
+    output the energy (``prediction_type`` ``"energy"`` or
+    ``("energy", "score")``); the leapfrog force is the score, computed by
+    autograd when the model does not output it. Each update is one
+    trajectory plus the accept/reject decision.
 
     Args:
-        model: Energy-based model to sample from.
+        model: Deprecated. Energy-based model sampled by `sample()`; construct
+            without it and call ``sampler(model, x, ...)``.
         step_size: Step size for leapfrog integration.
         n_leapfrog_steps: Number of leapfrog steps per trajectory.
         mass: Mass matrix (scalar or tensor).
@@ -59,21 +130,20 @@ class HamiltonianMonteCarlo(BaseSampler):
 
     Example:
         ```python
-        from torchebm.samplers import HamiltonianMonteCarlo
-        from torchebm.core import DoubleWellModel
         import torch
+        from torchebm.core import DoubleWellModel
+        from torchebm.samplers import HamiltonianMonteCarlo
 
-        energy = DoubleWellModel()
-        sampler = HamiltonianMonteCarlo(
-            energy, step_size=0.1, n_leapfrog_steps=10
-        )
-        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        sampler = HamiltonianMonteCarlo(step_size=0.1, n_leapfrog_steps=10)
+        samples = sampler(DoubleWellModel(), torch.randn(100, 2), num_inference_steps=500)
         ```
     """
 
+    prediction_type = "energy"
+
     def __init__(
         self,
-        model: BaseModel,
+        model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         n_leapfrog_steps: int = 10,
         mass: Optional[Union[float, torch.Tensor]] = None,
@@ -82,6 +152,8 @@ class HamiltonianMonteCarlo(BaseSampler):
         integrator: Union[str, BaseSymplecticIntegrator, None] = None,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         self._register_param("step_size", step_size, positive=True)
 
         if n_leapfrog_steps <= 0:
@@ -179,20 +251,53 @@ class HamiltonianMonteCarlo(BaseSampler):
                 cached = self._mass_kin_view
             return 0.5 * torch.sum(p.square() / cached[1], dim=-1)
 
+    @torch.no_grad()
+    def forward(
+        self,
+        model: nn.Module,
+        sample: torch.Tensor,
+        *,
+        num_inference_steps: int = 50,
+        generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
+    ) -> torch.Tensor:
+        r"""Run `num_inference_steps` Metropolis-Hastings transitions of
+        `model` from `sample`; see `BaseSampler.forward` for the arguments.
+
+        Raises:
+            ValueError: If the model does not output the energy.
+        """
+        energy, drift = _energy_and_drift(self, model, model_kwargs)
+        return _chain(
+            self,
+            lambda x: self._transition(x, energy, drift, generator)[0],
+            sample,
+            num_inference_steps,
+            return_trajectory,
+        )
+
     def _transition(
         self,
         x: torch.Tensor,
-        model_kwargs: Dict[str, Any],
+        energy: Callable[[torch.Tensor], torch.Tensor],
+        drift: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
         generator: Optional[torch.Generator],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         r"""One leapfrog trajectory and Metropolis-Hastings decision.
+
+        Args:
+            x: Current state.
+            energy: ``energy(x)``, the potential of the Hamiltonian.
+            drift: ``drift(x, t)``, the score driving the leapfrog momentum.
+            generator: RNG for the momentum draw and the accept/reject uniforms.
 
         Returns:
             The next state and the per-chain acceptance mask.
         """
         current_momentum = self._initialize_momentum(x.shape, generator)
 
-        current_energy = self._model_energy(x, model_kwargs).clamp_(min=-1e10, max=1e10)
+        current_energy = energy(x).clamp_(min=-1e10, max=1e10)
         current_kinetic = self._compute_kinetic_energy(current_momentum).clamp_(
             min=0.0, max=1e10
         )
@@ -200,7 +305,6 @@ class HamiltonianMonteCarlo(BaseSampler):
         current_hamiltonian = current_energy + current_kinetic
 
         state = {"x": x, "p": current_momentum}
-        drift = lambda x_, t_: -self._model_gradient(x_, model_kwargs)
         proposed = self.integrator.integrate(
             state,
             step_size=self.get_scheduled_value("step_size"),
@@ -211,9 +315,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         )
         proposed_position, proposed_momentum = proposed["x"], proposed["p"]
 
-        proposed_energy = self._model_energy(proposed_position, model_kwargs).clamp_(
-            min=-1e10, max=1e10
-        )
+        proposed_energy = energy(proposed_position).clamp_(min=-1e10, max=1e10)
         proposed_kinetic = self._compute_kinetic_energy(proposed_momentum).clamp_(
             min=0.0, max=1e10
         )
@@ -234,31 +336,6 @@ class HamiltonianMonteCarlo(BaseSampler):
         # no `mask*proposed + (1-mask)*x` quartet of temporaries.
         accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
         return torch.where(accept_view, proposed_position, x), accepted
-
-    @torch.no_grad()
-    def step(
-        self,
-        sample: torch.Tensor,
-        *,
-        model_kwargs: Optional[Dict[str, Any]] = None,
-        generator: Optional[torch.Generator] = None,
-    ) -> torch.Tensor:
-        r"""One Metropolis-Hastings transition of the bound model from `sample`.
-
-        Args:
-            sample: Current state of shape ``(n_samples, dim)``.
-            model_kwargs: Conditioning arguments forwarded to the model.
-            generator: RNG for the momentum draw and the accept/reject
-                uniforms; the global RNG when ``None``.
-
-        Returns:
-            The next state.
-        """
-        x, _ = self._transition(
-            sample, self._prepare_model_kwargs(model_kwargs), generator
-        )
-        self.step_schedulers()
-        return x
 
     @torch.no_grad()
     def sample(
@@ -303,6 +380,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         Raises:
             ValueError: If `thin < 1`.
         """
+        self._require_model()
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
@@ -311,6 +389,8 @@ class HamiltonianMonteCarlo(BaseSampler):
         model_kwargs = self._prepare_model_kwargs(
             self._merge_condition(model_kwargs, y)
         )
+        energy = lambda x_: self._model_energy(x_, model_kwargs)
+        drift = lambda x_, t_: -self._model_gradient(x_, model_kwargs)
 
         if x is None and dim is None:
             if hasattr(self.model, "mean") and isinstance(
@@ -349,7 +429,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
-                x, accepted = self._transition(x, model_kwargs, generator)
+                x, accepted = self._transition(x, energy, drift, generator)
 
                 if (i + 1) % thin == 0:
                     if return_trajectory:
@@ -411,8 +491,13 @@ class RiemannianManifoldHMC(BaseSampler):
     volume-preserving and reversible, which keeps the Metropolis–Hastings
     acceptance correction valid.
 
+    The model must output the energy (``prediction_type`` ``"energy"`` or
+    ``("energy", "score")``); the force is computed by autograd through the
+    energy and the metric.
+
     Args:
-        model: Energy-based model defining the potential \(U(x)\).
+        model: Deprecated. Energy-based model sampled by `sample()`; construct
+            without it and call ``sampler(model, x, ...)``.
         metric_fn: Callable ``x -> G(x)`` returning a symmetric positive-
             definite tensor of shape ``(batch, dim, dim)``. The metric is
             evaluated under `torch.enable_grad` when computing the
@@ -448,17 +533,18 @@ class RiemannianManifoldHMC(BaseSampler):
             return eye.expand(x.shape[0], dim, dim).contiguous()
 
         sampler = RiemannianManifoldHMC(
-            model, metric_fn=metric_fn,
-            step_size=0.1, n_leapfrog_steps=10,
+            metric_fn=metric_fn, step_size=0.1, n_leapfrog_steps=10
         )
-        samples = sampler.sample(n_samples=200, dim=dim, n_steps=500)
+        samples = sampler(model, torch.randn(200, dim), num_inference_steps=500)
         ```
     """
 
+    prediction_type = "energy"
+
     def __init__(
         self,
-        model: BaseModel,
-        metric_fn: Callable[[torch.Tensor], torch.Tensor],
+        model: Optional[BaseModel] = None,
+        metric_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         n_leapfrog_steps: int = 10,
         solver_max_iter: Optional[int] = None,
@@ -469,6 +555,8 @@ class RiemannianManifoldHMC(BaseSampler):
         integrator: Union[str, BaseSymplecticIntegrator, None] = None,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         if not callable(metric_fn):
             raise TypeError("metric_fn must be callable: x -> G(x)")
         if n_leapfrog_steps <= 0:
@@ -477,6 +565,7 @@ class RiemannianManifoldHMC(BaseSampler):
         self._register_param("step_size", step_size, positive=True)
         self.metric_fn = metric_fn
         self.n_leapfrog_steps = n_leapfrog_steps
+        self._active_energy = lambda x_: self._model_energy(x_, None)
 
         solver_kwargs_given = not (
             solver_max_iter is None
@@ -623,24 +712,61 @@ class RiemannianManifoldHMC(BaseSampler):
         autograd graph.
         """
         p_detached = p.detach()
-        # Conditioning arrives via a transient attribute, not an argument: the
+        # The energy arrives via a transient attribute, not an argument: the
         # integrator pins _force to a fixed (x, p, t) signature.
-        model_kwargs = getattr(self, "_active_model_kwargs", None)
         with torch.enable_grad():
             x_grad = x.detach().requires_grad_(True)
-            U = self._model_energy(x_grad, model_kwargs)
+            U = self._active_energy(x_grad)
             K = self._kinetic_energy(x_grad, p_detached)
             H = (U + K).sum()
             (dH_dx,) = torch.autograd.grad(H, x_grad)
         return -dH_dx
 
+    @torch.no_grad()
+    def forward(
+        self,
+        model: nn.Module,
+        sample: torch.Tensor,
+        *,
+        num_inference_steps: int = 50,
+        generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
+    ) -> torch.Tensor:
+        r"""Run `num_inference_steps` Metropolis-Hastings transitions of
+        `model` from `sample`; see `BaseSampler.forward` for the arguments.
+
+        Raises:
+            ValueError: If the model does not output the energy, or `sample`
+                is not 2-D.
+        """
+        if sample.ndim != 2:
+            raise ValueError(
+                f"RMHMC currently expects 2-D state tensors (batch, dim); "
+                f"got sample.ndim={sample.ndim}."
+            )
+        self._active_energy, _ = _energy_and_drift(self, model, model_kwargs)
+        return _chain(
+            self,
+            lambda x: self._transition(x, self._active_energy, generator)[0],
+            sample,
+            num_inference_steps,
+            return_trajectory,
+        )
+
     def _transition(
         self,
         x: torch.Tensor,
-        model_kwargs: Dict[str, Any],
+        energy: Callable[[torch.Tensor], torch.Tensor],
         generator: Optional[torch.Generator],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         r"""One generalised-leapfrog trajectory and Metropolis-Hastings decision.
+
+        Args:
+            x: Current state.
+            energy: ``energy(x)``, the potential; the force differentiates
+                `_active_energy`, which must be the same callable.
+            generator: RNG for the momentum draw and the accept/reject uniforms.
 
         Returns:
             The next state and the per-chain acceptance mask.
@@ -648,7 +774,7 @@ class RiemannianManifoldHMC(BaseSampler):
         L = self._metric_chol(x)
         p = self._initialize_momentum(x, L=L, generator=generator)
 
-        current_U = self._model_energy(x, model_kwargs).clamp_(min=-1e10, max=1e10)
+        current_U = energy(x).clamp_(min=-1e10, max=1e10)
         current_K = self._kinetic_energy(x, p, L=L).clamp_(min=-1e10, max=1e10)
         current_H = current_U + current_K
 
@@ -662,9 +788,7 @@ class RiemannianManifoldHMC(BaseSampler):
         )
         x_prop, p_prop = proposed["x"], proposed["p"]
 
-        proposed_U = self._model_energy(x_prop, model_kwargs).clamp_(
-            min=-1e10, max=1e10
-        )
+        proposed_U = energy(x_prop).clamp_(min=-1e10, max=1e10)
         proposed_K = self._kinetic_energy(
             x_prop, p_prop, L=self._metric_chol(x_prop)
         ).clamp_(min=-1e10, max=1e10)
@@ -689,30 +813,6 @@ class RiemannianManifoldHMC(BaseSampler):
         )
         accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))
         return torch.where(accept_view, x_prop, x), accepted
-
-    @torch.no_grad()
-    def step(
-        self,
-        sample: torch.Tensor,
-        *,
-        model_kwargs: Optional[Dict[str, Any]] = None,
-        generator: Optional[torch.Generator] = None,
-    ) -> torch.Tensor:
-        r"""One Metropolis-Hastings transition of the bound model from `sample`.
-
-        Args:
-            sample: Current state of shape ``(n_samples, dim)``.
-            model_kwargs: Conditioning arguments forwarded to the model.
-            generator: RNG for the momentum draw and the accept/reject
-                uniforms; the global RNG when ``None``.
-
-        Returns:
-            The next state.
-        """
-        self._active_model_kwargs = self._prepare_model_kwargs(model_kwargs)
-        x, _ = self._transition(sample, self._active_model_kwargs, generator)
-        self.step_schedulers()
-        return x
 
     @torch.no_grad()
     def sample(
@@ -757,17 +857,18 @@ class RiemannianManifoldHMC(BaseSampler):
         Raises:
             ValueError: If ``thin < 1`` or ``x`` is not 2-D.
         """
+        self._require_model()
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
             self.reset_schedulers()
 
-        # `_force` reads conditioning from this attribute; set it every call so
+        # `_force` reads the energy from this attribute; set it every call so
         # stale conditioning cannot leak in.
-        self._active_model_kwargs = self._prepare_model_kwargs(
+        model_kwargs = self._prepare_model_kwargs(
             self._merge_condition(model_kwargs, y)
         )
-        model_kwargs = self._active_model_kwargs
+        self._active_energy = lambda x_: self._model_energy(x_, model_kwargs)
 
         if x is None and dim is None:
             if hasattr(self.model, "mean") and isinstance(
@@ -812,7 +913,7 @@ class RiemannianManifoldHMC(BaseSampler):
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
-                x, accepted = self._transition(x, model_kwargs, generator)
+                x, accepted = self._transition(x, self._active_energy, generator)
 
                 if (i + 1) % thin == 0:
                     if return_trajectory:

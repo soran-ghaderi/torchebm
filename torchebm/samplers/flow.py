@@ -50,12 +50,11 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     grace=4,
     grace_months=4,
-    replacement="Pipeline(model, FlowSampler(prediction_type=...))",
+    replacement="FlowSampler(prediction_type=...)(model, x, num_inference_steps=...)",
     message=(
         "FlowSampler(model=...), prediction=, train_eps=, negate_velocity= and "
         "sample() are deprecated: construct the sampler without a model, name "
-        "the model output with prediction_type=, and generate with "
-        "Pipeline(model, sampler)."
+        "the model output with prediction_type=, and call sampler(model, x, ...)."
     ),
     removal=(
         "the model, prediction, train_eps and negate_velocity arguments, the "
@@ -108,11 +107,12 @@ class FlowSampler(BaseSampler):
 
     The sampling process is configured at construction: ``mode="ode"``
     integrates the probability-flow ODE, ``mode="sde"`` the reverse-time
-    diffusion SDE. `step` consumes the model output named by
-    `prediction_type`, converts it through the interpolant to the velocity
-    (and, in SDE mode, the score), and advances the integrator one stage;
-    see `BaseSampler` for the step contract. The model is called as
-    ``model(x, t, **model_kwargs)``.
+    diffusion SDE. The model is called as ``model(x, t, **model_kwargs)`` and
+    its output, named by `prediction_type`, is converted through the
+    interpolant to the velocity (and, in SDE mode, the score). With a
+    fixed-step integrator `forward` runs the step contract (see
+    `BaseSampler`); with an adaptive integrator it solves the ODE and returns
+    the final state only.
 
     `sample()` (deprecated, model-bound) follows the `BaseSampler` contract;
     with a fixed-step integrator it supports ``thin``, ``return_trajectory``,
@@ -121,7 +121,7 @@ class FlowSampler(BaseSampler):
 
     Args:
         model: Deprecated. Trained network sampled by `sample()`; construct
-            without it and generate with `Pipeline(model, sampler)`.
+            without it and call ``sampler(model, x, ...)``.
         mode: `"ode"` (probability flow, default) or `"sde"` (diffusion).
         interpolant: Interpolant name ('linear', 'cosine', 'vp') or instance.
         prediction: Deprecated name of `prediction_type`, with ``"noise"``
@@ -147,20 +147,21 @@ class FlowSampler(BaseSampler):
             (default), ``"score"``, or ``"epsilon"``.
         dtype: Data type for computations.
         device: Device for computations.
-        integrator: `None` (default) uses `EulerMaruyamaIntegrator` (Euler in
-            ODE mode), or `Dopri5Integrator` in ODE mode with a bound model;
-            a registry name (e.g. `"rk4"`) constructs that integrator with
-            defaults; an instance is used as-is and must match the sampler's
+        integrator: `None` (default) uses `Dopri5Integrator` for ODE mode
+            and `EulerMaruyamaIntegrator` for SDE mode; a registry name
+            (e.g. `"rk4"`) constructs that integrator with defaults; an
+            instance is used as-is and must match the sampler's
             device/dtype. SDE mode requires a `BaseSDERungeKuttaIntegrator`;
             SDE integrators are valid for ODE mode (zero diffusion). The step
-            contract needs an explicit fixed-step integrator.
+            contract needs a fixed-step integrator.
 
     Example:
         ```python
-        from torchebm.samplers import FlowSampler, Pipeline
+        import torch
+        from torchebm.samplers import FlowSampler
 
-        pipe = Pipeline(velocity_net, FlowSampler(interpolant="linear"))
-        samples = pipe(batch_size=100, sample_shape=(2,), num_inference_steps=50)
+        sampler = FlowSampler(interpolant="linear", integrator="midpoint")
+        samples = sampler(velocity_net, torch.randn(100, 2), num_inference_steps=50)
         ```
     """
 
@@ -269,13 +270,9 @@ class FlowSampler(BaseSampler):
         family = (
             BaseRungeKuttaIntegrator if mode == "ode" else BaseSDERungeKuttaIntegrator
         )
-        if mode == "sde":
-            default = "euler_maruyama"
-        else:
-            default = "dopri5" if model is not None else "euler"
         self.integrator = resolve_integrator(
             integrator,
-            default=default,
+            default="dopri5" if mode == "ode" else "euler_maruyama",
             family=family,
             owner="FlowSampler",
             device=self.device,
@@ -287,7 +284,7 @@ class FlowSampler(BaseSampler):
                 f"fixed-step integrator, got {type(self.integrator).__name__}"
             )
         self._default_n_steps = 50 if mode == "ode" else 250
-        self.order = self.integrator.n_stages
+        self.order = sum(self._stage_evaluations())
 
     @property
     def train_eps(self) -> float:
@@ -305,6 +302,70 @@ class FlowSampler(BaseSampler):
     def sample_eps(self, value: Union[float, BaseScheduler]) -> None:
         self._register_param("sample_eps", value)
 
+    @torch.no_grad()
+    def forward(
+        self,
+        model: nn.Module,
+        sample: torch.Tensor,
+        *,
+        num_inference_steps: int = 50,
+        generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
+    ) -> torch.Tensor:
+        r"""Run `num_inference_steps` integration steps of `model` from `sample`.
+
+        A fixed-step integrator runs the step contract (see
+        `BaseSampler.forward`). An adaptive integrator solves the ODE over the
+        sampling interval, `num_inference_steps` setting its initial step
+        size, and returns the final state only; it advances no schedulers.
+
+        Raises:
+            ValueError: If `num_inference_steps` is not positive.
+            NotImplementedError: If `return_trajectory` is requested with an
+                adaptive integrator.
+        """
+        if self.integrator.error_weights is None:
+            return super().forward(
+                model,
+                sample,
+                num_inference_steps=num_inference_steps,
+                generator=generator,
+                model_kwargs=model_kwargs,
+                return_trajectory=return_trajectory,
+            )
+        if return_trajectory:
+            raise NotImplementedError(
+                "return_trajectory needs a fixed-step integrator; adaptive "
+                f"{type(self.integrator).__name__} returns only the final state"
+            )
+        if num_inference_steps <= 0:
+            raise ValueError("num_inference_steps must be positive")
+        model_output = self._model_fn(model, model_kwargs)
+        self.reset_schedulers()
+        t0, t1 = self._check_interval()
+        grid = torch.linspace(
+            t0, t1, num_inference_steps + 1, device=sample.device, dtype=self.dtype
+        )
+
+        def velocity(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+            return self._velocity(model_output(x, t), x, t)
+
+        drift = velocity
+        if self.reverse:
+            grid = grid - t0
+
+            def drift(x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
+                return -velocity(x, t0 + s)
+
+        return self.integrator.integrate(
+            state={"x": sample},
+            step_size=grid[1] - grid[0],
+            n_steps=num_inference_steps,
+            drift=drift,
+            t=grid,
+        )["x"]
+
     def set_timesteps(
         self,
         num_inference_steps: int,
@@ -314,12 +375,14 @@ class FlowSampler(BaseSampler):
         over the sampling interval and reset the schedulers.
 
         `timesteps` holds the interpolant time of every model evaluation,
-        `order` per step. In SDE mode with a `last_step` correction it ends
-        with the final time, one more evaluation than the integration steps.
+        `order` per step (an implicit stage repeats its time once per Picard
+        iteration). In SDE mode with a `last_step` correction it ends with
+        the final time, one more evaluation than the integration steps.
 
         Raises:
             ValueError: If `num_inference_steps` is not positive.
-            NotImplementedError: If the integrator is adaptive or implicit.
+            NotImplementedError: If the integrator has no fixed evaluation
+                count per update.
         """
         if num_inference_steps <= 0:
             raise ValueError("num_inference_steps must be positive")
@@ -337,7 +400,12 @@ class FlowSampler(BaseSampler):
         grid = t_phys - t0 if self.reverse else t_phys
         self._step_sizes = grid[1:] - grid[:-1]
         _, _, c, _ = self.integrator._tableau_on(grid.device, grid.dtype)
-        timesteps = (grid[:-1, None] + c * self._step_sizes[:, None]).reshape(-1)
+        stage_times = grid[:-1, None] + c * self._step_sizes[:, None]
+        if self.order != c.shape[0]:
+            stage_times = stage_times.repeat_interleave(
+                torch.tensor(self._stage_evaluations(), device=grid.device), dim=1
+            )
+        timesteps = stage_times.reshape(-1)
         if self.reverse:
             timesteps = t0 + timesteps
         self._last_step_index = -1
@@ -346,7 +414,7 @@ class FlowSampler(BaseSampler):
             self._last_step_index = timesteps.shape[0] - 1
         self.timesteps = timesteps
         self._step_index = 0
-        self._stage = 0
+        self._stage = self._iteration = 0
 
     def step(
         self,
@@ -361,12 +429,13 @@ class FlowSampler(BaseSampler):
             model_output: Output named by `prediction_type`, evaluated at
                 `sample` and `timestep`.
             timestep: Entry of `timesteps`, a 0-d tensor.
-            sample: Current state, or the stage point returned by the previous
-                call while a multi-stage update is in progress.
+            sample: Current state, or the point returned by the previous call
+                while a multi-stage or implicit update is in progress.
             generator: RNG for the SDE noise; the global RNG when ``None``.
 
         Returns:
-            The next state, or the next stage point of an unfinished update.
+            The next state, or the next point to evaluate of an unfinished
+            update.
         """
         i = self._step_index
         self._step_index = i + 1
@@ -381,12 +450,12 @@ class FlowSampler(BaseSampler):
             diffusion = self.interpolant.compute_diffusion(
                 sample, t, form=self.diffusion_form, norm=self.diffusion_norm
             )
-            if self._stage == 0:
+            if self._stage == 0 and self._iteration == 0:
                 self._diffusion = diffusion
             drift = drift + diffusion * self._score(model_output, sample, t)
         step_size = self._step_sizes[i // self.order]
         x = self._runge_kutta_stage(drift, sample, step_size)
-        if self._stage:
+        if self._stage or self._iteration:
             return x
         if sde:
             noise = torch.randn_like(x, generator=generator)
