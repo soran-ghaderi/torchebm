@@ -920,7 +920,7 @@ def build_sampler_bench(
         sampler = spec.cls(**init_kw)
 
         def fn():
-            sampler(model, x0, num_inference_steps=n_steps)
+            sampler(model, x0, n_steps=n_steps)
 
     else:
         sampler = spec.cls(**init_kw)
