@@ -3,6 +3,7 @@ r"""Langevin Dynamics Sampler Module."""
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
+from torch import nn
 
 from torchebm._deprecation import declare_deprecation
 from torchebm.core import (
@@ -20,7 +21,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     grace=4,
     grace_months=4,
-    replacement="LangevinDynamics(...)(model, x, num_inference_steps=...)",
+    replacement="LangevinDynamics(...)(model, x, n_steps=...)",
     message=(
         "LangevinDynamics(model=...) and sample() are deprecated: construct the "
         "sampler without a model and call sampler(model, x, ...)."
@@ -42,8 +43,9 @@ class LangevinDynamics(BaseSampler):
     x_{t+1} = x_t - \eta \nabla_x U(x_t) + \sqrt{2\eta} \epsilon_t
     \]
 
-    `step` consumes the score \(-\nabla_x U(x_t)\) and runs the configured
-    integrator on it; see `BaseSampler` for the call and step contracts.
+    Called as ``sampler(model, x, n_steps=...)``, the model giving
+    the score \(-\nabla_x U\) that the configured integrator drifts along; see
+    `BaseSampler`.
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct
@@ -68,7 +70,7 @@ class LangevinDynamics(BaseSampler):
         from torchebm.samplers import LangevinDynamics
 
         sampler = LangevinDynamics(step_size=0.01, noise_scale=1.0)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), num_inference_steps=500)
+        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
         ```
     """
 
@@ -102,58 +104,39 @@ class LangevinDynamics(BaseSampler):
             device=self.device,
             dtype=self.dtype,
         )
-        self.order = sum(self._stage_evaluations())
 
-    def set_timesteps(
+    @torch.no_grad()
+    def forward(
         self,
-        num_inference_steps: int,
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> None:
-        r"""Build `timesteps` for `num_inference_steps` updates and reset the
-        schedulers. The entries are step indices: the update has no physical
-        time, so the model is called as ``model(x)``.
-
-        Raises:
-            NotImplementedError: If the integrator has no fixed evaluation
-                count per update.
-        """
-        self._check_step_integrator()
-        self.reset_schedulers()
-        self.num_inference_steps = num_inference_steps
-        self.timesteps = torch.arange(num_inference_steps * self.order, device=device)
-        self._stage = self._iteration = 0
-
-    def step(
-        self,
-        model_output: torch.Tensor,
-        timestep: torch.Tensor,
-        sample: torch.Tensor,
+        model: nn.Module,
+        x: torch.Tensor,
+        *,
+        n_steps: int = 50,
         generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""One Langevin update from the score at `sample`.
-
-        Args:
-            model_output: Score \(-\nabla_x U\) at `sample`.
-            timestep: Entry of `timesteps`; unused.
-            sample: Current state, or the point returned by the previous call
-                while a multi-stage or implicit update is in progress.
-            generator: RNG for the Gaussian noise; the global RNG when ``None``.
-
-        Returns:
-            The next state, or the next point to evaluate of an unfinished
-            update.
-        """
-        step_size = self.get_scheduled_value("step_size")
-        x = self._runge_kutta_stage(model_output, sample, step_size)
-        if self._stage or self._iteration:
-            return x
-        noise_scale = self.get_scheduled_value("noise_scale")
-        noise = torch.randn_like(x, generator=generator)
-        x = x + (2.0 * noise_scale**2) ** 0.5 * (noise * step_size**0.5)
-        if self.clamp is not None:
-            x = x.clamp_(*self.clamp)
-        self.step_schedulers()
-        return x
+        r"""Run `n_steps` Langevin updates of `model` from `x`; see
+        `BaseSampler.forward` for the arguments."""
+        score = self._model_fn(model, model_kwargs)
+        self.reset_schedulers()
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            x = self.integrator.step(
+                state={"x": x},
+                step_size=self.get_scheduled_value("step_size"),
+                noise_scale=self.get_scheduled_value("noise_scale"),
+                drift=score,
+                generator=generator,
+            )["x"]
+            if self.clamp is not None:
+                x = x.clamp_(*self.clamp)
+            self.step_schedulers()
+            if trajectory is not None:
+                trajectory[:, i] = x
+        return x if trajectory is None else trajectory
 
     @torch.no_grad()
     def sample(

@@ -3,7 +3,8 @@
 Each step of the standard-API migration (.progress/STANDARD_API.md) adds its
 pair here: the legacy call and the target call, one seeded generator for
 both, compared with torch.equal wherever the operations are the same. A pair
-stays until its legacy path is removed in 1.0.0 and is deleted with it.
+stays until the deprecation ledger retires its legacy path and is deleted
+with it.
 """
 
 import pytest
@@ -214,7 +215,7 @@ def test_langevin_call_matches_legacy_sample(integrator, trajectory):
         target = LangevinDynamics(**kwargs)(
             model,
             x,
-            num_inference_steps=5,
+            n_steps=5,
             generator=seeded(),
             return_trajectory=trajectory,
         )
@@ -232,7 +233,7 @@ def test_optimization_call_matches_legacy_sample(sampler_cls, kwargs, trajectory
         x=x, n_steps=7, return_trajectory=trajectory
     )
     target = sampler_cls(step_size=0.1, **kwargs)(
-        Quadratic(), x, num_inference_steps=7, return_trajectory=trajectory
+        Quadratic(), x, n_steps=7, return_trajectory=trajectory
     )
     assert torch.equal(target, legacy)
 
@@ -254,7 +255,7 @@ def test_hmc_call_matches_legacy_sample(sampler_cls, kwargs, trajectory):
         target = sampler_cls(step_size=0.1, **kwargs)(
             model,
             x,
-            num_inference_steps=5,
+            n_steps=5,
             generator=seeded(),
             return_trajectory=trajectory,
         )
@@ -280,7 +281,7 @@ def test_flow_ode_call_matches_legacy_sample(
         x=x, n_steps=4, return_trajectory=True
     )
     target = FlowSampler(prediction_type=prediction_type, **kwargs)(
-        model, x, num_inference_steps=4, return_trajectory=True
+        model, x, n_steps=4, return_trajectory=True
     )
     assert torch.equal(target, legacy)
 
@@ -293,9 +294,7 @@ def test_flow_adaptive_call_matches_legacy_sample(prediction, prediction_type, r
     x = torch.randn(6, 2, generator=seeded())
     kwargs = dict(sample_eps=0.01, reverse=reverse, integrator="dopri5")
     legacy = FlowSampler(model, prediction=prediction, **kwargs).sample(x=x, n_steps=4)
-    target = FlowSampler(prediction_type=prediction_type, **kwargs)(
-        model, x, num_inference_steps=4
-    )
+    target = FlowSampler(prediction_type=prediction_type, **kwargs)(model, x, n_steps=4)
     assert torch.equal(target, legacy)
 
 
@@ -320,8 +319,21 @@ def test_flow_sde_call_matches_legacy_sample(
         x=x, n_steps=4, generator=seeded(), return_trajectory=True
     )
     target = FlowSampler(prediction_type=prediction_type, **kwargs)(
-        model, x, num_inference_steps=4, generator=seeded(), return_trajectory=True
+        model, x, n_steps=4, generator=seeded(), return_trajectory=True
     )
-    assert torch.equal(target[:, -1], legacy[:, -1])
-    kept = 3 if last_step is not None else 4
-    assert torch.equal(target[:, :kept], legacy[:, :kept])
+    assert torch.equal(target, legacy)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_flow_custom_grid_matches_legacy_uniform_grid(reverse):
+    torch.manual_seed(0)
+    model = TimeField()
+    x = torch.randn(6, 2, generator=seeded())
+    kwargs = dict(reverse=reverse, integrator="midpoint")
+    legacy = FlowSampler(model, prediction="velocity", **kwargs).sample(
+        x=x, n_steps=4, return_trajectory=True
+    )
+    target = FlowSampler(**kwargs)(
+        model, x, t=torch.linspace(0.0, 1.0, 5), return_trajectory=True
+    )
+    assert torch.equal(target, legacy)

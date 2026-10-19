@@ -50,7 +50,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     grace=4,
     grace_months=4,
-    replacement="FlowSampler(prediction_type=...)(model, x, num_inference_steps=...)",
+    replacement="FlowSampler(prediction_type=...)(model, x, n_steps=...)",
     message=(
         "FlowSampler(model=...), prediction=, train_eps=, negate_velocity= and "
         "sample() are deprecated: construct the sampler without a model, name "
@@ -107,12 +107,12 @@ class FlowSampler(BaseSampler):
 
     The sampling process is configured at construction: ``mode="ode"``
     integrates the probability-flow ODE, ``mode="sde"`` the reverse-time
-    diffusion SDE. The model is called as ``model(x, t, **model_kwargs)`` and
-    its output, named by `prediction_type`, is converted through the
-    interpolant to the velocity (and, in SDE mode, the score). With a
-    fixed-step integrator `forward` runs the step contract (see
-    `BaseSampler`); with an adaptive integrator it solves the ODE and returns
-    the final state only.
+    diffusion SDE. Called as ``sampler(model, x, n_steps=...)`` or with a
+    custom time grid ``sampler(model, x, t=...)``; the model is
+    called as ``model(x, t, **model_kwargs)`` and its output, named by
+    `prediction_type`, is converted through the interpolant to the velocity
+    (and, in SDE mode, the score) that the integrator drifts along. An
+    adaptive integrator solves the ODE and returns the final state only.
 
     `sample()` (deprecated, model-bound) follows the `BaseSampler` contract;
     with a fixed-step integrator it supports ``thin``, ``return_trajectory``,
@@ -152,8 +152,7 @@ class FlowSampler(BaseSampler):
             (e.g. `"rk4"`) constructs that integrator with defaults; an
             instance is used as-is and must match the sampler's
             device/dtype. SDE mode requires a `BaseSDERungeKuttaIntegrator`;
-            SDE integrators are valid for ODE mode (zero diffusion). The step
-            contract needs a fixed-step integrator.
+            SDE integrators are valid for ODE mode (zero diffusion).
 
     Example:
         ```python
@@ -161,7 +160,7 @@ class FlowSampler(BaseSampler):
         from torchebm.samplers import FlowSampler
 
         sampler = FlowSampler(interpolant="linear", integrator="midpoint")
-        samples = sampler(velocity_net, torch.randn(100, 2), num_inference_steps=50)
+        samples = sampler(velocity_net, torch.randn(100, 2), n_steps=50)
         ```
     """
 
@@ -284,7 +283,6 @@ class FlowSampler(BaseSampler):
                 f"fixed-step integrator, got {type(self.integrator).__name__}"
             )
         self._default_n_steps = 50 if mode == "ode" else 250
-        self.order = sum(self._stage_evaluations())
 
     @property
     def train_eps(self) -> float:
@@ -306,162 +304,133 @@ class FlowSampler(BaseSampler):
     def forward(
         self,
         model: nn.Module,
-        sample: torch.Tensor,
+        x: torch.Tensor,
         *,
-        num_inference_steps: int = 50,
+        n_steps: int = 50,
+        t: Optional[torch.Tensor] = None,
         generator: Optional[torch.Generator] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""Run `num_inference_steps` integration steps of `model` from `sample`.
+        r"""Integrate the configured ODE or SDE of `model` from `x`.
 
-        A fixed-step integrator runs the step contract (see
-        `BaseSampler.forward`). An adaptive integrator solves the ODE over the
-        sampling interval, `num_inference_steps` setting its initial step
-        size, and returns the final state only; it advances no schedulers.
+        Args:
+            model: Network called as ``model(x, t, **model_kwargs)``; its
+                output is named by `prediction_type`.
+            x: Initial state (typically noise).
+            n_steps: Number of integration steps on the uniform grid over the
+                sampling interval; ignored when `t` is given. With an adaptive
+                integrator it sets the initial step size.
+            t: Custom time grid, a 1-D tensor of at least two increasing
+                interpolant times (the integrators' ``t``, `diffusers`
+                ``timesteps=``, Meta ``time_grid=``); one integration step per
+                consecutive pair.
+            generator: RNG for the SDE noise; the global RNG when ``None``.
+            model_kwargs: Conditioning arguments forwarded to the model.
+            return_trajectory: If True, return the state after every step,
+                shape ``(batch_size, n_steps, *sample_shape)``; in SDE mode the
+                final entry carries the `last_step` correction. Fixed-step
+                integrators only.
+
+        Returns:
+            The final state, or the trajectory.
 
         Raises:
-            ValueError: If `num_inference_steps` is not positive.
+            ValueError: If `n_steps` is not positive, or `t` is not a 1-D
+                tensor of at least two entries.
             NotImplementedError: If `return_trajectory` is requested with an
                 adaptive integrator.
         """
-        if self.integrator.error_weights is None:
-            return super().forward(
-                model,
-                sample,
-                num_inference_steps=num_inference_steps,
-                generator=generator,
-                model_kwargs=model_kwargs,
-                return_trajectory=return_trajectory,
-            )
-        if return_trajectory:
-            raise NotImplementedError(
-                "return_trajectory needs a fixed-step integrator; adaptive "
-                f"{type(self.integrator).__name__} returns only the final state"
-            )
-        if num_inference_steps <= 0:
-            raise ValueError("num_inference_steps must be positive")
         model_output = self._model_fn(model, model_kwargs)
-        self.reset_schedulers()
-        t0, t1 = self._check_interval()
-        grid = torch.linspace(
-            t0, t1, num_inference_steps + 1, device=sample.device, dtype=self.dtype
-        )
+        grid = self._time_grid(n_steps, t, x)
+        sde = self.mode == "sde"
 
-        def velocity(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-            return self._velocity(model_output(x, t), x, t)
+        if sde:
 
-        drift = velocity
+            def diffusion(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                return self.interpolant.compute_diffusion(
+                    x, t, form=self.diffusion_form, norm=self.diffusion_norm
+                )
+
+            def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                output = model_output(x, t)
+                return self._velocity(output, x, t) + diffusion(x, t) * self._score(
+                    output, x, t
+                )
+
+        else:
+
+            def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                return self._velocity(model_output(x, t), x, t)
+
         if self.reverse:
+            t0 = grid[0]
             grid = grid - t0
+            velocity = drift
 
             def drift(x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
                 return -velocity(x, t0 + s)
 
-        return self.integrator.integrate(
-            state={"x": sample},
-            step_size=grid[1] - grid[0],
-            n_steps=num_inference_steps,
-            drift=drift,
-            t=grid,
-        )["x"]
-
-    def set_timesteps(
-        self,
-        num_inference_steps: int,
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> None:
-        r"""Build the stage times of `num_inference_steps` integration steps
-        over the sampling interval and reset the schedulers.
-
-        `timesteps` holds the interpolant time of every model evaluation,
-        `order` per step (an implicit stage repeats its time once per Picard
-        iteration). In SDE mode with a `last_step` correction it ends with
-        the final time, one more evaluation than the integration steps.
-
-        Raises:
-            ValueError: If `num_inference_steps` is not positive.
-            NotImplementedError: If the integrator has no fixed evaluation
-                count per update.
-        """
-        if num_inference_steps <= 0:
-            raise ValueError("num_inference_steps must be positive")
-        self._check_step_integrator()
         self.reset_schedulers()
-        self.num_inference_steps = num_inference_steps
-        t0, t1 = self._check_interval()
-        t_phys = torch.linspace(
-            t0,
-            t1,
-            num_inference_steps + 1,
-            device=self.device if device is None else device,
-            dtype=self.dtype,
-        )
-        grid = t_phys - t0 if self.reverse else t_phys
-        self._step_sizes = grid[1:] - grid[:-1]
-        _, _, c, _ = self.integrator._tableau_on(grid.device, grid.dtype)
-        stage_times = grid[:-1, None] + c * self._step_sizes[:, None]
-        if self.order != c.shape[0]:
-            stage_times = stage_times.repeat_interleave(
-                torch.tensor(self._stage_evaluations(), device=grid.device), dim=1
-            )
-        timesteps = stage_times.reshape(-1)
-        if self.reverse:
-            timesteps = t0 + timesteps
-        self._last_step_index = -1
-        if self.mode == "sde" and self.last_step is not None:
-            timesteps = torch.cat([timesteps, t_phys[-1:]])
-            self._last_step_index = timesteps.shape[0] - 1
-        self.timesteps = timesteps
-        self._step_index = 0
-        self._stage = self._iteration = 0
+        n_steps = grid.shape[0] - 1
+        if self.integrator.error_weights is not None:
+            if return_trajectory:
+                raise NotImplementedError(
+                    "return_trajectory needs a fixed-step integrator; adaptive "
+                    f"{type(self.integrator).__name__} returns only the final state"
+                )
+            return self.integrator.integrate(
+                state={"x": x},
+                step_size=grid[1] - grid[0],
+                n_steps=n_steps,
+                drift=drift,
+                t=grid,
+            )["x"]
 
-    def step(
-        self,
-        model_output: torch.Tensor,
-        timestep: torch.Tensor,
-        sample: torch.Tensor,
-        generator: Optional[torch.Generator] = None,
+        batch_size = x.shape[0]
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((batch_size, n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            t_batch = grid[i].expand(batch_size)
+            if sde:
+                x = self.integrator.step(
+                    state={"x": x},
+                    step_size=grid[i + 1] - grid[i],
+                    drift=drift,
+                    diffusion=diffusion(x, t_batch),
+                    t=t_batch,
+                    generator=generator,
+                )["x"]
+            else:
+                x = self.integrator.step(
+                    state={"x": x},
+                    step_size=grid[i + 1] - grid[i],
+                    drift=drift,
+                    t=t_batch,
+                )["x"]
+            self.step_schedulers()
+            if trajectory is not None:
+                trajectory[:, i] = x
+        if sde and self.last_step is not None:
+            t_batch = grid[-1].expand(batch_size)
+            x = self._denoise(model_output(x, t_batch), x, t_batch)
+            if trajectory is not None:
+                trajectory[:, -1] = x
+        return x if trajectory is None else trajectory
+
+    def _time_grid(
+        self, n_steps: int, t: Optional[torch.Tensor], x: torch.Tensor
     ) -> torch.Tensor:
-        r"""One integrator stage from the model output at ``(sample, timestep)``.
-
-        Args:
-            model_output: Output named by `prediction_type`, evaluated at
-                `sample` and `timestep`.
-            timestep: Entry of `timesteps`, a 0-d tensor.
-            sample: Current state, or the point returned by the previous call
-                while a multi-stage or implicit update is in progress.
-            generator: RNG for the SDE noise; the global RNG when ``None``.
-
-        Returns:
-            The next state, or the next point to evaluate of an unfinished
-            update.
-        """
-        i = self._step_index
-        self._step_index = i + 1
-        t = timestep.expand(sample.shape[0])
-        if i == self._last_step_index:
-            return self._denoise(model_output, sample, t)
-        sde = self.mode == "sde"
-        drift = self._velocity(model_output, sample, t)
-        if self.reverse:
-            drift = -drift
-        if sde:
-            diffusion = self.interpolant.compute_diffusion(
-                sample, t, form=self.diffusion_form, norm=self.diffusion_norm
-            )
-            if self._stage == 0 and self._iteration == 0:
-                self._diffusion = diffusion
-            drift = drift + diffusion * self._score(model_output, sample, t)
-        step_size = self._step_sizes[i // self.order]
-        x = self._runge_kutta_stage(drift, sample, step_size)
-        if self._stage or self._iteration:
-            return x
-        if sde:
-            noise = torch.randn_like(x, generator=generator)
-            x = x + (2.0 * self._diffusion) ** 0.5 * (noise * step_size**0.5)
-        self.step_schedulers()
-        return x
+        r"""Interpolant times of the integration grid, shape ``(n_steps + 1,)``."""
+        if t is not None:
+            if t.ndim != 1 or t.shape[0] < 2:
+                raise ValueError("t must be a 1-D tensor with at least two entries")
+            return t.to(device=x.device, dtype=self.dtype)
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive")
+        t0, t1 = self._check_interval()
+        return torch.linspace(t0, t1, n_steps + 1, device=x.device, dtype=self.dtype)
 
     def _velocity(
         self, model_output: torch.Tensor, x: torch.Tensor, t: torch.Tensor

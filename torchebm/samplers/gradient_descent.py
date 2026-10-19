@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
+from torch import nn
 
 from torchebm._deprecation import declare_deprecation
 from torchebm.core import BaseModel, BaseSampler, BaseScheduler
@@ -20,7 +21,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     grace=4,
     grace_months=4,
-    replacement="sampler(model, x, num_inference_steps=...)",
+    replacement="sampler(model, x, n_steps=...)",
     message=(
         "GradientDescentSampler(model=...), NesterovSampler(model=...) and "
         "sample() are deprecated: construct the sampler without a model and "
@@ -62,7 +63,7 @@ class GradientDescentSampler(BaseSampler):
         from torchebm.samplers import GradientDescentSampler
 
         sampler = GradientDescentSampler(step_size=0.1)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), num_inference_steps=500)
+        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
         ```
     """
 
@@ -82,39 +83,31 @@ class GradientDescentSampler(BaseSampler):
             _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         self._register_param("step_size", step_size, positive=True)
 
-    def set_timesteps(
+    @torch.no_grad()
+    def forward(
         self,
-        num_inference_steps: int,
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> None:
-        r"""Build `timesteps` for `num_inference_steps` updates and reset the
-        schedulers. The entries are step indices: the model is called as
-        ``model(x)``."""
-        self.reset_schedulers()
-        self.num_inference_steps = num_inference_steps
-        self.timesteps = torch.arange(num_inference_steps, device=device)
-
-    def step(
-        self,
-        model_output: torch.Tensor,
-        timestep: torch.Tensor,
-        sample: torch.Tensor,
+        model: nn.Module,
+        x: torch.Tensor,
+        *,
+        n_steps: int = 50,
         generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""One gradient descent update from the score at `sample`.
-
-        Args:
-            model_output: Score \(-\nabla_x E\) at `sample`.
-            timestep: Entry of `timesteps`; unused.
-            sample: Current state.
-            generator: Unused; the update is deterministic.
-
-        Returns:
-            The next state.
-        """
-        x = torch.add(sample, model_output, alpha=self.get_scheduled_value("step_size"))
-        self.step_schedulers()
-        return x
+        r"""Run `n_steps` gradient descent updates of `model` from `x`; see
+        `BaseSampler.forward` for the arguments. `generator` is unused: the
+        updates are deterministic."""
+        score = self._model_fn(model, model_kwargs)
+        self.reset_schedulers()
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            x = torch.add(x, score(x), alpha=self.get_scheduled_value("step_size"))
+            self.step_schedulers()
+            if trajectory is not None:
+                trajectory[:, i] = x
+        return x if trajectory is None else trajectory
 
     @torch.no_grad()
     def sample(
@@ -224,10 +217,9 @@ class NesterovSampler(BaseSampler):
 
     where \(\mu\) is the momentum coefficient and \(\eta\) is the step size.
 
-    The model is evaluated at the lookahead point \(x_k + \mu v_k\), which
-    `scale_model_input` returns; `step` consumes the score there and keeps the
-    momentum \(v\) as internal state reset by `set_timesteps`. See
-    `BaseSampler` for the call and step contracts.
+    Called as ``sampler(model, x, n_steps=...)``, the model giving
+    the score \(-\nabla_x E\) at the lookahead point \(x_k + \mu v_k\); see
+    `BaseSampler`.
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct
@@ -244,7 +236,7 @@ class NesterovSampler(BaseSampler):
         from torchebm.samplers import NesterovSampler
 
         sampler = NesterovSampler(step_size=0.1, momentum=0.9)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), num_inference_steps=500)
+        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
         ```
     """
 
@@ -268,55 +260,37 @@ class NesterovSampler(BaseSampler):
         self.momentum = momentum
 
         self._register_param("step_size", step_size, positive=True)
-        self._momentum_buffer: Optional[torch.Tensor] = None
 
-    def set_timesteps(
+    @torch.no_grad()
+    def forward(
         self,
-        num_inference_steps: int,
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> None:
-        r"""Build `timesteps` for `num_inference_steps` updates, reset the
-        schedulers and the momentum. The entries are step indices: the model
-        is called as ``model(x)``."""
-        self.reset_schedulers()
-        self.num_inference_steps = num_inference_steps
-        self.timesteps = torch.arange(num_inference_steps, device=device)
-        self._momentum_buffer = None
-
-    def scale_model_input(
-        self, sample: torch.Tensor, timestep: torch.Tensor
-    ) -> torch.Tensor:
-        r"""The lookahead point \(x_k + \mu v_k\) the model is evaluated at."""
-        if self._momentum_buffer is None:
-            return sample
-        return torch.add(sample, self._momentum_buffer, alpha=self.momentum)
-
-    def step(
-        self,
-        model_output: torch.Tensor,
-        timestep: torch.Tensor,
-        sample: torch.Tensor,
+        model: nn.Module,
+        x: torch.Tensor,
+        *,
+        n_steps: int = 50,
         generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""One Nesterov update from the score at the lookahead point.
-
-        Args:
-            model_output: Score \(-\nabla_x E\) at `scale_model_input(sample)`.
-            timestep: Entry of `timesteps`; unused.
-            sample: Current state.
-            generator: Unused; the update is deterministic.
-
-        Returns:
-            The next state.
-        """
-        v = self._momentum_buffer
-        if v is None:
-            v = self._momentum_buffer = torch.zeros_like(sample)
-        v.mul_(self.momentum).add_(
-            model_output, alpha=self.get_scheduled_value("step_size")
-        )
-        self.step_schedulers()
-        return sample + v
+        r"""Run `n_steps` Nesterov updates of `model` from `x`; see
+        `BaseSampler.forward` for the arguments. `generator` is unused: the
+        updates are deterministic."""
+        score = self._model_fn(model, model_kwargs)
+        self.reset_schedulers()
+        v = torch.zeros_like(x)
+        mu = self.momentum
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            eta = self.get_scheduled_value("step_size")
+            lookahead_score = score(torch.add(x, v, alpha=mu))
+            v.mul_(mu).add_(lookahead_score, alpha=eta)
+            x = x + v
+            self.step_schedulers()
+            if trajectory is not None:
+                trajectory[:, i] = x
+        return x if trajectory is None else trajectory
 
     @torch.no_grad()
     def sample(

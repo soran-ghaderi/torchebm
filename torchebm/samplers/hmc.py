@@ -24,7 +24,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     grace=4,
     grace_months=4,
-    replacement="sampler(model, x, num_inference_steps=...)",
+    replacement="sampler(model, x, n_steps=...)",
     message=(
         "HamiltonianMonteCarlo(model=...), RiemannianManifoldHMC(model=...) and "
         "sample() are deprecated: construct the sampler without a model and "
@@ -50,35 +50,14 @@ def _energy_and_drift(
     call = sampler._model_call(model, model_kwargs)
     produced = getattr(model, "prediction_type", "energy")
     if produced == "energy":
-        return (lambda x: call(x, None)), _score_from_energy(call, model)
+        return call, _score_from_energy(call, model)
     if isinstance(produced, tuple) and "energy" in produced and "score" in produced:
         e, s = produced.index("energy"), produced.index("score")
-        return (lambda x: call(x, None)[e]), (lambda x, t: call(x, t)[s])
+        return (lambda x: call(x)[e]), (lambda x, t=None: call(x, t)[s])
     raise ValueError(
         f"{type(sampler).__name__} needs the energy for the Metropolis-Hastings "
         f"correction; the model outputs {produced!r}"
     )
-
-
-def _chain(
-    sampler: BaseSampler,
-    transition: Callable[[torch.Tensor], torch.Tensor],
-    sample: torch.Tensor,
-    num_inference_steps: int,
-    return_trajectory: bool,
-) -> torch.Tensor:
-    r"""Run `num_inference_steps` transitions, stepping the schedulers after each."""
-    x = sample
-    trajectory = None
-    if return_trajectory:
-        trajectory = x.new_empty((x.shape[0], num_inference_steps, *x.shape[1:]))
-    sampler.reset_schedulers()
-    for i in range(num_inference_steps):
-        x = transition(x)
-        sampler.step_schedulers()
-        if trajectory is not None:
-            trajectory[:, i] = x
-    return x if trajectory is None else trajectory
 
 
 # First warned in v0.6.2; window restarted when the deprecation ledger was
@@ -135,7 +114,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         from torchebm.samplers import HamiltonianMonteCarlo
 
         sampler = HamiltonianMonteCarlo(step_size=0.1, n_leapfrog_steps=10)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), num_inference_steps=500)
+        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
         ```
     """
 
@@ -255,27 +234,30 @@ class HamiltonianMonteCarlo(BaseSampler):
     def forward(
         self,
         model: nn.Module,
-        sample: torch.Tensor,
+        x: torch.Tensor,
         *,
-        num_inference_steps: int = 50,
+        n_steps: int = 50,
         generator: Optional[torch.Generator] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""Run `num_inference_steps` Metropolis-Hastings transitions of
-        `model` from `sample`; see `BaseSampler.forward` for the arguments.
+        r"""Run `n_steps` Metropolis-Hastings transitions of `model` from `x`;
+        see `BaseSampler.forward` for the arguments.
 
         Raises:
             ValueError: If the model does not output the energy.
         """
         energy, drift = _energy_and_drift(self, model, model_kwargs)
-        return _chain(
-            self,
-            lambda x: self._transition(x, energy, drift, generator)[0],
-            sample,
-            num_inference_steps,
-            return_trajectory,
-        )
+        self.reset_schedulers()
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            x, _ = self._transition(x, energy, drift, generator)
+            self.step_schedulers()
+            if trajectory is not None:
+                trajectory[:, i] = x
+        return x if trajectory is None else trajectory
 
     def _transition(
         self,
@@ -535,7 +517,7 @@ class RiemannianManifoldHMC(BaseSampler):
         sampler = RiemannianManifoldHMC(
             metric_fn=metric_fn, step_size=0.1, n_leapfrog_steps=10
         )
-        samples = sampler(model, torch.randn(200, dim), num_inference_steps=500)
+        samples = sampler(model, torch.randn(200, dim), n_steps=500)
         ```
     """
 
@@ -726,33 +708,36 @@ class RiemannianManifoldHMC(BaseSampler):
     def forward(
         self,
         model: nn.Module,
-        sample: torch.Tensor,
+        x: torch.Tensor,
         *,
-        num_inference_steps: int = 50,
+        n_steps: int = 50,
         generator: Optional[torch.Generator] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""Run `num_inference_steps` Metropolis-Hastings transitions of
-        `model` from `sample`; see `BaseSampler.forward` for the arguments.
+        r"""Run `n_steps` Metropolis-Hastings transitions of `model` from `x`;
+        see `BaseSampler.forward` for the arguments.
 
         Raises:
-            ValueError: If the model does not output the energy, or `sample`
-                is not 2-D.
+            ValueError: If the model does not output the energy, or `x` is
+                not 2-D.
         """
-        if sample.ndim != 2:
+        if x.ndim != 2:
             raise ValueError(
                 f"RMHMC currently expects 2-D state tensors (batch, dim); "
-                f"got sample.ndim={sample.ndim}."
+                f"got x.ndim={x.ndim}."
             )
         self._active_energy, _ = _energy_and_drift(self, model, model_kwargs)
-        return _chain(
-            self,
-            lambda x: self._transition(x, self._active_energy, generator)[0],
-            sample,
-            num_inference_steps,
-            return_trajectory,
-        )
+        self.reset_schedulers()
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            x, _ = self._transition(x, self._active_energy, generator)
+            self.step_schedulers()
+            if trajectory is not None:
+                trajectory[:, i] = x
+        return x if trajectory is None else trajectory
 
     def _transition(
         self,

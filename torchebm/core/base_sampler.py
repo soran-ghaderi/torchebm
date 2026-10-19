@@ -9,13 +9,13 @@ from torchebm.models.functional import energy_gradient
 
 
 def _score_from_energy(
-    call: Callable[[torch.Tensor, torch.Tensor], torch.Tensor], model: nn.Module
-) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+    call: Callable[..., torch.Tensor], model: nn.Module
+) -> Callable[..., torch.Tensor]:
     r"""Closure differentiating an energy call into the score, the
     ``prediction_type="score"`` path of `BaseModel.__call__`."""
     force_fp32 = bool(getattr(model, "force_fp32_gradient", False))
 
-    def score(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    def score(x: torch.Tensor, t: Optional[torch.Tensor] = None) -> torch.Tensor:
         with torch.enable_grad():
             x = x.detach().requires_grad_(True)
             energy = call(x.float() if force_fp32 else x, t)
@@ -33,7 +33,7 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
 
     ```python
     sampler = LangevinDynamics(step_size=0.1, noise_scale=1.0)
-    x = sampler(model, x0, num_inference_steps=100)
+    x = sampler(model, x0, n_steps=100)
     ```
 
     `forward` runs the sampler's updates with the model called as
@@ -41,23 +41,9 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
     `model.prediction_type` to what the sampler consumes (`prediction_type`):
     equal types pass through, a tuple such as ``("energy", "score")`` is
     indexed, and an energy is differentiated into the score. A model without
-    the attribute is taken to output what the sampler consumes.
-
-    Fixed-step samplers also expose the `diffusers` scheduler contract that
-    `forward` is built on:
-
-    ```python
-    sampler.set_timesteps(num_inference_steps, device=None)   # builds timesteps, resets state
-    sampler.timesteps                                         # one entry per model evaluation
-    sampler.step(model_output, timestep, sample, generator=None) -> sample
-    ```
-
-    with `order` model evaluations per update: a multi-stage or implicit
-    integrator lists every stage time in `timesteps`, and `step` returns the
-    stage points until the update completes. `scale_model_input` prepares the
-    sample the model sees, the identity unless the sampler evaluates away
-    from its state. Samplers that evaluate the model inside a solver
-    (adaptive integrators, the HMC family) implement `forward` directly.
+    the attribute is taken to output what the sampler consumes. Step sizes,
+    noise scales and temperatures are `BaseScheduler` parameters set at
+    construction; `FlowSampler` also accepts a custom time grid per call.
 
     Args:
         model (nn.Module): Deprecated. Model sampled by `sample()`; pass the
@@ -81,12 +67,10 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         Each sampler's `sample()` docstring lists the keys it produces.
     """
 
-    #: Model output consumed by `step`: ``"score"`` or ``"velocity"``.
+    #: Model output the sampler consumes: ``"score"``, ``"velocity"`` or ``"energy"``.
     prediction_type: str = "score"
     #: Whether the model is called as ``model(x, t)`` rather than ``model(x)``.
     timestep_conditioned: bool = False
-    #: Model evaluations per completed update.
-    order: int = 1
 
     def __init__(
         self,
@@ -96,94 +80,66 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
     ):
         super().__init__(device=device, dtype=dtype)
         self.model = model
-        self.timesteps: Optional[torch.Tensor] = None
-        self.num_inference_steps: Optional[int] = None
-        self._stage = 0
-        self._iteration = 0
 
-    @torch.no_grad()
+    @abstractmethod
     def forward(
         self,
         model: nn.Module,
-        sample: torch.Tensor,
+        x: torch.Tensor,
         *,
-        num_inference_steps: int = 50,
+        n_steps: int = 50,
         generator: Optional[torch.Generator] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""Run `num_inference_steps` updates of `model` from `sample`.
+        r"""Run `n_steps` updates of `model` from `sample`.
 
-        Runs on the device and dtype of `sample`. Under `torch.no_grad()`;
-        use `step` directly for a differentiable chain.
+        Runs on the device and dtype of `x`, under `torch.no_grad()`, with
+        the schedulers reset at the start.
 
         Args:
             model: Model called at every evaluation; see the class docstring
                 for how its output is matched to the sampler.
-            sample: Initial state of shape ``(batch_size, *sample_shape)``.
-            num_inference_steps: Number of sampler updates.
+            x: Initial state of shape ``(batch_size, *sample_shape)``.
+            n_steps: Number of sampler updates.
             generator: RNG for the sampler's noise; the global RNG when
                 ``None``.
             model_kwargs: Conditioning arguments forwarded to the model at
                 every evaluation.
             return_trajectory: If True, return the state after every update,
-                shape ``(batch_size, num_inference_steps, *sample_shape)``,
-                instead of the final state. A sampler whose `timesteps` end
-                with a correction (`FlowSampler` in SDE mode with a
-                `last_step`) records it as one more entry.
+                shape ``(batch_size, n_steps, *sample_shape)``,
+                instead of the final state.
 
         Returns:
             The final state, or the trajectory.
 
         Raises:
             ValueError: If `model.prediction_type` cannot feed the sampler.
-            NotImplementedError: If the integrator has no fixed evaluation
-                count per update (see `set_timesteps`).
         """
-        model_output = self._model_fn(model, model_kwargs)
-        self.set_timesteps(num_inference_steps, device=sample.device)
-        timesteps, order = self.timesteps, self.order
-        x = sample
-        trajectory = None
-        if return_trajectory:
-            n_kept = (timesteps.shape[0] + order - 1) // order
-            trajectory = x.new_empty((x.shape[0], n_kept, *x.shape[1:]))
-        last = timesteps.shape[0] - 1
-        for i, t in enumerate(timesteps):
-            x = self.step(
-                model_output(self.scale_model_input(x, t), t), t, x, generator=generator
-            )
-            if trajectory is not None and ((i + 1) % order == 0 or i == last):
-                trajectory[:, i // order] = x
-        return x if trajectory is None else trajectory
-
-    def scale_model_input(
-        self, sample: torch.Tensor, timestep: torch.Tensor
-    ) -> torch.Tensor:
-        r"""The input the model is evaluated on for the next `step`."""
-        return sample
+        raise NotImplementedError
 
     def _model_call(
         self, model: nn.Module, model_kwargs: Optional[Dict[str, Any]]
-    ) -> Callable[[torch.Tensor, torch.Tensor], Any]:
-        r"""Closure ``(x, t) -> model(...)`` following `timestep_conditioned`."""
+    ) -> Callable[..., Any]:
+        r"""Closure ``(x, t=None) -> model(...)`` following `timestep_conditioned`."""
         kwargs = model_kwargs or {}
         if self.timestep_conditioned:
 
-            def call(x: torch.Tensor, t: torch.Tensor):
+            def call(x: torch.Tensor, t: Optional[torch.Tensor] = None):
                 return model(x, t.expand(x.shape[0]), **kwargs)
 
         else:
 
-            def call(x: torch.Tensor, t: torch.Tensor):
+            def call(x: torch.Tensor, t: Optional[torch.Tensor] = None):
                 return model(x, **kwargs)
 
         return call
 
     def _model_fn(
         self, model: nn.Module, model_kwargs: Optional[Dict[str, Any]]
-    ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
-        r"""Closure ``(x, t) -> model_output`` in the form `step` consumes.
+    ) -> Callable[..., torch.Tensor]:
+        r"""Closure ``(x, t=None) -> model_output`` in the form the sampler
+        consumes.
 
         Raises:
             ValueError: If `model.prediction_type` cannot feed the sampler.
@@ -199,7 +155,7 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
                 )
             index = produced.index(consumed)
 
-            def pick(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+            def pick(x: torch.Tensor, t: Optional[torch.Tensor] = None) -> torch.Tensor:
                 return call(x, t)[index]
 
             return pick
@@ -218,69 +174,6 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
                 f"{type(self).__name__}.sample() runs the model bound at "
                 "construction (deprecated); call sampler(model, x, ...) instead"
             )
-
-    def _stage_evaluations(self) -> Tuple[int, ...]:
-        r"""Model evaluations per Runge-Kutta stage of `self.integrator`: one,
-        or the Picard iterations of an implicit stage."""
-        integrator = self.integrator
-        return tuple(
-            integrator.solver_max_iter if implicit else 1
-            for implicit in integrator._stage_implicit
-        )
-
-    def _check_step_integrator(self) -> None:
-        r"""The step contract feeds one model output per evaluation, so the
-        integrator needs a fixed evaluation count per update."""
-        integrator = self.integrator
-        if integrator.error_weights is not None:
-            raise NotImplementedError(
-                f"{type(integrator).__name__} is adaptive and evaluates the "
-                "model inside the solver: sampler(model, x) runs it; "
-                "set_timesteps/step need a fixed-step integrator"
-            )
-        if any(integrator._stage_implicit) and integrator.solver_check_every > 0:
-            raise NotImplementedError(
-                f"{type(integrator).__name__} with solver_check_every > 0 has "
-                "a data-dependent evaluation count; use solver_check_every=0"
-            )
-
-    def _runge_kutta_stage(
-        self,
-        drift: torch.Tensor,
-        sample: torch.Tensor,
-        step_size: Union[float, torch.Tensor],
-    ) -> torch.Tensor:
-        r"""Feed the drift of the current evaluation to the Runge-Kutta
-        tableau of `self.integrator`.
-
-        Returns the next point to evaluate while the update is in progress
-        (a stage point, or the next Picard iterate of an implicit stage;
-        ``self._stage`` or ``self._iteration`` is then non-zero) and the
-        deterministic update \(x + h \sum_i b_i k_i\) at the last evaluation.
-        """
-        integrator = self.integrator
-        a, b, _, _ = integrator._tableau_on(sample.device, sample.dtype)
-        i = self._stage
-        if i == 0 and self._iteration == 0:
-            self._stage_sample = self._stage_point = sample
-            self._stage_drifts = sample.new_empty((a.size(0),) + sample.shape)
-        k = self._stage_drifts
-        k[i] = drift
-        if (
-            integrator._stage_implicit[i]
-            and self._iteration + 1 < integrator.solver_max_iter
-        ):
-            self._iteration += 1
-            return torch.addcmul(self._stage_point, step_size * a[i, i], drift)
-        self._iteration = 0
-        if i + 1 < a.size(0):
-            self._stage = i + 1
-            self._stage_point = self._stage_sample + step_size * torch.einsum(
-                "i,i...->...", a[i + 1, : i + 1], k[: i + 1]
-            )
-            return self._stage_point
-        self._stage = 0
-        return self._stage_sample + step_size * torch.einsum("i,i...->...", b, k)
 
     def _init_state(
         self,
