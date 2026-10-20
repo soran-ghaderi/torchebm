@@ -119,7 +119,7 @@ class LangevinDynamics(BaseSampler):
         r"""Run `n_steps` Langevin updates of `model` from `x`; see
         `BaseSampler.forward` for the arguments."""
         score = self._model_fn(model, model_kwargs)
-        self.reset_schedulers()
+        self.reset_schedulers(model)
         trajectory = None
         if return_trajectory:
             trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
@@ -133,7 +133,7 @@ class LangevinDynamics(BaseSampler):
             )["x"]
             if self.clamp is not None:
                 x = x.clamp_(*self.clamp)
-            self.step_schedulers()
+            self.step_schedulers(model)
             if trajectory is not None:
                 trajectory[:, i] = x
         return x if trajectory is None else trajectory

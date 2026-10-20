@@ -41,9 +41,11 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
     `model.prediction_type` to what the sampler consumes (`prediction_type`):
     equal types pass through, a tuple such as ``("energy", "score")`` is
     indexed, and an energy is differentiated into the score. A model without
-    the attribute is taken to output what the sampler consumes. Step sizes,
-    noise scales and temperatures are `BaseScheduler` parameters set at
-    construction; `FlowSampler` also accepts a custom time grid per call.
+    the attribute, or declaring ``None``, is taken to output what the sampler
+    consumes. Step sizes, noise scales and temperatures are `BaseScheduler`
+    parameters set at construction, reset at every call and advanced once per
+    step together with those of a `Schedulable` model such as
+    `InteractionModel`; `FlowSampler` also accepts a custom time grid per call.
 
     Args:
         model (nn.Module): Deprecated. Model sampled by `sample()`; pass the
@@ -146,7 +148,9 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         """
         call = self._model_call(model, model_kwargs)
         consumed = self.prediction_type
-        produced = getattr(model, "prediction_type", consumed)
+        produced = getattr(model, "prediction_type", None)
+        if produced is None or produced == consumed:
+            return call
         if isinstance(produced, tuple):
             if consumed not in produced:
                 raise ValueError(
@@ -159,14 +163,24 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
                 return call(x, t)[index]
 
             return pick
-        if produced == consumed:
-            return call
         if produced == "energy" and consumed == "score":
             return _score_from_energy(call, model)
         raise ValueError(
             f"model outputs {produced!r} but {type(self).__name__} consumes "
             f"{consumed!r}; set prediction_type on the model or the sampler"
         )
+
+    def reset_schedulers(self, model: Optional[nn.Module] = None) -> None:
+        r"""Reset the schedulers of this sampler and of a `Schedulable` model."""
+        super().reset_schedulers()
+        if isinstance(model, Schedulable) and model is not self.model:
+            model.reset_schedulers()
+
+    def step_schedulers(self, model: Optional[nn.Module] = None) -> None:
+        r"""Advance the schedulers of this sampler and of a `Schedulable` model."""
+        super().step_schedulers()
+        if isinstance(model, Schedulable) and model is not self.model:
+            model.step_schedulers()
 
     def _require_model(self) -> None:
         if self.model is None:

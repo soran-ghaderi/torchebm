@@ -248,13 +248,13 @@ class HamiltonianMonteCarlo(BaseSampler):
             ValueError: If the model does not output the energy.
         """
         energy, drift = _energy_and_drift(self, model, model_kwargs)
-        self.reset_schedulers()
+        self.reset_schedulers(model)
         trajectory = None
         if return_trajectory:
             trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
         for i in range(n_steps):
             x, _ = self._transition(x, energy, drift, generator)
-            self.step_schedulers()
+            self.step_schedulers(model)
             if trajectory is not None:
                 trajectory[:, i] = x
         return x if trajectory is None else trajectory
@@ -728,13 +728,13 @@ class RiemannianManifoldHMC(BaseSampler):
                 f"got x.ndim={x.ndim}."
             )
         self._active_energy, _ = _energy_and_drift(self, model, model_kwargs)
-        self.reset_schedulers()
+        self.reset_schedulers(model)
         trajectory = None
         if return_trajectory:
             trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
         for i in range(n_steps):
             x, _ = self._transition(x, self._active_energy, generator)
-            self.step_schedulers()
+            self.step_schedulers(model)
             if trajectory is not None:
                 trajectory[:, i] = x
         return x if trajectory is None else trajectory

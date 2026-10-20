@@ -98,13 +98,13 @@ class GradientDescentSampler(BaseSampler):
         `BaseSampler.forward` for the arguments. `generator` is unused: the
         updates are deterministic."""
         score = self._model_fn(model, model_kwargs)
-        self.reset_schedulers()
+        self.reset_schedulers(model)
         trajectory = None
         if return_trajectory:
             trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
         for i in range(n_steps):
             x = torch.add(x, score(x), alpha=self.get_scheduled_value("step_size"))
-            self.step_schedulers()
+            self.step_schedulers(model)
             if trajectory is not None:
                 trajectory[:, i] = x
         return x if trajectory is None else trajectory
@@ -276,7 +276,7 @@ class NesterovSampler(BaseSampler):
         `BaseSampler.forward` for the arguments. `generator` is unused: the
         updates are deterministic."""
         score = self._model_fn(model, model_kwargs)
-        self.reset_schedulers()
+        self.reset_schedulers(model)
         v = torch.zeros_like(x)
         mu = self.momentum
         trajectory = None
@@ -287,7 +287,7 @@ class NesterovSampler(BaseSampler):
             lookahead_score = score(torch.add(x, v, alpha=mu))
             v.mul_(mu).add_(lookahead_score, alpha=eta)
             x = x + v
-            self.step_schedulers()
+            self.step_schedulers(model)
             if trajectory is not None:
                 trajectory[:, i] = x
         return x if trajectory is None else trajectory

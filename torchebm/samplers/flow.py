@@ -371,7 +371,7 @@ class FlowSampler(BaseSampler):
             def drift(x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
                 return -velocity(x, t0 + s)
 
-        self.reset_schedulers()
+        self.reset_schedulers(model)
         n_steps = grid.shape[0] - 1
         if self.integrator.error_weights is not None:
             if return_trajectory:
@@ -409,7 +409,7 @@ class FlowSampler(BaseSampler):
                     drift=drift,
                     t=t_batch,
                 )["x"]
-            self.step_schedulers()
+            self.step_schedulers(model)
             if trajectory is not None:
                 trajectory[:, i] = x
         if sde and self.last_step is not None:
