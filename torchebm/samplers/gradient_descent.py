@@ -19,7 +19,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     name="model-bound optimization samplers",
     since="0.8.10",
     deprecated_on="2026-09-29",
-    grace=4,
+    until="0.12.0",
     grace_months=4,
     replacement="sampler(model, x, n_steps=...)",
     message=(
