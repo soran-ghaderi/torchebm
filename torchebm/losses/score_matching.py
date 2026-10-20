@@ -204,7 +204,7 @@ class SlicedScoreMatchingLoss(BaseLoss):
 @deprecated(
     since="0.8.10",
     deprecated_on="2026-09-29",
-    grace=4,
+    until="0.12.0",
     grace_months=4,
     replacement="ScoreMatchingLoss on the model's score and its divergence",
     message=(
@@ -444,7 +444,7 @@ class ScoreMatching(BaseScoreMatching):
 @deprecated(
     since="0.8.10",
     deprecated_on="2026-09-29",
-    grace=4,
+    until="0.12.0",
     grace_months=4,
     replacement="DenoisingScoreMatchingLoss on the model's score at the perturbed input",
     message=(
@@ -582,7 +582,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
 @deprecated(
     since="0.8.10",
     deprecated_on="2026-09-29",
-    grace=4,
+    until="0.12.0",
     grace_months=4,
     replacement="SlicedScoreMatchingLoss on the model's score at tiled inputs",
     message=(

@@ -101,7 +101,7 @@ class ContrastiveDivergenceLoss(BaseLoss):
 @deprecated(
     since="0.8.10",
     deprecated_on="2026-09-29",
-    grace=4,
+    until="0.12.0",
     grace_months=4,
     replacement="ContrastiveDivergenceLoss on the energies of data and sampled negatives",
     message=(
