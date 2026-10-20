@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Callable, Literal, Optional, Union
+from typing import Callable, Literal, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 
+from torchebm._deprecation import deprecated
 from torchebm.core import BaseModel, BaseScheduler, Schedulable
 from torchebm.core.base_module import substitute_condition
 
@@ -21,9 +22,12 @@ class ClassifierFreeGuidance(BaseModel):
     where \(c\) and \(u\) are the wrapped model's outputs under the true and
     null conditioning, evaluated in a single 2x-batch forward (no python
     loop). Works with field models, called as ``model(x, t, y=y)`` by
-    `FlowSampler`, and with scalar energies, called as ``model(x, y=y)`` and
-    differentiated through the inherited `BaseModel.gradient` by the MCMC and
-    gradient-descent samplers.
+    `FlowSampler`, and with energy or score models, called as ``model(x, y=y)``
+    by the MCMC and gradient-descent samplers. The wrapper reports the wrapped
+    model's `prediction_type` (``None`` when it declares none, ``"energy"`` for
+    an ``("energy", "score")`` pair, whose energy is guided) and its call is
+    the plain module call, so ``sampler(guided, x, model_kwargs={"y": y})``
+    consumes the guided output exactly as it would the wrapped model's.
 
     \(w = 0\) reproduces the null-conditioned (unconditional) model exactly
     via a single un-doubled forward; \(w = 1\) matches the conditional model.
@@ -44,6 +48,8 @@ class ClassifierFreeGuidance(BaseModel):
             sigma, must not be guided). ``None`` (default) guides everything.
     """
 
+    __call__ = nn.Module.__call__
+
     def __init__(
         self,
         model: nn.Module,
@@ -58,6 +64,8 @@ class ClassifierFreeGuidance(BaseModel):
         self.guidance_scale = float(guidance_scale)
         self.null_condition = null_condition
         self.guide_channels = guide_channels
+        produced = getattr(model, "prediction_type", None)
+        self.prediction_type = produced[0] if isinstance(produced, tuple) else produced
 
     def _null_y(self, y: torch.Tensor) -> torch.Tensor:
         mask = torch.ones(y.shape[0], dtype=torch.bool, device=y.device)
@@ -122,17 +130,18 @@ class InteractionModel(Schedulable, BaseModel):
     \]
 
     so that \(\sum_i W_i = \tfrac{1}{2} \tfrac{s}{\sigma_W^2}
-    \sum_{i \neq j} \|x_i - x_j\|^2\). Because `BaseModel.gradient()`
-    differentiates the summed batch energy, sampling with this model yields
-    the batch-coupled repulsive Langevin drift of the paper: samples are
-    pushed apart, increasing diversity (used for inverse design and
-    conditional generation).
+    \sum_{i \neq j} \|x_i - x_j\|^2\). Because the score differentiates the
+    summed batch energy (``prediction_type="score"`` on this wrapper, or the
+    samplers' autograd on its energy), sampling with this model yields the
+    batch-coupled repulsive Langevin drift of the paper: samples are pushed
+    apart, increasing diversity (used for inverse design and conditional
+    generation).
 
     The strength \(s\) is a `Schedulable` parameter. Pass a
     `TemperatureScheduler(..., sqrt=False)` to reproduce the paper's
-    \(\epsilon(t)\)-scaled interaction: the wrapper sits inside the sampler's
-    module subtree, so `LangevinDynamics.sample()` resets and advances it in
-    lockstep with the noise schedule.
+    \(\epsilon(t)\)-scaled interaction: a sampler resets and advances the
+    schedulers of the model it is given together with its own, so the
+    interaction follows the noise schedule step for step.
 
     Note:
         The squared distances use the expansion
@@ -153,6 +162,9 @@ class InteractionModel(Schedulable, BaseModel):
         sigma_w: Interaction bandwidth \(\sigma_W\). Must be positive.
         strength: Interaction strength \(s\), typically the temperature
             \(\epsilon(t)\). Float or `BaseScheduler`.
+        prediction_type: Output of the call, ``"energy"`` (default),
+            ``"score"`` or ``("energy", "score")``, as for any `BaseModel`;
+            the wrapped potential must output energies.
 
     Example:
         ```python
@@ -165,10 +177,8 @@ class InteractionModel(Schedulable, BaseModel):
             0.15, 0.8, n_steps=325, t_end=3.25, sqrt=False
         )
         repulsive = InteractionModel(V, sigma_w=4.0, strength=temp_strength)
-        sampler = LangevinDynamics(
-            model=repulsive, step_size=0.01, noise_scale=temp_noise
-        )
-        samples = sampler.sample(x=torch.randn(64, 2), n_steps=325)
+        sampler = LangevinDynamics(step_size=0.01, noise_scale=temp_noise)
+        samples = sampler(repulsive, torch.randn(64, 2), n_steps=325)
         ```
     """
 
@@ -178,11 +188,17 @@ class InteractionModel(Schedulable, BaseModel):
         sigma_w: float,
         strength: Union[float, BaseScheduler] = 1.0,
         *args,
+        prediction_type: Union[str, Tuple[str, str]] = "energy",
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, prediction_type=prediction_type, **kwargs)
         if sigma_w <= 0:
             raise ValueError(f"sigma_w must be positive, got {sigma_w}")
+        if getattr(model, "prediction_type", "energy") != "energy":
+            raise ValueError(
+                "model must output energies (prediction_type='energy'); set "
+                "prediction_type on the InteractionModel instead"
+            )
         self.model = model
         self.sigma_w = float(sigma_w)
         self._register_param("strength", strength)
@@ -199,8 +215,8 @@ class InteractionModel(Schedulable, BaseModel):
         r"""Compute the interacting energy \(V(x_i) - W_i\) per sample.
 
         Any ``model_kwargs`` (e.g. class labels) are forwarded to the wrapped
-        potential, so conditional diverse sampling works: samplers reach this
-        through `BaseModel.gradient(x, model_kwargs=...)`.
+        potential, so conditional diverse sampling works through the samplers'
+        ``model_kwargs=``.
         """
         batch = x.shape[0]
         flat = x.reshape(batch, -1)
@@ -216,6 +232,24 @@ class InteractionModel(Schedulable, BaseModel):
         )
 
 
+@deprecated(
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="a prediction_type='score' model passed to the sampler call",
+    message=(
+        "EqMEnergy is deprecated: the samplers consume a prediction_type='score' "
+        "model directly, sampler(model, x, n_steps=...). Train the field with "
+        "EquilibriumMatchingLoss()(model(x_t), target, t), which points it from "
+        "noise to data, and use a scalar BaseModel(prediction_type='score') for "
+        "the explicit energy."
+    ),
+    removal=(
+        "EqMEnergy, tests/models/test_eqm_energy.py and the adapter use in the "
+        "equilibrium matching examples and docs"
+    ),
+)
 class EqMEnergy(BaseModel):
     r"""Scalar-energy adapter for sampling Equilibrium Matching fields.
 

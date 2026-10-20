@@ -12,7 +12,7 @@ import torch
 from torch import nn
 from torch.func import grad, jacrev, vmap
 
-from torchebm.core import BaseModel, HarmonicModel
+from torchebm.core import BaseModel, HarmonicModel, TemperatureScheduler
 from torchebm.interpolants import (
     CosineInterpolant,
     LinearInterpolant,
@@ -32,6 +32,7 @@ from torchebm.losses import (
     SlicedScoreMatching,
     SlicedScoreMatchingLoss,
 )
+from torchebm.models import ClassifierFreeGuidance, InteractionModel
 from torchebm.samplers import (
     FlowSampler,
     GradientDescentSampler,
@@ -336,4 +337,63 @@ def test_flow_custom_grid_matches_legacy_uniform_grid(reverse):
     target = FlowSampler(**kwargs)(
         model, x, t=torch.linspace(0.0, 1.0, 5), return_trajectory=True
     )
+    assert torch.equal(target, legacy)
+
+
+class ConditionalQuadratic(BaseModel):
+    def forward(self, x, y=None):
+        energy = 0.5 * x.square().sum(dim=-1)
+        return energy if y is None else energy + y
+
+
+class ConditionalTimeField(TimeField):
+    def forward(self, x, t, y=None, **kwargs):
+        out = super().forward(x, t)
+        return out if y is None else out + y.view(-1, 1)
+
+
+def test_guided_flow_call_matches_legacy_sample():
+    torch.manual_seed(0)
+    guided = ClassifierFreeGuidance(
+        ConditionalTimeField(), guidance_scale=2.0, null_condition=0.0
+    )
+    x = torch.randn(6, 2, generator=seeded())
+    y = torch.arange(6, dtype=torch.float32)
+    legacy = FlowSampler(guided, integrator="euler").sample(
+        x=x, n_steps=4, model_kwargs={"y": y}, return_trajectory=True
+    )
+    target = FlowSampler(integrator="euler")(
+        guided, x, n_steps=4, model_kwargs={"y": y}, return_trajectory=True
+    )
+    assert torch.equal(target, legacy)
+
+
+def test_guided_langevin_call_matches_legacy_sample():
+    guided = ClassifierFreeGuidance(
+        ConditionalQuadratic(), guidance_scale=2.0, null_condition=0.0
+    )
+    x = torch.randn(6, 2, generator=seeded())
+    y = torch.arange(6, dtype=torch.float32)
+    legacy = LangevinDynamics(guided, step_size=0.05).sample(
+        x=x, n_steps=5, model_kwargs={"y": y}, generator=seeded()
+    )
+    target = LangevinDynamics(step_size=0.05)(
+        guided, x, n_steps=5, model_kwargs={"y": y}, generator=seeded()
+    )
+    assert torch.equal(target, legacy)
+
+
+def test_scheduled_interaction_call_matches_legacy_sample():
+    def repulsive():
+        strength = TemperatureScheduler(
+            epsilon_max=0.1, tau_star=0.5, n_steps=10, sqrt=False
+        )
+        return InteractionModel(Quadratic(), sigma_w=2.0, strength=strength)
+
+    x = torch.randn(8, 2, generator=seeded())
+    kwargs = dict(step_size=0.01, noise_scale=0.5)
+    legacy = LangevinDynamics(repulsive(), **kwargs).sample(
+        x=x, n_steps=5, generator=seeded()
+    )
+    target = LangevinDynamics(**kwargs)(repulsive(), x, n_steps=5, generator=seeded())
     assert torch.equal(target, legacy)
