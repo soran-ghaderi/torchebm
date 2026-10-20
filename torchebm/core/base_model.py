@@ -47,8 +47,8 @@ class BaseModel(TorchEBMModule, ABC):
     the unnormalized negative log-likelihood of a probability distribution.
     It supports both analytical models and trainable neural networks.
 
-    Subclasses must implement the `forward(x)` method and can optionally
-    override the `gradient(x)` method for analytical gradients.
+    Subclasses implement `forward(x)` returning the energy; `AnalyticModel` is
+    the base for models with a closed-form score.
 
     Calling the model returns the output selected by `prediction_type`:
 
@@ -316,7 +316,51 @@ class BaseModel(TorchEBMModule, ABC):
         return gradient.detach()
 
 
-class DoubleWellModel(BaseModel):
+class AnalyticModel(BaseModel):
+    r"""Energy with a closed-form score.
+
+    Subclasses implement `_energy` and `_score`; `forward` returns the output
+    selected by `prediction_type` (the energy, the score, or both) without
+    autograd, so the call is the plain module call rather than the
+    differentiating `BaseModel.__call__`. A 1-D input is a batch of one. This
+    is the pattern for potentials with analytic forces:
+
+    ```python
+    class Harmonic(AnalyticModel):
+        def _energy(self, x):
+            return 0.5 * x.square().sum(dim=-1)
+
+        def _score(self, x):
+            return -x
+
+    score = Harmonic(prediction_type="score")(x)
+    ```
+    """
+
+    __call__ = nn.Module.__call__
+
+    @abstractmethod
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Energy \(E(x)\) of shape (batch_size,)."""
+
+    @abstractmethod
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Score \(-\nabla_x E(x)\) of the shape of `x`."""
+
+    def forward(
+        self, x: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        r"""Return the energy, the score, or ``(energy, score)`` per `prediction_type`."""
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+        if self.prediction_type == "energy":
+            return self._energy(x)
+        if self.prediction_type == "score":
+            return self._score(x)
+        return self._energy(x), self._score(x)
+
+
+class DoubleWellModel(AnalyticModel):
     r"""
     Energy-based model for a double-well potential.
 
@@ -329,15 +373,16 @@ class DoubleWellModel(BaseModel):
         self.barrier_height = barrier_height
         self.b = b
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the double well energy: \(h \sum_{i=1}^{n} (x_i^2 - b^2)^2\)."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-
         return self.barrier_height * (x.pow(2) - self.b**2).pow(2).sum(dim=-1)
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-4 h\, x_i (x_i^2 - b^2)\)."""
+        return -4.0 * self.barrier_height * x * (x.pow(2) - self.b**2)
 
-class GaussianModel(BaseModel):
+
+class GaussianModel(AnalyticModel):
     r"""
     Energy-based model for a Gaussian distribution.
 
@@ -367,39 +412,34 @@ class GaussianModel(BaseModel):
                 f"Failed to invert covariance matrix: {e}. Ensure it is invertible."
             ) from e
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""Computes the Gaussian energy: \(E(x) = \frac{1}{2} (x - \mu)^{\top} \Sigma^{-1} (x - \mu)\)."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
+    def _delta(self, x: torch.Tensor) -> torch.Tensor:
         if x.ndim != 2 or x.shape[1] != self.mean.shape[0]:
             raise ValueError(
                 f"Input x expected batch_shape (batch_size, {self.mean.shape[0]}), but got {x.shape}"
             )
+        return x.to(dtype=self.dtype, device=self.device) - self.mean
 
-        x = x.to(dtype=self.dtype, device=self.device)
-        # mean = self.mean.to(device=x.device)
-        cov_inv = self.cov_inv.to(dtype=self.dtype, device=x.device)
-
-        delta = (
-            x - self.mean
-        )  # avoid detaching or converting x to maintain grad tracking
-        # energy = 0.5 * torch.einsum("bi,ij,bj->b", delta, cov_inv, delta)
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes the Gaussian energy: \(E(x) = \frac{1}{2} (x - \mu)^{\top} \Sigma^{-1} (x - \mu)\)."""
+        delta = self._delta(x)
+        cov_inv = self.cov_inv.to(dtype=self.dtype, device=delta.device)
 
         if delta.shape[0] > 1:
-            delta_expanded = delta.unsqueeze(-1)  # (batch_size, dim, 1)
-            cov_inv_expanded = cov_inv.unsqueeze(0).expand(
-                delta.shape[0], -1, -1
-            )  # (batch_size, dim, dim)
-
-            temp = torch.bmm(cov_inv_expanded, delta_expanded)  # (batch_size, dim, 1)
+            delta_expanded = delta.unsqueeze(-1)
+            cov_inv_expanded = cov_inv.unsqueeze(0).expand(delta.shape[0], -1, -1)
+            temp = torch.bmm(cov_inv_expanded, delta_expanded)
             energy = 0.5 * torch.bmm(delta.unsqueeze(1), temp).squeeze(-1).squeeze(-1)
         else:
             energy = 0.5 * torch.sum(delta * torch.matmul(delta, cov_inv), dim=-1)
 
         return energy
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-\Sigma^{-1}(x - \mu)\) for the symmetric covariance."""
+        return -torch.matmul(self._delta(x), self.cov_inv)
 
-class HarmonicModel(BaseModel):
+
+class HarmonicModel(AnalyticModel):
     r"""
     Energy-based model for a harmonic oscillator.
 
@@ -410,15 +450,16 @@ class HarmonicModel(BaseModel):
         super().__init__(*args, **kwargs)
         self.k = k
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the harmonic oscillator energy: \(\frac{1}{2} k \sum_{i=1}^{n} x_i^{2}\)."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-
         return 0.5 * self.k * x.pow(2).sum(dim=-1)
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-k\, x\)."""
+        return -self.k * x
 
-class RosenbrockModel(BaseModel):
+
+class RosenbrockModel(AnalyticModel):
     r"""
     Energy-based model for the Rosenbrock function.
 
@@ -432,28 +473,32 @@ class RosenbrockModel(BaseModel):
         self.b = b
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""Computes the Rosenbrock energy: \(\sum_{i=1}^{n-1} \left[ b(x_{i+1} - x_i^2)^2 + (a - x_i)^2 \right]\)."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
         if x.shape[-1] < 2:
             raise ValueError(
                 f"Rosenbrock energy function requires at least 2 dimensions, got {x.shape[-1]}"
             )
+        return super().forward(x)
 
-        # return (self.a - x[..., 0]) ** 2 + self.b * (x[..., 1] - x[..., 0] ** 2) ** 2
-        # return sum(
-        #     self.b * (x[..., i + 1] - x[..., i] ** 2) ** 2 + (self.a - x[i]) ** 2
-        #     for i in range(len(x) - 1)
-        # )
-
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes the Rosenbrock energy: \(\sum_{i=1}^{n-1} \left[ b(x_{i+1} - x_i^2)^2 + (a - x_i)^2 \right]\)."""
         x_i = x[:, :-1]
         x_ip1 = x[:, 1:]
         term1 = (self.a - x_i).pow(2)
         term2 = self.b * (x_ip1 - x_i.pow(2)).pow(2)
         return (term1 + term2).sum(dim=-1)
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(2(a - x_i) + 4 b\, x_i (x_{i+1} - x_i^2)\) on the first \(n-1\)
+        coordinates, minus \(2 b (x_i - x_{i-1}^2)\) on the last \(n-1\)."""
+        x_i = x[:, :-1]
+        gap = x[:, 1:] - x_i.pow(2)
+        pad = nn.functional.pad
+        return pad(2.0 * (self.a - x_i) + 4.0 * self.b * x_i * gap, (0, 1)) - pad(
+            2.0 * self.b * gap, (1, 0)
+        )
 
-class AckleyModel(BaseModel):
+
+class AckleyModel(AnalyticModel):
     r"""
     Energy-based model for the Ackley function.
 
@@ -470,11 +515,8 @@ class AckleyModel(BaseModel):
         self.b = b
         self.c = c
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the Ackley energy."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-
         n = x.shape[-1]
         sum1 = torch.sum(x**2, dim=-1)
         sum2 = torch.sum(torch.cos(self.c * x), dim=-1)
@@ -482,8 +524,21 @@ class AckleyModel(BaseModel):
         term2 = -torch.exp(sum2 / n)
         return term1 + term2 + self.a + math.e
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-\big[a b\, e^{-b r} x_i / (n r) + (c / n)\, e^{\bar c} \sin(c x_i)\big]\)
+        with \(r = \sqrt{\sum_i x_i^2 / n}\) and \(\bar c = \sum_i \cos(c x_i) / n\)."""
+        n = x.shape[-1]
+        r = torch.sqrt(torch.sum(x**2, dim=-1, keepdim=True) / n)
+        radial = self.a * self.b * torch.exp(-self.b * r) / (n * r) * x
+        periodic = (
+            (self.c / n)
+            * torch.exp(torch.sum(torch.cos(self.c * x), dim=-1, keepdim=True) / n)
+            * torch.sin(self.c * x)
+        )
+        return -(radial + periodic)
 
-class RastriginModel(BaseModel):
+
+class RastriginModel(AnalyticModel):
     r"""
     Energy-based model for the Rastrigin function.
 
@@ -494,55 +549,73 @@ class RastriginModel(BaseModel):
         super().__init__(*args, **kwargs)
         self.a = a
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes the Rastrigin energy."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-
         n = x.shape[-1]
         return self.a * n + torch.sum(
             x**2 - self.a * torch.cos(2 * math.pi * x), dim=-1
         )
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-\big(2 x_i + 2 \pi a \sin(2 \pi x_i)\big)\)."""
+        return -(2.0 * x + 2.0 * math.pi * self.a * torch.sin(2.0 * math.pi * x))
 
-class HimmelblauModel(BaseModel):
+
+class HimmelblauModel(AnalyticModel):
     r"""Energy-based model for the two-dimensional Himmelblau function."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""Computes \((x_1^2 + x_2 - 11)^2 + (x_1 + x_2^2 - 7)^2\)."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
         if x.shape[-1] != 2:
             raise ValueError(
                 f"Himmelblau energy function requires 2 dimensions, got {x.shape[-1]}"
             )
+        return super().forward(x)
 
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes \((x_1^2 + x_2 - 11)^2 + (x_1 + x_2^2 - 7)^2\)."""
         x1, x2 = x.unbind(dim=-1)
         return (x1.pow(2) + x2 - 11).pow(2) + (x1 + x2.pow(2) - 7).pow(2)
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-(4 x_1 u + 2 v,\; 2 u + 4 x_2 v)\) with \(u = x_1^2 + x_2 - 11\)
+        and \(v = x_1 + x_2^2 - 7\)."""
+        x1, x2 = x.unbind(dim=-1)
+        u = x1.pow(2) + x2 - 11
+        v = x1 + x2.pow(2) - 7
+        return -torch.stack((4 * x1 * u + 2 * v, 2 * u + 4 * x2 * v), dim=-1)
 
-class BoothModel(BaseModel):
+
+class BoothModel(AnalyticModel):
     r"""Energy-based model for the two-dimensional Booth function."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""Computes \((x_1 + 2x_2 - 7)^2 + (2x_1 + x_2 - 5)^2\)."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
         if x.shape[-1] != 2:
             raise ValueError(
                 f"Booth energy function requires 2 dimensions, got {x.shape[-1]}"
             )
+        return super().forward(x)
 
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Computes \((x_1 + 2x_2 - 7)^2 + (2x_1 + x_2 - 5)^2\)."""
         x1, x2 = x.unbind(dim=-1)
         return (x1 + 2 * x2 - 7).pow(2) + (2 * x1 + x2 - 5).pow(2)
 
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-(2 u + 4 v,\; 4 u + 2 v)\) with \(u = x_1 + 2 x_2 - 7\) and
+        \(v = 2 x_1 + x_2 - 5\)."""
+        x1, x2 = x.unbind(dim=-1)
+        u = x1 + 2 * x2 - 7
+        v = 2 * x1 + x2 - 5
+        return -torch.stack((2 * u + 4 * v, 4 * u + 2 * v), dim=-1)
 
-class StyblinskiTangModel(BaseModel):
+
+class StyblinskiTangModel(AnalyticModel):
     r"""Energy-based model for the Styblinski-Tang function."""
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _energy(self, x: torch.Tensor) -> torch.Tensor:
         r"""Computes \(\frac{1}{2}\sum_i(x_i^4 - 16x_i^2 + 5x_i)\)."""
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-
         return 0.5 * (x.pow(4) - 16 * x.pow(2) + 5 * x).sum(dim=-1)
+
+    def _score(self, x: torch.Tensor) -> torch.Tensor:
+        r"""\(-(2 x_i^3 - 16 x_i + 5 / 2)\)."""
+        return -(2.0 * x.pow(3) - 16.0 * x + 2.5)

@@ -5,6 +5,7 @@ Core functionality for energy-based models, including energy functions, base sam
 from .base_module import TorchEBMModule, warn_once
 
 from .base_model import (
+    AnalyticModel,
     BaseModel,
     BoothModel,
     DoubleWellModel,
@@ -52,6 +53,7 @@ __all__ = [
     # Energy functions
     "TorchEBMModule",
     "warn_once",
+    "AnalyticModel",
     "BoothModel",
     "BaseModel",
     "DoubleWellModel",
