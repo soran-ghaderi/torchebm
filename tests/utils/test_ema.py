@@ -27,6 +27,24 @@ def _set_params(model, value):
             p.fill_(value)
 
 
+def test_blend_matches_torch_averaged_model():
+    from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+
+    model = _model()
+    ema = EMA(model, decay=0.9)
+    averaged = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9))
+    averaged.update_parameters(model)
+    generator = torch.Generator().manual_seed(0)
+    for _ in range(5):
+        with torch.no_grad():
+            for p in model.parameters():
+                p.add_(torch.randn(p.shape, generator=generator))
+        ema.update(model)
+        averaged.update_parameters(model)
+    for ours, theirs in zip(ema.module.parameters(), averaged.module.parameters()):
+        assert torch.equal(ours, theirs)
+
+
 def test_copy_is_frozen_and_eval():
     model = _model()
     model.train()

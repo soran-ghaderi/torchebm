@@ -68,6 +68,15 @@ class EMA(nn.Module):
     and update with the same unwrapped module; for sharded checkpoint-style
     workflows the functional `torchebm.utils.update_ema` remains available.
 
+    Relation to `torch.optim.swa_utils.AveragedModel` with
+    ``get_ema_multi_avg_fn(decay)``: the per-step blend is the same
+    ``lerp`` and the averages agree bitwise once both start from the same
+    weights. `EMA` is kept because it starts from the construction-time
+    weights (the DiT/ADM convention; `AveragedModel` copies the weights of
+    its first update instead), copies buffers on every update, offers the
+    warmup schedule, and never synchronizes with the host
+    (`AveragedModel.update_parameters` reads ``n_averaged`` on every call).
+
     Args:
         model: Module to shadow. Deep-copied at construction.
         decay: EMA decay \(d\) (the cap under warmup). Must lie in [0, 1).
