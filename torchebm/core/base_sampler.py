@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import torch
 from torch import nn
 
-from torchebm.core import Schedulable, TorchEBMModule
+from torchebm.core import BaseModel, Schedulable, TorchEBMModule
 from torchebm.models.functional import energy_gradient
 
 
@@ -229,10 +229,18 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         analytic `gradient(self, x)` overrides with no `model_kwargs` parameter
         keep working. Pass an already-normalized dict (see
         `_prepare_model_kwargs`); it is reused per step with no re-normalization.
+        A model that does not override `gradient` is differentiated through
+        `BaseModel._gradient`, so legacy sampling warns about the sampler only.
         """
+        model = self.model
+        gradient = (
+            model._gradient
+            if type(model).gradient is BaseModel.gradient
+            else model.gradient
+        )
         if model_kwargs:
-            return self.model.gradient(x, model_kwargs=model_kwargs)
-        return self.model.gradient(x)
+            return gradient(x, model_kwargs=model_kwargs)
+        return gradient(x)
 
     def _model_energy(
         self, x: torch.Tensor, model_kwargs: Dict[str, object]

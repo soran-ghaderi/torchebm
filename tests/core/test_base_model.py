@@ -1,6 +1,9 @@
+import warnings
+
 import pytest
 import torch
 
+from torchebm._deprecation import TorchEBMDeprecationWarning
 from torchebm.core.base_model import (
     AckleyModel,
     BaseModel,
@@ -12,6 +15,11 @@ from torchebm.core.base_model import (
     RastriginModel,
     RosenbrockModel,
     StyblinskiTangModel,
+)
+from torchebm.samplers import (
+    GradientDescentSampler,
+    HamiltonianMonteCarlo,
+    LangevinDynamics,
 )
 
 
@@ -253,3 +261,28 @@ def test_model_without_prediction_type_attribute_is_energy_model():
     del m.prediction_type
     x = torch.randn(4, 3)
     assert torch.equal(m(x), m.forward(x))
+
+
+def test_gradient_is_deprecated_in_favour_of_the_score_call():
+    m = TrainableQuadratic()
+    x = torch.randn(4, 3)
+    with pytest.warns(TorchEBMDeprecationWarning, match="BaseModel.gradient"):
+        gradient = m.gradient(x)
+    m.prediction_type = "score"
+    assert torch.equal(gradient, -m(x).detach())
+
+
+@pytest.mark.parametrize(
+    "sampler_cls,kwargs",
+    [
+        (LangevinDynamics, {"step_size": 0.01}),
+        (HamiltonianMonteCarlo, {"step_size": 0.01, "n_leapfrog_steps": 2}),
+        (GradientDescentSampler, {"step_size": 0.01}),
+    ],
+)
+def test_legacy_sampling_warns_about_the_sampler_only(sampler_cls, kwargs):
+    sampler = sampler_cls(TrainableQuadratic(), **kwargs)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampler.sample(x=torch.randn(4, 3), n_steps=2)
+    assert not any("BaseModel.gradient" in str(w.message) for w in caught)

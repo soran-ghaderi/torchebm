@@ -358,7 +358,7 @@ class EqMEnergy(BaseModel):
         """
         if self.energy_type == "implicit":
             return self._field(x, **(model_kwargs or {}))
-        return super().gradient(x, model_kwargs=model_kwargs)
+        return super()._gradient(x, model_kwargs=model_kwargs)
 
     def __repr__(self) -> str:
         return (

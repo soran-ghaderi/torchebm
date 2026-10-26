@@ -8,13 +8,23 @@ icon: material/help-circle-outline
 
 ## What is TorchEBM, and what is it not?
 
-TorchEBM is a PyTorch library of composable primitives for energy-based
-generative modeling: energies, samplers, losses, interpolants, couplings,
-integrators, and schedulers, spanning EBMs, diffusion, flow matching,
-stochastic interpolants, and (roadmap) Schrödinger bridges. It is not a model
-zoo or a training framework: there are no pretrained checkpoints, no dataset loaders beyond 2D
-synthetic benchmarks, and no `Trainer` class. See
+TorchEBM is a PyTorch library of composable primitives for generative models
+that learn dynamics on data space: energies and fields, samplers, losses,
+interpolants, couplings, integrators, and schedulers. It covers EBMs,
+diffusion, flow matching, and equilibrium and energy matching; Schrödinger
+bridges, flow maps, and discrete or manifold state spaces are on the roadmap.
+It ships no
+pretrained checkpoints and no dataset loaders beyond the 2D synthetic
+benchmarks, and `BaseTrainer` is a thin wrapper around the training loop. See
 [Design and Scope](../concepts/design.md).
+
+## Is every model in TorchEBM an energy-based model?
+
+No. Energy-based models are the case where the model is a scalar potential and
+samples come from its gradient. Flow-matching velocities, diffusion scores and
+the implicit equilibrium-matching field are vector fields that need not be
+gradients of any energy. The library takes its name from EBMs; the
+[Design and Scope](../concepts/design.md) page places both kinds of model.
 
 ## How does it relate to diffusers, torchdiffeq, or POT?
 
@@ -44,10 +54,32 @@ ODE/SDE generation. `get_integrator("rk4")` constructs one directly. The
 [integrator comparison](../examples/10-sampling/02-integrators/01-integrator-comparison.md)
 example measures the accuracy orders.
 
+## Why do I see deprecation warnings about model-bound losses and samplers?
+
+TorchEBM moved to the standard PyTorch loop: losses consume model outputs
+and samplers take the model at call time. The old forms keep working and
+warn once per process.
+
+| Deprecated | Use instead |
+| --- | --- |
+| `ContrastiveDivergence(model, sampler)`, `PersistentContrastiveDivergence` | `ContrastiveDivergenceLoss()(model(x), model(x_neg))` with `x_neg = sampler(model, x0, n_steps=k)`; a `ReplayBuffer` holds persistent chains |
+| `FlowMatchingLoss(model=...)`, `EquilibriumMatchingLoss(model=...)`, `EnergyMatchingLoss(model=...)` | the same classes without `model`: `x_t, u_t = path(x0, x1, t)` then `loss_fn(model(x_t, t), u_t)` |
+| `ScoreMatching`, `DenoisingScoreMatching`, `SlicedScoreMatching` | `ScoreMatchingLoss`, `DenoisingScoreMatchingLoss`, `SlicedScoreMatchingLoss` on the output of a `prediction_type="score"` model |
+| `LangevinDynamics(model=...)`, `HamiltonianMonteCarlo(model=...)`, `FlowSampler(model=...)` and `sampler.sample(x=...)` | `sampler(model, x, n_steps=...)` |
+| `FlowSampler(prediction=, negate_velocity=, train_eps=)` | `prediction_type=` on the model or the sampler; trained fields point from noise to data |
+| `EqMEnergy` | a `prediction_type="score"` model sampled directly |
+| `model.gradient(x)` | `model(x)` on a model built with `prediction_type="score"`, which returns \(-\nabla_x E\); a closed-form gradient goes in `AnalyticModel._score` |
+| `ContrastiveDivergenceTrainer` | `BaseTrainer(model, optimizer, ContrastiveDivergenceLoss(), sampler=..., buffer=...)` |
+
+The deprecated paths are removed in release 0.12.0, and not before
+2027-01-29; `tests/test_deprecations.py` enforces the window. The scripts in
+`examples/20-training` show each loop in full.
+
 ## How do I define a custom energy?
 
 Subclass `BaseModel` with any differentiable `forward` mapping `(N, d)` to
-`(N,)`; gradients come from autograd via `.gradient()`. See
+`(N,)`; built with `prediction_type="score"` or `("energy", "score")`, the
+call returns the autograd score. See
 [The Energy-Based View](../concepts/energy_view.md) and the
 [custom energies example](../examples/00-foundations/01-energy/02-custom-energy.md).
 
@@ -82,9 +114,12 @@ generated from `benchmarks/` runs in this repository. The
 
 ## Are Schrödinger bridges supported?
 
-Not yet. Bridges are on the roadmap; the components they require (couplings,
-interpolants, SDE integrators) are already maintained, and the design page
-records the gap explicitly.
+Not yet. Bridge matching needs a probability path with a latent term
+\(\gamma(t) z\), which the interpolants do not have yet, and an SDE sampler that
+consumes a learned velocity and score together; iterative proportional
+fitting also needs simulation inside the training loop. The couplings
+(including entropic OT) and the SDE integrators already exist, and the
+[design page](../concepts/design.md#scope-boundaries) lists the gap.
 
 ## How do I cite TorchEBM?
 

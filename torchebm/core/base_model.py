@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from typing import Any, Optional, Tuple, Union
 
+from torchebm._deprecation import declare_deprecation
 from torchebm.core import TorchEBMModule
 from torchebm.core.base_module import (
     _has_dtensor_params,
@@ -15,6 +16,25 @@ try:
     from torch.distributed.tensor import DTensor, Replicate, Shard
 except ImportError:
     DTensor = Replicate = Shard = None
+
+_GRADIENT_DEPRECATION = declare_deprecation(
+    name="BaseModel.gradient",
+    since="0.8.10",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="model(x) with prediction_type='score', which returns -gradient",
+    message=(
+        "BaseModel.gradient is deprecated: build the model with "
+        "prediction_type='score' and call it for the score -grad E, or with "
+        "prediction_type=('energy', 'score') for both; a closed-form gradient "
+        "belongs in AnalyticModel._score."
+    ),
+    removal=(
+        "BaseModel.gradient and BaseModel._gradient, BaseSampler._model_gradient "
+        "and EqMEnergy.gradient"
+    ),
+)
 
 
 def _local_shard(value: torch.Tensor, mesh) -> torch.Tensor:
@@ -69,11 +89,11 @@ class BaseModel(TorchEBMModule, ABC):
 
     prediction_type: Union[str, Tuple[str, str]] = "energy"
 
-    #: When True, the default autograd `gradient` computes in float32 regardless
-    #: of the input dtype (the historical behavior). Default False respects the
-    #: input dtype - byte-identical for float32, no fp64 downcast, no bf16/fp16
-    #: round-trip. Set per instance for fp32-precision gradients under low
-    #: precision: ``model.force_fp32_gradient = True``.
+    #: When True, the autograd score and the deprecated `gradient` compute in
+    #: float32 regardless of the input dtype (the historical behavior). Default
+    #: False respects the input dtype - byte-identical for float32, no fp64
+    #: downcast, no bf16/fp16 round-trip. Set per instance for fp32-precision
+    #: gradients under low precision: ``model.force_fp32_gradient = True``.
     force_fp32_gradient: bool = False
 
     def __init__(
@@ -258,8 +278,9 @@ class BaseModel(TorchEBMModule, ABC):
         r"""
         Computes the gradient of the energy function with respect to the input, \(\nabla_x E(x)\).
 
-        This default implementation uses `torch.autograd`. Subclasses can override it
-        for analytical gradients.
+        Deprecated: build the model with ``prediction_type="score"`` and call it
+        for the score \(-\nabla_x E(x)\), or with ``("energy", "score")`` for
+        both; a closed-form gradient belongs in `AnalyticModel._score`.
 
         Args:
             x (torch.Tensor): Input tensor of shape (batch_size, *input_dims).
@@ -273,6 +294,14 @@ class BaseModel(TorchEBMModule, ABC):
         Returns:
             torch.Tensor: Gradient tensor of the same shape as `x`.
         """
+        _GRADIENT_DEPRECATION.warn()
+        return self._gradient(x, model_kwargs)
+
+    def _gradient(
+        self, x: torch.Tensor, model_kwargs: Optional[dict] = None
+    ) -> torch.Tensor:
+        r"""Autograd \(\nabla_x E(x)\) behind `gradient`; the legacy `sample()`
+        paths call it directly, so they warn about the sampler only."""
 
         original_dtype = x.dtype
         device = x.device

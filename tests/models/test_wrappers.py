@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 import torch
 from torch import nn
@@ -246,3 +248,11 @@ def test_interaction_model_schedule_advances_with_the_call():
 def test_eqm_energy_is_deprecated():
     with pytest.warns(TorchEBMDeprecationWarning, match=r"sampler\(model"):
         EqMEnergy(_Field(), energy_type="implicit")
+
+
+def test_eqm_energy_legacy_sampling_does_not_raise_the_gradient_deprecation():
+    sampler = LangevinDynamics(EqMEnergy(_Field(), energy_type="dot"), step_size=0.01)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampler.sample(x=torch.randn(4, 2), n_steps=2)
+    assert not any("BaseModel.gradient" in str(w.message) for w in caught)
