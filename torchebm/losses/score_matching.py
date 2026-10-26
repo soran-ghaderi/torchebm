@@ -40,7 +40,7 @@ def _random_projections(
 
 
 class ScoreMatchingLoss(BaseLoss):
-    r"""Score matching criterion (Hyvärinen, 2005) on a score and its divergence.
+    r"""Score matching loss (Hyvärinen, 2005) on a score and its divergence.
 
     \[
     L = \tfrac{1}{2}\|s_\theta(x)\|^2 + \nabla_x \cdot s_\theta(x)
@@ -57,8 +57,8 @@ class ScoreMatchingLoss(BaseLoss):
 
     Example:
         ```python
-        criterion = ScoreMatchingLoss()
-        loss = criterion(score, divergence)
+        loss_fn = ScoreMatchingLoss()
+        loss = loss_fn(score, divergence)
         ```
     """
 
@@ -76,7 +76,7 @@ class ScoreMatchingLoss(BaseLoss):
 
 
 class DenoisingScoreMatchingLoss(BaseLoss):
-    r"""Denoising score matching criterion (Vincent, 2011).
+    r"""Denoising score matching loss (Vincent, 2011).
 
     \[
     L = \tfrac{1}{2}\, w\, \|s_\theta(\tilde x) - \nabla_{\tilde x} \log q(\tilde x \mid x)\|^2
@@ -93,9 +93,9 @@ class DenoisingScoreMatchingLoss(BaseLoss):
 
     Example:
         ```python
-        criterion = DenoisingScoreMatchingLoss()
+        loss_fn = DenoisingScoreMatchingLoss()
         noise = torch.randn_like(x)
-        loss = criterion(model(x + sigma * noise), -noise / sigma)
+        loss = loss_fn(model(x + sigma * noise), -noise / sigma)
         ```
     """
 
@@ -119,7 +119,7 @@ class DenoisingScoreMatchingLoss(BaseLoss):
 
 
 class SlicedScoreMatchingLoss(BaseLoss):
-    r"""Sliced score matching criterion (Song et al., 2019).
+    r"""Sliced score matching loss (Song et al., 2019).
 
     \[
     L = \mathbb{E}_v\left[ v^\top \nabla_x \big(v^\top s_\theta(x)\big)
@@ -140,9 +140,9 @@ class SlicedScoreMatchingLoss(BaseLoss):
 
     Example:
         ```python
-        criterion = SlicedScoreMatchingLoss(n_projections=1)
-        x_tiled = x.repeat(criterion.n_projections, 1).requires_grad_(True)
-        loss = criterion(model(x_tiled), x_tiled)
+        loss_fn = SlicedScoreMatchingLoss(n_projections=1)
+        x_tiled = x.repeat(loss_fn.n_projections, 1).requires_grad_(True)
+        loss = loss_fn(model(x_tiled), x_tiled)
         ```
     """
 

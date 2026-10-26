@@ -1,20 +1,22 @@
 r"""Compute layer for the "Integrators in practice" explainer.
 
 TorchEBM is the compute engine: this script runs every experiment and writes a
-single ``data.json`` that the Three.js front-end (index.html / app.js) animates.
-It also renders a static ``preview.png`` contact sheet so the physics can be
-sanity-checked before building the interactive artifact.
+single ``data.json`` that the Three.js front-end (index.html / app.js) animates,
+plus ``data.js`` carrying the same payload as a JS global so index.html opens
+by double-click (no fetch, no CORS). It also renders a static ``preview.png``
+contact sheet so the physics can be sanity-checked before building the
+interactive artifact.
 
 Three chapters:
-    1. ODE  — eccentric two-body (Kepler) orbit: Euler vs RK4 vs symplectic
-              Leapfrog; symplectic stays a closed ellipse, the rest drift.
-    2. SDE  — overdamped Langevin on a double well: Euler-Maruyama vs Heun vs
-              Backward-Euler-Maruyama recover the Boltzmann density; at large dt
-              the explicit method destabilises while the implicit one holds.
-    3. S^2  — geodesic motion on a sphere: a naive ambient Euler step drifts off
-              the manifold, an exponential-map (geodesic) step stays exact.
+    1. ODE: eccentric two-body (Kepler) orbit, Euler vs RK4 vs symplectic
+       Leapfrog; symplectic stays a closed ellipse, the rest drift.
+    2. SDE: overdamped Langevin on a double well, Euler-Maruyama vs Heun vs
+       Backward-Euler-Maruyama recovering the Boltzmann density; at large dt
+       the explicit method destabilises while the implicit one holds.
+    3. S^2: geodesic motion on a sphere; a naive ambient Euler step drifts off
+       the manifold, an exponential-map (geodesic) step stays exact.
 
-Run:  python examples/visualization/integrator_story/compute.py
+Run:  python examples/90-showcase/03-integrator-story/compute.py
 """
 
 from __future__ import annotations
@@ -41,10 +43,9 @@ from torchebm.samplers import LangevinDynamics
 HERE = Path(__file__).resolve().parent
 torch.manual_seed(0)
 
-# Brand palette shared with the front-end.
-ORANGE = "#E69F00"   # the method that goes wrong
-BLUE = "#56B4E9"     # in-between
-GREEN = "#00D49A"    # the correct / stable method
+ORANGE = "#E69F00"
+BLUE = "#56B4E9"
+GREEN = "#00D49A"
 TRUTH = "#e8e8ee"
 
 
@@ -52,10 +53,6 @@ def _r(a, nd=4):
     """Round a numpy array to a JSON-friendly nested list."""
     return np.asarray(a, dtype=np.float64).round(nd).tolist()
 
-
-# ============================================================================ #
-# Chapter 1 — Kepler orbit (ODE)
-# ============================================================================ #
 
 GM = 1.0
 
@@ -78,15 +75,18 @@ def kepler_energy(pos: np.ndarray, vel: np.ndarray) -> np.ndarray:
 
 
 def run_kepler(h: float, n: int):
-    p0 = torch.tensor([[1.4, 0.0]])          # start at aphelion
-    v0 = torch.tensor([[0.0, 0.45]])         # -> eccentricity ~0.7 (RK4 visibly decays)
+    """Kepler orbit from aphelion with eccentricity ~0.7 (RK4 visibly decays):
+    Euler and RK4 on the full first-order system (Euler-Maruyama without noise
+    is forward Euler), then symplectic Leapfrog on (x=position, p=velocity,
+    mass=1)."""
+    p0 = torch.tensor([[1.4, 0.0]])
+    v0 = torch.tensor([[0.0, 0.45]])
     t = np.arange(n + 1) * h
 
     methods = []
 
-    # --- Euler (forward) and RK4 on the full first-order system ---
     for name, color, integ in [
-        ("Forward Euler", ORANGE, EulerMaruyamaIntegrator()),   # no noise -> Euler
+        ("Forward Euler", ORANGE, EulerMaruyamaIntegrator()),
         ("RK4", BLUE, RK4Integrator()),
     ]:
         z = torch.cat([p0, v0], dim=-1)
@@ -102,7 +102,6 @@ def run_kepler(h: float, n: int):
         methods.append({"name": name, "color": color,
                         "xy": _r(pos), "energy": _r(kepler_energy(pos, vel), 5)})
 
-    # --- symplectic Leapfrog (x=position, p=velocity, mass=1) ---
     lf = LeapfrogIntegrator()
     state = {"x": p0.clone(), "p": v0.clone()}
     pos = [p0.numpy().copy()[0]]; vel = [v0.numpy().copy()[0]]
@@ -123,11 +122,6 @@ def run_kepler(h: float, n: int):
     return {"t": _r(t, 4), "GM": GM, "energy0": round(e0, 5), "methods": methods}
 
 
-# ============================================================================ #
-# Chapter 1b — the figure-eight 3-body choreography (ODE)
-# ============================================================================ #
-
-# Chenciner-Montgomery figure-eight initial conditions (G=1, equal unit masses).
 TB_X = [0.97000436, -0.24308753, -0.97000436, 0.24308753, 0.0, 0.0]
 TB_V = [0.46620369, 0.43236573, 0.46620369, 0.43236573, -0.93240737, -0.86473146]
 TB_PERIOD = 6.3259
@@ -162,6 +156,7 @@ def tb_energy(pos: np.ndarray, vel: np.ndarray) -> np.ndarray:
 
 
 def run_threebody(h: float, periods: float, keep: int):
+    """The Chenciner-Montgomery figure-eight choreography (G=1, equal unit masses)."""
     p0 = torch.tensor([TB_X]); v0 = torch.tensor([TB_V])
     n = int(round(periods * TB_PERIOD / h))
     every = max(1, n // keep)
@@ -192,7 +187,7 @@ def run_threebody(h: float, periods: float, keep: int):
     print(f"\n  [3-body figure-8]  h={h}  periods={periods}  e0={e0:.3f}")
     for name, (color, P, V) in runs.items():
         E = tb_energy(P, V)
-        bodies = P.reshape(P.shape[0], 3, 2)        # (F, 3, 2)
+        bodies = P.reshape(P.shape[0], 3, 2)
         methods.append({"name": name, "color": color,
                         "bodies": _r(bodies, 4), "energy": _r(E, 4)})
         print(f"    {name:<16} |E_end-e0|={abs(E[-1]-e0):8.3f}  "
@@ -200,12 +195,8 @@ def run_threebody(h: float, periods: float, keep: int):
     return {"period": TB_PERIOD, "energy0": round(e0, 4), "methods": methods}
 
 
-# ============================================================================ #
-# Chapter 2 — Langevin on a double well (SDE)
-# ============================================================================ #
-
-BARRIER = 1.0           # U(x) = BARRIER * (x^2 - 1)^2
-TEMP = 0.5              # temperature -> diffusion D = TEMP
+BARRIER = 1.0
+TEMP = 0.5
 
 
 def U(x):
@@ -221,12 +212,14 @@ def langevin_drift(x, t):
 
 
 def run_langevin(dt: float, n_steps: int, n_walkers: int, keep: int, label_blowup=False):
-    """Drive each SDE integrator; return per-method walker frames + final hist."""
+    """Overdamped Langevin on U(x) = BARRIER (x^2 - 1)^2 at temperature TEMP
+    (diffusion D = TEMP), walkers started near the barrier; return per-method
+    walker frames and the final histogram."""
     xgrid = np.linspace(-2.2, 2.2, 220)
     true_pdf = np.exp(-U(xgrid) / TEMP)
-    true_pdf /= true_pdf.sum() * (xgrid[1] - xgrid[0])     # normalise (uniform grid)
+    true_pdf /= true_pdf.sum() * (xgrid[1] - xgrid[0])
 
-    D = torch.tensor(float(TEMP))            # diffusion coefficient (must be a tensor)
+    D = torch.tensor(float(TEMP))
     specs = [
         ("Euler-Maruyama", ORANGE, EulerMaruyamaIntegrator()),
         ("Heun", BLUE, HeunIntegrator()),
@@ -235,7 +228,7 @@ def run_langevin(dt: float, n_steps: int, n_walkers: int, keep: int, label_blowu
     methods = []
     for name, color, integ in specs:
         torch.manual_seed(0)
-        x = (torch.rand(n_walkers, 1) * 0.4 - 0.2)        # start near the barrier
+        x = (torch.rand(n_walkers, 1) * 0.4 - 0.2)
         frames = [x[:, 0].numpy().copy()]
         every = max(1, n_steps // keep)
         blew = False
@@ -246,7 +239,7 @@ def run_langevin(dt: float, n_steps: int, n_walkers: int, keep: int, label_blowu
                 x = torch.nan_to_num(x, nan=0.0).clamp(-50, 50)
             if (i + 1) % every == 0:
                 frames.append(x[:, 0].numpy().copy())
-        frames = np.asarray(frames)                       # (F, n_walkers)
+        frames = np.asarray(frames)
         hist, edges = np.histogram(frames[-1], bins=60, range=(-2.2, 2.2), density=True)
         methods.append({"name": name, "color": color, "blew_up": bool(blew),
                         "frames": _r(frames, 3),
@@ -264,10 +257,6 @@ def run_langevin(dt: float, n_steps: int, n_walkers: int, keep: int, label_blowu
     return out
 
 
-# ============================================================================ #
-# SDE on a line — Ornstein-Uhlenbeck, same Brownian path for every integrator
-# ============================================================================ #
-
 def run_sde_line(theta=1.5, sigma=1.0, x0=2.0, dt=0.3, n=42, stride=24):
     r"""Drive Euler-Maruyama / Heun / Backward-EM on dX = -theta X dt + sigma dW,
     all sharing ONE Brownian path, against a fine-step reference.
@@ -281,9 +270,8 @@ def run_sde_line(theta=1.5, sigma=1.0, x0=2.0, dt=0.3, n=42, stride=24):
     D = torch.tensor(sigma ** 2 / 2.0)
     drift = lambda x, t: -theta * x
     dt_fine = dt / stride
-    zf = torch.randn(n * stride, 1)                      # fine standard normals
+    zf = torch.randn(n * stride, 1)
 
-    # fine reference (Euler-Maruyama at dt_fine on the same noise)
     em = EulerMaruyamaIntegrator()
     x = torch.tensor([[x0]]); ref = [x0]
     for i in range(n * stride):
@@ -292,8 +280,7 @@ def run_sde_line(theta=1.5, sigma=1.0, x0=2.0, dt=0.3, n=42, stride=24):
             ref.append(float(x.item()))
     ref = np.asarray(ref)
 
-    # coarse standardised increments (same Brownian path)
-    zc = zf.view(n, stride, 1).sum(dim=1) / math.sqrt(stride)   # (n,1)
+    zc = zf.view(n, stride, 1).sum(dim=1) / math.sqrt(stride)
 
     specs = [("Euler-Maruyama", ORANGE, EulerMaruyamaIntegrator()),
              ("Heun", BLUE, HeunIntegrator()),
@@ -316,10 +303,6 @@ def run_sde_line(theta=1.5, sigma=1.0, x0=2.0, dt=0.3, n=42, stride=24):
             "ref": _r(ref, 4), "methods": methods}
 
 
-# ============================================================================ #
-# Optimal transport — exact Gaussian displacement interpolation (Flow Matching)
-# ============================================================================ #
-
 def run_ot(n=620, F=64):
     r"""Flow-Matching / optimal-transport demo: a Gaussian source is carried to a
     structured two-moons target. A greedy OT coupling pairs the points, and
@@ -329,10 +312,8 @@ def run_ot(n=620, F=64):
     from torchebm.interpolants.cosine import CosineInterpolant
     torch.manual_seed(2)
 
-    # source: isotropic Gaussian (left)
     x0 = torch.randn(n, 2) * 0.42 + torch.tensor([-2.7, 0.0])
 
-    # target: two interleaving moons (sklearn-style), centred, scaled, shifted right
     h1 = n // 2
     a1 = math.pi * torch.rand(h1)
     a2 = math.pi * torch.rand(n - h1)
@@ -341,7 +322,6 @@ def run_ot(n=620, F=64):
     moons = (moons - moons.mean(0)) * 1.45 + torch.randn(n, 2) * 0.045
     x1 = moons + torch.tensor([2.7, 0.0])
 
-    # greedy OT-approximate coupling (no scipy): repeatedly take the nearest free pair
     C = ((x0[:, None, :] - x1[None, :, :]) ** 2).sum(-1).numpy()
     order = np.argsort(C, axis=None)
     u0 = np.zeros(n, bool); u1 = np.zeros(n, bool); pair = np.full(n, -1); cnt = 0
@@ -353,7 +333,6 @@ def run_ot(n=620, F=64):
                 break
     x1 = x1[torch.from_numpy(pair)]
 
-    # interpolant schedules straight from TorchEBM (x_t = alpha x1 + sigma x0)
     tg = torch.linspace(0, 1, F)
     sched = {}
     for name, interp in [("linear", LinearInterpolant()), ("cosine", CosineInterpolant())]:
@@ -366,22 +345,18 @@ def run_ot(n=620, F=64):
             "t": _r(tg.numpy(), 4), "sched": sched}
 
 
-# ============================================================================ #
-# Chapter 3 — geodesic on the sphere S^2
-# ============================================================================ #
-
 def run_sphere(h: float, n: int):
-    """A great-circle geodesic: exact exponential-map step vs naive ambient Euler."""
-    x0 = np.array([0.0, 0.0, 1.0])                  # north pole
-    # tangent velocity (in the x-z... pick a tilted great circle for visual interest)
+    """A great-circle geodesic from the north pole along a tilted unit-speed
+    tangent: the exact exponential-map step (a rotation in the (x, v) plane)
+    against naive ambient Euler on x'' = -x with no re-projection, whose
+    energy drift lets |x| grow and the path spiral off the sphere."""
+    x0 = np.array([0.0, 0.0, 1.0])
     v0 = np.array([1.0, 0.35, 0.0]); v0 = v0 - np.dot(v0, x0) * x0
-    v0 = v0 / np.linalg.norm(v0) * 1.0              # |v|=omega=1
+    v0 = v0 / np.linalg.norm(v0) * 1.0
 
-    # True great circle: x(t) = cos(t) x0 + sin(t) v0_hat
     t = np.arange(n + 1) * h
     true = (np.cos(t)[:, None] * x0 + np.sin(t)[:, None] * v0)
 
-    # Geodesic (exponential-map) integrator: exact rotation in the (x, v) plane.
     geo = []
     x, v = x0.copy(), v0.copy()
     for _ in range(n + 1):
@@ -392,10 +367,6 @@ def run_sphere(h: float, n: int):
         x, v = xn, vn
     geo = np.asarray(geo)
 
-    # Naive forward Euler on the unit-speed geodesic ODE x'' = -x, with NO
-    # re-projection onto the manifold: energy is not conserved, so |x| grows and
-    # the path gently spirals OFF the sphere (the flat-space integrator does not
-    # know it must stay on S^2).
     naive = []
     x, v = x0.copy(), v0.copy()
     for _ in range(n + 1):
@@ -421,10 +392,6 @@ def run_sphere(h: float, n: int):
     }
 
 
-# ============================================================================ #
-# Fluid — Taylor-Green (exact NS) + Karman street + vorticity-as-density
-# ============================================================================ #
-
 class RingEnergy(BaseModel):
     """A vortex-ring energy: low energy on the circle r=R."""
     def forward(self, x):
@@ -433,10 +400,12 @@ class RingEnergy(BaseModel):
 
 
 def run_fluid(disp=1000, nsteps=180, keep=2):
+    """Tracers in the steady Taylor-Green vortices u = (cos x sin y, -sin x cos y),
+    a Karman street of staggered point vortices in a freestream, and vorticity
+    as a density: Langevin walkers on the vortex-ring energy."""
     rk = RK4Integrator()
     out = {}
 
-    # ---- Taylor-Green vortices: u = (cos x sin y, -sin x cos y) (steady NS) ----
     def tg(z, t):
         x, y = z[..., 0:1], z[..., 1:2]
         return torch.cat([torch.cos(x) * torch.sin(y), -torch.sin(x) * torch.cos(y)], -1)
@@ -458,7 +427,6 @@ def run_fluid(disp=1000, nsteps=180, keep=2):
                                f"  ({Nb * 400 / el / 1e6:.0f}M particle-steps/s)"}
     print(f"  [Fluid] Taylor-Green: {out['taylor']['timing']}")
 
-    # ---- Karman vortex street: staggered point vortices + freestream ----
     sp, hgt, G, U = 1.7, 0.6, 2.6, 0.9
     vlist = []
     for k in range(-3, 4):
@@ -484,20 +452,15 @@ def run_fluid(disp=1000, nsteps=180, keep=2):
     out["karman"] = {"tracers": _r(np.stack(frk, 0), 3),
                      "vortices": _r(VX.numpy(), 3), "gam": GAM.tolist()}
 
-    # ---- vorticity as a density: Langevin on a vortex-ring energy ----
     torch.manual_seed(5)
-    sampler = LangevinDynamics(model=RingEnergy(), step_size=5e-3, noise_scale=0.25)
+    sampler = LangevinDynamics(step_size=5e-3, noise_scale=0.25)
     x0 = torch.randn(900, 2) * 0.25
-    traj = sampler.sample(x=x0, dim=2, n_steps=900, thin=12, return_trajectory=True)
-    vort = traj.permute(1, 0, 2).numpy()              # (frames, walkers, 2)
+    traj = sampler(RingEnergy(), x0, n_steps=900, return_trajectory=True)[:, 11::12]
+    vort = traj.permute(1, 0, 2).numpy()
     out["vorticity"] = {"walkers": _r(vort, 3), "R": 1.2}
     print(f"  [Fluid] vorticity walkers {vort.shape}")
     return out
 
-
-# ============================================================================ #
-# Assemble + preview
-# ============================================================================ #
 
 def preview(data, path: Path):
     import matplotlib
@@ -508,7 +471,6 @@ def preview(data, path: Path):
                          "text.color": "#f5f5f7", "font.family": "DejaVu Sans"})
     fig = plt.figure(figsize=(15, 5), dpi=110)
 
-    # (a) Kepler
     ax = fig.add_subplot(1, 3, 1)
     ax.set_facecolor("#0b0b0f"); ax.set_aspect("equal"); ax.axis("off")
     ax.set_xlim(-2.2, 2.2); ax.set_ylim(-2.2, 2.2)
@@ -519,7 +481,6 @@ def preview(data, path: Path):
         ax.plot(xy[:, 0], xy[:, 1], color=m["color"], lw=1.3, alpha=0.9, label=m["name"])
     ax.legend(loc="upper right", fontsize=7, frameon=False, labelcolor="#f5f5f7")
 
-    # (b) Langevin
     ax = fig.add_subplot(1, 3, 2)
     ax.set_facecolor("#0b0b0f")
     ax.set_title("Ch.2 · Langevin double-well (SDE)", color="#9aa0aa")
@@ -533,7 +494,6 @@ def preview(data, path: Path):
     ax.set_xlim(-2.2, 2.2); ax.tick_params(colors="#9aa0aa")
     ax.legend(loc="upper center", fontsize=7, frameon=False, labelcolor="#f5f5f7")
 
-    # (c) Sphere
     ax = fig.add_subplot(1, 3, 3, projection="3d")
     ax.set_facecolor("#0b0b0f")
     ax.set_title("Ch.3 · Geodesic on S² (3D finale)", color="#9aa0aa")
@@ -565,7 +525,6 @@ def main():
     out = HERE / "data.json"
     payload = json.dumps(data, separators=(",", ":"))
     out.write_text(payload)
-    # Also emit a JS global so index.html works by double-click (no fetch/CORS).
     (HERE / "data.js").write_text("window.STORY_DATA=" + payload + ";\n")
     mb = out.stat().st_size / 1e6
     print(f"\nwrote {out} and data.js  ({mb:.1f} MB)")

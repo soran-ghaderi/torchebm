@@ -36,10 +36,12 @@ The shipped schedules, generated from the installed package:
 
 ```python
 from torchebm.interpolants import LinearInterpolant
-xt, ut = LinearInterpolant().interpolate(x0, x1, t)   # path point + target velocity
+path = LinearInterpolant()
+x_t, u_t = path(x0, x1, t)
 ```
 
-Beyond `interpolate`, the base class carries the conversion algebra
+The call returns the path point and the target velocity. Beyond it, the base
+class carries the conversion algebra
 (`velocity_to_score`, `score_to_velocity`, `velocity_to_noise`,
 `compute_drift`, `compute_diffusion`), which is what lets `FlowSampler` accept
 any prediction type over any path.
@@ -59,33 +61,34 @@ reflow). The shipped set, generated from the installed package:
 
 ```python
 from torchebm.couplings import SinkhornCoupling
-x0, x1 = SinkhornCoupling(reg=0.05)(x0, x1)   # CouplingResult unpacks as the pair
+x0, x1 = SinkhornCoupling(reg=0.05)(x0, x1)
 ```
 
-Results are `CouplingResult` objects: they unpack as `(x0, x1)`, and extras
-ride as attributes so the contract never breaks. Today the extra is
-`weights`, per-pair importance weights produced by unbalanced OT; weight-aware
-losses such as `EnergyMatchingLoss` consume them automatically. Couplings are
-also addressable by registry string via `get_coupling`.
+Results are `CouplingResult` objects: they unpack as `(x0, x1)` and carry
+extras as attributes, so unpacking code keeps working when a coupling adds one.
+The current extra is `weights`, per-pair importance weights produced by
+unbalanced OT, which losses take through `weight=`. Couplings are also
+addressable by registry string via `get_coupling`.
 
-Minibatch OT couplings straighten the conditional paths[^tong], which lowers
-the variance of the regression and cuts the integration steps generation
-needs[^liu]; `ReflowCoupling` is the model-induced version of the same idea,
-re-pairing noise with the model's current outputs to iteratively rectify the
-flow.
+Minibatch OT couplings reduce crossings between the paired paths, so the
+marginal flow is straighter[^tong]; this lowers the variance of the regression
+target and the number of integration steps generation needs[^liu].
+`ReflowCoupling` is the model-induced version of the same idea, re-pairing
+noise with the model's current outputs to iteratively rectify the flow.
 
-## How losses consume them
+## Where they sit in the loop
 
-Transport losses take both objects as constructor arguments and hide the
-mechanics:
+Both objects are called by the training loop, right before the model:
 
 ```python
-EnergyMatchingLoss(model=potential, coupling=SinkhornCoupling(reg=0.01), ...)
-EquilibriumMatchingLoss(model=field, interpolant="linear", ...)
+x0, x1 = coupling(torch.randn_like(x1), x1)
+x_t, u_t = path(x0, x1, t)
+loss = loss_fn(model(x_t, t), u_t)
 ```
 
-Internally each training step is: couple the batch, draw \(t\), interpolate,
-regress. Everything upstream (which energy, which network) and downstream
+Each training step is: couple the batch, draw \(t\), interpolate, call the
+model, regress; a weighted coupling's `weights` go to the loss's `weight=`
+argument. Everything upstream (which energy, which network) and downstream
 (which sampler, which integrator) is untouched by the choice.
 
 ## Runnable counterparts

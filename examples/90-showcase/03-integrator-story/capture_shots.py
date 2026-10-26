@@ -47,7 +47,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--deck", default="story", choices=list(DECK_DUR))
     ap.add_argument("--fps", type=int, default=20)
-    ap.add_argument("--duration", type=float, default=0.0)   # 0 -> per-deck default
+    ap.add_argument("--duration", type=float, default=0.0, help="0 uses the per-deck default")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--budget", type=int, default=1600)
     ap.add_argument("--out", default="")

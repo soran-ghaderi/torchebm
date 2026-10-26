@@ -1,9 +1,10 @@
 r"""Equilibrium Matching (EqM) loss.
 
-Implements time-invariant equilibrium training objectives for learning energy
-landscapes, following the EqM paper:
+Implements the time-invariant objectives of the EqM paper for two kinds of
+model:
 
-- **Implicit EqM** ($L_{EqM}$): Learns gradient field directly
+- **Implicit EqM** ($L_{EqM}$): Learns a vector field \(f\) directly; it is not
+  constrained to be the gradient of an energy
   
     \[
     L_{EqM} = \|f(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
@@ -16,14 +17,19 @@ landscapes, following the EqM paper:
     \]
 
 where $\epsilon$ is noise (x0), $x$ is data (x1), and the target $(\epsilon - x)$
-points from data toward noise (opposite of FM velocity).
+points from data toward noise (opposite of FM velocity). Built without
+``model``, the loss acts on model outputs and trains toward
+\(c(t)\, u_t\), from noise to data, so the field drops into the samplers
+unchanged.
 
 Key differences from Flow Matching:
 
 - Time-invariant: the model receives a zeroed clock by default
   (``time_invariant=True``); ``time_invariant=False`` passes the sampled time
-- Gradient direction: EqM learns $(\epsilon - x)$, FM learns $(x - \epsilon)$
-- Sampling: Use ``negate_velocity=True`` with FlowSampler for ODE sampling
+- Scaling: the target is multiplied by the decay \(c(\gamma)\), which vanishes
+  at the data
+- Direction on the deprecated model-bound path: EqM learns $(\epsilon - x)$,
+  FM learns $(x - \epsilon)$, and ODE sampling uses ``negate_velocity=True``
 
 The field-sign and clock conventions of both losses are tabulated in
 ``docs/concepts/objectives.md``.
@@ -71,7 +77,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
-    replacement="EquilibriumMatchingLoss() as a criterion on model outputs",
+    replacement="EquilibriumMatchingLoss() on model outputs",
     message=(
         "EquilibriumMatchingLoss(model=...) is deprecated: build the path in "
         "the training loop and use EquilibriumMatchingLoss()(model(x_t), u_t, t) "
@@ -89,16 +95,17 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
 class EquilibriumMatchingLoss(BaseInterpolantLoss):
     r"""Equilibrium Matching (EqM) training loss.
 
-    Built without ``model``, the loss is a criterion on model outputs,
-    ``loss = criterion(model(x_t), u_t, t)``, which trains the field toward
+    Built without ``model``, the loss acts on model outputs,
+    ``loss = loss_fn(model(x_t), u_t, t)``, which trains the field toward
     \(c(t)\, u_t\) (noise to data) so a ``prediction_type="score"`` model
     drops into the gradient samplers unchanged; ``ct``, ``ct_threshold``,
     ``ct_multiplier`` and ``reduction`` apply. Built with ``model``
     (deprecated), it runs the training step itself as described below.
 
-    Implements gradient matching for learning equilibrium energy landscapes.
-    Supports both implicit (vector field) and explicit (energy-based) formulations,
-    with multiple prediction types and loss weighting schemes.
+    Supports an implicit formulation, where the model is a vector field that
+    need not be a gradient, and explicit ones, where the model is a scalar
+    energy fitted through its gradient, with multiple prediction types and loss
+    weighting schemes.
 
     The target is $(\epsilon - x) \cdot c(\gamma)$ where:
 
@@ -114,7 +121,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         prediction: Network prediction type ('velocity', 'score', or 'noise').
         energy_type: Energy formulation type:
 
-            - 'none': Implicit EqM, model predicts gradient directly
+            - 'none': Implicit EqM, the model predicts the field directly
             - 'dot': $g(x) = x \cdot f(x)$, dot product energy formulation
             - 'l2': $g(x) = -\frac{1}{2}\|f(x)\|^2$ (experimental)
             - 'mean': Same as dot (alias)

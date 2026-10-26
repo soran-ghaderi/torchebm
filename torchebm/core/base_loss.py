@@ -92,7 +92,7 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
                 Set False for models this probe misjudges, e.g.
                 stochastic-in-eval backbones.
             reduction: ``"mean"``, ``"sum"``, or ``"none"``, as in
-                `torch.nn.functional`; used by the criterion signatures.
+                `torch.nn.functional`; used by the loss signatures.
 
         Raises:
             TypeError: If constructor arguments remain that no class in the

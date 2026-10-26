@@ -1,5 +1,5 @@
 title: "HMC 101"
-summary: "Hamiltonian Monte Carlo on a correlated Gaussian; trade leapfrog steps against acceptance and decorrelation."
+summary: "Hamiltonian Monte Carlo on a correlated Gaussian; trade leapfrog steps against gradient cost and chain autocorrelation."
 order: 450
 difficulty: intro
 tags: [hmc, sampling, mcmc, 2d-energy]

@@ -75,7 +75,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
-    replacement="EnergyMatchingLoss() as a criterion on model outputs",
+    replacement="EnergyMatchingLoss() on model outputs",
     message=(
         "EnergyMatchingLoss(model=...) is deprecated: build the path and draw "
         "the negatives in the training loop and use "
@@ -93,9 +93,9 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
 class EnergyMatchingLoss(BaseInterpolantLoss):
     r"""Energy Matching (EM) training loss.
 
-    Built without ``model``, the loss is a criterion on model outputs,
-    ``loss = criterion(score, u_t, t)`` for the warm-up and
-    ``criterion(score, u_t, t, positive, negative)`` for the joint phase, with
+    Built without ``model``, the loss acts on model outputs,
+    ``loss = loss_fn(score, u_t, t)`` for the warm-up and
+    ``loss_fn(score, u_t, t, positive, negative)`` for the joint phase, with
     ``score`` \(= -\nabla_x V_\theta(x_t)\) from a ``prediction_type="score"``
     model; ``flow_weight_cutoff``, ``lambda_cd``, ``cd_trim_fraction`` and
     ``cd_clamp`` apply. Built with ``model`` (deprecated), it runs the

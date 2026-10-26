@@ -6,8 +6,9 @@ interpolant velocity u_t:
 
     L = || v(x_t, t) - u_t ||^2
 
-Sampling integrates the learned velocity forward from noise with FlowSampler
-(no negation; the field already points noise -> data).
+The interpolant builds (x_t, u_t) in the loop, the loss compares the model
+output with u_t. Sampling integrates the learned velocity forward from noise
+with FlowSampler (the field points noise -> data).
 
 The model is TimeConditionedMLP, which carries DiT's adaLN-Zero conditioning
 on a vector stream by default; conditioning="concat" is the hand-rolled
@@ -19,6 +20,7 @@ import os
 import torch
 
 from torchebm.datasets import TwoMoonsDataset
+from torchebm.interpolants import LinearInterpolant
 from torchebm.losses import FlowMatchingLoss
 from torchebm.models import TimeConditionedMLP
 from torchebm.samplers import FlowSampler
@@ -32,16 +34,20 @@ def train(conditioning):
     """Train a velocity field on two-moons with the given conditioning mode."""
     torch.manual_seed(0)
     data = TwoMoonsDataset(n_samples=4000, noise=0.05, seed=0).get_data()
-    field = TimeConditionedMLP(in_dim=2, conditioning=conditioning)
-    loss_fn = FlowMatchingLoss(model=field, interpolant="linear")
-    opt = torch.optim.Adam(field.parameters(), lr=1e-3)
+    model = TimeConditionedMLP(in_dim=2, conditioning=conditioning)
+    path = LinearInterpolant()
+    loss_fn = FlowMatchingLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     for _ in range(N_STEPS):
-        batch = data[torch.randint(len(data), (256,))]
-        loss = loss_fn(batch)
-        opt.zero_grad()
+        x1 = data[torch.randint(len(data), (256,))]
+        x0 = torch.randn_like(x1)
+        t = torch.rand(len(x1))
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t, t), u_t)
+        optimizer.zero_grad()
         loss.backward()
-        opt.step()
-    return field, data
+        optimizer.step()
+    return model, data
 
 
 def median_dist(samples, data):
@@ -53,8 +59,6 @@ torch.manual_seed(1)
 x0 = torch.randn(N_GEN, 2)
 
 for conditioning in ("adaln_zero", "concat"):
-    field, data = train(conditioning)
-    samples = FlowSampler(field, interpolant="linear", integrator="euler").sample(
-        x=x0.clone(), n_steps=100
-    )
+    model, data = train(conditioning)
+    samples = FlowSampler(integrator="euler")(model, x0, n_steps=100)
     print(f"{conditioning:11s} median dist to data: {median_dist(samples, data):.3f}")

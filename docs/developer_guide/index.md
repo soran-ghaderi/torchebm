@@ -18,20 +18,24 @@ itself:
 
 Requirements: Python 3.9+, Git, a GitHub account.
 
+Fork the repository on GitHub, then clone your fork and install the
+development dependencies; on Windows, activate the environment with
+`.venv\Scripts\activate`:
+
 ```bash
-# Fork on GitHub, then:
 git clone https://github.com/<your-user>/torchebm.git
 cd torchebm
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-For docs work, additionally:
+For docs work, install the docs extra and start the live preview at
+http://127.0.0.1:8000:
 
 ```bash
 pip install -e ".[docs]"
-mkdocs serve                     # live preview at http://127.0.0.1:8000
+mkdocs serve
 ```
 
 ## Workflow

@@ -51,21 +51,21 @@ def sample_chain(
 
 - **Inherit** from the matching base class (`BaseLoss`, `BaseSampler`, `BaseModel`, `BaseIntegrator`, `BaseInterpolant`). Do not invent parallel hierarchies.
 - **Argument order is part of the API.** Keep it consistent across samplers, losses, and integrators. When in doubt, match the closest existing component.
-- **Explicit over implicit**: configuration goes through constructor kwargs, not globals.
-- **Compose, don't extend deeply.** Two levels of inheritance is usually the limit.
+- **Explicit configuration**: options are passed as constructor or call arguments.
+- **Shallow inheritance.** Compose objects; two levels of inheritance is usually the limit.
 
 ---
 
 ## Performance rules
 
-These are non-negotiable for any code in `torchebm/`:
+These rules apply to all code in `torchebm/`:
 
 - Vectorise. No Python loops over batch elements.
 - No `.item()`, `.cpu()`, or `.tolist()` inside a hot loop.
 - Use `self.device` / `self.dtype` from `TorchEBMModule`. Never hard-code `"cuda"`.
 - Inputs moved to device in `BaseLoss.__call__`. subclass `forward()` must not re-do it.
 - Wrap grad-free regions with `torch.no_grad()`.
-- Use `self.autocast_context()` for mixed precision, not bare `torch.autocast`.
+- Use `self.autocast_context()` for mixed precision; it honours the module's configured dtype.
 
 See [Performance and Benchmarking](performance.md) for patterns and for when to measure.
 
@@ -79,12 +79,12 @@ See [Performance and Benchmarking](performance.md) for patterns and for when to 
 - For stochastic code, seed once at the top of the test; mock `torch.randn_like` / `torch.rand` when you need exact equality.
 - Verify both **correctness** (finite output, shape, known analytical answer) and **gradient flow** (trainable params receive non-zero grads).
 
-Run the suite:
+Run all tests, one package, or the suite with coverage:
 
 ```bash
-pytest tests/ -v                 # all tests
-pytest tests/losses -v           # one package
-pytest --cov=torchebm            # with coverage
+pytest tests/ -v
+pytest tests/losses -v
+pytest --cov=torchebm
 ```
 
 Benchmark and profile tests live under `benchmarks/` and are disabled by default. see [Performance and Benchmarking](performance.md).

@@ -1,12 +1,12 @@
 # Sampling
 
-Given a *fixed* target, how do you draw samples from it? Nothing is learned here:
-the model is known, and the question is one of dynamics and numerics.
+These examples draw samples from a *fixed*, known target. Nothing is learned;
+the subject is the dynamics and the numerics.
 
-- **MCMC**: Langevin dynamics and Hamiltonian Monte Carlo, plus the fact that
-  chains are a batch dimension, so thousands of them cost one integer.
-- **Integrators**: the numerical engines *inside* the samplers. Order of accuracy
-  is measurable, so we measure it against an exact solution.
+- **MCMC**: Langevin dynamics and Hamiltonian Monte Carlo, with chains as a batch
+  dimension, so one call runs thousands of them.
+- **Integrators**: the numerical engines *inside* the samplers, with their order
+  of accuracy measured against an exact solution.
 - **Flow**: continuous-time generation, where `FlowSampler` integrates a velocity
   field as an ODE or an SDE using those same integrators.
 
@@ -15,5 +15,4 @@ numerics that both MCMC and generative sampling stand on.
 
 Theory: [Sampling and Integration](../../concepts/sampling.md).
 
-Next: [Training](../20-training/index.md), where the target is learned rather
-than given.
+Next: [Training](../20-training/index.md), where the target is learned from data.

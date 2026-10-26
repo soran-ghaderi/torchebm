@@ -26,10 +26,10 @@ class BaseTrainer:
 
     This class provides a generic interface for training EBMs, supporting various
     training methods and mixed precision training. `compute_loss` turns a batch
-    into the criterion's loss: with a `sampler`, it draws the negatives of a
-    contrastive criterion (`ContrastiveDivergenceLoss`) from `buffer` or noise
-    and returns ``loss_fn(model(x), model(x_neg))``; override it for objectives
-    that build their own inputs.
+    into the loss: with a `sampler`, it draws the negatives of a contrastive
+    loss (`ContrastiveDivergenceLoss`) from `buffer` or noise and returns
+    ``loss_fn(model(x), model(x_neg))``; override it for objectives that build
+    their own inputs.
 
     Args:
         model: Energy function to train
@@ -42,8 +42,8 @@ class BaseTrainer:
         sampler: Sampler drawing the negatives, called as
             ``sampler(model, x0, n_steps=n_steps, model_kwargs=...)`` with
             ``x0`` from `buffer`, or Gaussian noise without one. ``None``
-            (default) calls the criterion on the batch (criteria holding the
-            model) or leaves the work to an overridden `compute_loss`.
+            (default) calls `loss_fn` on the batch (losses holding the model)
+            or leaves the work to an overridden `compute_loss`.
         buffer: `ReplayBuffer` of persistent chains: sampled for the start
             points and refilled with every step's negatives; moved to the
             trainer device and saved with the checkpoint.
@@ -194,10 +194,9 @@ class BaseTrainer:
         r"""Loss of one batch; override for objectives that build their own inputs.
 
         With a `sampler`, the negatives start from `buffer` (refilled with the
-        result) or from Gaussian noise, and the criterion receives the energies
-        ``loss_fn(model(batch), model(negative))``. Without one, the criterion
-        is called on the batch and ``model_kwargs`` (criteria holding the
-        model).
+        result) or from Gaussian noise, and `loss_fn` receives the energies
+        ``loss_fn(model(batch), model(negative))``. Without one, `loss_fn` is
+        called on the batch and ``model_kwargs`` (losses holding the model).
 
         Args:
             batch: Data on the trainer device and dtype.
@@ -230,7 +229,7 @@ class BaseTrainer:
         When ``grad_accum_steps > 1``, gradients accumulate across calls and the
         optimizer only steps on the accumulation boundary. The loss is scaled by
         ``1 / grad_accum_steps`` so the accumulated gradient matches a single
-        step at the larger effective batch size. The criterion's schedulers
+        step at the larger effective batch size. The schedulers of `loss_fn`
         advance once per optimizer step.
 
         Args:

@@ -1,4 +1,4 @@
-"""Loss classes as criteria on model outputs, and the deprecated model-bound mode."""
+"""Loss classes as loss functions on model outputs, and the deprecated model-bound mode."""
 
 import pytest
 import torch
@@ -39,18 +39,18 @@ class Field(nn.Module):
         return self.linear(x)
 
 
-def test_contrastive_divergence_criterion():
+def test_contrastive_divergence_loss_fn():
     positive, negative = torch.randn(8), torch.randn(8)
-    criterion = ContrastiveDivergenceLoss(energy_reg_weight=0.1, trim_fraction=0.25)
+    loss_fn = ContrastiveDivergenceLoss(energy_reg_weight=0.1, trim_fraction=0.25)
     expected = F.contrastive_divergence_loss(
         positive, negative, energy_reg_weight=0.1, trim_fraction=0.25
     )
-    assert torch.equal(criterion(positive, negative), expected)
+    assert torch.equal(loss_fn(positive, negative), expected)
 
 
 def test_contrastive_divergence_clamp_floors_the_loss():
-    criterion = ContrastiveDivergenceLoss(clamp=0.5)
-    assert criterion(torch.zeros(4), torch.full((4,), 10.0)) == -0.5
+    loss_fn = ContrastiveDivergenceLoss(clamp=0.5)
+    assert loss_fn(torch.zeros(4), torch.full((4,), 10.0)) == -0.5
 
 
 @pytest.mark.parametrize(
@@ -70,7 +70,7 @@ def test_model_bound_contrastive_divergence_is_deprecated():
         PersistentContrastiveDivergence(model, sampler)
 
 
-def test_flow_matching_criterion():
+def test_flow_matching_loss_fn():
     input, target, weight = torch.randn(4, 2), torch.randn(4, 2), torch.rand(4)
     per_sample = FlowMatchingLoss(reduction="none")(input, target, weight)
     assert torch.equal(per_sample, F.flow_matching_loss(input, target, weight, "none"))
@@ -79,44 +79,42 @@ def test_flow_matching_criterion():
     )
 
 
-def test_flow_matching_criterion_requires_target():
+def test_flow_matching_loss_fn_requires_target():
     with pytest.raises(TypeError, match="target"):
         FlowMatchingLoss()(torch.randn(4, 2))
 
 
-def test_equilibrium_matching_criterion_scales_target_by_ct():
+def test_equilibrium_matching_loss_fn_scales_target_by_ct():
     input, target, t = torch.randn(4, 2), torch.randn(4, 2), torch.rand(4)
-    criterion = EquilibriumMatchingLoss(ct_threshold=0.5, ct_multiplier=2.0)
+    loss_fn = EquilibriumMatchingLoss(ct_threshold=0.5, ct_multiplier=2.0)
     ct = compute_eqm_ct(t, threshold=0.5, multiplier=2.0)
     expected = F.equilibrium_matching_loss(input, target, ct)
-    assert torch.equal(criterion(input, target, t), expected)
+    assert torch.equal(loss_fn(input, target, t), expected)
     constant = EquilibriumMatchingLoss(ct="constant")(input, target, t)
     assert torch.equal(
         constant, F.equilibrium_matching_loss(input, target, torch.full((4,), 4.0))
     )
 
 
-def test_equilibrium_matching_criterion_requires_target_and_t():
+def test_equilibrium_matching_loss_fn_requires_target_and_t():
     with pytest.raises(TypeError, match="target"):
         EquilibriumMatchingLoss()(torch.randn(4, 2), torch.randn(4, 2))
 
 
-def test_energy_matching_criterion_warm_up_and_joint_phase():
+def test_energy_matching_loss_fn_warm_up_and_joint_phase():
     input, target, t = torch.randn(4, 2), torch.randn(4, 2), torch.rand(4)
     positive, negative = torch.randn(4), torch.randn(6)
-    criterion = EnergyMatchingLoss(lambda_cd=2.0, cd_trim_fraction=0.0, cd_clamp=None)
+    loss_fn = EnergyMatchingLoss(lambda_cd=2.0, cd_trim_fraction=0.0, cd_clamp=None)
     flow = F.energy_matching_loss(input, target, t)
-    assert torch.equal(criterion(input, target, t), flow)
+    assert torch.equal(loss_fn(input, target, t), flow)
     cd = 2.0 * F.contrastive_divergence_loss(positive, negative)
-    assert torch.equal(criterion(input, target, t, positive, negative), flow + cd)
+    assert torch.equal(loss_fn(input, target, t, positive, negative), flow + cd)
 
 
-def test_energy_matching_criterion_clamps_the_contrastive_term():
+def test_energy_matching_loss_fn_clamps_the_contrastive_term():
     zeros = torch.zeros(4, 2)
-    criterion = EnergyMatchingLoss(lambda_cd=1.0, cd_clamp=0.02)
-    loss = criterion(
-        zeros, zeros, torch.zeros(4), torch.zeros(4), torch.full((4,), 10.0)
-    )
+    loss_fn = EnergyMatchingLoss(lambda_cd=1.0, cd_clamp=0.02)
+    loss = loss_fn(zeros, zeros, torch.zeros(4), torch.zeros(4), torch.full((4,), 10.0))
     assert loss == -0.02
 
 
@@ -136,7 +134,7 @@ def test_model_bound_mode_is_deprecated_but_still_runs(build):
     assert loss(torch.randn(8, 2)).dim() == 0
 
 
-def test_score_matching_criterion():
+def test_score_matching_loss_fn():
     score, divergence = torch.randn(4, 3), torch.randn(4)
     assert torch.equal(
         ScoreMatchingLoss(reduction="sum")(score, divergence),
@@ -144,7 +142,7 @@ def test_score_matching_criterion():
     )
 
 
-def test_denoising_score_matching_criterion():
+def test_denoising_score_matching_loss_fn():
     input, target, weight = torch.randn(4, 3), torch.randn(4, 3), torch.rand(4)
     assert torch.equal(
         DenoisingScoreMatchingLoss()(input, target, weight),
@@ -152,19 +150,19 @@ def test_denoising_score_matching_criterion():
     )
 
 
-def test_sliced_score_matching_criterion_draws_projections_from_generator():
+def test_sliced_score_matching_loss_fn_draws_projections_from_generator():
     x = torch.randn(6, 2, requires_grad=True)
     score = -x
-    criterion = SlicedScoreMatchingLoss(n_projections=3)
-    first = criterion(score, x, generator=torch.Generator().manual_seed(0))
-    second = criterion(score, x, generator=torch.Generator().manual_seed(0))
+    loss_fn = SlicedScoreMatchingLoss(n_projections=3)
+    first = loss_fn(score, x, generator=torch.Generator().manual_seed(0))
+    second = loss_fn(score, x, generator=torch.Generator().manual_seed(0))
     assert torch.equal(first, second)
     projections = torch.randn(6, 2, generator=torch.Generator().manual_seed(0)).sign()
     expected = F.sliced_score_matching_loss(score, x, projections, n_projections=3)
     assert torch.equal(first, expected)
 
 
-def test_sliced_score_matching_criterion_validates():
+def test_sliced_score_matching_loss_fn_validates():
     with pytest.raises(ValueError, match="projection_type"):
         SlicedScoreMatchingLoss(projection_type="bogus")
     with pytest.raises(ValueError, match="n_projections"):

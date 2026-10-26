@@ -25,7 +25,7 @@ icon: octicons/home-fill-16
   </div>
 
   <p class="home-tagline">
-    TorchEBM: Simulation-free, GPU-first generative modeling in PyTorch<br>Composable primitives for scalable, stable training of modern <b>EBMs</b>, <b>diffusion</b>, <b>flow matching</b>, and <b>Schrödinger bridges</b>.
+    TorchEBM: Simulation-free, GPU-first generative modeling in PyTorch<br>Composable primitives for scalable, stable training of <b>EBMs</b>, <b>diffusion</b>, <b>flow matching</b>, and <b>equilibrium and energy matching</b>.
   </p>
 
   <div class="home-actions">
@@ -204,17 +204,17 @@ icon: octicons/home-fill-16
 ## Overview
 
 TorchEBM is a PyTorch library for simulation-free, GPU-first generative
-modeling: scalable, stable training of modern energy-based models, diffusion,
-flow matching, and Schrödinger bridges. Energy-based models define probability
-distributions through a scalar energy function, and the formulation is general
-enough that much of modern generative modeling, from MCMC sampling and score
-matching to simulation-free transport along probability paths, factors into
-the same components, i.e. fields, probability paths, couplings, objectives,
-and integrators. TorchEBM implements these components as composable,
-high-throughput PyTorch primitives.
+modeling: scalable, stable training of energy-based models, diffusion, flow
+matching, and equilibrium and energy matching. Each of these methods defines a
+dynamical system on data space through a learned model: a scalar energy whose
+gradient drives Langevin or Hamiltonian dynamics, or a vector field (a
+velocity, score, or noise prediction) that an ODE or SDE integrates. The
+methods share their components (models, probability paths, couplings,
+objectives, samplers, and integrators), and TorchEBM implements each as a
+composable, high-throughput PyTorch primitive.
 
-The [Design and Scope](concepts/design.md) page states this framing precisely
-and places each method family within it.
+The [Design and Scope](concepts/design.md) page states this framing precisely,
+places each method family within it, and lists what is on the roadmap.
 
 ---
 
@@ -247,64 +247,51 @@ and places each method family within it.
 pip install torchebm
 ```
 
-Train a generative model with **equilibrium matching**, then sample the same
-network both as an ODE flow and as a scalar energy:
+Train a time-invariant field with **equilibrium matching**, then sample it two
+ways:
 
 ```python
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import DataLoader
-from torchebm.losses import EquilibriumMatchingLoss
-from torchebm.samplers import FlowSampler, NesterovSampler
-from torchebm.core import BaseModel
 from torchebm.datasets import EightGaussiansDataset
+from torchebm.interpolants import LinearInterpolant
+from torchebm.losses import EquilibriumMatchingLoss
+from torchebm.samplers import FlowSampler, GradientDescentSampler
 
-dataset = EightGaussiansDataset(n_samples=8192)
-loader = DataLoader(dataset, batch_size=256, shuffle=True)
-
-# Any nn.Module with forward(x, t) works
-class VelocityNet(nn.Module):
+class MLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(2, 256), nn.SiLU(),
                                  nn.Linear(256, 256), nn.SiLU(), nn.Linear(256, 2))
-    def forward(self, x, t, **kwargs):
+    def forward(self, x, t=None, **kwargs):
         return self.net(x)
 
-model = VelocityNet()
-
-loss_fn = EquilibriumMatchingLoss(
-    model=model, interpolant="linear", energy_type="dot",
-)
+loader = DataLoader(EightGaussiansDataset(n_samples=8192), batch_size=256, shuffle=True)
+model = MLP()
+path = LinearInterpolant()
+loss_fn = EquilibriumMatchingLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
 
 for epoch in range(50):
-    for x in loader:
-        loss = loss_fn(x)
+    for x1 in loader:
+        x0 = torch.randn_like(x1)
+        t = torch.rand(len(x1))
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t), u_t, t)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-# Sample via ODE flow
-flow = FlowSampler(model=model, interpolant="linear", negate_velocity=True)
-flow_samples = flow.sample(x=torch.randn(1000, 2), n_steps=100)
-
-# Same model as a scalar energy: g(x) = x · f(x)
-class LearnedEnergy(BaseModel):
-    def __init__(self, net):
-        super().__init__()
-        self.net = net
-    def forward(self, x):
-        t = torch.zeros(x.shape[0], device=x.device)
-        return (x * self.net(x, t)).sum(-1)
-
-nesterov = NesterovSampler(LearnedEnergy(model), step_size=0.01, momentum=0.9)
-energy_samples = nesterov.sample(n_samples=1000, dim=2, n_steps=200)
+x0 = torch.randn(1000, 2)
+samples_ode = FlowSampler(integrator="euler")(model, x0, n_steps=100)
+samples_gd = GradientDescentSampler(step_size=0.05)(model, x0, n_steps=200)
 ```
 
-One model, two views: the flow view generates in a fixed number of steps, the
-energy view supports gradient-based refinement. That interchangeability is the
-library's central design property.
+Both samplers apply the update \(x \leftarrow x + \eta f(x)\) of the learned
+field: `FlowSampler` integrates it over a fixed time horizon, and the
+gradient-descent sampler iterates it further toward the field's attractors.
+Swapping the sampler leaves the model and the training loop unchanged.
 
 See the [concepts](concepts/) and [examples](examples/) for the theory behind
 each component and a runnable, CI-tested curriculum.

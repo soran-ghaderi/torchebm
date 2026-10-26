@@ -46,8 +46,13 @@ class GradientDescentSampler(BaseSampler):
 
     This is a deterministic optimization-based sampler that finds low-energy
     configurations by following the negative gradient of the energy function.
-    `step` consumes the score \(-\nabla_x E(x_k)\); see `BaseSampler` for the
-    call and step contracts.
+    The call consumes the score \(-\nabla_x E(x_k)\); see `BaseSampler` for the
+    call contract.
+
+    A model whose output is a field \(f\) that is not the gradient of an
+    energy, such as an implicit equilibrium-matching model, gets the same
+    update \(x_{k+1} = x_k + \eta f(x_k)\): a fixed-point iteration toward the
+    stable zeros of \(f\), and the explicit Euler step of \(\dot x = f(x)\).
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct
@@ -219,7 +224,8 @@ class NesterovSampler(BaseSampler):
 
     Called as ``sampler(model, x, n_steps=...)``, the model giving
     the score \(-\nabla_x E\) at the lookahead point \(x_k + \mu v_k\); see
-    `BaseSampler`.
+    `BaseSampler`. On a field that is not a gradient, the update is
+    momentum-accelerated fixed-point iteration toward the field's stable zeros.
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct

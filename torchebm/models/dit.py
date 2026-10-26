@@ -34,7 +34,7 @@ class DiT(_ConditionalBackbone):
 
     The module is loss-agnostic: it maps ``(B, C, H, W)`` to
     ``(B, out_channels, H, W)`` and can serve as the velocity field of
-    `FlowMatchingLoss`, the gradient field of `EquilibriumMatchingLoss`, a
+    `FlowMatchingLoss`, the time-invariant field of `EquilibriumMatchingLoss`, a
     noise/score predictor, or any other image-shaped regressor.
 
     Standard sizes ship as factory functions (`dit_s_2` ... `dit_xl_8`):

@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 name = "torchebm"
 #version = "0.0.0"
 dynamic = ["version"]
-description = "Simulation-free, GPU-first generative modeling in PyTorch: composable primitives for scalable, stable training of modern energy-based models, diffusion, flow matching, and Schrödinger bridges."
+description = "Simulation-free, GPU-first generative modeling in PyTorch: composable primitives for scalable, stable training of energy-based models, diffusion, flow matching, and equilibrium and energy matching."
 readme = "README.md"
 license = { file = "LICENSE" }
 #license = "MIT"

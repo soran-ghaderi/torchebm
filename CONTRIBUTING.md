@@ -1,6 +1,6 @@
 # Contributing to TorchEBM
 
-Thank you for your interest in contributing to TorchEBM! We welcome contributions of all kinds, including bug fixes, documentation improvements, new examples, performance enhancements, and new features. Whether you're fixing a bug, improving documentation, or adding a new feature, we're happy to have your contribution.
+Thank you for your interest in contributing to TorchEBM. Contributions of all kinds are welcome: bug fixes, documentation improvements, new examples, performance enhancements, and new features.
 
 > ⭐ If TorchEBM is useful for your work, please consider starring the repository. It is the main way people discover the project.
 
@@ -27,15 +27,11 @@ Clone your fork and install the development dependencies:
 git clone https://github.com/<your-github-username>/torchebm.git
 cd torchebm
 python -m venv .venv
-
-# Linux/macOS
 source .venv/bin/activate
-
-# Windows
-.venv\Scripts\activate
-
 pip install -e ".[dev]"
 ```
+
+On Windows, the activation command is `.venv\Scripts\activate`.
 
 For documentation work:
 
@@ -47,17 +43,16 @@ mkdocs serve
 ## Dependencies
 
 `torch` is the only runtime dependency, and `torchebm/` imports nothing else. Data
-loaders, pretrained checkpoints, trainer loops and plotting belong to the
-application, not to the library.
+loaders, pretrained checkpoints, trainer loops and plotting belong in the
+application code that uses the library.
 
-The optional extras (`examples`, `dev`, `docs`) serve the repository, never the
-library at runtime. A new runtime extra is justified only when a module under
+The optional extras (`examples`, `dev`, `docs`) serve the repository only; the
+library does not import them at runtime. A new runtime extra is justified only when a module under
 `torchebm/` needs it, and then it must:
 
-- import the package lazily at the call site, never at module import time;
+- import the package lazily, at the call site;
 - raise an `ImportError` naming the extra to install;
-- be named after the capability it unlocks (for example `vision`), not after a
-  paper or an algorithm.
+- be named after the capability it provides, for example `vision`.
 
 ## Development Workflow
 
@@ -79,9 +74,9 @@ library at runtime. A new runtime extra is justified only when a module under
 ## Coding Style and Rules
 
 - Surgical diffs only. Do not reformat, reorder imports, or touch lines unrelated to the issue you are closing.
-- Docs are MkDocs, not Sphinx. Google-style docstrings with `r"""`.  LaTeX is \( \) inline and \[ \] block. No `.. math::`, no `:class:`.
+- Docs build with MkDocs: Google-style docstrings with `r"""`, LaTeX as \( \) inline and \[ \] block, and no Sphinx roles such as `.. math::` or `:class:`.
 - Avoid excessive inline commenting or verbose docstrings
-- Type annotations go in the signature, not the docstring.
+- Type annotations go in the signature only.
 - Never modify base classes unless the issue names one.
 - Never add external dependency
 - Every tensor op in its maximally optimized form. No host syncs (`.item()`, `.cpu()`, Python `and`/`or` on tensors) in hot paths.

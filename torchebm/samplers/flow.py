@@ -143,7 +143,7 @@ class FlowSampler(BaseSampler):
         last_step: SDE-only. Final denoising step: 'Mean' (default),
             'Euler', 'Tweedie', or None (no correction).
         last_step_size: SDE-only. Size of the final step (default 0.04).
-        prediction_type: Model output `step` consumes: ``"velocity"``
+        prediction_type: Model output the sampler consumes: ``"velocity"``
             (default), ``"score"``, or ``"epsilon"``.
         dtype: Data type for computations.
         device: Device for computations.

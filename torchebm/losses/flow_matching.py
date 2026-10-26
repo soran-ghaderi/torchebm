@@ -36,7 +36,7 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
-    replacement="FlowMatchingLoss() as a criterion on model outputs",
+    replacement="FlowMatchingLoss() on model outputs",
     message=(
         "FlowMatchingLoss(model=...) is deprecated: build the path in the "
         "training loop and use FlowMatchingLoss()(model(x_t, t), u_t) instead."
@@ -52,8 +52,8 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
 class FlowMatchingLoss(BaseInterpolantLoss):
     r"""Conditional Flow Matching training loss.
 
-    Built without ``model``, the loss is a criterion on model outputs,
-    ``loss = criterion(model(x_t, t), u_t)``, with ``x_t, u_t`` from an
+    Built without ``model``, the loss acts on model outputs,
+    ``loss = loss_fn(model(x_t, t), u_t)``, with ``x_t, u_t`` from an
     interpolant and ``reduction`` as in `torch.nn`; only ``reduction`` applies.
     Built with ``model`` (deprecated), it runs the training step itself as
     described below.

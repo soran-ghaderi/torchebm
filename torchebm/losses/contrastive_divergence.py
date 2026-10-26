@@ -28,7 +28,7 @@ _CD_OPTION_KWARGS_DEPRECATION = declare_deprecation(
 
 
 class ContrastiveDivergenceLoss(BaseLoss):
-    r"""Contrastive divergence criterion on the energies of data and model samples.
+    r"""Contrastive divergence loss on the energies of data and model samples.
 
     \[
     L = \mathbb{E}[E(x^+)] - \widetilde{\mathbb{E}}[E(x^-)]
@@ -49,10 +49,10 @@ class ContrastiveDivergenceLoss(BaseLoss):
 
     Example:
         ```python
-        criterion = ContrastiveDivergenceLoss()
+        loss_fn = ContrastiveDivergenceLoss()
         x_neg = sampler.sample(x=buffer.sample(len(x)), n_steps=10)
         buffer.add(x_neg)
-        loss = criterion(energy(x), energy(x_neg))
+        loss = loss_fn(energy(x), energy(x_neg))
         ```
     """
 

@@ -1,4 +1,4 @@
-"""BaseTrainer with the model-centric criteria."""
+"""BaseTrainer with the model-centric losses."""
 
 import copy
 
@@ -109,7 +109,7 @@ def test_gradient_accumulation_steps_on_the_boundary():
     assert changed(before, t.model)
 
 
-def test_criterion_schedulers_advance_once_per_optimizer_step():
+def test_loss_fn_schedulers_advance_once_per_optimizer_step():
     loss_fn = ScheduledLoss()
     t = trainer(loss_fn, grad_accum_steps=2)
     for _ in range(4):
