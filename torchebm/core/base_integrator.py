@@ -41,8 +41,9 @@ class BaseIntegrator(TorchEBMModule, ABC):
         if drift is not None:
             return drift
         raise ValueError(
-            "drift must be provided explicitly. For EBM sampling, pass "
-            "drift=lambda x, t: -model.gradient(x) from the caller."
+            "drift must be provided explicitly. For EBM sampling, pass the "
+            "score, e.g. drift=lambda x, t: model(x) for a model built with "
+            "prediction_type='score'."
         )
 
     @abstractmethod
@@ -728,9 +729,7 @@ class BaseSDERungeKuttaIntegrator(BaseRungeKuttaIntegrator):
 
         if diffusion_val is not None:
             if noise is None:
-                noise = torch.randn_like(
-                    x, device=self.device, dtype=self.dtype, generator=generator
-                )
+                noise = torch.randn_like(x, generator=generator)
             # step_size/diffusion_val stay Python floats to avoid a per-step host
             # sync; ** 0.5 accepts floats and tensors, torch.sqrt would not.
             dw = noise * (step_size**0.5)

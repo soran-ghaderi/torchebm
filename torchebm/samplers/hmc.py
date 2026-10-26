@@ -162,7 +162,12 @@ class HamiltonianMonteCarlo(BaseSampler):
         self.integrator = integ
 
     def _initialize_momentum(
-        self, shape: torch.Size, generator: Optional[torch.Generator] = None
+        self,
+        shape: torch.Size,
+        generator: Optional[torch.Generator] = None,
+        *,
+        dtype: Optional[torch.dtype] = None,
+        device: Optional[torch.device] = None,
     ) -> torch.Tensor:
         r"""
         Initializes momentum variables from a Gaussian distribution.
@@ -173,18 +178,22 @@ class HamiltonianMonteCarlo(BaseSampler):
         Args:
             shape (torch.Size): The shape of the momentum tensor to generate.
             generator: RNG for the Gaussian draw; the global RNG when `None`.
+            dtype: Momentum dtype; the sampler's when `None`.
+            device: Momentum device; the sampler's when `None`.
 
         Returns:
             torch.Tensor: The initialized momentum tensor.
         """
+        dtype = self.dtype if dtype is None else dtype
+        device = self.device if device is None else device
         buf = getattr(self, "_momentum_buf", None)
         if (
             buf is None
             or buf.shape != shape
-            or buf.dtype != self.dtype
-            or buf.device != self.device
+            or buf.dtype != dtype
+            or buf.device != device
         ):
-            buf = torch.empty(shape, dtype=self.dtype, device=self.device)
+            buf = torch.empty(shape, dtype=dtype, device=device)
             self._momentum_buf = buf
         p = buf.normal_(generator=generator)
 
@@ -277,7 +286,12 @@ class HamiltonianMonteCarlo(BaseSampler):
         Returns:
             The next state and the per-chain acceptance mask.
         """
-        current_momentum = self._initialize_momentum(x.shape, generator)
+        if torch.is_tensor(self.mass) and self.mass.device != x.device:
+            self.mass = self.mass.to(x.device)
+            self._mass_sqrt_view = self._mass_kin_view = None
+        current_momentum = self._initialize_momentum(
+            x.shape, generator, dtype=x.dtype, device=x.device
+        )
 
         current_energy = energy(x).clamp_(min=-1e10, max=1e10)
         current_kinetic = self._compute_kinetic_energy(current_momentum).clamp_(
@@ -312,7 +326,7 @@ class HamiltonianMonteCarlo(BaseSampler):
         # the freshly allocated `exp` result (no `ones` tensor allocation).
         acceptance_prob = torch.exp(hamiltonian_diff).clamp_(max=1.0)
 
-        random_uniform = torch.rand(x.shape[0], device=self.device, generator=generator)
+        random_uniform = torch.rand(x.shape[0], device=x.device, generator=generator)
         accepted = random_uniform < acceptance_prob
         # `torch.where` on the broadcast accept mask: single fused kernel,
         # no `mask*proposed + (1-mask)*x` quartet of temporaries.
@@ -793,7 +807,7 @@ class RiemannianManifoldHMC(BaseSampler):
         )
 
         accepted = (
-            torch.rand(x.shape[0], device=self.device, generator=generator)
+            torch.rand(x.shape[0], device=x.device, generator=generator)
             < acceptance_prob
         )
         accept_view = accepted.view(-1, *([1] * (x.ndim - 1)))

@@ -12,6 +12,7 @@ import torch
 from torch import nn
 from torch.func import grad, jacrev, vmap
 
+from tests.conftest import requires_cuda
 from torchebm.core import BaseModel, HarmonicModel, TemperatureScheduler
 from torchebm.interpolants import (
     CosineInterpolant,
@@ -122,7 +123,7 @@ def test_flow_matching_matches_legacy():
 
 
 def test_equilibrium_matching_matches_legacy_up_to_the_field_sign():
-    """Legacy regresses onto -c(t) u_t (data to noise); the criterion onto +c(t) u_t."""
+    """Legacy regresses onto -c(t) u_t (data to noise); the new loss onto +c(t) u_t."""
     torch.manual_seed(0)
     field, x = Field(), torch.randn(8, 2)
     legacy = EquilibriumMatchingLoss(model=field, energy_type="none")(
@@ -179,8 +180,8 @@ def test_sliced_score_matching_matches_legacy():
 
     x_tiled = x.repeat(3, 1).requires_grad_(True)
     score = Quadratic(prediction_type="score")(x_tiled)
-    criterion = SlicedScoreMatchingLoss(n_projections=3)
-    assert torch.equal(criterion(score, x_tiled, generator=seeded()), legacy)
+    loss_fn = SlicedScoreMatchingLoss(n_projections=3)
+    assert torch.equal(loss_fn(score, x_tiled, generator=seeded()), legacy)
 
 
 class TimeField(nn.Module):
@@ -397,3 +398,27 @@ def test_scheduled_interaction_call_matches_legacy_sample():
     )
     target = LangevinDynamics(**kwargs)(repulsive(), x, n_steps=5, generator=seeded())
     assert torch.equal(target, legacy)
+
+
+@requires_cuda
+def test_call_runs_on_the_device_of_x():
+    device = torch.device("cuda")
+    x = torch.randn(8, 2, device=device)
+    generator = torch.Generator(device=device).manual_seed(0)
+
+    def metric_fn(x):
+        return torch.eye(2, device=x.device).expand(x.shape[0], 2, 2)
+
+    samplers = (
+        LangevinDynamics(step_size=0.1),
+        HamiltonianMonteCarlo(
+            step_size=0.1, n_leapfrog_steps=3, mass=torch.tensor([1.0, 2.0])
+        ),
+        RiemannianManifoldHMC(metric_fn=metric_fn, step_size=0.1, n_leapfrog_steps=2),
+    )
+    for sampler in samplers:
+        out = sampler(Quadratic(), x, n_steps=2, generator=generator)
+        assert out.device == x.device and out.dtype == x.dtype
+    sampler = FlowSampler(mode="sde", integrator="euler_maruyama")
+    out = sampler(Field().to(device), x, n_steps=2, generator=generator)
+    assert out.device == x.device
