@@ -35,15 +35,16 @@ class VarianceExplodingInterpolant(BaseInterpolant):
             (default), ``"epsilon"``, or ``"sample"``.
 
     Example:
+        The VE SDE of Song et al. (2021) at the CIFAR-10 setting of the
+        reference code, \(\sigma\) from 0.01 to 50, with the denoising target:
+
         ```python
         from torchebm.interpolants import VarianceExplodingInterpolant
-        import torch
 
-        path = VarianceExplodingInterpolant(prediction_type="epsilon")
-        x0 = torch.randn(32, 2)  # noise
-        x1 = torch.randn(32, 2)  # data
-        t = torch.rand(32)
-        x_t, noise = path(x0, x1, t)
+        path = VarianceExplodingInterpolant(
+            sigma_min=0.01, sigma_max=50.0, prediction_type="epsilon"
+        )
+        x_t, noise = path(torch.randn_like(x1), x1, torch.rand(len(x1)))
         ```
     """
 

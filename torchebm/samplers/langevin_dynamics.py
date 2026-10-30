@@ -64,13 +64,16 @@ class LangevinDynamics(BaseSampler):
             match the sampler's device/dtype.
 
     Example:
+        SGLD as in JEM (Grathwohl et al., 2020): step 1 and noise std 0.01
+        (``noise_scale`` times \(\sqrt{2\eta}\)), 20 steps from U(-1, 1) on
+        CIFAR-10 images:
+
         ```python
-        import torch
-        from torchebm.core import DoubleWellModel
         from torchebm.samplers import LangevinDynamics
 
-        sampler = LangevinDynamics(step_size=0.01, noise_scale=1.0)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
+        sampler = LangevinDynamics(step_size=1.0, noise_scale=0.01 / 2**0.5)
+        x = torch.empty(64, 3, 32, 32).uniform_(-1, 1)
+        samples = sampler(model, x, n_steps=20)
         ```
     """
 

@@ -48,9 +48,24 @@ class ContrastiveDivergenceLoss(BaseLoss):
         **kwargs: Keyword arguments of `BaseLoss`, e.g. ``dtype`` and ``device``.
 
     Example:
+        The \(p(x)\) term of JEM (Grathwohl et al., 2020) on CIFAR-10 scaled
+        to [-1, 1]: ``model`` is the energy \(-\mathrm{LogSumExp}_y f(x)[y]\)
+        of a WRN-28-10 classifier, the negatives run 20 SGLD steps at step 1
+        and noise 0.01 (``noise_scale`` times \(\sqrt{2\eta}\)) from a
+        10000-sample buffer that reinitializes 5% of the chains. JEM draws
+        fresh chains from U(-1, 1) and writes them back in place; the buffer
+        draws from N(0, I) and stores first in, first out.
+
         ```python
+        from torchebm.losses import ContrastiveDivergenceLoss
+        from torchebm.samplers import LangevinDynamics
+        from torchebm.utils import ReplayBuffer
+
+        buffer = ReplayBuffer(capacity=10000, sample_shape=(3, 32, 32), new_sample_ratio=0.05)
+        sampler = LangevinDynamics(step_size=1.0, noise_scale=0.01 / 2**0.5)
         loss_fn = ContrastiveDivergenceLoss()
-        x_neg = sampler(model, buffer.sample(len(x)), n_steps=10)
+
+        x_neg = sampler(model, buffer.sample(len(x)), n_steps=20)
         buffer.add(x_neg)
         loss = loss_fn(model(x), model(x_neg))
         ```
@@ -148,7 +163,7 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
         model = DoubleWellModel()
         sampler = LangevinDynamics(step_size=0.01)
-        loss_fn = ContrastiveDivergenceLoss()
+        loss_fn = ContrastiveDivergenceLoss(energy_reg_weight=0.001)
         x = torch.randn(32, 2)
         x_neg = sampler(model, x, n_steps=10)
         loss = loss_fn(model(x), model(x_neg))

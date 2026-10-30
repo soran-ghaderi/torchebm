@@ -88,12 +88,21 @@ class EMA(nn.Module):
             validated into [0, 1]).
 
     Example:
+        The DiT recipe (Peebles and Xie, 2023): AdamW at 1e-4 without weight
+        decay, EMA 0.9999 updated after every step, samples from the average:
+
         ```python
+        from torchebm.utils import EMA
+
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
         ema = EMA(model, decay=0.9999)
-        for batch in loader:
-            train_step(model, batch)
+        for x1, y in loader:
+            loss = compute_loss(x1, y)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
             ema.update(model)
-        samples = sampler(ema.module, x0, n_steps=100)
+        samples = sampler(ema.module, torch.randn(64, 4, 32, 32), model_kwargs={"y": y})
         ```
     """
 

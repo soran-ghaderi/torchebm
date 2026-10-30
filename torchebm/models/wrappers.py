@@ -46,6 +46,19 @@ class ClassifierFreeGuidance(BaseModel):
             ``guide_channels`` entries of dim 1 and keep the unconditional
             output for the rest (models whose extra channels, e.g. a learned
             sigma, must not be guided). ``None`` (default) guides everything.
+
+    Example:
+        The guidance of DiT (Peebles and Xie, 2023): scale 1.5 on the first
+        three latent channels for the FID results, 4.0 for visual samples:
+
+        ```python
+        from torchebm.models import ClassifierFreeGuidance
+
+        guided = ClassifierFreeGuidance(
+            model, guidance_scale=1.5, null_condition=1000, guide_channels=3
+        )
+        samples = sampler(guided, torch.randn(64, 4, 32, 32), model_kwargs={"y": y})
+        ```
     """
 
     __call__ = nn.Module.__call__
@@ -167,18 +180,29 @@ class InteractionModel(Schedulable, BaseModel):
             the wrapped potential must output energies.
 
     Example:
+        The repulsive sampling of Energy Matching (Balcerak et al., 2025) for
+        protein inverse design: 128 chains in the 16-dimensional latent of an
+        AAV sequence VAE, Langevin with \(\Delta t = 0.01\) for 170 steps
+        (\(\tau_s = 1.7\)) under \(\epsilon_{max} = 0.1\) and
+        \(\tau^* = 0.9\), strength \(\epsilon(t)\), states clamped to
+        [-1, 1] as in the reference code. The paper sweeps \(\sigma_W\) to
+        trade fitness for diversity without reporting its values, and adds
+        a guidance term left out here.
+
         ```python
         from torchebm.core import TemperatureScheduler
         from torchebm.models import InteractionModel
         from torchebm.samplers import LangevinDynamics
 
-        temp_noise = TemperatureScheduler(0.15, 0.8, n_steps=325, t_end=3.25)
-        temp_strength = TemperatureScheduler(
-            0.15, 0.8, n_steps=325, t_end=3.25, sqrt=False
+        noise_scale = TemperatureScheduler(
+            epsilon_max=0.1, tau_star=0.9, n_steps=170, t_end=1.7
         )
-        repulsive = InteractionModel(V, sigma_w=4.0, strength=temp_strength)
-        sampler = LangevinDynamics(step_size=0.01, noise_scale=temp_noise)
-        samples = sampler(repulsive, torch.randn(64, 2), n_steps=325)
+        strength = TemperatureScheduler(
+            epsilon_max=0.1, tau_star=0.9, n_steps=170, t_end=1.7, sqrt=False
+        )
+        interaction_model = InteractionModel(model, sigma_w=sigma_w, strength=strength)
+        sampler = LangevinDynamics(step_size=0.01, noise_scale=noise_scale, clamp=(-1.0, 1.0))
+        samples = sampler(interaction_model, torch.randn(128, 16), n_steps=170)
         ```
     """
 
@@ -253,8 +277,11 @@ class InteractionModel(Schedulable, BaseModel):
 class EqMEnergy(BaseModel):
     r"""Scalar-energy adapter for sampling Equilibrium Matching fields.
 
-    Deprecated: pass the trained field, or a scalar energy built with
-    ``prediction_type="score"``, to the sampler call, as in the example.
+    Deprecated: train the field with `EquilibriumMatchingLoss()` on model
+    outputs, which points it from noise to data, and pass it, or a scalar
+    energy built with ``prediction_type="score"``, to the sampler call, as in
+    the example. A field trained by the deprecated model-bound loss points
+    from data to noise; sample it with ``FlowSampler(negate_velocity=True)``.
 
     Equilibrium Matching trains a vector field \(f(x, t)\)
     (`EquilibriumMatchingLoss`), but the gradient-based samplers
@@ -295,9 +322,8 @@ class EqMEnergy(BaseModel):
         ```python
         from torchebm.samplers import GradientDescentSampler
 
-        sampler = GradientDescentSampler(step_size=0.01)
-        samples = sampler(model, torch.randn(512, 2), n_steps=200)
-        energy_samples = sampler(energy_model, torch.randn(512, 2), n_steps=200)
+        sampler = GradientDescentSampler(step_size=0.0017)
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
         ```
     """
 

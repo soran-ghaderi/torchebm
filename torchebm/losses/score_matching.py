@@ -92,10 +92,29 @@ class DenoisingScoreMatchingLoss(BaseLoss):
         device: Device for computations.
 
     Example:
+        NCSN (Song and Ermon, 2019) on CIFAR-10: ten noise levels from 1 to
+        0.01 in geometric progression, one level per sample passed to the
+        model as its label, weight \(\sigma^2\), and annealed Langevin
+        sampling with 100 steps per level at step
+        \(2 \times 10^{-5} (\sigma_i / \sigma_L)^2\), as in the reference
+        code:
+
         ```python
+        from torchebm.losses import DenoisingScoreMatchingLoss
+        from torchebm.samplers import LangevinDynamics
+
+        sigmas = torch.logspace(0, -2, 10)
         loss_fn = DenoisingScoreMatchingLoss()
+
+        i = torch.randint(len(sigmas), (len(x),))
+        sigma = sigmas[i].view(-1, 1, 1, 1)
         noise = torch.randn_like(x)
-        loss = loss_fn(model(x + sigma * noise), -noise / sigma)
+        loss = loss_fn(model(x + sigma * noise, y=i), -noise / sigma, weight=sigmas[i] ** 2)
+
+        x = torch.rand(64, 3, 32, 32)
+        for i, sigma in enumerate(sigmas.tolist()):
+            sampler = LangevinDynamics(step_size=2e-5 * (sigma / 0.01) ** 2)
+            x = sampler(model, x, n_steps=100, model_kwargs={"y": torch.full((64,), i)})
         ```
     """
 
@@ -139,10 +158,15 @@ class SlicedScoreMatchingLoss(BaseLoss):
             ``"sum"``, or ``"none"``), ``dtype`` and ``device``.
 
     Example:
+        The setting of Song et al. (2019) for density estimation: one
+        Rademacher projection per sample, the defaults:
+
         ```python
-        loss_fn = SlicedScoreMatchingLoss(n_projections=1)
-        x_tiled = x.repeat(loss_fn.n_projections, 1).requires_grad_(True)
-        loss = loss_fn(model(x_tiled), x_tiled)
+        from torchebm.losses import SlicedScoreMatchingLoss
+
+        loss_fn = SlicedScoreMatchingLoss()
+        x = x.requires_grad_(True)
+        loss = loss_fn(model(x), x)
         ```
     """
 
@@ -234,15 +258,17 @@ class ScoreMatching(BaseScoreMatching):
 
     Example:
         ```python
+        from torch.func import grad, jacrev, vmap
+
         from torchebm.core import DoubleWellModel
         from torchebm.losses import ScoreMatchingLoss
 
-        model = DoubleWellModel(prediction_type="score")
-        x = torch.randn(32, 2, requires_grad=True)
-        score = model(x)
-        v = torch.randn_like(x)
-        vjp = torch.autograd.grad(score, x, v, create_graph=True)[0]
-        loss = ScoreMatchingLoss()(score, (vjp * v).sum(dim=1))
+        model = DoubleWellModel()
+        x = torch.randn(32, 2)
+        score_fn = grad(lambda xi: -model(xi.unsqueeze(0)).squeeze())
+        score = vmap(score_fn)(x)
+        divergence = vmap(lambda xi: jacrev(score_fn)(xi).trace())(x)
+        loss = ScoreMatchingLoss()(score, divergence)
         ```
     """
 

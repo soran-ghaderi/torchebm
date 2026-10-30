@@ -108,13 +108,27 @@ class HamiltonianMonteCarlo(BaseSampler):
             and must match the sampler's device/dtype.
 
     Example:
+        The 100-dimensional Gaussian of Neal (2011, Sec. 3.3): independent
+        components with standard deviations 0.01 to 1.00, 150 leapfrog steps,
+        1000 iterations, and a step size drawn uniformly from
+        (0.0104, 0.0156) at every iteration to avoid periodic trajectories:
+
         ```python
-        import torch
-        from torchebm.core import DoubleWellModel
+        import random
+
+        from torchebm.core import GaussianModel
         from torchebm.samplers import HamiltonianMonteCarlo
 
-        sampler = HamiltonianMonteCarlo(step_size=0.1, n_leapfrog_steps=10)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
+        std = torch.linspace(0.01, 1.0, 100)
+        model = GaussianModel(torch.zeros(100), torch.diag(std**2))
+        x, samples = torch.zeros(1, 100), []
+        for _ in range(1000):
+            sampler = HamiltonianMonteCarlo(
+                step_size=random.uniform(0.0104, 0.0156), n_leapfrog_steps=150
+            )
+            x = sampler(model, x, n_steps=1)
+            samples.append(x)
+        samples = torch.cat(samples)
         ```
     """
 
@@ -515,23 +529,34 @@ class RiemannianManifoldHMC(BaseSampler):
             is used as-is and must match the sampler's device/dtype.
 
     Example:
+        Bayesian logistic regression of Girolami and Calderhead (2011,
+        Sec. 7) on the Pima data: standardized covariates with an intercept
+        column (532 x 8), prior \(\mathcal{N}(0, 100 I)\), the metric
+        \(G(\beta) = X^T \Lambda X + I / 100\) with
+        \(\Lambda = \mathrm{diag}(s (1 - s))\), \(\epsilon = 0.5\) and six
+        leapfrog steps, 5000 samples after 5000 burn-in. The default eight
+        fixed-point iterations cover the five or six the paper needed.
+
         ```python
-        from torchebm.core import GaussianModel
+        import torch.nn.functional as F
+
         from torchebm.samplers import RiemannianManifoldHMC
-        import torch
 
-        dim = 2
-        model = GaussianModel(mean=torch.zeros(dim), cov=torch.eye(dim))
+        standardized = (features - features.mean(0)) / features.std(0)
+        X = torch.cat([torch.ones(len(features), 1), standardized], dim=1)
 
-        # Identity metric — reduces to plain HMC.
-        def metric_fn(x):
-            eye = torch.eye(dim, dtype=x.dtype, device=x.device)
-            return eye.expand(x.shape[0], dim, dim).contiguous()
+        def model(beta):
+            logits = beta @ X.T
+            nll = F.binary_cross_entropy_with_logits(logits, y.expand_as(logits), reduction="none")
+            return nll.sum(-1) + beta.square().sum(-1) / 200
 
-        sampler = RiemannianManifoldHMC(
-            metric_fn=metric_fn, step_size=0.1, n_leapfrog_steps=10
-        )
-        samples = sampler(model, torch.randn(200, dim), n_steps=500)
+        def metric_fn(beta):
+            s = torch.sigmoid(beta @ X.T)
+            return torch.einsum("bn,ni,nj->bij", s * (1 - s), X, X) + torch.eye(X.shape[1]) / 100
+
+        sampler = RiemannianManifoldHMC(metric_fn=metric_fn, step_size=0.5, n_leapfrog_steps=6)
+        trajectory = sampler(model, torch.full((1, 8), 1e-3), n_steps=10000, return_trajectory=True)
+        samples = trajectory[0, 5000:]
         ```
     """
 

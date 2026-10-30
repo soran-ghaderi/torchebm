@@ -30,9 +30,9 @@ through a single time-independent scalar potential \(V_\theta(x)\):
   \(\widetilde{\mathbb{E}}\) is a one-sided trimmed mean, and the term is
   floored for stability.
 
-Training is two-phase: a warm-up with `lambda_cd=0.0` (pure OT flow
-matching, no Langevin), then joint optimization after setting
-`loss_fn.lambda_cd` to a positive value.
+Training is two-phase: a warm-up on the flow term alone (pure OT flow
+matching, no Langevin), then joint optimization that adds the contrastive
+term.
 
 Key differences from `EquilibriumMatchingLoss` (EqM):
 
@@ -118,8 +118,9 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             `BaseScheduler`.
         flow_weight_cutoff: Time-gate onset for the flow term; >= 1.0
             disables gating.
-        lambda_cd: Contrastive term weight; 0.0 selects the warm-up phase
-            (Langevin chains are skipped entirely). Float or `BaseScheduler`.
+        lambda_cd: Contrastive term weight. Float or `BaseScheduler`. On the
+            deprecated model-bound path, 0.0 selects the warm-up phase
+            (Langevin chains are skipped entirely).
         epsilon_max: Plateau temperature of \(\epsilon(t)\).
         tau_star: Transport/diffusion switch time \(\tau^*\) in [0, 1).
         n_langevin_steps: Langevin steps per negative chain.
@@ -150,30 +151,52 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
         device: Device for computations.
 
     Example:
+        The two-moons experiment of Balcerak et al. (2025): \(\epsilon_{max}
+        = 0.15\), \(\tau^* = 0.8\), 200 Langevin steps at \(dt = 0.01\),
+        \(\lambda_{CD} = 2\) and plain contrastive divergence, trained with
+        Adam at 1e-4:
+
         ```python
         from torchebm.core import TemperatureScheduler
+        from torchebm.couplings import ExactOTCoupling
+        from torchebm.interpolants import LinearInterpolant
         from torchebm.losses import EnergyMatchingLoss
         from torchebm.samplers import LangevinDynamics
 
         model = MLP(prediction_type=("energy", "score"))
-        loss_fn = EnergyMatchingLoss(lambda_cd=2.0)
-        temp = TemperatureScheduler(0.15, 0.8, n_steps=200, t_end=1.0)
-        sampler = LangevinDynamics(step_size=0.01, noise_scale=temp)
+        coupling, path = ExactOTCoupling(), LinearInterpolant()
+        loss_fn = EnergyMatchingLoss(cd_trim_fraction=0.0, cd_clamp=None)
+        sweep = LangevinDynamics(
+            step_size=0.01, noise_scale=TemperatureScheduler(epsilon_max=0.15)
+        )
+        hold = LangevinDynamics(step_size=0.01, noise_scale=0.15**0.5)
 
-        x_t, u_t = path(x0, x1, t)
-        _, score = model(x_t)
-        warmup_loss = loss_fn(score, u_t, t)
+        def compute_loss(x1, contrastive):
+            x0, x1 = coupling(torch.randn_like(x1), x1)
+            t = torch.rand(len(x1))
+            x_t, u_t = path(x0, x1, t)
+            _, score = model(x_t + 0.1 * torch.randn_like(x_t))
+            if not contrastive:
+                return loss_fn(score, u_t, t)
+            half = len(x1) // 2
+            x_neg = torch.cat([
+                sweep(model, x0[:half], n_steps=200),
+                hold(model, x1[half:], n_steps=200),
+            ])
+            energy_pos, _ = model(x1)
+            energy_neg, _ = model(x_neg)
+            return loss_fn(score, u_t, t, energy_pos, energy_neg)
 
-        energy_pos, _ = model(x1)
-        energy_neg, _ = model(sampler(model, x0, n_steps=200))
-        loss = loss_fn(score, u_t, t, energy_pos, energy_neg)
-
-        samples = sampler(model, torch.randn(1000, 2), n_steps=200)
+        samples = sweep(model, torch.randn(1000, 2), n_steps=200)
         ```
 
-    The warm-up phase trains the flow term alone; the joint phase adds the
-    energies of data and Langevin negatives. Generation is one SDE sweep over
-    \(t \in [0, 1]\) with \(dt = 0.01\), 200 steps.
+    ``compute_loss(x1, contrastive=False)`` is the warm-up, the flow term
+    alone on OT-coupled pairs with smoothing noise \(\sigma = 0.1\);
+    ``contrastive=True`` is the joint phase, which adds the energies of the
+    data and of Langevin negatives, half swept from noise through
+    \(\epsilon(t)\) and half started at the data and held at
+    \(\epsilon_{max}\). Generation is the same sweep over \(t \in [0, 1]\)
+    with \(dt = 0.01\), 200 steps.
 
     Sampling with `t_end > 1.0` equilibrates at \(\epsilon_{max}\) and draws
     from the tempered density \(\propto e^{-V/\epsilon_{max}}\) itself; the

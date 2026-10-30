@@ -43,11 +43,14 @@ class ReplayBuffer(nn.Module):
         generator: RNG for the initial storage; the global RNG when ``None``.
 
     Example:
+        The buffer of JEM (Grathwohl et al., 2020) on CIFAR-10: 10000 samples,
+        5% of the chains reinitialized, 20 SGLD steps per draw of 64:
+
         ```python
         from torchebm.utils import ReplayBuffer
 
-        buffer = ReplayBuffer(capacity=8192, sample_shape=(2,))
-        x_neg = sampler(model, buffer.sample(256), n_steps=10)
+        buffer = ReplayBuffer(capacity=10000, sample_shape=(3, 32, 32), new_sample_ratio=0.05)
+        x_neg = sampler(model, buffer.sample(64), n_steps=20)
         buffer.add(x_neg)
         ```
     """

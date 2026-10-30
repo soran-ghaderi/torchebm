@@ -22,15 +22,13 @@ class LinearInterpolant(BaseInterpolant):
     with \(\alpha(t) = t\) and \(\sigma(t) = 1 - t\).
 
     Example:
+        The Linear path of SiT (Ma et al., 2024) on image latents ``x1``:
+
         ```python
         from torchebm.interpolants import LinearInterpolant
-        import torch
 
-        interpolant = LinearInterpolant()
-        x0 = torch.randn(32, 2)  # noise
-        x1 = torch.randn(32, 2)  # data
-        t = torch.rand(32)
-        xt, ut = interpolant.interpolate(x0, x1, t)
+        path = LinearInterpolant()
+        x_t, u_t = path(torch.randn_like(x1), x1, torch.rand(len(x1)))
         ```
     """
 

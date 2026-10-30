@@ -115,15 +115,17 @@ class DiT(_ConditionalBackbone):
             computation is unchanged.
 
     Example:
-        ```python
-        from torchebm.models import DiT, dit_b_2
+        DiT-XL/2 of the paper on the 32x32x4 SD-VAE latents of ImageNet 256,
+        with the reference label dropout; ``out_channels=8`` adds the
+        learned-sigma head of the diffusion setup:
 
-        model = DiT(
-            input_size=32, in_channels=4, patch_size=2,
-            embed_dim=384, depth=12, num_heads=6, num_classes=1000,
+        ```python
+        from torchebm.models import dit_xl_2
+
+        model = dit_xl_2(
+            input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1
         )
-        preset = dit_b_2(input_size=32, in_channels=4, num_classes=1000)
-        v = preset(x, t, y=labels)  # (B, 4, 32, 32)
+        v = model(x_t, t, y=y)
         ```
     """
 

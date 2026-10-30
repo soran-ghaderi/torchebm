@@ -30,15 +30,14 @@ class VariancePreservingInterpolant(BaseInterpolant):
             (default), ``"epsilon"``, or ``"sample"``.
 
     Example:
+        The VP SDE of Song et al. (2021), \(\beta\) from 0.1 to 20 as in DDPM,
+        which is also the VP path of SiT (Ma et al., 2024):
+
         ```python
         from torchebm.interpolants import VariancePreservingInterpolant
-        import torch
 
-        interpolant = VariancePreservingInterpolant(sigma_min=0.1, sigma_max=20.0)
-        x0 = torch.randn(32, 2)  # noise
-        x1 = torch.randn(32, 2)  # data
-        t = torch.rand(32)
-        xt, ut = interpolant.interpolate(x0, x1, t)
+        path = VariancePreservingInterpolant(sigma_min=0.1, sigma_max=20.0)
+        x_t, u_t = path(torch.randn_like(x1), x1, torch.rand(len(x1)))
         ```
     """
 

@@ -21,7 +21,7 @@ torch.set_float32_matmul_precision("high")
 
 
 class BaseTrainer:
-    """
+    r"""
     Base class for training energy-based models.
 
     This class provides a generic interface for training EBMs, supporting various
@@ -59,16 +59,21 @@ class BaseTrainer:
         load_checkpoint: Load model from checkpoint
 
     Example:
+        The \(p(x)\) training of JEM (Grathwohl et al., 2020) on CIFAR-10:
+        Adam at 1e-4 for 150 epochs, 20 SGLD steps at step 1 and noise 0.01
+        from a 10000-sample buffer (JEM also decays the learning rate by 0.3
+        at epochs 50 and 100):
+
         ```python
         trainer = BaseTrainer(
             model,
-            torch.optim.Adam(model.parameters(), lr=1e-3),
+            torch.optim.Adam(model.parameters(), lr=1e-4),
             ContrastiveDivergenceLoss(),
-            sampler=LangevinDynamics(step_size=0.1),
-            buffer=ReplayBuffer(capacity=8192, sample_shape=(2,)),
-            n_steps=10,
+            sampler=LangevinDynamics(step_size=1.0, noise_scale=0.01 / 2**0.5),
+            buffer=ReplayBuffer(capacity=10000, sample_shape=(3, 32, 32)),
+            n_steps=20,
         )
-        trainer.train(loader, num_epochs=10)
+        trainer.train(loader, num_epochs=150)
         ```
     """
 

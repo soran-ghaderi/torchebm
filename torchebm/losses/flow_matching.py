@@ -79,23 +79,45 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)``
             multiplied into the per-sample loss.
         negate_velocity: Regress onto \(-u_t\) (data -> noise) instead of
-            \(u_t\), the sign the gradient-descent samplers and `EqMEnergy`
-            assume, so the trained field drops into them without a wrapper.
-            Sample it with ``FlowSampler(negate_velocity=True)``. Mirrors the
-            sampler flag of the same name. Default False.
+            \(u_t\), the sign of the deprecated model-bound
+            `EquilibriumMatchingLoss` and of `EqMEnergy`. Sample it with
+            ``FlowSampler(negate_velocity=True)``. Mirrors the sampler flag of
+            the same name. Default False.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
+        SiT-XL/2 (Ma et al., 2024) on ImageNet 256: ``x1`` are SD-VAE latents
+        scaled by 0.18215, ``y`` their labels, batches of 256; sampling uses
+        the reference dopri5 ODE solver and guidance 1.5 on the first three
+        latent channels.
+
         ```python
         from torchebm.interpolants import LinearInterpolant
         from torchebm.losses import FlowMatchingLoss
+        from torchebm.models import ClassifierFreeGuidance, dit_xl_2
         from torchebm.samplers import FlowSampler
+        from torchebm.utils import EMA
 
+        model = dit_xl_2(
+            input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1
+        )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+        ema = EMA(model, decay=0.9999)
         path, loss_fn = LinearInterpolant(), FlowMatchingLoss()
-        x_t, u_t = path(torch.randn_like(x1), x1, t)
-        loss = loss_fn(model(x_t, t), u_t)
-        samples = FlowSampler()(model, torch.randn(64, 2), n_steps=50)
+
+        x0, t = torch.randn_like(x1), torch.rand(len(x1))
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t, t, y=y), u_t)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        ema.update(model)
+
+        guided = ClassifierFreeGuidance(
+            ema.module, guidance_scale=1.5, null_condition=1000, guide_channels=3
+        )
+        samples = FlowSampler()(guided, torch.randn(64, 4, 32, 32), model_kwargs={"y": y})
         ```
     """
 

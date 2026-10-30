@@ -155,12 +155,22 @@ class FlowSampler(BaseSampler):
             SDE integrators are valid for ODE mode (zero diffusion).
 
     Example:
+        The two samplers of SiT (Ma et al., 2024) at the reference settings,
+        on a class-conditional velocity model over ImageNet 256 latents (see
+        `FlowMatchingLoss`): the dopri5 probability-flow ODE (atol 1e-6, rtol
+        1e-3, the defaults here) and the 250-step Euler-Maruyama SDE with
+        diffusion \(\sigma_t\) and a last mean step of size 0.04.
+
         ```python
-        import torch
         from torchebm.samplers import FlowSampler
 
-        sampler = FlowSampler(interpolant="linear", integrator="midpoint")
-        samples = sampler(velocity_net, torch.randn(100, 2), n_steps=50)
+        x = torch.randn(64, 4, 32, 32)
+        samples = FlowSampler()(model, x, model_kwargs={"y": y})
+
+        sampler = FlowSampler(
+            mode="sde", diffusion_form="sigma", last_step="Mean", last_step_size=0.04
+        )
+        samples = sampler(model, x, n_steps=250, model_kwargs={"y": y})
         ```
     """
 

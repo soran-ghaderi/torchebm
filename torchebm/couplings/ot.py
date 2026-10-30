@@ -237,13 +237,22 @@ class ExactOTCoupling(BaseCostCoupling):
             `BaseCostCoupling`.
 
     Example:
+        OT-CFM (Tong et al., 2024) on 2D data: exact minibatch OT pairs and
+        the constant smoothing \(\sigma = 0.1\) of the conditional path;
+        ``model`` is the paper's MLP on \((x, t)\), three hidden layers of
+        width 64 with SELU, trained with AdamW (weight decay 1e-5) at batch
+        512.
+
         ```python
         from torchebm.couplings import ExactOTCoupling
+        from torchebm.interpolants import LinearInterpolant
+        from torchebm.losses import FlowMatchingLoss
 
-        coupling = ExactOTCoupling()
-        x0 = torch.randn_like(x1)
-        x0, x1 = coupling(x0, x1)             # transport-aligned pairs
-        xt, ut = interpolant.interpolate(x0, x1, t)
+        coupling, path, loss_fn = ExactOTCoupling(), LinearInterpolant(), FlowMatchingLoss()
+        x0, x1 = coupling(torch.randn_like(x1), x1)
+        t = torch.rand(len(x1))
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t + 0.1 * torch.randn_like(x_t), t), u_t)
         ```
     """
 
