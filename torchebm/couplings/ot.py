@@ -233,6 +233,8 @@ class ExactOTCoupling(BaseCostCoupling):
 
     Args:
         tol: Optimality tolerance, relative to the normalized cost scale.
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
         ```python
@@ -245,8 +247,10 @@ class ExactOTCoupling(BaseCostCoupling):
         ```
     """
 
-    def __init__(self, tol: float = 1e-4, process_group=None):
-        super().__init__(process_group=process_group)
+    def __init__(
+        self, tol: float = 1e-4, process_group=None, conditional: bool = False
+    ):
+        super().__init__(process_group=process_group, conditional=conditional)
         self.tol = tol
 
     def _solve(
@@ -283,6 +287,8 @@ class SinkhornCoupling(BaseCostCoupling):
             and `couple` becomes a collective every rank must enter
             together. Pass `torch.distributed.group.WORLD` for the default
             group; `None` (the default) never issues a collective.
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
         ```python
@@ -290,6 +296,9 @@ class SinkhornCoupling(BaseCostCoupling):
 
         coupling = SinkhornCoupling(reg=0.01)
         x0, x1 = coupling(torch.randn_like(x1), x1)
+
+        coupling = SinkhornCoupling(conditional=True)
+        x0, x1 = coupling(torch.randn_like(x1), x1, y=labels)
         ```
     """
 
@@ -300,8 +309,9 @@ class SinkhornCoupling(BaseCostCoupling):
         reg: float = 0.05,
         n_iters: int = 100,
         process_group: Optional["torch.distributed.ProcessGroup"] = None,
+        conditional: bool = False,
     ):
-        super().__init__(process_group=process_group)
+        super().__init__(process_group=process_group, conditional=conditional)
         if reg <= 0:
             raise ValueError(f"reg must be positive, got {reg}")
         if n_iters <= 0:
@@ -340,6 +350,8 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
         reg_marginal: KL marginal-relaxation strength \(\rho\); larger values
             approach balanced Sinkhorn (uniform weights).
         n_iters: Number of Sinkhorn iterations.
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
         ```python
@@ -358,8 +370,9 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
         reg_marginal: float = 1.0,
         n_iters: int = 100,
         process_group=None,
+        conditional: bool = False,
     ):
-        super().__init__(process_group=process_group)
+        super().__init__(process_group=process_group, conditional=conditional)
         if reg <= 0:
             raise ValueError(f"reg must be positive, got {reg}")
         if reg_marginal <= 0:
@@ -414,6 +427,10 @@ class GreedyCoupling(BaseCostCoupling):
 
     Rejects `process_group` at construction; use `SinkhornCoupling` for
     global-batch coupling.
+
+    Args:
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
         ```python

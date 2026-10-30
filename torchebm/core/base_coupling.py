@@ -174,14 +174,20 @@ class BaseCostCoupling(BaseCoupling):
         process_group: Group to couple globally over; None couples the local
             batch only. Only solvers with `_supports_process_group` accept a
             group.
+        conditional: Pair only samples with equal class labels ``y``, passed
+            as conditioning on every call: per-class OT in a single solve.
+            Each source takes the label of the target at its index, so the
+            source distribution within every class is unchanged.
     """
 
     _supports_process_group = False
     process_group: Optional["torch.distributed.ProcessGroup"] = None
+    conditional: bool = False
 
     def __init__(
         self,
         process_group: Optional["torch.distributed.ProcessGroup"] = None,
+        conditional: bool = False,
     ):
         if process_group is not None and not self._supports_process_group:
             raise ValueError(
@@ -191,6 +197,7 @@ class BaseCostCoupling(BaseCoupling):
                 "pooled batch)."
             )
         self.process_group = process_group
+        self.conditional = conditional
 
     @torch.no_grad()
     def couple(
@@ -226,14 +233,11 @@ class BaseCostCoupling(BaseCoupling):
         solver's draw is broadcast from rank 0, so per-rank generators cannot
         desynchronize the pairing. Requires equal batch sizes on every rank
         and every rank calling together (collective). Degrades to the local
-        path in single-process runs.
+        path in single-process runs. With `conditional`, the labels ``y`` are
+        gathered too, so classes pair across ranks; other conditioning never
+        reaches `compute_cost`.
         """
-        if kwargs:
-            raise NotImplementedError(
-                "Conditioning-aware ground costs are not supported with "
-                "process_group: conditioning stays rank-local while the cost "
-                "is computed on the pooled batches."
-            )
+        y = self._require_y(kwargs.get("y")) if self.conditional else None
         from torchebm.utils.distributed import (
             all_gather_cat,
             broadcast_tensor,
@@ -244,7 +248,9 @@ class BaseCostCoupling(BaseCoupling):
         g1 = all_gather_cat(x1, group=self.process_group)
         if g0.shape[0] == 1:
             return CouplingResult(x0, x1)
-        cost = self.compute_cost(g0, g1)
+        if y is not None:
+            y = all_gather_cat(y, group=self.process_group)
+        cost = self.compute_cost(g0, g1, y=y)
         idx = self._solve(cost.T, generator=generator)
         idx = broadcast_tensor(idx, src=0, group=self.process_group)
         start = get_rank(self.process_group) * x1.shape[0]
@@ -263,17 +269,43 @@ class BaseCostCoupling(BaseCoupling):
         C_{ij} = \frac{\|x_0^{(i)} - x_1^{(j)}\|^2}{\max_{kl} C_{kl}}
         \]
 
+        With `conditional`, source \(i\) takes the label \(y_i\) and pairs
+        across labels are priced out:
+
+        \[
+        C_{ij} = n + 1 \quad \text{if } y_i \neq y_j
+        \]
+
+        which exceeds the cost of any within-class matching (at most \(n\)),
+        so every solver pairs within classes: the label-preserving limit of
+        conditional OT (Chemseddine et al., 2024; Kerrigan et al., 2024).
+
         Args:
             x0: Source samples of shape (batch_size, ...).
             x1: Target samples of shape (batch_size, ...).
-            **kwargs: Optional conditioning (unused by the default cost).
+            **kwargs: Optional conditioning; with `conditional`, the class
+                labels ``y`` of shape (batch_size, ...).
 
         Returns:
             Cost matrix of shape (batch_size, batch_size).
         """
         batch = x0.shape[0]
         cost = torch.cdist(x0.reshape(batch, -1), x1.reshape(batch, -1)).square()
-        return cost / cost.max().clamp(min=1e-12)
+        cost = cost / cost.max().clamp(min=1e-12)
+        if self.conditional:
+            y = self._require_y(kwargs.get("y")).reshape(batch, -1)
+            mismatch = (y.unsqueeze(1) != y.unsqueeze(0)).any(dim=-1)
+            cost = cost.masked_fill(mismatch, batch + 1.0)
+        return cost
+
+    def _require_y(self, y: Optional[torch.Tensor]) -> torch.Tensor:
+        r"""Validate that class labels were passed (conditional couplings)."""
+        if y is None:
+            raise ValueError(
+                f"{self.__class__.__name__}(conditional=True) pairs samples "
+                "within classes; pass the class labels as y"
+            )
+        return y
 
     @abstractmethod
     def _solve(

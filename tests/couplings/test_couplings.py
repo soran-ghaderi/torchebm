@@ -337,3 +337,50 @@ def test_ot_coupling_repr():
     assert "ExactOTCoupling" in repr(ExactOTCoupling())
     assert "SinkhornCoupling" in repr(SinkhornCoupling())
     assert "GreedyCoupling" in repr(GreedyCoupling())
+
+
+# Conditional (per-class) OT
+# ==========================
+
+
+def _source_index(y0, x0):
+    return (y0.unsqueeze(1) == x0.unsqueeze(0)).all(-1).int().argmax(dim=1)
+
+
+@pytest.mark.parametrize("one_hot", [False, True])
+@pytest.mark.parametrize(
+    "coupling_cls",
+    [ExactOTCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling],
+)
+def test_conditional_coupling_pairs_within_classes(coupling_cls, one_hot):
+    """Every target is paired with a source carrying its own label."""
+    torch.manual_seed(0)
+    labels = torch.arange(4).repeat(8)
+    x0 = torch.randn(32, 2)
+    x1 = torch.randn(32, 2)
+    y = torch.nn.functional.one_hot(labels).float() if one_hot else labels
+    y0, y1 = coupling_cls(conditional=True)(x0, x1, y=y)
+    assert y1 is x1
+    assert torch.equal(labels[_source_index(y0, x0)], labels)
+
+
+def test_conditional_exact_ot_is_optimal_within_each_class():
+    """Conditional exact OT equals the brute-force optimum of every class."""
+    torch.manual_seed(0)
+    labels = torch.arange(3).repeat(5)
+    x0 = torch.randn(15, 2)
+    x1 = torch.randn(15, 2)
+    y0, _ = ExactOTCoupling(tol=1e-6, conditional=True)(x0, x1, y=labels)
+    for c in range(3):
+        s0, s1 = x0[labels == c], x1[labels == c]
+        cost = torch.cdist(s1, s0).square()
+        best = min(
+            itertools.permutations(range(5)),
+            key=lambda p: cost[torch.arange(5), list(p)].sum().item(),
+        )
+        assert torch.equal(y0[labels == c], s0[list(best)])
+
+
+def test_conditional_coupling_requires_y():
+    with pytest.raises(ValueError, match="class labels as y"):
+        SinkhornCoupling(conditional=True)(torch.randn(8, 2), torch.randn(8, 2))
