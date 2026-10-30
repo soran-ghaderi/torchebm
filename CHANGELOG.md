@@ -5,11 +5,19 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.10](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.8.10) - 2026-09-29
+## [0.8.10](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.8.10) - 2026-10-11
 
 ### Added
 
 - [`bc41ec9`](https://github.com/soran-ghaderi/torchebm/commit/bc41ec9238cf7fd8321f356938fabe8e4af5cca0) - expose differentiable energy gradient
+- [`87a0c2b`](https://github.com/soran-ghaderi/torchebm/commit/87a0c2b0b00658fb335b3eed35fa64d23ae063ea) - add fixed-time conditioning wrapper
+- [`a84a631`](https://github.com/soran-ghaderi/torchebm/commit/a84a6310d09939a515976ac8c5f0e750570c9262) - expose flow matching preparation
+
+### Fixed
+
+- [`fe8317a`](https://github.com/soran-ghaderi/torchebm/commit/fe8317a2fde25a6aaf6360c408fb23624b73c67c) - preserve fixed-time precision
+- [`a588b75`](https://github.com/soran-ghaderi/torchebm/commit/a588b75df64ce705d2dd9e200026043fe8b17f95) - preserve subclass loss terms
+- [`81035fd`](https://github.com/soran-ghaderi/torchebm/commit/81035fd37e132a71720084db2a2a7e601d7a2e4c) - align functional t_sampler signature with loss classes
 
 ### Other
 

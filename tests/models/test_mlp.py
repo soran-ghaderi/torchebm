@@ -93,6 +93,22 @@ def test_cond_width_mismatch_raises():
         model(torch.randn(4, 2), cond=torch.randn(4, 8))
 
 
+@pytest.mark.parametrize("conditioning", ["adaln_zero", "concat"])
+def test_time_invariant_pins_model_clock_to_zero(conditioning):
+    torch.manual_seed(0)
+    model = _tiny(conditioning=conditioning, time_invariant=True)
+    reference = _tiny(conditioning=conditioning)
+    with torch.no_grad():
+        for p in model.parameters():
+            p.normal_()
+    reference.load_state_dict(model.state_dict())
+    x = torch.randn(4, 2)
+    with torch.no_grad():
+        expected = reference(x, torch.zeros(4))
+        assert torch.equal(model(x, torch.rand(4)), expected)
+        assert torch.equal(model(x), expected)
+
+
 def test_unconditional_ignores_t():
     model = _tiny(conditioning="concat", cond_dim=0)
     assert model.t_embedder is None

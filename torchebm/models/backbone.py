@@ -25,9 +25,11 @@ class _ConditionalBackbone(nn.Module):
     default embedders, so every backbone exposes the same
     ``forward(x, t=None, y=None, *, cond=None)`` contract with identical
     semantics. ``cond_dim=0`` builds no embedders (unconditional backbone);
-    subclasses decide whether that is allowed. ``prediction_type`` declares
-    what ``forward`` returns (``"velocity"``, ``"score"``, or ``"epsilon"``);
-    it does not change the computation.
+    subclasses decide whether that is allowed. ``time_invariant=True`` pins
+    ``t`` to zero on every call, the Equilibrium Matching model convention,
+    so the backbone defines one field for all times. ``prediction_type``
+    declares what ``forward`` returns (``"velocity"``, ``"score"``, or
+    ``"epsilon"``); it does not change the computation.
     """
 
     prediction_type: str = "velocity"
@@ -40,6 +42,7 @@ class _ConditionalBackbone(nn.Module):
         class_dropout_prob: float = 0.0,
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
+        time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
         super().__init__()
@@ -70,6 +73,7 @@ class _ConditionalBackbone(nn.Module):
 
         self.cond_dim = int(cond_dim)
         self.num_classes = int(num_classes) if num_classes is not None else None
+        self.time_invariant = bool(time_invariant)
         self.prediction_type = prediction_type
         self._default_t_embedder = t_embedder is None and self.cond_dim > 0
         self._default_y_embedder = y_embedder is None and self.num_classes is not None
@@ -97,10 +101,13 @@ class _ConditionalBackbone(nn.Module):
 
     def _condition(
         self,
+        x: torch.Tensor,
         t: Optional[torch.Tensor],
         y: Optional[torch.Tensor],
         cond: Optional[torch.Tensor],
     ) -> torch.Tensor:
+        if self.time_invariant:
+            t = x.new_zeros(x.shape[0])
         c = None
         if t is not None:
             c = self.t_embedder(t)

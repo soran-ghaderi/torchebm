@@ -108,6 +108,8 @@ class DiT(_ConditionalBackbone):
             reuses ``num_heads``.
         pos_embed: Positional embedding kind: ``"sincos"`` (fixed 2D
             sin/cos, default), ``"learnable"``, or ``None`` for none.
+        time_invariant: Pin ``t`` to zero on every call, the Equilibrium
+            Matching model convention; labels and ``cond`` still apply.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
             ``"score"``, or ``"epsilon"``. A declaration for consumers; the
             computation is unchanged.
@@ -145,6 +147,7 @@ class DiT(_ConditionalBackbone):
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
         pos_embed: Optional[str] = "sincos",
+        time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
         if isinstance(input_size, int):
@@ -172,6 +175,7 @@ class DiT(_ConditionalBackbone):
             class_dropout_prob=class_dropout_prob,
             t_embedder=t_embedder,
             y_embedder=y_embedder,
+            time_invariant=time_invariant,
             prediction_type=prediction_type,
         )
 
@@ -289,7 +293,7 @@ class DiT(_ConditionalBackbone):
         Returns:
             torch.Tensor: Output of shape ``(B, out_channels, H, W)``.
         """
-        c = self._condition(t, y, cond)
+        c = self._condition(x, t, y, cond)
         if tuple(x.shape[-2:]) != self.input_size:
             raise ValueError(
                 f"input has spatial size {tuple(x.shape[-2:])}, "
