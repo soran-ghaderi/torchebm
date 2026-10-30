@@ -134,9 +134,9 @@ class SlicedScoreMatchingLoss(BaseLoss):
         n_projections: Projections per sample.
         projection_type: ``"rademacher"`` (default), ``"sphere"``, or
             ``"gaussian"``.
-        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
-        dtype: Data type for computations.
-        device: Device for computations.
+        *args: Positional arguments of `BaseLoss`.
+        **kwargs: Keyword arguments of `BaseLoss`: ``reduction`` (``"mean"``,
+            ``"sum"``, or ``"none"``), ``dtype`` and ``device``.
 
     Example:
         ```python

@@ -44,8 +44,8 @@ class ContrastiveDivergenceLoss(BaseLoss):
         trim_fraction: Fraction of the largest negative energies dropped from
             their mean, in [0, 1) (the robust statistic of Energy Matching).
         clamp: Floor \(-c\) applied to the loss; ``None`` (default) disables it.
-        dtype: Data type for computations.
-        device: Device for computations.
+        *args: Positional arguments of `BaseLoss`.
+        **kwargs: Keyword arguments of `BaseLoss`, e.g. ``dtype`` and ``device``.
 
     Example:
         ```python
