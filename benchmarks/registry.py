@@ -255,7 +255,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "init_kwargs": {"sigma_min": 0.1, "sigma_max": 20.0},
     },
     # ── Models (completely custom configs) ──
-    "ConditionalTransformer2D": {
+    "DiT": {
         "model_configs": {
             "small": {
                 "input_size": 16,
@@ -1025,7 +1025,7 @@ def build_model_bench(
         target = torch.randn_like(x)
 
         def fn():
-            out = model(x, cond)
+            out = model(x, cond=cond)
             loss = (out - target).pow(2).mean()
             loss.backward()
             model.zero_grad()
@@ -1033,7 +1033,7 @@ def build_model_bench(
     else:
 
         def fn():
-            model(x, cond)
+            model(x, cond=cond)
 
     info = {
         "module": spec.module,
