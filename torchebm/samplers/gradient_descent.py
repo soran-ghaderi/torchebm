@@ -62,13 +62,15 @@ class GradientDescentSampler(BaseSampler):
         device: Device for computations.
 
     Example:
+        The sampler of Equilibrium Matching (Wang and Du, 2025) on EqM-XL/2,
+        a class-conditional model on ImageNet 256 latents (see
+        `EquilibriumMatchingLoss`):
+
         ```python
-        import torch
-        from torchebm.core import DoubleWellModel
         from torchebm.samplers import GradientDescentSampler
 
-        sampler = GradientDescentSampler(step_size=0.1)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
+        sampler = GradientDescentSampler(step_size=0.0017)
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
         ```
     """
 
@@ -222,6 +224,11 @@ class NesterovSampler(BaseSampler):
 
     where \(\mu\) is the momentum coefficient and \(\eta\) is the step size.
 
+    With ``lookahead_only=True`` the momentum only moves the point where the
+    score is evaluated, \(v_{k+1} = -\eta \nabla_x E(x_k + \mu v_k)\), so
+    \(x_{k+1} = x_k - \eta \nabla_x E(x_k + \mu (x_k - x_{k-1}))\): the NAG-GD
+    sampler of Equilibrium Matching (Wang and Du, 2025, Eq. 9).
+
     Called as ``sampler(model, x, n_steps=...)``, the model giving
     the score \(-\nabla_x E\) at the lookahead point \(x_k + \mu v_k\); see
     `BaseSampler`. On a field that is not a gradient, the update is
@@ -232,17 +239,21 @@ class NesterovSampler(BaseSampler):
             without it and call ``sampler(model, x, ...)``.
         step_size: Step size \(\eta\) or scheduler.
         momentum: Momentum coefficient \(\mu \in [0, 1)\).
+        lookahead_only: Step with the lookahead score alone, without the
+            momentum term. Default False, standard Nesterov momentum.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
+        The NAG-GD sampler of Equilibrium Matching (Wang and Du, 2025) on
+        EqM-XL/2, a class-conditional model on ImageNet 256 latents (see
+        `EquilibriumMatchingLoss`):
+
         ```python
-        import torch
-        from torchebm.core import DoubleWellModel
         from torchebm.samplers import NesterovSampler
 
-        sampler = NesterovSampler(step_size=0.1, momentum=0.9)
-        samples = sampler(DoubleWellModel(), torch.randn(100, 2), n_steps=500)
+        sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True)
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
         ```
     """
 
@@ -251,6 +262,7 @@ class NesterovSampler(BaseSampler):
         model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         momentum: float = 0.9,
+        lookahead_only: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
@@ -264,6 +276,7 @@ class NesterovSampler(BaseSampler):
         if not (0 <= momentum < 1):
             raise ValueError("momentum must be in [0, 1)")
         self.momentum = momentum
+        self.lookahead_only = bool(lookahead_only)
 
         self._register_param("step_size", step_size, positive=True)
 
@@ -285,13 +298,14 @@ class NesterovSampler(BaseSampler):
         self.reset_schedulers(model)
         v = torch.zeros_like(x)
         mu = self.momentum
+        carry = 0.0 if self.lookahead_only else mu
         trajectory = None
         if return_trajectory:
             trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
         for i in range(n_steps):
             eta = self.get_scheduled_value("step_size")
             lookahead_score = score(torch.add(x, v, alpha=mu))
-            v.mul_(mu).add_(lookahead_score, alpha=eta)
+            v.mul_(carry).add_(lookahead_score, alpha=eta)
             x = x + v
             self.step_schedulers(model)
             if trajectory is not None:
@@ -363,13 +377,14 @@ class NesterovSampler(BaseSampler):
             }
 
         mu = self.momentum
+        carry = 0.0 if self.lookahead_only else mu
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
                 eta = self.get_scheduled_value("step_size")
                 lookahead = torch.add(x, v, alpha=mu)
                 grad = self._model_gradient(lookahead, model_kwargs)
-                v.mul_(mu).sub_(grad, alpha=eta)
+                v.mul_(carry).sub_(grad, alpha=eta)
                 x = x + v
 
                 if (i + 1) % thin == 0:
