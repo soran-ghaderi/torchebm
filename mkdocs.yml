@@ -149,7 +149,7 @@ plugins:
         - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, GradientDescentSampler, NesterovSampler, FlowSampler
         - Losses: ContrastiveDivergenceLoss, ScoreMatchingLoss, DenoisingScoreMatchingLoss, SlicedScoreMatchingLoss, FlowMatchingLoss, EquilibriumMatchingLoss, EnergyMatchingLoss
         - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant, VarianceExplodingInterpolant
-        - Couplings: IndependentCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling, ExactOTCoupling, ReflowCoupling
+        - Couplings: IndependentCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling, ExactOTCoupling
         - Integrators: EulerMaruyama, Heun, RK4, Dopri5, Leapfrog, GeneralisedLeapfrog
         - Models: BaseModel, AnalyticModel, DiT, TimeConditionedMLP, ClassifierFreeGuidance, InteractionModel
         - Datasets: TwoMoons, EightGaussians, SwissRoll, and more synthetic benchmarks

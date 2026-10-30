@@ -74,8 +74,9 @@ class TimeConditionedMLP(_ConditionalBackbone):
         from torchebm.losses import FlowMatchingLoss
         from torchebm.models import TimeConditionedMLP
 
-        field = TimeConditionedMLP(in_dim=2)
-        loss = FlowMatchingLoss(model=field)(x_batch)
+        model = TimeConditionedMLP(in_dim=2)
+        loss_fn = FlowMatchingLoss()
+        loss = loss_fn(model(x_t, t), u_t)
         ```
     """
 

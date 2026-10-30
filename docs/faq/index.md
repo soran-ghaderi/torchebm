@@ -70,6 +70,7 @@ warn once per process.
 | `EqMEnergy` | a `prediction_type="score"` model sampled directly |
 | `model.gradient(x)` | `model(x)` on a model built with `prediction_type="score"`, which returns \(-\nabla_x E\); a closed-form gradient goes in `AnalyticModel._score` |
 | `ContrastiveDivergenceTrainer` | `BaseTrainer(model, optimizer, ContrastiveDivergenceLoss(), sampler=..., buffer=...)` |
+| `ReflowCoupling(flow)` | `x1 = sampler(model, x0, n_steps=...)` in the training loop |
 
 The deprecated paths are removed in release 0.12.0, and not before
 2027-01-29; `tests/test_deprecations.py` enforces the window. The scripts in

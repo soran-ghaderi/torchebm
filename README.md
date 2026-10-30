@@ -114,7 +114,7 @@ The path decides how the source becomes data, and the coupling decides which sou
 | `LinearInterpolant` (flow matching) | `IndependentCoupling` (the classical pairing) |
 | `CosineInterpolant` | `GreedyCoupling` (nearest unmatched) |
 | `VariancePreservingInterpolant`, `VarianceExplodingInterpolant` (diffusion) | `SinkhornCoupling` (entropic OT), `ExactOTCoupling` |
-| | `UnbalancedSinkhornCoupling` (per-pair weights), `ReflowCoupling` (model-induced) |
+| | `UnbalancedSinkhornCoupling` (per-pair weights) |
 
 ### And the rest
 
@@ -292,19 +292,15 @@ x0, x1 = coupling(x0, x1)
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/rectified_flow_straightening.png" alt="Linear interpolation crosses; the rectified flow induced by its own pairs is straight" width="820"/>
   <br>
-  <em>Fig. 2 of <a href="https://arxiv.org/abs/2209.03003">Liu et al. (2023)</a>: paths that cross (left) are rewired by the flow's own pairing into straight ones (right). That rewiring is <code>ReflowCoupling</code>.</em>
+  <em>Fig. 2 of <a href="https://arxiv.org/abs/2209.03003">Liu et al. (2023)</a>: paths that cross (left) are rewired by the flow's own pairing into straight ones (right).</em>
 </p>
 
 ```python
-from functools import partial
-from torchebm.couplings import ReflowCoupling
-
-flow = partial(FlowSampler(integrator="heun"), model, n_steps=50)
-coupling = ReflowCoupling(flow)
-x0, x1 = coupling(torch.randn(256, 2))
+x0 = torch.randn(256, 2)
+x1 = FlowSampler(integrator="heun")(model, x0, n_steps=50)
 ```
 
-The coupling takes any callable from noise to data; here it is the ODE of the trained flow, so $x_1 = \Phi(x_0)$ is the model's own output and no data is needed.
+The ODE of the trained flow maps the noise to $x_1 = \Phi(x_0)$, the model's own output, so no data is needed; the pairs then go through the interpolant as above.
 
 
 ### Contrastive divergence

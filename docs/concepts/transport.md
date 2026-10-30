@@ -73,8 +73,9 @@ addressable by registry string via `get_coupling`.
 Minibatch OT couplings reduce crossings between the paired paths, so the
 marginal flow is straighter[^tong]; this lowers the variance of the regression
 target and the number of integration steps generation needs[^liu].
-`ReflowCoupling` is the model-induced version of the same idea, re-pairing
-noise with the model's current outputs to iteratively rectify the flow.
+Reflow is the model-induced version of the same idea: the training loop pairs
+noise with the model's own outputs, `x1 = sampler(model, x0, n_steps=50)`, to
+iteratively rectify the flow.
 
 ## Where they sit in the loop
 
