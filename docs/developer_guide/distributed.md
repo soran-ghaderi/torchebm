@@ -184,7 +184,8 @@ x0, x1 = coupling(x0_local, x1_local, generator=generator)
 ```
 
 Every rank gathers both batches, solves the identical pooled problem, and
-keeps its own rows; the row-conditional draw is broadcast from rank 0. Budget
+keeps its own targets, paired with sources from any rank; the per-target draw
+is broadcast from rank 0. Budget
 for the \((\text{world\_size} \times \text{batch})^2\) cost matrix on every
 rank. Exact and greedy couplings reject a process group (assignment solvers
 scale quadratically with the pooled batch); `couple` becomes a collective all

@@ -57,10 +57,10 @@ class BaseCoupling(ABC):
     A coupling is a rule that pairs a batch of source samples \(x_0\)
     (typically noise) with target samples \(x_1\) (data) before
     interpolation. Depending on the family it may **reorder** or **resample**
-    an incoming target batch (independent, minibatch OT), **transform** it
-    (equivariant alignment, closed-form maps), or **generate** it from the
-    source (model-induced couplings such as reflow and DSBM, where
-    \(x_1 = \Phi(x_0)\)).
+    the source batch against an incoming target batch (independent, minibatch
+    OT), **transform** the target (equivariant alignment, closed-form maps),
+    or **generate** it from the source (model-induced couplings such as
+    reflow and DSBM, where \(x_1 = \Phi(x_0)\)).
 
     Couplings are computed under `torch.no_grad()` and never propagate
     gradients. Equal batch sizes are not enforced at this level; families
@@ -102,7 +102,7 @@ class BaseCoupling(ABC):
                 source and ignore (or do not need) an incoming batch;
                 pairing families require it via `_require_x1`.
             generator: RNG for stochastic couplings (entropic plans draw a
-                target index per source); the global RNG when `None`.
+                source index per target); the global RNG when `None`.
                 Deterministic families ignore it.
             **kwargs: Optional conditioning forwarded by the caller; ignored
                 by unconditional couplings.
@@ -155,9 +155,10 @@ class BaseCostCoupling(BaseCoupling):
     2. validates that a target batch exists and batch sizes match,
     3. passes a single-sample batch through unchanged,
     4. builds a pairwise cost matrix via `compute_cost` (overridable), and
-    5. delegates pairing to the abstract `_solve`.
+    5. delegates pairing to the abstract `_solve` on its transpose.
 
-    `x0` order and marginal are always preserved; only `x1` is reindexed.
+    `x1` order and marginal are always preserved; only `x0` is reindexed, so
+    conditioning aligned with `x1` (class labels, prompts) stays aligned.
     Subclasses supply `_solve`; they may also override `compute_cost` for a
     non-Euclidean or conditioning-aware ground cost. Weighted cost variants
     (unbalanced OT) override `couple` itself, reusing `compute_cost`, to
@@ -165,7 +166,7 @@ class BaseCostCoupling(BaseCoupling):
 
     Constructed with a `process_group`, steps 4-5 instead run on the
     all_gathered pooled batches of every rank and each rank keeps its own
-    rows (see `_couple_global`). Solvers opt in via the
+    targets (see `_couple_global`). Solvers opt in via the
     `_supports_process_group` class flag; the others reject the argument at
     construction. `None` (the default) never issues a collective.
 
@@ -207,8 +208,8 @@ class BaseCostCoupling(BaseCoupling):
         if x0.shape[0] == 1:
             return CouplingResult(x0, x1)
         cost = self.compute_cost(x0, x1, **kwargs)
-        idx = self._solve(cost, generator=generator)
-        return CouplingResult(x0, x1[idx])
+        idx = self._solve(cost.T, generator=generator)
+        return CouplingResult(x0[idx], x1)
 
     def _couple_global(
         self,
@@ -221,7 +222,7 @@ class BaseCostCoupling(BaseCoupling):
         r"""Couple against the pooled batches of every rank in the group.
 
         All ranks gather both batches, solve the identical pooled problem,
-        and keep their own rows, paired against targets from any rank; the
+        and keep their own targets, paired with sources from any rank; the
         solver's draw is broadcast from rank 0, so per-rank generators cannot
         desynchronize the pairing. Requires equal batch sizes on every rank
         and every rank calling together (collective). Degrades to the local
@@ -244,10 +245,10 @@ class BaseCostCoupling(BaseCoupling):
         if g0.shape[0] == 1:
             return CouplingResult(x0, x1)
         cost = self.compute_cost(g0, g1)
-        idx = self._solve(cost, generator=generator)
+        idx = self._solve(cost.T, generator=generator)
         idx = broadcast_tensor(idx, src=0, group=self.process_group)
-        start = get_rank(self.process_group) * x0.shape[0]
-        return CouplingResult(x0, g1[idx[start : start + x0.shape[0]]])
+        start = get_rank(self.process_group) * x1.shape[0]
+        return CouplingResult(g0[idx[start : start + x1.shape[0]]], x1)
 
     def compute_cost(
         self, x0: torch.Tensor, x1: torch.Tensor, **kwargs: Any
@@ -282,15 +283,16 @@ class BaseCostCoupling(BaseCoupling):
         Solve the pairing problem on a square cost matrix.
 
         Args:
-            cost: Cost matrix of shape (n, n).
+            cost: Cost matrix of shape (n, n), one row per target and one
+                column per source.
             generator: RNG for entropic solvers that draw row-conditionally;
                 the global RNG when `None`. Assignment solvers are
                 deterministic and ignore it.
 
         Returns:
-            Long tensor `idx` of shape (n,) pairing `x0[i]` with `x1[idx[i]]`.
+            Long tensor `idx` of shape (n,) pairing `x1[i]` with `x0[idx[i]]`.
             Assignment solvers return a permutation; entropic solvers return
-            row-conditional draws (the `x0` marginal is preserved exactly).
+            row-conditional draws (the `x1` marginal is preserved exactly).
         """
         raise NotImplementedError
 

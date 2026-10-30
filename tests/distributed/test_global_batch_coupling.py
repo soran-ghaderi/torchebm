@@ -1,8 +1,8 @@
 r"""Global-batch entropic OT coupling across ranks.
 
 With a process group, `SinkhornCoupling` all_gathers both batches, every rank
-solves the identical pooled problem, the row-conditional draw is broadcast
-from rank 0, and each rank keeps its own rows. The pinned contract: the
+solves the identical pooled problem, the per-target draw is broadcast from
+rank 0, and each rank keeps its own targets. The pinned contract: the
 2-rank global coupling equals the single-process coupling on the concatenated
 batch. Assignment solvers reject a process group at construction (quadratic
 pooled cost).
@@ -63,16 +63,16 @@ def _global_worker(rank, world_size, tmpdir):
         tmpdir,
         rank,
         {
-            "x0_unchanged": torch.equal(res.x0, x0),
-            "x1_err": (res.x1 - ref.x1[start : start + BATCH]).abs().max().item(),
+            "x1_unchanged": torch.equal(res.x1, x1),
+            "x0_err": (res.x0 - ref.x0[start : start + BATCH]).abs().max().item(),
         },
     )
 
 
 def test_two_rank_global_coupling_matches_single_process():
     for res in spawn_dist(_global_worker):
-        assert res["x0_unchanged"], res
-        assert res["x1_err"] == 0.0, res
+        assert res["x1_unchanged"], res
+        assert res["x0_err"] == 0.0, res
 
 
 def test_assignment_and_unbalanced_couplings_reject_process_group():
@@ -89,7 +89,7 @@ def test_single_process_with_group_degrades_to_local():
     local = SinkhornCoupling(reg=REG, n_iters=N_ITERS)(
         x0, x1, generator=make_generator(3)
     )
-    assert torch.equal(grouped.x1, local.x1)
+    assert torch.equal(grouped.x0, local.x0)
 
 
 def test_conditioning_kwargs_rejected_on_global_path():
