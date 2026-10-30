@@ -47,7 +47,7 @@ class ReplayBuffer(nn.Module):
         from torchebm.utils import ReplayBuffer
 
         buffer = ReplayBuffer(capacity=8192, sample_shape=(2,))
-        x_neg = sampler.sample(x=buffer.sample(256), n_steps=10)
+        x_neg = sampler(model, buffer.sample(256), n_steps=10)
         buffer.add(x_neg)
         ```
     """

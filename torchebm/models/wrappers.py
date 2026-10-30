@@ -253,6 +253,9 @@ class InteractionModel(Schedulable, BaseModel):
 class EqMEnergy(BaseModel):
     r"""Scalar-energy adapter for sampling Equilibrium Matching fields.
 
+    Deprecated: pass the trained field, or a scalar energy built with
+    ``prediction_type="score"``, to the sampler call, as in the example.
+
     Equilibrium Matching trains a vector field \(f(x, t)\)
     (`EquilibriumMatchingLoss`), but the gradient-based samplers
     (`GradientDescentSampler`, `NesterovSampler`, `LangevinDynamics`,
@@ -290,12 +293,11 @@ class EqMEnergy(BaseModel):
 
     Example:
         ```python
-        from torchebm.models import EqMEnergy
         from torchebm.samplers import GradientDescentSampler
 
-        energy = EqMEnergy(field, energy_type="dot")
-        sampler = GradientDescentSampler(energy, step_size=0.01)
-        samples = sampler.sample(x=torch.randn(512, 2), n_steps=200)
+        sampler = GradientDescentSampler(step_size=0.01)
+        samples = sampler(model, torch.randn(512, 2), n_steps=200)
+        energy_samples = sampler(energy_model, torch.randn(512, 2), n_steps=200)
         ```
     """
 

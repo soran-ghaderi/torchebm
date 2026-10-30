@@ -94,7 +94,7 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         model_kwargs: Optional[Dict[str, Any]] = None,
         return_trajectory: bool = False,
     ) -> torch.Tensor:
-        r"""Run `n_steps` updates of `model` from `sample`.
+        r"""Run `n_steps` updates of `model` from `x`.
 
         Runs on the device and dtype of `x`, under `torch.no_grad()`, with
         the schedulers reset at the start.

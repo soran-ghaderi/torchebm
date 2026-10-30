@@ -93,7 +93,7 @@ class EMA(nn.Module):
         for batch in loader:
             train_step(model, batch)
             ema.update(model)
-        samples = sampler_cls(ema.module).sample(...)
+        samples = sampler(ema.module, x0, n_steps=100)
         ```
     """
 

@@ -6,15 +6,17 @@ profiling. Use ``profile_context`` for ad-hoc profiling and
 
 Example:
     ```python
+    import torch
     from torchebm.utils.profiling import profile_context
     from torchebm.samplers import GradientDescentSampler
     from torchebm.core import DoubleWellModel
 
-    model = DoubleWellModel()
-    sampler = GradientDescentSampler(model, step_size=0.01, device="cuda")
+    model = DoubleWellModel(device="cuda")
+    sampler = GradientDescentSampler(step_size=0.01)
+    x0 = torch.randn(1024, 128, device="cuda")
 
     with profile_context(export_trace="trace.json") as prof:
-        sampler.sample(dim=128, n_samples=1024, n_steps=200)
+        sampler(model, x0, n_steps=200)
     ```
 """
 

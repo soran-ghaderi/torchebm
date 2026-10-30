@@ -180,27 +180,22 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
     Example:
         ```python
+        from torchebm.interpolants import LinearInterpolant
         from torchebm.losses import EquilibriumMatchingLoss
-        import torch.nn as nn
-        import torch
+        from torchebm.samplers import GradientDescentSampler
 
-        # Implicit EqM with velocity prediction (default)
-        model = MyTimeConditionedModel()
-        loss_fn = EquilibriumMatchingLoss(
-            model=model,
-            prediction="velocity",
-            energy_type="none",
-        )
+        path, loss_fn = LinearInterpolant(), EquilibriumMatchingLoss()
+        x_t, u_t = path(torch.randn_like(x1), x1, t)
+        loss = loss_fn(model(x_t), u_t, t)
+        sampler = GradientDescentSampler(step_size=0.05)
+        samples = sampler(model, torch.randn(64, 2), n_steps=200)
+        ```
 
-        # Explicit EqM-E with dot product (for OOD detection)
-        loss_fn_explicit = EquilibriumMatchingLoss(
-            model=model,
-            prediction="velocity",
-            energy_type="dot",
-        )
+        The explicit variant (EqM-E) trains a scalar energy through its score:
 
-        x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        ```python
+        energy_model = EnergyMLP(prediction_type="score")
+        loss = loss_fn(energy_model(x_t), u_t, t)
         ```
     """
 

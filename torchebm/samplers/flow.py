@@ -1,7 +1,7 @@
 r"""Flow-based sampler for trained generative models.
 
 Supports ODE (probability flow) and SDE (diffusion) sampling, configured at
-construction and executed through the standard `BaseSampler.sample` contract.
+construction and run by calling the sampler, ``sampler(model, x, n_steps=...)``.
 """
 
 import enum

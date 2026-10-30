@@ -155,21 +155,25 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
         from torchebm.losses import EnergyMatchingLoss
         from torchebm.samplers import LangevinDynamics
 
-        loss_fn = EnergyMatchingLoss(model=V, lambda_cd=0.0)  # phase 1
-        for step in range(2000):
-            loss = loss_fn(data_batch())
-            opt.zero_grad(); loss.backward(); opt.step()
-
-        loss_fn.lambda_cd = 2.0                                # phase 2
-        for step in range(1000):
-            loss = loss_fn(data_batch())
-            opt.zero_grad(); loss.backward(); opt.step()
-
-        # Generation: one SDE sweep t: 0 -> 1 (dt = 0.01 -> 200 steps)
+        model = MLP(prediction_type=("energy", "score"))
+        loss_fn = EnergyMatchingLoss(lambda_cd=2.0)
         temp = TemperatureScheduler(0.15, 0.8, n_steps=200, t_end=1.0)
-        gen = LangevinDynamics(model=V, step_size=0.01, noise_scale=temp)
-        samples = gen.sample(x=torch.randn(1000, 2), n_steps=200)
+        sampler = LangevinDynamics(step_size=0.01, noise_scale=temp)
+
+        x_t, u_t = path(x0, x1, t)
+        _, score = model(x_t)
+        warmup_loss = loss_fn(score, u_t, t)
+
+        energy_pos, _ = model(x1)
+        energy_neg, _ = model(sampler(model, x0, n_steps=200))
+        loss = loss_fn(score, u_t, t, energy_pos, energy_neg)
+
+        samples = sampler(model, torch.randn(1000, 2), n_steps=200)
         ```
+
+    The warm-up phase trains the flow term alone; the joint phase adds the
+    energies of data and Langevin negatives. Generation is one SDE sweep over
+    \(t \in [0, 1]\) with \(dt = 0.01\), 200 steps.
 
     Sampling with `t_end > 1.0` equilibrates at \(\epsilon_{max}\) and draws
     from the tempered density \(\propto e^{-V/\epsilon_{max}}\) itself; the

@@ -217,6 +217,9 @@ class ScoreMatching(BaseScoreMatching):
     r"""
     Original Score Matching loss from Hyvärinen (2005).
 
+    Deprecated: compute the score and its divergence in the training loop and
+    apply `ScoreMatchingLoss`, as in the example.
+
     Trains an energy-based model by matching the model's score function
     \(\nabla_x \log p_\theta(x)\) to the data's score. Avoids MCMC sampling
     but requires computing the trace of the Hessian.
@@ -231,14 +234,15 @@ class ScoreMatching(BaseScoreMatching):
 
     Example:
         ```python
-        from torchebm.losses import ScoreMatching
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.losses import ScoreMatchingLoss
 
-        energy = DoubleWellModel()
-        loss_fn = ScoreMatching(model=energy, hessian_method="exact")
-        x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        model = DoubleWellModel(prediction_type="score")
+        x = torch.randn(32, 2, requires_grad=True)
+        score = model(x)
+        v = torch.randn_like(x)
+        vjp = torch.autograd.grad(score, x, v, create_graph=True)[0]
+        loss = ScoreMatchingLoss()(score, (vjp * v).sum(dim=1))
         ```
     """
 
@@ -457,6 +461,9 @@ class DenoisingScoreMatching(BaseScoreMatching):
     r"""
     Denoising Score Matching (DSM) from Vincent (2011).
 
+    Deprecated: perturb the data in the training loop and apply
+    `DenoisingScoreMatchingLoss` to the score, as in the example.
+
     Avoids computing the Hessian trace by matching the score of noise-perturbed
     data. More computationally efficient and often more stable than standard
     Score Matching.
@@ -471,14 +478,13 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
     Example:
         ```python
-        from torchebm.losses import DenoisingScoreMatching
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.losses import DenoisingScoreMatchingLoss
 
-        energy = DoubleWellModel()
-        loss_fn = DenoisingScoreMatching(model=energy, noise_scale=0.1)
+        model = DoubleWellModel(prediction_type="score")
         x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        noise = torch.randn_like(x)
+        loss = DenoisingScoreMatchingLoss()(model(x + 0.1 * noise), -noise / 0.1)
         ```
     """
 
@@ -595,6 +601,9 @@ class SlicedScoreMatching(BaseScoreMatching):
     r"""
     Sliced Score Matching (SSM) from Song et al. (2019).
 
+    Deprecated: tile the batch in the training loop and apply
+    `SlicedScoreMatchingLoss` to the score, as in the example.
+
     A scalable variant that uses random projections to efficiently approximate
     the score matching objective, avoiding expensive Hessian trace computation.
 
@@ -609,14 +618,13 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     Example:
         ```python
-        from torchebm.losses import SlicedScoreMatching
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.losses import SlicedScoreMatchingLoss
 
-        energy = DoubleWellModel()
-        loss_fn = SlicedScoreMatching(model=energy, n_projections=5)
-        x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        model = DoubleWellModel(prediction_type="score")
+        loss_fn = SlicedScoreMatchingLoss(n_projections=5)
+        x_tiled = torch.randn(32, 2).repeat(5, 1).requires_grad_(True)
+        loss = loss_fn(model(x_tiled), x_tiled)
         ```
     """
 

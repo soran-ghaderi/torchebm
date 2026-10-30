@@ -50,9 +50,9 @@ class ContrastiveDivergenceLoss(BaseLoss):
     Example:
         ```python
         loss_fn = ContrastiveDivergenceLoss()
-        x_neg = sampler.sample(x=buffer.sample(len(x)), n_steps=10)
+        x_neg = sampler(model, buffer.sample(len(x)), n_steps=10)
         buffer.add(x_neg)
-        loss = loss_fn(energy(x), energy(x_neg))
+        loss = loss_fn(model(x), model(x_neg))
         ```
     """
 
@@ -118,6 +118,9 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
     r"""
     Standard Contrastive Divergence (CD-k) loss.
 
+    Deprecated: draw the negatives with a sampler call in the training loop
+    and apply `ContrastiveDivergenceLoss` to their energies, as in the example.
+
     CD approximates the log-likelihood gradient by running an MCMC sampler
     for `k_steps` to generate negative samples.
 
@@ -139,15 +142,16 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
     Example:
         ```python
-        from torchebm.losses import ContrastiveDivergence
-        from torchebm.samplers import LangevinDynamics
         from torchebm.core import DoubleWellModel
+        from torchebm.losses import ContrastiveDivergenceLoss
+        from torchebm.samplers import LangevinDynamics
 
-        energy = DoubleWellModel()
-        sampler = LangevinDynamics(energy, step_size=0.01)
-        cd_loss = ContrastiveDivergence(model=energy, sampler=sampler, k_steps=10)
+        model = DoubleWellModel()
+        sampler = LangevinDynamics(step_size=0.01)
+        loss_fn = ContrastiveDivergenceLoss()
         x = torch.randn(32, 2)
-        loss, neg_samples = cd_loss(x)
+        x_neg = sampler(model, x, n_steps=10)
+        loss = loss_fn(model(x), model(x_neg))
         ```
     """
 

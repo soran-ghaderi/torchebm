@@ -88,14 +88,14 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
     Example:
         ```python
+        from torchebm.interpolants import LinearInterpolant
         from torchebm.losses import FlowMatchingLoss
         from torchebm.samplers import FlowSampler
 
-        loss_fn = FlowMatchingLoss(model=velocity_net, interpolant="linear")
-        loss = loss_fn(x_batch)
-        # ... train, then:
-        sampler = FlowSampler(velocity_net, interpolant="linear")
-        samples = sampler.sample(n_samples=64, dim=2, n_steps=50)
+        path, loss_fn = LinearInterpolant(), FlowMatchingLoss()
+        x_t, u_t = path(torch.randn_like(x1), x1, t)
+        loss = loss_fn(model(x_t, t), u_t)
+        samples = FlowSampler()(model, torch.randn(64, 2), n_steps=50)
         ```
     """
 
