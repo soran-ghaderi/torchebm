@@ -1,5 +1,6 @@
 """Optional visualization for energy-matching-2d (needs: pip install matplotlib). Retrains, then plots."""
 
+import math
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -10,13 +11,14 @@ from torch import nn
 from torchebm.core import BaseModel, TemperatureScheduler
 from torchebm.datasets import TwoMoonsDataset
 from torchebm.couplings import SinkhornCoupling
+from torchebm.interpolants import LinearInterpolant
 from torchebm.losses import EnergyMatchingLoss
 from torchebm.samplers import LangevinDynamics
 
 
-class Potential(BaseModel):
-    def __init__(self):
-        super().__init__()
+class MLP(BaseModel):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.net = nn.Sequential(
             nn.Linear(2, 256), nn.SiLU(),
             nn.Linear(256, 256), nn.SiLU(),
@@ -30,30 +32,50 @@ class Potential(BaseModel):
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 data = TwoMoonsDataset(n_samples=8000, noise=0.05, seed=0, device=device).get_data()
-model = Potential().to(device)
-loss_fn = EnergyMatchingLoss(
-    model=model, coupling=SinkhornCoupling(reg=0.01), lambda_cd=0.0,
-    epsilon_max=0.15, tau_star=0.8, n_langevin_steps=200, langevin_dt=0.01,
-    cd_trim_fraction=0.0, cd_clamp=None, device=device,
+model = MLP(prediction_type=("energy", "score")).to(device)
+coupling = SinkhornCoupling(reg=0.01)
+path = LinearInterpolant()
+loss_fn = EnergyMatchingLoss(lambda_cd=2.0, cd_trim_fraction=0.0, cd_clamp=None)
+langevin_sweep = LangevinDynamics(
+    step_size=0.01,
+    noise_scale=TemperatureScheduler(epsilon_max=0.15, tau_star=0.8, n_steps=200),
 )
-opt = torch.optim.Adam(model.parameters(), lr=1e-4)
+langevin_hold = LangevinDynamics(step_size=0.01, noise_scale=math.sqrt(0.15))
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+
+def compute_loss(x1, contrastive):
+    x0, x1 = coupling(torch.randn_like(x1), x1)
+    t = torch.rand(len(x1), device=device)
+    x_t, u_t = path(x0, x1, t)
+    x_t = x_t + 0.1 * torch.randn_like(x_t)
+    _, score = model(x_t)
+    if not contrastive:
+        return loss_fn(score, u_t, t)
+    half = len(x1) // 2
+    negatives = torch.cat([
+        langevin_sweep(model, x0[:half], n_steps=200),
+        langevin_hold(model, x1[half:], n_steps=200),
+    ])
+    energy_pos, _ = model(x1)
+    energy_neg, _ = model(negatives)
+    return loss_fn(score, u_t, t, energy_pos, energy_neg)
+
+
 for step in range(22000):
-    if step == 20000:
-        loss_fn.lambda_cd = 2.0
     batch = data[torch.randint(len(data), (128,), device=device)]
-    loss = loss_fn(batch)
-    opt.zero_grad()
+    loss = compute_loss(batch, contrastive=step >= 20000)
+    optimizer.zero_grad()
     loss.backward()
-    opt.step()
+    optimizer.step()
     if step % 4000 == 0:
         print(f"step {step:5d}  loss {loss.item():.4f}")
 
-temp = TemperatureScheduler(epsilon_max=0.15, tau_star=0.8, n_steps=200, t_end=1.0)
-sampler = LangevinDynamics(model=model, step_size=0.01, noise_scale=temp, device=device)
-samples = sampler.sample(x=torch.randn(3000, 2, device=device), n_steps=200)
+model.prediction_type = "energy"
+temperature = TemperatureScheduler(epsilon_max=0.15, tau_star=0.8, n_steps=200, t_end=1.0)
+sampler = LangevinDynamics(step_size=0.01, noise_scale=temperature)
+samples = sampler(model, torch.randn(3000, 2, device=device), n_steps=200)
 
-# Visual system shared with the paper-suite example: light-to-dark blue energy
-# field (low energy recedes into the surface), model samples in red.
 SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e1e0d9"
 RED = "#e34948"
 FIELD = LinearSegmentedColormap.from_list(

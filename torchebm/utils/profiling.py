@@ -6,20 +6,23 @@ profiling. Use ``profile_context`` for ad-hoc profiling and
 
 Example:
     ```python
+    import torch
     from torchebm.utils.profiling import profile_context
     from torchebm.samplers import GradientDescentSampler
     from torchebm.core import DoubleWellModel
 
-    model = DoubleWellModel()
-    sampler = GradientDescentSampler(model, step_size=0.01, device="cuda")
+    model = DoubleWellModel(device="cuda")
+    sampler = GradientDescentSampler(step_size=0.01)
+    x0 = torch.randn(1024, 128, device="cuda")
 
     with profile_context(export_trace="trace.json") as prof:
-        sampler.sample(dim=128, n_samples=1024, n_steps=200)
+        sampler(model, x0, n_steps=200)
     ```
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Optional, Sequence
 
@@ -44,7 +47,7 @@ def profile_context(
     row_limit: int = 20,
     export_trace: Optional[str] = None,
     print_table: bool = True,
-):
+) -> Iterator[profile]:
     r"""Context manager for profiling TorchEBM operations.
 
     Wraps ``torch.profiler.profile`` with automatic CUDA sync, table printing,
@@ -63,7 +66,7 @@ def profile_context(
         print_table: Whether to print the summary table on exit.
 
     Yields:
-        ``torch.profiler.profile`` instance for advanced access.
+        torch.profiler.profile: Profiler instance for advanced access.
     """
     if activities is None:
         activities = _default_activities()

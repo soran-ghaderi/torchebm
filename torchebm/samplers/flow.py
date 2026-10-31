@@ -1,7 +1,7 @@
 r"""Flow-based sampler for trained generative models.
 
 Supports ODE (probability flow) and SDE (diffusion) sampling, configured at
-construction and executed through the standard `BaseSampler.sample` contract.
+construction and run by calling the sampler, ``sampler(model, x, n_steps=...)``.
 """
 
 import enum
@@ -28,41 +28,25 @@ from torchebm.interpolants import (
 )
 from torchebm.interpolants.interpolant_utils import resolve_interpolant
 
-# First warned in v0.7.5; window restarted when the deprecation ledger was
-# adopted.
-_BARE_SAMPLE_KWARGS_DEPRECATION = declare_deprecation(
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
-    name="FlowSampler.sample bare conditioning kwargs",
-    since="0.8.5",
-    deprecated_on="2026-08-31",
-    replacement="model_kwargs={...}",
+    name="model-bound FlowSampler",
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="FlowSampler(prediction_type=...)(model, x, n_steps=...)",
     message=(
-        "Passing conditioning to FlowSampler.sample() as bare keyword "
-        "arguments is deprecated; pass model_kwargs={...} instead."
+        "FlowSampler(model=...), prediction=, train_eps=, negate_velocity= and "
+        "sample() are deprecated: construct the sampler without a model, name "
+        "the model output with prediction_type=, and call sampler(model, x, ...)."
     ),
-    removal="the **legacy_model_kwargs parameter and its merge in FlowSampler.sample",
-)
-
-# Sampling-call kwargs removed with the sample_ode/sample_sde retirement.
-# Guarded so stale call sites fail loudly instead of silently forwarding
-# these to the model.
-_REMOVED_SAMPLE_KWARGS = frozenset(
-    {
-        "mode",
-        "shape",
-        "ode_method",
-        "sde_method",
-        "method",
-        "atol",
-        "rtol",
-        "reverse",
-        "diffusion_form",
-        "diffusion_norm",
-        "last_step",
-        "last_step_size",
-        "num_steps",
-        "z",
-    }
+    removal=(
+        "the model, prediction, train_eps and negate_velocity arguments, the "
+        "train_eps property, sample, _require_model, _get_drift, _get_score, "
+        "_grid_and_drift, _sde_dynamics, _apply_last_step, _record_stats, "
+        "_batch_stats and the PredictionType export in FlowSampler"
+    ),
 )
 
 # Sentinel distinguishing "not passed" from the legitimate last_step=None.
@@ -71,12 +55,13 @@ _UNSET = object()
 _LAST_STEPS = ("Mean", "Euler", "Tweedie", None)
 
 
-class PredictionType(enum.Enum):
-    r"""Model prediction type for generative models."""
+class PredictionType(str, enum.Enum):
+    r"""Model output consumed by `FlowSampler`; compares equal to its name
+    as used by the models (``"velocity"``, ``"score"``, ``"epsilon"``)."""
 
-    NOISE = enum.auto()
-    SCORE = enum.auto()
-    VELOCITY = enum.auto()
+    NOISE = "epsilon"
+    SCORE = "score"
+    VELOCITY = "velocity"
 
 
 class FlowSampler(BaseSampler):
@@ -85,26 +70,34 @@ class FlowSampler(BaseSampler):
 
     The sampling process is configured at construction: ``mode="ode"``
     integrates the probability-flow ODE, ``mode="sde"`` the reverse-time
-    diffusion SDE. `sample()` follows the standard `BaseSampler` contract;
+    diffusion SDE. Called as ``sampler(model, x, n_steps=...)`` or with a
+    custom time grid ``sampler(model, x, t=...)``; the model is
+    called as ``model(x, t, **model_kwargs)`` and its output, named by
+    `prediction_type`, is converted through the interpolant to the velocity
+    (and, in SDE mode, the score) that the integrator drifts along. An
+    adaptive integrator solves the ODE and returns the final state only.
+
+    `sample()` (deprecated, model-bound) follows the `BaseSampler` contract;
     with a fixed-step integrator it supports ``thin``, ``return_trajectory``,
     and ``return_diagnostics``, while adaptive integrators (``dopri5``, ...)
     return only the final state.
 
     Args:
-        model: Trained neural network predicting velocity/score/noise,
-            called as ``model(x, t, **model_kwargs)``.
+        model: Deprecated. Trained network sampled by `sample()`; construct
+            without it and call ``sampler(model, x, ...)``.
         mode: `"ode"` (probability flow, default) or `"sde"` (diffusion).
         interpolant: Interpolant name ('linear', 'cosine', 'vp') or instance.
-        prediction: Model prediction type ('velocity', 'score', or 'noise').
-        train_eps: Epsilon used during training for time interval stability.
-            Accepts a float or a `BaseScheduler`.
+        prediction: Deprecated name of `prediction_type`, with ``"noise"``
+            for ``"epsilon"``.
+        train_eps: Deprecated and unused.
         sample_eps: Epsilon for sampling time interval. Accepts a float or a
             `BaseScheduler` (advanced via `step_schedulers()`).
-        negate_velocity: Negate the velocity during sampling. Set True for
-            EqM models which learn (ε - x) direction; velocity is v = -f(x).
-            EqM equilibrium fields are time-invariant, so the model is then
-            conditioned on zeroed time (matching training) while the
-            integration clock still drives the grid and interpolant math.
+        negate_velocity: Deprecated; `sample()` only. Negate the velocity
+            during sampling. Set True for EqM models which learn (ε - x)
+            direction; velocity is v = -f(x). EqM equilibrium fields are
+            time-invariant, so the model is then conditioned on zeroed time
+            (matching training) while the integration clock still drives the
+            grid and interpolant math.
         reverse: If True, integrate from data to noise (ODE mode only).
         diffusion_form: SDE-only. Form of the diffusion coefficient:
             'constant', 'SBDM' (default), 'sigma', 'linear', 'decreasing',
@@ -113,6 +106,8 @@ class FlowSampler(BaseSampler):
         last_step: SDE-only. Final denoising step: 'Mean' (default),
             'Euler', 'Tweedie', or None (no correction).
         last_step_size: SDE-only. Size of the final step (default 0.04).
+        prediction_type: Model output the sampler consumes: ``"velocity"``
+            (default), ``"score"``, or ``"epsilon"``.
         dtype: Data type for computations.
         device: Device for computations.
         integrator: `None` (default) uses `Dopri5Integrator` for ODE mode
@@ -123,29 +118,34 @@ class FlowSampler(BaseSampler):
             SDE integrators are valid for ODE mode (zero diffusion).
 
     Example:
+        The two samplers of SiT (Ma et al., 2024) at the reference settings,
+        on a class-conditional velocity model over ImageNet 256 latents (see
+        `FlowMatchingLoss`): the dopri5 probability-flow ODE (atol 1e-6, rtol
+        1e-3, the defaults here) and the 250-step Euler-Maruyama SDE with
+        diffusion \(\sigma_t\) and a last mean step of size 0.04.
+
         ```python
         from torchebm.samplers import FlowSampler
-        import torch.nn as nn
-        import torch
 
-        model = nn.Sequential(nn.Linear(3, 64), nn.ReLU(), nn.Linear(64, 2))
+        x = torch.randn(64, 4, 32, 32)
+        samples = FlowSampler()(model, x, model_kwargs={"y": y})
+
         sampler = FlowSampler(
-            model=model,
-            interpolant="linear",
-            prediction="velocity",
-            integrator="euler",
+            mode="sde", diffusion_form="sigma", last_step="Mean", last_step_size=0.04
         )
-        samples = sampler.sample(n_samples=100, dim=2, n_steps=50)
+        samples = sampler(model, x, n_steps=250, model_kwargs={"y": y})
         ```
     """
 
+    timestep_conditioned = True
+
     def __init__(
         self,
-        model: nn.Module,
+        model: Optional[nn.Module] = None,
         mode: Literal["ode", "sde"] = "ode",
         interpolant: Union[str, BaseInterpolant] = "linear",
-        prediction: Literal["velocity", "score", "noise"] = "velocity",
-        train_eps: Union[float, BaseScheduler] = 0.0,
+        prediction: Optional[Literal["velocity", "score", "noise"]] = None,
+        train_eps: Union[float, BaseScheduler, None] = None,
         sample_eps: Union[float, BaseScheduler] = 0.0,
         negate_velocity: bool = False,
         reverse: bool = False,
@@ -153,12 +153,20 @@ class FlowSampler(BaseSampler):
         diffusion_norm: Optional[float] = None,
         last_step: Union[str, None, object] = _UNSET,
         last_step_size: Optional[float] = None,
+        prediction_type: Literal["velocity", "score", "epsilon"] = "velocity",
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         integrator: Union[str, BaseRungeKuttaIntegrator, None] = None,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
-        self._register_param("train_eps", train_eps)
+        if (
+            model is not None
+            or prediction is not None
+            or train_eps is not None
+            or negate_velocity
+        ):
+            _MODEL_BOUND_DEPRECATION.warn()
+        self._register_param("train_eps", 0.0 if train_eps is None else train_eps)
         self._register_param("sample_eps", sample_eps)
         self.negate_velocity = negate_velocity
 
@@ -171,18 +179,27 @@ class FlowSampler(BaseSampler):
             interpolant, default="linear", owner="FlowSampler"
         )
 
-        prediction_map = {
-            "velocity": PredictionType.VELOCITY,
-            "score": PredictionType.SCORE,
-            "noise": PredictionType.NOISE,
-        }
-        try:
-            self.prediction_type = prediction_map[prediction]
-        except KeyError:
-            raise ValueError(
-                f"Unknown prediction: {prediction!r}. "
-                f"Choose from {list(prediction_map)}"
-            ) from None
+        if prediction is None:
+            try:
+                self.prediction_type = PredictionType(prediction_type)
+            except ValueError:
+                raise ValueError(
+                    f"Unknown prediction_type: {prediction_type!r}. "
+                    "Choose from ['velocity', 'score', 'epsilon']"
+                ) from None
+        else:
+            prediction_map = {
+                "velocity": PredictionType.VELOCITY,
+                "score": PredictionType.SCORE,
+                "noise": PredictionType.NOISE,
+            }
+            try:
+                self.prediction_type = prediction_map[prediction]
+            except KeyError:
+                raise ValueError(
+                    f"Unknown prediction: {prediction!r}. "
+                    f"Choose from {list(prediction_map)}"
+                ) from None
 
         if mode == "ode":
             offenders = [
@@ -255,6 +272,177 @@ class FlowSampler(BaseSampler):
     @sample_eps.setter
     def sample_eps(self, value: Union[float, BaseScheduler]) -> None:
         self._register_param("sample_eps", value)
+
+    @torch.no_grad()
+    def forward(
+        self,
+        model: nn.Module,
+        x: torch.Tensor,
+        *,
+        n_steps: int = 50,
+        t: Optional[torch.Tensor] = None,
+        generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
+    ) -> torch.Tensor:
+        r"""Integrate the configured ODE or SDE of `model` from `x`.
+
+        Args:
+            model: Network called as ``model(x, t, **model_kwargs)``; its
+                output is named by `prediction_type`.
+            x: Initial state (typically noise).
+            n_steps: Number of integration steps on the uniform grid over the
+                sampling interval; ignored when `t` is given. With an adaptive
+                integrator it sets the initial step size.
+            t: Custom time grid, a 1-D tensor of at least two increasing
+                interpolant times (the integrators' ``t``, `diffusers`
+                ``timesteps=``, Meta ``time_grid=``); one integration step per
+                consecutive pair.
+            generator: RNG for the SDE noise; the global RNG when ``None``.
+            model_kwargs: Conditioning arguments forwarded to the model.
+            return_trajectory: If True, return the state after every step,
+                shape ``(batch_size, n_steps, *sample_shape)``; in SDE mode the
+                final entry carries the `last_step` correction. Fixed-step
+                integrators only.
+
+        Returns:
+            The final state, or the trajectory.
+
+        Raises:
+            ValueError: If `n_steps` is not positive, or `t` is not a 1-D
+                tensor of at least two entries.
+            NotImplementedError: If `return_trajectory` is requested with an
+                adaptive integrator.
+        """
+        model_output = self._model_fn(model, model_kwargs)
+        grid = self._time_grid(n_steps, t, x)
+        sde = self.mode == "sde"
+
+        if sde:
+
+            def diffusion(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                return self.interpolant.compute_diffusion(
+                    x, t, form=self.diffusion_form, norm=self.diffusion_norm
+                )
+
+            def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                output = model_output(x, t)
+                return self._velocity(output, x, t) + diffusion(x, t) * self._score(
+                    output, x, t
+                )
+
+        else:
+
+            def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                return self._velocity(model_output(x, t), x, t)
+
+        if self.reverse:
+            t0 = grid[0]
+            grid = grid - t0
+            velocity = drift
+
+            def drift(x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
+                return -velocity(x, t0 + s)
+
+        self.reset_schedulers(model)
+        n_steps = grid.shape[0] - 1
+        if self.integrator.error_weights is not None:
+            if return_trajectory:
+                raise NotImplementedError(
+                    "return_trajectory needs a fixed-step integrator; adaptive "
+                    f"{type(self.integrator).__name__} returns only the final state"
+                )
+            return self.integrator.integrate(
+                state={"x": x},
+                step_size=grid[1] - grid[0],
+                n_steps=n_steps,
+                drift=drift,
+                t=grid,
+            )["x"]
+
+        batch_size = x.shape[0]
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((batch_size, n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            t_batch = grid[i].expand(batch_size)
+            if sde:
+                x = self.integrator.step(
+                    state={"x": x},
+                    step_size=grid[i + 1] - grid[i],
+                    drift=drift,
+                    diffusion=diffusion(x, t_batch),
+                    t=t_batch,
+                    generator=generator,
+                )["x"]
+            else:
+                x = self.integrator.step(
+                    state={"x": x},
+                    step_size=grid[i + 1] - grid[i],
+                    drift=drift,
+                    t=t_batch,
+                )["x"]
+            self.step_schedulers(model)
+            if trajectory is not None:
+                trajectory[:, i] = x
+        if sde and self.last_step is not None:
+            t_batch = grid[-1].expand(batch_size)
+            x = self._denoise(model_output(x, t_batch), x, t_batch)
+            if trajectory is not None:
+                trajectory[:, -1] = x
+        return x if trajectory is None else trajectory
+
+    def _time_grid(
+        self, n_steps: int, t: Optional[torch.Tensor], x: torch.Tensor
+    ) -> torch.Tensor:
+        r"""Interpolant times of the integration grid, shape ``(n_steps + 1,)``."""
+        if t is not None:
+            if t.ndim != 1 or t.shape[0] < 2:
+                raise ValueError("t must be a 1-D tensor with at least two entries")
+            return t.to(device=x.device, dtype=self.dtype)
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive")
+        t0, t1 = self._check_interval()
+        return torch.linspace(t0, t1, n_steps + 1, device=x.device, dtype=self.dtype)
+
+    def _velocity(
+        self, model_output: torch.Tensor, x: torch.Tensor, t: torch.Tensor
+    ) -> torch.Tensor:
+        r"""Probability-flow velocity from the model output at ``(x, t)``."""
+        if self.prediction_type is PredictionType.VELOCITY:
+            return model_output
+        drift_mean, drift_var = self.interpolant.compute_drift(x, t)
+        return -drift_mean + drift_var * self._score(model_output, x, t)
+
+    def _score(
+        self, model_output: torch.Tensor, x: torch.Tensor, t: torch.Tensor
+    ) -> torch.Tensor:
+        r"""Score from the model output at ``(x, t)``."""
+        if self.prediction_type is PredictionType.SCORE:
+            return model_output
+        if self.prediction_type is PredictionType.VELOCITY:
+            return self.interpolant.velocity_to_score(model_output, x, t)
+        sigma_t, _ = self.interpolant.compute_sigma_t(expand_t_like_x(t, x))
+        return model_output / (-sigma_t + 1e-8)
+
+    def _denoise(
+        self, model_output: torch.Tensor, x: torch.Tensor, t: torch.Tensor
+    ) -> torch.Tensor:
+        r"""The SDE `last_step` correction from the model output at the final time."""
+        if self.last_step == "Mean":
+            diffusion = self.interpolant.compute_diffusion(
+                x, t, form=self.diffusion_form, norm=self.diffusion_norm
+            )
+            drift = self._velocity(model_output, x, t) + diffusion * self._score(
+                model_output, x, t
+            )
+            return x + drift * self.last_step_size
+        if self.last_step == "Euler":
+            return x + self._velocity(model_output, x, t) * self.last_step_size
+        t_expanded = expand_t_like_x(t, x)
+        alpha, _ = self.interpolant.compute_alpha_t(t_expanded)
+        sigma, _ = self.interpolant.compute_sigma_t(t_expanded)
+        return x / alpha + sigma.square() / alpha * self._score(model_output, x, t)
 
     def _get_drift(self) -> Callable:
         r"""Get drift function for probability flow ODE."""
@@ -404,7 +592,6 @@ class FlowSampler(BaseSampler):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **legacy_model_kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Sample by integrating the configured ODE or SDE.
 
@@ -440,10 +627,6 @@ class FlowSampler(BaseSampler):
             generator: RNG for the initial state and, in SDE mode, the per-step
                 diffusion noise; the global RNG when ``None``. ODE mode is
                 deterministic once the initial state is fixed.
-            **legacy_model_kwargs: Deprecated. Passing conditioning as bare
-                keyword arguments still works for one release but emits a
-                ``DeprecationWarning``; pass ``model_kwargs={...}`` instead. When
-                both are given, keys in the explicit dict win.
 
         Returns:
             Sample tensor (or trajectory if `return_trajectory=True`),
@@ -454,23 +637,10 @@ class FlowSampler(BaseSampler):
                 both `None`.
             NotImplementedError: If `return_trajectory=True` or `thin != 1`
                 with an adaptive integrator.
-            TypeError: If a removed legacy sampling kwarg is passed.
         """
-        removed = _REMOVED_SAMPLE_KWARGS.intersection(legacy_model_kwargs)
-        if removed:
-            raise TypeError(
-                f"{', '.join(sorted(removed))}: removed from "
-                "FlowSampler.sample(). mode/reverse/diffusion/"
-                "last-step options and the integrator moved to the "
-                "constructor; use x/n_steps instead of z/num_steps and "
-                "dim=(...) instead of shape."
-            )
-        if legacy_model_kwargs:
-            _BARE_SAMPLE_KWARGS_DEPRECATION.warn()
+        self._require_model()
         model_kwargs = self._prepare_model_kwargs(
-            self._merge_condition(
-                {**legacy_model_kwargs, **(model_kwargs or {})}, y
-            )
+            self._merge_condition(model_kwargs, y)
         )
         if thin < 1:
             raise ValueError("thin must be >= 1")

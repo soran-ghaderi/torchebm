@@ -2,7 +2,7 @@
 
 site_name: TorchEBM
 site_url: https://soran-ghaderi.github.io/torchebm/
-site_description: "Simulation-free, GPU-first generative modeling in PyTorch: composable primitives for scalable, stable training of modern energy-based models, diffusion, flow matching, and Schrödinger bridges."
+site_description: "Simulation-free, GPU-first generative modeling in PyTorch: composable primitives for scalable, stable training of energy-based models, diffusion, flow matching, and equilibrium and energy matching."
 site_author: Soran Ghaderi
 repo_url: https://github.com/soran-ghaderi/torchebm
 repo_name: soran-ghaderi/torchebm
@@ -130,25 +130,28 @@ plugins:
   - llmstxt:
       markdown_description: |
         TorchEBM is a PyTorch library for simulation-free, GPU-first generative
-        modeling: scalable, stable training of modern energy-based models, diffusion,
-        flow matching, and Schrödinger bridges. Energy-based models define probability
-        distributions through a scalar energy function, with lower energy meaning
-        higher probability. This formulation is general enough that much of modern
-        generative modeling, from MCMC sampling and score matching to simulation-free
-        transport along probability paths, factors into the same components: a field,
-        a probability path, a coupling, an objective, and an integrator. TorchEBM
-        implements these components as composable, high-throughput PyTorch primitives,
-        so simulation-free objectives (flow matching, equilibrium matching, denoising
-        score matching) and sampling-based objectives (contrastive divergence with
-        Langevin or HMC negatives) are unified under one library.
+        modeling: scalable, stable training of energy-based models, diffusion, flow
+        matching, and equilibrium and energy matching. Every model defines a
+        dynamical system on data space: a scalar energy whose gradient drives
+        Langevin or Hamiltonian dynamics, or a vector field (a velocity, score, or
+        noise prediction, time-conditioned or autonomous) that an ODE or SDE
+        integrates; the field need not be the gradient of an energy. The methods
+        share the same components: a model, a probability path, a coupling, an
+        objective, a sampler, and an integrator. TorchEBM implements them as
+        composable, high-throughput PyTorch primitives, so simulation-free
+        objectives (flow matching, equilibrium matching, denoising score matching)
+        and sampling-based objectives (contrastive divergence with Langevin or HMC
+        negatives) share one library. Losses take model outputs, and samplers take
+        the model per call, sampler(model, x, n_steps=...). Schrödinger bridges,
+        flow maps, and discrete or manifold state spaces are on the roadmap.
 
         Key components:
-        - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, FlowSampler
-        - Losses: ContrastiveDivergence, ScoreMatching, EquilibriumMatchingLoss, EnergyMatchingLoss
-        - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
-        - Couplings: IndependentCoupling, SinkhornCoupling, ExactOTCoupling, ReflowCoupling
+        - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, GradientDescentSampler, NesterovSampler, FlowSampler
+        - Losses: ContrastiveDivergenceLoss, ScoreMatchingLoss, DenoisingScoreMatchingLoss, SlicedScoreMatchingLoss, FlowMatchingLoss, EquilibriumMatchingLoss, EnergyMatchingLoss
+        - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant, VarianceExplodingInterpolant
+        - Couplings: IndependentCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling, ExactOTCoupling
         - Integrators: EulerMaruyama, Heun, RK4, Dopri5, Leapfrog, GeneralisedLeapfrog
-        - Models: ConditionalTransformer2D, neural network components
+        - Models: BaseModel, AnalyticModel, DiT, TimeConditionedMLP, ClassifierFreeGuidance, InteractionModel
         - Datasets: TwoMoons, EightGaussians, SwissRoll, and more synthetic benchmarks
       full_output: llms-full.txt
       sections:
@@ -222,6 +225,8 @@ plugins:
           heading_level: 1
           show_symbol_type_heading: true
           show_symbol_type_toc: true
+          docstring_options:
+            warn_missing_types: false
       api_root_uri: "api"
 
   - meta

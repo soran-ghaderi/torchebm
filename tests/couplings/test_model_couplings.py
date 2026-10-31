@@ -4,6 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from torchebm._deprecation import TorchEBMDeprecationWarning
 from torchebm.core import BaseCoupling, BaseModelCoupling, CouplingResult
 from torchebm.couplings import IndependentCoupling, ReflowCoupling, resolve_coupling
 from torchebm.samplers import FlowSampler
@@ -77,3 +78,8 @@ def test_model_coupling_family_and_resolver():
 
 def test_reflow_repr():
     assert "ReflowCoupling(n_steps=50)" in repr(ReflowCoupling(lambda x: x))
+
+
+def test_reflow_coupling_is_deprecated():
+    with pytest.warns(TorchEBMDeprecationWarning, match=r"sampler\(model, x0"):
+        ReflowCoupling(lambda x: x)

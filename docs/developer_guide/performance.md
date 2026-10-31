@@ -17,18 +17,21 @@ profiler (where does the time go?).
 3. **Loss forward + backward**: called every training batch.
 4. **Host-device traffic**: `.item()`, `.cpu()`, repeated `.to()` stall the GPU.
 
-Optimise in that order. Everything else is noise.
+Optimise in that order.
 
-## Vectorise, don't loop
+## Vectorise
 
-Work in batch dimensions; avoid Python-level iteration over samples.
+Work in batch dimensions. A Python loop over samples launches one kernel per
+sample:
 
 ```python
-# bad
 energies = torch.stack([energy_fn(x[i]) for i in range(batch)])
+```
 
-# good
-energies = energy_fn(x)                       # (batch,)
+The batched call computes all `(batch,)` energies in one pass:
+
+```python
+energies = energy_fn(x)
 ```
 
 Sample many chains in parallel by putting the chain index in the leading dim.
@@ -40,20 +43,23 @@ Keep tensors on one device and dtype for the whole pipeline. Use
 hard-code `"cuda"`.
 
 `.item()`, `.cpu()`, `.tolist()`, and Python `if tensor > 0:` all trigger a
-full GPU sync; defer them until after the hot loop:
+full GPU sync. This loop stalls the GPU at every step:
 
 ```python
-# bad: syncs every step
 for step in range(n_steps):
     loss = loss_fn(x)
-    if loss.item() < threshold:               # GPU stall
+    if loss.item() < threshold:
         break
+```
 
-# good: one sync per epoch
+Keeping the values on device and reading them once after the loop costs a
+single sync:
+
+```python
 losses = []
 for step in range(n_steps):
     losses.append(loss_fn(x).detach())
-avg = torch.stack(losses).mean().item()       # single sync
+avg = torch.stack(losses).mean().item()
 ```
 
 ### The GPU-first contract
@@ -74,10 +80,11 @@ components already do:
   a Python float computed on the host, so it folds into the next kernel launch
   with no device→host sync. Do not read step sizes or temperatures back off a
   device tensor.
-- **Respect the input dtype.** `BaseModel.gradient` computes in the input's
-  dtype (byte-identical for float32, no fp64 downcast); set
-  `model.force_fp32_gradient = True` only when a low-precision model needs
-  fp32-precision gradients.
+- **Respect the input dtype.** The autograd score of a
+  `prediction_type="score"` model computes in the input's dtype
+  (byte-identical for float32, no fp64 downcast); set
+  `model.force_fp32_gradient = True` only when a low-precision model needs an
+  fp32-precision score.
 - **Adaptive/implicit integrators carry one bounded sync per iteration** (the
   step-acceptance and solver-convergence checks are data-dependent and must
   reach the host). This is inherent; fixed-step integrators are the sync-free
@@ -90,24 +97,22 @@ the offending op named.
 
 ## Reuse memory
 
-Pre-allocate buffers once and fill them in place inside loops; for
-trajectories, write into a pre-allocated tensor instead of appending to a list:
+Pre-allocate buffers once and fill them in place inside loops. The samplers
+write a trajectory into one pre-allocated tensor:
 
 ```python
-traj = torch.empty(n_steps + 1, *x.shape, device=device, dtype=x.dtype)
-traj[0] = x
+trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
 for i in range(n_steps):
-    x = sampler.step(x)
-    traj[i + 1] = x
+    x = integrator.step({"x": x}, step_size, drift=drift)["x"]
+    trajectory[:, i] = x
 ```
 
 In-place ops (`x.add_`, `x.mul_`) are safe outside autograd-tracked paths.
 
 ## Mixed precision and compilation
 
-Inside the library, wrap large matmul blocks with `self.autocast_context()`
-rather than calling `torch.autocast` directly; this honours the user's
-configured dtype. At the benchmark/application layer, `--amp` and `--compile`
+Inside the library, wrap large matmul blocks with `self.autocast_context()`,
+which honours the user's configured dtype. At the benchmark/application layer, `--amp` and `--compile`
 apply the same transforms via `benchmarks/registry.py::apply_mode`, so eager,
 compiled, and mixed-precision results stay comparable.
 
@@ -126,14 +131,14 @@ The suite ([pytest-benchmark](https://pytest-benchmark.readthedocs.io/) under
 `torchebm.*.__init__` and times its standard workload at three scales. Regular
 `pytest tests/` never runs them.
 
-```bash
-bash benchmarks/run.sh --quick               # smoke run, small scale
-bash benchmarks/run.sh --module losses       # one module
-bash benchmarks/run.sh --filter "ScoreMatching"
-bash benchmarks/run.sh --baseline            # save current results as baseline
-bash benchmarks/run.sh --compare             # compare latest two runs
-bash benchmarks/run.sh --ci                  # fail if geo-mean speedup < 0.95x
-```
+| Command | Runs |
+| --- | --- |
+| `bash benchmarks/run.sh --quick` | a smoke run at small scale |
+| `bash benchmarks/run.sh --module losses` | one module |
+| `bash benchmarks/run.sh --filter "ScoreMatching"` | the benchmarks matching a name |
+| `bash benchmarks/run.sh --baseline` | the suite, saving the results as the baseline |
+| `bash benchmarks/run.sh --compare` | a comparison of the latest two runs |
+| `bash benchmarks/run.sh --ci` | the suite, failing if the geo-mean speedup is below 0.95x |
 
 Components needing non-default construction get an entry in
 `benchmarks/registry.py::COMPONENT_OVERRIDES`; existing entries are the best
@@ -156,11 +161,10 @@ non-trivial and evidence-driven: a dashboard regression to localise, a hot
 path rewrite to justify, or a suspected memory issue. Skip it for one-line
 fixes and cleanups.
 
-The whole workflow is one before/after pair plus a diff:
+The workflow is one profile before the change, one after it, and a diff:
 
 ```bash
 python benchmarks/profiler.py run --component LangevinDynamics --scale medium --top 20 --label before
-# make the change
 python benchmarks/profiler.py run --component LangevinDynamics --scale medium --top 20 --label after
 python benchmarks/profiler.py diff benchmarks/profiles/*_before benchmarks/profiles/*_after
 ```

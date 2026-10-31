@@ -1,6 +1,6 @@
 # Foundations
 
-The static objects of energy-based modeling, before anything moves. These
+The static objects of the library, before anything moves. These
 examples are fast, CPU-friendly, and involve no training: they build the
 intuition the rest of the curriculum rests on.
 

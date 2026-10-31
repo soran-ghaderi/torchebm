@@ -1,20 +1,55 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
 
-from torchebm.core import Schedulable, TorchEBMModule
+from torchebm.core import BaseModel, Schedulable, TorchEBMModule
+from torchebm.models.functional import energy_gradient
+
+
+def _score_from_energy(
+    call: Callable[..., torch.Tensor], model: nn.Module
+) -> Callable[..., torch.Tensor]:
+    r"""Closure differentiating an energy call into the score, the
+    ``prediction_type="score"`` path of `BaseModel.__call__`."""
+    force_fp32 = bool(getattr(model, "force_fp32_gradient", False))
+
+    def score(x: torch.Tensor, t: Optional[torch.Tensor] = None) -> torch.Tensor:
+        with torch.enable_grad():
+            x = x.detach().requires_grad_(True)
+            energy = call(x.float() if force_fp32 else x, t)
+            return -energy_gradient(energy, x).detach()
+
+    return score
 
 
 class BaseSampler(Schedulable, TorchEBMModule, ABC):
     r"""
     Abstract base class for samplers.
 
+    The model is an argument of the call, as the function is for
+    `torchdiffeq.odeint`:
+
+    ```python
+    sampler = LangevinDynamics(step_size=0.1, noise_scale=1.0)
+    x = sampler(model, x0, n_steps=100)
+    ```
+
+    `forward` runs the sampler's updates with the model called as
+    ``model(x)`` (`timestep_conditioned=False`) or ``model(x, t)``, matching
+    `model.prediction_type` to what the sampler consumes (`prediction_type`):
+    equal types pass through, a tuple such as ``("energy", "score")`` is
+    indexed, and an energy is differentiated into the score. A model without
+    the attribute, or declaring ``None``, is taken to output what the sampler
+    consumes. Step sizes, noise scales and temperatures are `BaseScheduler`
+    parameters set at construction, reset at every call and advanced once per
+    step together with those of a `Schedulable` model such as
+    `InteractionModel`; `FlowSampler` also accepts a custom time grid per call.
+
     Args:
-        model (nn.Module): The model to sample from. For MCMC samplers, this is
-            typically a `BaseModel` energy function; for learned samplers it may be
-            any `nn.Module`.
+        model (nn.Module): Deprecated. Model sampled by `sample()`; pass the
+            model to the call instead.
         dtype (torch.dtype): The data type for computations.
         device (Optional[Union[str, torch.device]]): The device for computations.
 
@@ -34,14 +69,125 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         Each sampler's `sample()` docstring lists the keys it produces.
     """
 
+    #: Model output the sampler consumes: ``"score"``, ``"velocity"`` or ``"energy"``.
+    prediction_type: str = "score"
+    #: Whether the model is called as ``model(x, t)`` rather than ``model(x)``.
+    timestep_conditioned: bool = False
+
     def __init__(
         self,
-        model: nn.Module,
+        model: Optional[nn.Module] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
         super().__init__(device=device, dtype=dtype)
         self.model = model
+
+    @abstractmethod
+    def forward(
+        self,
+        model: nn.Module,
+        x: torch.Tensor,
+        *,
+        n_steps: int = 50,
+        generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
+    ) -> torch.Tensor:
+        r"""Run `n_steps` updates of `model` from `x`.
+
+        Runs on the device and dtype of `x`, under `torch.no_grad()`, with
+        the schedulers reset at the start.
+
+        Args:
+            model: Model called at every evaluation; see the class docstring
+                for how its output is matched to the sampler.
+            x: Initial state of shape ``(batch_size, *sample_shape)``.
+            n_steps: Number of sampler updates.
+            generator: RNG for the sampler's noise; the global RNG when
+                ``None``.
+            model_kwargs: Conditioning arguments forwarded to the model at
+                every evaluation.
+            return_trajectory: If True, return the state after every update,
+                shape ``(batch_size, n_steps, *sample_shape)``,
+                instead of the final state.
+
+        Returns:
+            The final state, or the trajectory.
+
+        Raises:
+            ValueError: If `model.prediction_type` cannot feed the sampler.
+        """
+        raise NotImplementedError
+
+    def _model_call(
+        self, model: nn.Module, model_kwargs: Optional[Dict[str, Any]]
+    ) -> Callable[..., Any]:
+        r"""Closure ``(x, t=None) -> model(...)`` following `timestep_conditioned`."""
+        kwargs = model_kwargs or {}
+        if self.timestep_conditioned:
+
+            def call(x: torch.Tensor, t: Optional[torch.Tensor] = None):
+                return model(x, t.expand(x.shape[0]), **kwargs)
+
+        else:
+
+            def call(x: torch.Tensor, t: Optional[torch.Tensor] = None):
+                return model(x, **kwargs)
+
+        return call
+
+    def _model_fn(
+        self, model: nn.Module, model_kwargs: Optional[Dict[str, Any]]
+    ) -> Callable[..., torch.Tensor]:
+        r"""Closure ``(x, t=None) -> model_output`` in the form the sampler
+        consumes.
+
+        Raises:
+            ValueError: If `model.prediction_type` cannot feed the sampler.
+        """
+        call = self._model_call(model, model_kwargs)
+        consumed = self.prediction_type
+        produced = getattr(model, "prediction_type", None)
+        if produced is None or produced == consumed:
+            return call
+        if isinstance(produced, tuple):
+            if consumed not in produced:
+                raise ValueError(
+                    f"model outputs {produced!r}, none of which is the "
+                    f"{consumed!r} that {type(self).__name__} consumes"
+                )
+            index = produced.index(consumed)
+
+            def pick(x: torch.Tensor, t: Optional[torch.Tensor] = None) -> torch.Tensor:
+                return call(x, t)[index]
+
+            return pick
+        if produced == "energy" and consumed == "score":
+            return _score_from_energy(call, model)
+        raise ValueError(
+            f"model outputs {produced!r} but {type(self).__name__} consumes "
+            f"{consumed!r}; set prediction_type on the model or the sampler"
+        )
+
+    def reset_schedulers(self, model: Optional[nn.Module] = None) -> None:
+        r"""Reset the schedulers of this sampler and of a `Schedulable` model."""
+        super().reset_schedulers()
+        if isinstance(model, Schedulable) and model is not self.model:
+            model.reset_schedulers()
+
+    def step_schedulers(self, model: Optional[nn.Module] = None) -> None:
+        r"""Advance the schedulers of this sampler and of a `Schedulable` model."""
+        super().step_schedulers()
+        if isinstance(model, Schedulable) and model is not self.model:
+            model.step_schedulers()
+
+    def _require_model(self) -> None:
+        if self.model is None:
+            raise RuntimeError(
+                f"{type(self).__name__}.sample() runs the model bound at "
+                "construction (deprecated); call sampler(model, x, ...) instead"
+            )
 
     def _init_state(
         self,
@@ -83,10 +229,18 @@ class BaseSampler(Schedulable, TorchEBMModule, ABC):
         analytic `gradient(self, x)` overrides with no `model_kwargs` parameter
         keep working. Pass an already-normalized dict (see
         `_prepare_model_kwargs`); it is reused per step with no re-normalization.
+        A model that does not override `gradient` is differentiated through
+        `BaseModel._gradient`, so legacy sampling warns about the sampler only.
         """
+        model = self.model
+        gradient = (
+            model._gradient
+            if type(model).gradient is BaseModel.gradient
+            else model.gradient
+        )
         if model_kwargs:
-            return self.model.gradient(x, model_kwargs=model_kwargs)
-        return self.model.gradient(x)
+            return gradient(x, model_kwargs=model_kwargs)
+        return gradient(x)
 
     def _model_energy(
         self, x: torch.Tensor, model_kwargs: Dict[str, object]

@@ -44,8 +44,8 @@ def test_template_runs_under_no_grad():
     coupling = IdentitySolveCoupling()
     x0 = torch.randn(8, 2, requires_grad=True)
     x1 = torch.randn(8, 2, requires_grad=True)
-    _, y1 = coupling(x0, x1)
-    assert y1.grad_fn is None
+    y0, _ = coupling(x0, x1)
+    assert y0.grad_fn is None
 
 
 def test_default_compute_cost_is_normalized_squared_cdist():

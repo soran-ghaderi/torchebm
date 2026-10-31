@@ -153,7 +153,7 @@ def unsharded(module: nn.Module, recurse: bool = True) -> Iterator[nn.Module]:
         from torchebm.utils.distributed import unsharded
 
         with unsharded(model):
-            samples = sampler.sample(x=x0, n_steps=100)
+            samples = sampler(model, x0, n_steps=100)
         ```
     """
     set_reshard = getattr(module, "set_reshard_after_forward", None)

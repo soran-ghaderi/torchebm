@@ -1,5 +1,5 @@
 title: "Custom Energies"
-summary: "Subclass BaseModel with any differentiable map (N, d) -> (N,); gradients, sampling, and losses come for free."
+summary: "Subclass BaseModel with any differentiable map (N, d) -> (N,); built with prediction_type, its call returns the energy, the autograd score, or both."
 order: 120
 difficulty: intro
 tags: [energy, 2d-energy]

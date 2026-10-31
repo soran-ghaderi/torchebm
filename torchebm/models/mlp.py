@@ -63,14 +63,20 @@ class TimeConditionedMLP(_ConditionalBackbone):
             ``None`` builds an `MLPTimestepEmbedder`.
         y_embedder: Module mapping labels to ``(B, cond_dim)``. Mutually
             exclusive with ``num_classes``/``class_dropout_prob``.
+        time_invariant: Pin ``t`` to zero on every call, the Equilibrium
+            Matching model convention; labels and ``cond`` still apply.
+        prediction_type: What ``forward`` returns: ``"velocity"`` (default),
+            ``"score"``, or ``"epsilon"``. A declaration for consumers; the
+            computation is unchanged.
 
     Example:
         ```python
         from torchebm.losses import FlowMatchingLoss
         from torchebm.models import TimeConditionedMLP
 
-        field = TimeConditionedMLP(in_dim=2)
-        loss = FlowMatchingLoss(model=field)(x_batch)
+        model = TimeConditionedMLP(in_dim=2)
+        loss_fn = FlowMatchingLoss()
+        loss = loss_fn(model(x_t, t), u_t)
         ```
     """
 
@@ -89,6 +95,8 @@ class TimeConditionedMLP(_ConditionalBackbone):
         class_dropout_prob: float = 0.0,
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
+        time_invariant: bool = False,
+        prediction_type: str = "velocity",
     ):
         if in_dim <= 0:
             raise ValueError(f"in_dim must be positive, got {in_dim}")
@@ -112,6 +120,8 @@ class TimeConditionedMLP(_ConditionalBackbone):
             class_dropout_prob=class_dropout_prob,
             t_embedder=t_embedder,
             y_embedder=y_embedder,
+            time_invariant=time_invariant,
+            prediction_type=prediction_type,
         )
         self.in_dim = int(in_dim)
         self.out_dim = int(out_dim) if out_dim is not None else self.in_dim
@@ -191,7 +201,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
                     "y and cond are not accepted"
                 )
             return self.net(x)
-        c = self._condition(t, y, cond)
+        c = self._condition(x, t, y, cond)
         if self.conditioning == "adaln_zero":
             h = self.stem(x)
             for block in self.blocks:

@@ -34,7 +34,7 @@ class DiT(_ConditionalBackbone):
 
     The module is loss-agnostic: it maps ``(B, C, H, W)`` to
     ``(B, out_channels, H, W)`` and can serve as the velocity field of
-    `FlowMatchingLoss`, the gradient field of `EquilibriumMatchingLoss`, a
+    `FlowMatchingLoss`, the time-invariant field of `EquilibriumMatchingLoss`, a
     noise/score predictor, or any other image-shaped regressor.
 
     Standard sizes ship as factory functions (`dit_s_2` ... `dit_xl_8`):
@@ -108,17 +108,24 @@ class DiT(_ConditionalBackbone):
             reuses ``num_heads``.
         pos_embed: Positional embedding kind: ``"sincos"`` (fixed 2D
             sin/cos, default), ``"learnable"``, or ``None`` for none.
+        time_invariant: Pin ``t`` to zero on every call, the Equilibrium
+            Matching model convention; labels and ``cond`` still apply.
+        prediction_type: What ``forward`` returns: ``"velocity"`` (default),
+            ``"score"``, or ``"epsilon"``. A declaration for consumers; the
+            computation is unchanged.
 
     Example:
-        ```python
-        from torchebm.models import DiT, dit_b_2
+        DiT-XL/2 of the paper on the 32x32x4 SD-VAE latents of ImageNet 256,
+        with the reference label dropout; ``out_channels=8`` adds the
+        learned-sigma head of the diffusion setup:
 
-        model = DiT(
-            input_size=32, in_channels=4, patch_size=2,
-            embed_dim=384, depth=12, num_heads=6, num_classes=1000,
+        ```python
+        from torchebm.models import dit_xl_2
+
+        model = dit_xl_2(
+            input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1
         )
-        preset = dit_b_2(input_size=32, in_channels=4, num_classes=1000)
-        v = preset(x, t, y=labels)  # (B, 4, 32, 32)
+        v = model(x_t, t, y=y)
         ```
     """
 
@@ -142,6 +149,8 @@ class DiT(_ConditionalBackbone):
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
         pos_embed: Optional[str] = "sincos",
+        time_invariant: bool = False,
+        prediction_type: str = "velocity",
     ):
         if isinstance(input_size, int):
             size = (int(input_size), int(input_size))
@@ -168,6 +177,8 @@ class DiT(_ConditionalBackbone):
             class_dropout_prob=class_dropout_prob,
             t_embedder=t_embedder,
             y_embedder=y_embedder,
+            time_invariant=time_invariant,
+            prediction_type=prediction_type,
         )
 
         self.input_size = size
@@ -284,7 +295,7 @@ class DiT(_ConditionalBackbone):
         Returns:
             torch.Tensor: Output of shape ``(B, out_channels, H, W)``.
         """
-        c = self._condition(t, y, cond)
+        c = self._condition(x, t, y, cond)
         if tuple(x.shape[-2:]) != self.input_size:
             raise ValueError(
                 f"input has spatial size {tuple(x.shape[-2:])}, "

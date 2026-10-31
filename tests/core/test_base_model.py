@@ -1,6 +1,9 @@
+import warnings
+
 import pytest
 import torch
 
+from torchebm._deprecation import TorchEBMDeprecationWarning
 from torchebm.core.base_model import (
     AckleyModel,
     BaseModel,
@@ -12,6 +15,11 @@ from torchebm.core.base_model import (
     RastriginModel,
     RosenbrockModel,
     StyblinskiTangModel,
+)
+from torchebm.samplers import (
+    GradientDescentSampler,
+    HamiltonianMonteCarlo,
+    LangevinDynamics,
 )
 
 
@@ -156,3 +164,125 @@ def test_harmonic_gradient_linear_in_x():
     x = torch.randn(4, 3)
     g = m.gradient(x)
     assert torch.allclose(g, 2.0 * x, atol=1e-5)
+
+
+class TrainableQuadratic(BaseModel):
+    r"""E(x) = 0.5 * scale * w * ||x||^2, so the score is -scale * w * x."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.w = torch.nn.Parameter(torch.tensor(2.0))
+
+    def forward(self, x, scale=1.0):
+        return 0.5 * scale * self.w * x.square().sum(dim=-1)
+
+
+def test_prediction_type_defaults_to_energy():
+    m = TrainableQuadratic()
+    x = torch.randn(4, 3)
+    assert m.prediction_type == "energy"
+    assert torch.equal(m(x), m.forward(x))
+
+
+def test_score_prediction_is_negative_energy_gradient():
+    x = torch.randn(4, 3)
+    score = HarmonicModel(k=2.0, prediction_type="score")(x)
+    assert torch.allclose(score, -HarmonicModel(k=2.0).gradient(x))
+
+
+def test_energy_and_score_prediction_returns_both():
+    m = TrainableQuadratic(prediction_type=("energy", "score"))
+    x = torch.randn(4, 3)
+    energy, score = m(x)
+    assert torch.allclose(energy, x.square().sum(dim=-1))
+    assert torch.allclose(score, -2.0 * x)
+
+
+def test_score_forwards_model_kwargs():
+    m = TrainableQuadratic(prediction_type="score")
+    x = torch.randn(4, 3)
+    assert torch.allclose(m(x, scale=3.0), -6.0 * x)
+
+
+def test_score_trains_the_model_under_grad_mode():
+    m = TrainableQuadratic(prediction_type="score")
+    x = torch.randn(4, 3)
+    m(x).sum().backward()
+    assert torch.allclose(m.w.grad, -x.sum())
+    assert not x.requires_grad
+
+
+def test_score_keeps_graph_to_input_that_requires_grad():
+    m = TrainableQuadratic(prediction_type="score")
+    x = torch.randn(4, 3, requires_grad=True)
+    (divergence,) = torch.autograd.grad(m(x).sum(), x)
+    assert torch.allclose(divergence, torch.full_like(x, -2.0))
+
+
+def test_score_is_detached_under_no_grad():
+    m = TrainableQuadratic(prediction_type=("energy", "score"))
+    with torch.no_grad():
+        energy, score = m(torch.randn(4, 3))
+    assert not energy.requires_grad
+    assert not score.requires_grad
+
+
+def test_score_prediction_rejects_inference_mode():
+    m = TrainableQuadratic(prediction_type="score")
+    with torch.inference_mode(), pytest.raises(RuntimeError, match="no_grad"):
+        m(torch.randn(4, 3))
+
+
+@pytest.mark.parametrize("prediction_type", ["velocity", ("score", "energy"), "bogus"])
+def test_invalid_prediction_type_raises(prediction_type):
+    with pytest.raises(ValueError, match="prediction_type"):
+        TrainableQuadratic(prediction_type=prediction_type)
+
+
+def test_functional_model_is_held_as_structure_only():
+    with torch.device("meta"):
+        template = TrainableQuadratic()
+    m = TrainableQuadratic(prediction_type="score", functional_model=template)
+    assert list(m.children()) == []
+    assert len(list(m.parameters())) == 1
+    assert m.state_dict().keys() == {"w"}
+
+
+def test_functional_model_must_be_an_energy_model():
+    with pytest.raises(ValueError, match="functional_model"):
+        TrainableQuadratic(
+            prediction_type="score",
+            functional_model=TrainableQuadratic(prediction_type="score"),
+        )
+
+
+def test_model_without_prediction_type_attribute_is_energy_model():
+    m = TrainableQuadratic(prediction_type="score")
+    del m.prediction_type
+    x = torch.randn(4, 3)
+    assert torch.equal(m(x), m.forward(x))
+
+
+def test_gradient_is_deprecated_in_favour_of_the_score_call():
+    m = TrainableQuadratic()
+    x = torch.randn(4, 3)
+    with pytest.warns(TorchEBMDeprecationWarning, match="BaseModel.gradient"):
+        gradient = m.gradient(x)
+    m.prediction_type = "score"
+    assert torch.equal(gradient, -m(x).detach())
+
+
+@pytest.mark.parametrize(
+    "sampler_cls,kwargs",
+    [
+        (LangevinDynamics, {"step_size": 0.01}),
+        (HamiltonianMonteCarlo, {"step_size": 0.01, "n_leapfrog_steps": 2}),
+        (GradientDescentSampler, {"step_size": 0.01}),
+    ],
+)
+def test_legacy_sampling_warns_about_the_sampler_only(sampler_cls, kwargs):
+    sampler = sampler_cls(TrainableQuadratic(), **kwargs)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampler.sample(x=torch.randn(4, 3), n_steps=2)
+    assert not any("BaseModel.gradient" in str(w.message) for w in caught)

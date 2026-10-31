@@ -6,11 +6,10 @@ icon: material/chart-scatter-plot
 
 # Sampling and Integration
 
-Sampling answers one question: given a model, how are samples produced? The
-library covers the spectrum from Markov chain methods on a fixed energy to
-deterministic integration of a learned velocity field, and factors the
-numerics into a shared integrator layer. The current family, generated from
-the installed package at build time:
+A sampler turns a model into samples. The samplers range from Markov chain
+methods on a fixed energy to deterministic integration of a learned velocity
+field, and all of them step through a shared integrator layer. The current
+family, generated from the installed package at build time:
 
 <!-- torchebm:diagram samplers -->
 
@@ -29,8 +28,8 @@ generation:
 
 ```python
 from torchebm.samplers import LangevinDynamics
-sampler = LangevinDynamics(model=model, step_size=0.02, noise_scale=1.0)
-samples = sampler.sample(dim=2, n_samples=2000, n_steps=500)
+sampler = LangevinDynamics(step_size=0.02, noise_scale=1.0)
+samples = sampler(model, torch.randn(2000, 2), n_steps=500)
 ```
 
 **Hamiltonian Monte Carlo** augments the state with momentum and integrates
@@ -43,26 +42,33 @@ targets.
 
 ```python
 from torchebm.samplers import HamiltonianMonteCarlo
-hmc = HamiltonianMonteCarlo(model=model, step_size=0.1, n_leapfrog_steps=10)
-samples, diag = hmc.sample(dim=2, n_samples=1000, n_steps=300,
-                           return_diagnostics=True)
-diag["acceptance_rate"].mean()
+sampler = HamiltonianMonteCarlo(step_size=0.1, n_leapfrog_steps=10)
+samples = sampler(model, torch.randn(1000, 2), n_steps=300)
 ```
 
 Optimization-based samplers (plain gradient descent and momentum variants such
-as `NesterovSampler`) are the noise-free members of the family: mode seekers
-rather than samplers, useful for finding minima of a trained energy.
+as `NesterovSampler`) are the noise-free members of the family. On an energy
+they descend to its minima; on a field that is not a gradient, such as an
+implicit equilibrium-matching model, the same update
+\(x \leftarrow x + \eta f(x)\) is a fixed-point iteration toward the field's
+attractors.
 
-Three conventions hold across all of them:
+Four conventions hold across all of them:
 
-- **Chains are a batch dimension.** `n_samples` chains advance as one tensor
-  program; scaling chains costs one integer, not a loop.
-- **Diagnostics are dictionaries.** `return_diagnostics=True` returns per-step
-  tensors (means, variances, energies, acceptance rates) rather than opaque
-  state.
+- **The model is an argument of the call.** `sampler(model, x, n_steps=...)`,
+  as the function is for `torchdiffeq`; the sampler reads
+  `model.prediction_type` and differentiates an energy into the score it
+  consumes, so one sampler serves analytic energies, trained energies and
+  score models alike.
+- **Chains are a batch dimension.** The rows of `x` advance as one tensor
+  program, so the number of chains is the batch size.
+- **Trajectories are tensors.** `return_trajectory=True` returns the state
+  after every step, shape `(batch, n_steps, ...)`, for diagnostics and
+  animation.
 - **Hyperparameters are schedulable.** Step sizes and noise scales accept
   schedulers, which is how annealed Langevin and temperature sweeps are
-  expressed.
+  expressed; a `Schedulable` model such as `InteractionModel` is stepped in
+  lockstep.
 
 ## Continuous-time generation
 
@@ -71,21 +77,22 @@ the learned field from noise to data:
 
 ```python
 from torchebm.samplers import FlowSampler
-flow = FlowSampler(model=field, interpolant="linear",
-                   prediction="velocity", integrator="heun")
-samples = flow.sample(x=torch.randn(4096, 2), n_steps=50)
+sampler = FlowSampler(interpolant="linear", prediction_type="velocity",
+                      integrator="heun")
+samples = sampler(model, torch.randn(4096, 2), n_steps=50)
 ```
 
-`prediction` declares what the network outputs (`"velocity"`, `"score"`, or
-`"noise"`); the interpolant converts between them internally, so one sampler
-serves flow matching, score-based diffusion, and noise-prediction models.
-The process is chosen at construction: `mode="ode"` (default) integrates the
-probability-flow ODE, `mode="sde"` adds a diffusion term with selectable
-form (`diffusion_form=`, `last_step=`). `sample()` follows the same contract
-as every other sampler; with a fixed-step integrator it supports `thin`,
-`return_trajectory`, and `return_diagnostics`, while adaptive integrators
-(`dopri5`, ...) return the final state only. Equilibrium-matching models set
-`negate_velocity=True`, since they learn the data-to-noise direction.
+`prediction_type` names what the network outputs (`"velocity"`, `"score"`,
+or `"epsilon"`); the interpolant converts between them internally, so one
+sampler serves flow matching, score-based diffusion, and noise-prediction
+models. The process is chosen at construction: `mode="ode"` (default)
+integrates the probability-flow ODE, `mode="sde"` adds a diffusion term with
+selectable form (`diffusion_form=`, `last_step=`). The call follows the same
+contract as every other sampler and also accepts a custom time grid, `t=`,
+in place of `n_steps`; with a fixed-step integrator it supports
+`return_trajectory`, while adaptive integrators (`dopri5`, ...) return the
+final state only. An equilibrium-matching field declares no
+`prediction_type` and is integrated as the velocity directly.
 
 ## The integrator layer
 
@@ -105,8 +112,9 @@ from torchebm.integrators import get_integrator
 integ = get_integrator("rk4")
 ```
 
-Higher-order solvers buy accuracy per step; adaptive solvers buy robustness on
-stiff fields; symplectic solvers preserve the phase-space volume HMC's
+Higher-order solvers are more accurate per step, adaptive solvers choose the
+step size from an error estimate, implicit solvers stay stable on stiff
+dynamics, and symplectic solvers preserve the phase-space volume that HMC's
 correctness depends on. The
 [integrator comparison example](../examples/10-sampling/02-integrators/01-integrator-comparison.md)
 measures the orders directly against an exact solution.

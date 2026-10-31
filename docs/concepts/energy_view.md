@@ -14,31 +14,37 @@ p_\theta(x) = \frac{e^{-E_\theta(x)}}{Z_\theta},
 \]
 
 where lower energy means higher probability. The normalizer \(Z_\theta\) is
-intractable in general, and the central observation of the field is how little
-it is needed: differences of energies, gradients of energies, and ratios of
-densities are all available without it.
+intractable in general, but differences of energies, gradients of energies,
+and ratios of densities do not depend on it.
 
-Two derived quantities do most of the work in the library:
+For a model parameterized by an energy, two derived quantities do most of the
+work:
 
 - the **score** \(s_\theta(x) = \nabla_x \log p_\theta(x) = -\nabla_x E_\theta(x)\),
   which is what score-matching objectives estimate, and
 - the **force** \(-\nabla_x E_\theta(x)\) (the same vector), which is the drift
   every gradient-based sampler follows.
 
+Models that output a vector field directly, such as flow-matching velocities
+and the implicit equilibrium-matching field, have no energy in general;
+[Design and Scope](design.md) places both kinds of model.
+
 ## The model contract
 
 Any differentiable map from a batch `(N, d)` to energies `(N,)` is a valid
-model. `BaseModel` supplies the gradient through autograd, device and dtype
-handling, and integration with every sampler and loss:
+model. `forward` returns the energy; the call returns what `prediction_type`
+names: the energy (default), the score \(-\nabla_x E\) through autograd, or
+both from one pass. `BaseModel` adds device and dtype handling and the
+integration with every sampler and loss:
 
 ```python
 import torch
 from torch import nn
 from torchebm.core import BaseModel
 
-class MLPEnergy(BaseModel):
-    def __init__(self):
-        super().__init__()
+class MLP(BaseModel):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.net = nn.Sequential(
             nn.Linear(2, 128), nn.SiLU(),
             nn.Linear(128, 128), nn.SiLU(),
@@ -47,11 +53,12 @@ class MLPEnergy(BaseModel):
     def forward(self, x):
         return self.net(x).squeeze(-1)
 
-energy = MLPEnergy()
-x = torch.randn(64, 2)
-e = energy(x)              # (64,)
-force = -energy.gradient(x)  # (64, 2), autograd-supplied
+model = MLP(prediction_type=("energy", "score"))
+energy, score = model(torch.randn(64, 2))
 ```
+
+A model declares only what its training loss consumes; samplers read the
+attribute and differentiate an energy themselves.
 
 Architecture guidance is the usual for EBMs: smooth activations (SiLU, GELU)
 keep the gradient field well behaved, and the output must remain a raw scalar
@@ -73,6 +80,9 @@ from torchebm.core import GaussianModel
 model = GaussianModel(mean=torch.zeros(2), cov=torch.eye(2))
 ```
 
+They subclass `AnalyticModel`, so `prediction_type="score"` returns the
+closed-form score without autograd.
+
 ## Scheduled parameters
 
 Hyperparameters that should vary over a run (a step size annealed during
@@ -86,9 +96,9 @@ from torchebm.core import CosineScheduler
 from torchebm.samplers import LangevinDynamics
 
 sampler = LangevinDynamics(
-    model=model,
     step_size=CosineScheduler(start_value=0.05, end_value=0.005, n_steps=500),
 )
+samples = sampler(model, torch.randn(2000, 2), n_steps=500)
 ```
 
 ## Runnable counterparts

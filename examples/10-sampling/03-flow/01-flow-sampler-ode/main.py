@@ -5,7 +5,10 @@ the marginal velocity is closed-form:
 
     u(x, t) = mu + (t s^2 - (1 - t)) / (t^2 s^2 + (1 - t)^2) * (x - t mu)
 
-so the sampler's mechanics can be studied in isolation from learning.
+so the sampler's mechanics can be studied in isolation from learning. More
+steps mean less discretization error; integrator="heun" or the adaptive
+"dopri5" collapse the error at few steps, and trained velocity models (see
+20-training) plug in identically.
 """
 
 import torch
@@ -17,31 +20,20 @@ MU = torch.tensor([2.0, -1.0])
 S = 0.5
 
 
-class AnalyticVelocity(nn.Module):  # the exact marginal velocity field u(x, t)
+class AnalyticVelocity(nn.Module):
     def forward(self, x, t, **kwargs):
-        t = torch.as_tensor(t, dtype=x.dtype, device=x.device)
-        if t.ndim == 0:
-            t = t.expand(x.size(0))
-        t = t.view(-1, 1)
+        t = torch.as_tensor(t, dtype=x.dtype, device=x.device).view(-1, 1)
         var = t**2 * S**2 + (1 - t) ** 2
         return MU + (t * S**2 - (1 - t)) / var * (x - t * MU)
 
 
-flow = FlowSampler(
-    model=AnalyticVelocity(),
-    interpolant="linear",
-    prediction="velocity",
-    integrator="euler",
-)
+model = AnalyticVelocity()
+sampler = FlowSampler(interpolant="linear", integrator="euler")
 
-# More steps, smaller discretization error: the samples converge to N(mu, s^2 I).
 torch.manual_seed(0)
-z = torch.randn(8192, 2)
-for num_steps in (2, 8, 64):
-    samples = flow.sample(x=z, n_steps=num_steps)
+x0 = torch.randn(8192, 2)
+for n_steps in (2, 8, 64):
+    samples = sampler(model, x0, n_steps=n_steps)
     mean_err = (samples.mean(0) - MU).norm()
     std_err = (samples.std(0) - S).abs().max()
-    print(f"num_steps={num_steps:3d}  mean error {mean_err:.3f}   std error {std_err:.3f}")
-
-# Swap integrator="euler" for "heun" or "dopri5" (adaptive) and the error at few
-# steps collapses; trained velocity models (see 20-training) plug in identically.
+    print(f"n_steps={n_steps:3d}  mean error {mean_err:.3f}   std error {std_err:.3f}")

@@ -13,8 +13,9 @@ provided here as a thin compatibility shim. They will move to a dedicated
 `AMPConfig` utility in a follow-up release.
 """
 
+import functools
 from contextlib import nullcontext
-from typing import Optional, Union
+from typing import Optional, Union, Callable
 import warnings
 
 import torch
@@ -27,6 +28,23 @@ def _normalize(device: torch.device) -> torch.device:
     if device.type == "cuda" and device.index == 0:
         return torch.device("cuda")
     return device
+
+
+@functools.cache
+def _dtensor_type():
+    try:
+        from torch.distributed.tensor import DTensor
+    except ImportError:
+        return None
+    return DTensor
+
+
+def _has_dtensor_params(module: nn.Module) -> bool:
+    r"""Whether the module's parameters are sharded DTensors (e.g. FSDP2)."""
+    dtensor = _dtensor_type()
+    return dtensor is not None and isinstance(
+        next(module.parameters(), None), dtensor
+    )
 
 
 def _unexpected_init_args_message(cls, args, kwargs, stop_at: type) -> str:
@@ -68,7 +86,16 @@ def _unexpected_init_args_message(cls, args, kwargs, stop_at: type) -> str:
     )
 
 
-def substitute_condition(y, mask, null):
+def substitute_condition(
+    y: torch.Tensor,
+    mask: torch.Tensor,
+    null: Union[
+        int,
+        float,
+        torch.Tensor,
+        Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    ],
+) -> torch.Tensor:
     r"""Replace conditioning rows selected by `mask` with the null condition.
 
     Shared semantics for classifier-free-guidance label dropout (losses) and
@@ -83,7 +110,7 @@ def substitute_condition(y, mask, null):
             callable ``(y, mask) -> y``.
 
     Returns:
-        Tensor of y's shape with masked rows nulled.
+        torch.Tensor: Tensor of y's shape with masked rows nulled.
     """
     if callable(null):
         return null(y, mask)

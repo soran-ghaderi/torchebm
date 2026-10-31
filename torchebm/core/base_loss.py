@@ -5,7 +5,7 @@ Base Loss Classes for Energy-Based Models
 import logging
 import warnings
 from abc import abstractmethod, ABC
-from typing import Tuple, Union, Optional, Dict, Any, Callable
+from typing import Tuple, Union, Optional, Dict, Any, Callable, TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -15,44 +15,18 @@ from torchebm.core import BaseSampler
 from torchebm.core import BaseScheduler
 from torchebm.core import Schedulable
 from torchebm.core import TorchEBMModule
-from torchebm._deprecation import declare_deprecation
 from torchebm.core.base_module import (
+    _dtensor_type,
+    _has_dtensor_params,
     _unexpected_init_args_message,
     substitute_condition,
 )
 
-# First warned in v0.7.5; window restarted when the deprecation ledger was
-# adopted.
-_BARE_MODEL_KWARGS_DEPRECATION = declare_deprecation(
-    module=__name__,
-    name="bare model-conditioning kwargs",
-    since="0.8.5",
-    deprecated_on="2026-08-31",
-    replacement="model_kwargs={...}",
-    message=(
-        "Passing model conditioning as bare keyword arguments is "
-        "deprecated; pass model_kwargs={...} instead."
-    ),
-    removal="the legacy_kwargs merge path in _resolve_model_kwargs and every caller's bare **kwargs forwarding",
-)
+if TYPE_CHECKING:
+    from torchebm.core.base_coupling import BaseCoupling
+    from torchebm.core.base_interpolant import BaseInterpolant
 
 logger = logging.getLogger(__name__)
-
-
-def _dtensor_type():
-    try:
-        from torch.distributed.tensor import DTensor
-    except ImportError:
-        return None
-    return DTensor
-
-
-def _has_dtensor_params(module: nn.Module) -> bool:
-    r"""Whether the module's parameters are sharded DTensors (e.g. FSDP2)."""
-    dtensor = _dtensor_type()
-    return dtensor is not None and isinstance(
-        next(module.parameters(), None), dtensor
-    )
 
 
 class BaseLoss(Schedulable, TorchEBMModule, ABC):
@@ -78,6 +52,7 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
         cfg_dropout: float = 0.0,
         null_condition: Union[int, float, torch.Tensor, Callable, None] = None,
         check_conditioning: bool = True,
+        reduction: str = "mean",
         *args: Any,
         **kwargs: Any,
     ):
@@ -100,13 +75,15 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
                 raise instead of silently training an unconditional model).
                 Set False for models this probe misjudges, e.g.
                 stochastic-in-eval backbones.
+            reduction: ``"mean"``, ``"sum"``, or ``"none"``, as in
+                `torch.nn.functional`; used by the loss signatures.
 
         Raises:
             TypeError: If constructor arguments remain that no class in the
                 loss's MRO binds; the message lists the supported parameters
                 and the installed torchebm version.
             ValueError: If ``cfg_dropout`` is outside [0, 1], or positive
-                without a `null_condition`.
+                without a `null_condition`, or if ``reduction`` is unknown.
         """
         if args or kwargs:
             raise TypeError(
@@ -116,11 +93,16 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
             raise ValueError(f"cfg_dropout must be in [0, 1], got {cfg_dropout}")
         if cfg_dropout > 0 and null_condition is None:
             raise ValueError("cfg_dropout > 0 requires null_condition")
+        if reduction not in ("mean", "sum", "none"):
+            raise ValueError(
+                f"reduction must be 'mean', 'sum', or 'none', got {reduction!r}"
+            )
         super().__init__(device=device, dtype=dtype)
         self.cfg_dropout = cfg_dropout
         self.null_condition = null_condition
         self._condition_check_pending = check_conditioning
         self._condition_probe_deferrals = 0
+        self.reduction = reduction
 
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
         r"""Model call used by the conditioning probe; energy convention."""
@@ -240,29 +222,6 @@ class BaseLoss(Schedulable, TorchEBMModule, ABC):
             "y": substitute_condition(y, mask, self.null_condition),
         }
 
-    def _resolve_model_kwargs(
-        self,
-        model_kwargs: Optional[dict],
-        legacy_kwargs: Optional[dict] = None,
-    ) -> dict:
-        r"""Merge explicit `model_kwargs` with deprecated bare ``**kwargs``.
-
-        Shared shim for losses whose bare ``**kwargs`` historically meant *model*
-        conditioning (EqM, EM, score matching). The explicit dict wins on key
-        conflicts; a non-empty legacy mapping triggers a one-time
-        ``DeprecationWarning`` per concrete loss class. The result is device-
-        normalized once (see `_prepare_model_kwargs`) and is a fresh dict, so it
-        never aliases the caller's mapping.
-        """
-        if legacy_kwargs:
-            _BARE_MODEL_KWARGS_DEPRECATION.warn(
-                qualifier=f"{type(self).__module__}.{type(self).__qualname__}"
-            )
-            merged = {**legacy_kwargs, **(model_kwargs or {})}
-        else:
-            merged = model_kwargs
-        return self._prepare_model_kwargs(merged)
-
     @abstractmethod
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         """
@@ -329,8 +288,8 @@ class BaseInterpolantLoss(BaseLoss):
 
     def __init__(
         self,
-        interpolant="linear",
-        coupling=None,
+        interpolant: Union[str, "BaseInterpolant"] = "linear",
+        coupling: Optional[Union[str, "BaseCoupling"]] = None,
         train_eps: Union[float, "BaseScheduler"] = 0.0,
         t_sampler: Union[str, Callable[..., torch.Tensor]] = "uniform",
         t_p_mean: float = -1.2,
@@ -383,26 +342,23 @@ class BaseInterpolantLoss(BaseLoss):
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""Resolve conditioning, run `training_losses`, reduce with weights.
 
-        Shared pipeline: model_kwargs resolution (deprecated bare kwargs
-        included), the conditioning-consumption probe, cfg label dropout,
-        then the subclass `training_losses`; per-pair coupling weights, when
-        present, replace the plain mean.
+        Shared pipeline: model_kwargs resolution, the conditioning-consumption
+        probe, cfg label dropout, then the subclass `training_losses`; per-pair
+        coupling weights, when present, replace the plain mean.
 
         Args:
             x: Data samples of shape (batch_size, ...).
             *args: Additional positional arguments.
             x0: Optional source samples of shape (batch_size, ...).
             model_kwargs: Conditioning arguments forwarded to the model.
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             Scalar loss value.
         """
-        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+        mk = self._prepare_model_kwargs(model_kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         terms = self.training_losses(

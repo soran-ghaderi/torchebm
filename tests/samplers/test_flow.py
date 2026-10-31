@@ -578,7 +578,7 @@ class TestFlowSampleContract:
     )
     def test_removed_kwargs_raise(self, device, dtype, kwargs):
         sampler = self._euler_sampler(device, dtype)
-        with pytest.raises(TypeError, match="removed from"):
+        with pytest.raises(TypeError, match="unexpected keyword argument"):
             sampler.sample(n_samples=2, dim=2, n_steps=4, **kwargs)
 
 

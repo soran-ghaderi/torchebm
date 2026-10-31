@@ -4,9 +4,9 @@ All solvers are torch-native (no scipy/POT dependency):
 
 - `ExactOTCoupling`: Bertsekas auction algorithm with epsilon scaling, solving
   the discrete assignment problem to (float) optimality; a deterministic
-  permutation of the target batch.
+  permutation of the source batch.
 - `SinkhornCoupling`: log-domain Sinkhorn iterations producing an entropic
-  transport plan, from which target indices are drawn row-conditionally.
+  transport plan, from which one source index is drawn per target.
 - `GreedyCoupling`: nearest-free-pair heuristic; a fast, deterministic
   approximation to the assignment problem.
 
@@ -223,7 +223,7 @@ class ExactOTCoupling(BaseCostCoupling):
 
     Solves the assignment problem on the squared-Euclidean cost with the
     Bertsekas auction algorithm and returns a deterministic permutation of the
-    target batch (paper-faithful minibatch EMD). Round-bound: roughly 0.15 s
+    source batch (paper-faithful minibatch EMD). Round-bound: roughly 0.15 s
     (batch 128) to 0.5 s (batch 256) per call on CPU or GPU; prefer
     `SinkhornCoupling` inside training loops.
 
@@ -233,20 +233,33 @@ class ExactOTCoupling(BaseCostCoupling):
 
     Args:
         tol: Optimality tolerance, relative to the normalized cost scale.
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
+        OT-CFM (Tong et al., 2024) on 2D data: exact minibatch OT pairs and
+        the constant smoothing \(\sigma = 0.1\) of the conditional path;
+        ``model`` is the paper's MLP on \((x, t)\), three hidden layers of
+        width 64 with SELU, trained with AdamW (weight decay 1e-5) at batch
+        512.
+
         ```python
         from torchebm.couplings import ExactOTCoupling
+        from torchebm.interpolants import LinearInterpolant
+        from torchebm.losses import FlowMatchingLoss
 
-        coupling = ExactOTCoupling()
-        x0 = torch.randn_like(x1)
-        x0, x1 = coupling(x0, x1)             # transport-aligned pairs
-        xt, ut = interpolant.interpolate(x0, x1, t)
+        coupling, path, loss_fn = ExactOTCoupling(), LinearInterpolant(), FlowMatchingLoss()
+        x0, x1 = coupling(torch.randn_like(x1), x1)
+        t = torch.rand(len(x1))
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t + 0.1 * torch.randn_like(x_t), t), u_t)
         ```
     """
 
-    def __init__(self, tol: float = 1e-4, process_group=None):
-        super().__init__(process_group=process_group)
+    def __init__(
+        self, tol: float = 1e-4, process_group=None, conditional: bool = False
+    ):
+        super().__init__(process_group=process_group, conditional=conditional)
         self.tol = tol
 
     def _solve(
@@ -263,26 +276,28 @@ class SinkhornCoupling(BaseCostCoupling):
     Entropic minibatch optimal-transport coupling.
 
     Computes an entropic transport plan with log-domain Sinkhorn iterations,
-    then draws one target index per source sample from the row-conditional
-    plan. This preserves the source marginal exactly (joint sampling with
-    replacement would not) and is stochastic. Milliseconds per call; the
-    preferred choice inside training loops.
+    then draws one source index per target sample from the conditional plan.
+    This preserves the target marginal exactly, so every data sample is used
+    once (joint sampling with replacement would not), and is stochastic.
+    Milliseconds per call; the preferred choice inside training loops.
 
     Args:
         reg: Entropic regularization strength.
         n_iters: Number of Sinkhorn iterations.
         process_group: When set, couple globally over the pooled batches of
             every rank in the group: both batches are all_gathered, every
-            rank solves the identical pooled problem, the row-conditional
-            draw is broadcast from rank 0 (per-rank generators cannot
-            desynchronize it), and each rank keeps its own rows, paired
-            against targets from any rank. This shrinks the minibatch-OT
+            rank solves the identical pooled problem, the per-target draw is
+            broadcast from rank 0 (per-rank generators cannot desynchronize
+            it), and each rank keeps its own targets, paired with sources
+            from any rank. This shrinks the minibatch-OT
             bias at fixed per-rank batch size, at the price of a
             \((\text{world\_size} \times \text{batch})^2\) cost matrix
             materialized on every rank. Requires equal batch sizes per rank,
             and `couple` becomes a collective every rank must enter
             together. Pass `torch.distributed.group.WORLD` for the default
             group; `None` (the default) never issues a collective.
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
         ```python
@@ -290,13 +305,22 @@ class SinkhornCoupling(BaseCostCoupling):
 
         coupling = SinkhornCoupling(reg=0.01)
         x0, x1 = coupling(torch.randn_like(x1), x1)
+
+        coupling = SinkhornCoupling(conditional=True)
+        x0, x1 = coupling(torch.randn_like(x1), x1, y=labels)
         ```
     """
 
     _supports_process_group = True
 
-    def __init__(self, reg: float = 0.05, n_iters: int = 100, process_group=None):
-        super().__init__(process_group=process_group)
+    def __init__(
+        self,
+        reg: float = 0.05,
+        n_iters: int = 100,
+        process_group: Optional["torch.distributed.ProcessGroup"] = None,
+        conditional: bool = False,
+    ):
+        super().__init__(process_group=process_group, conditional=conditional)
         if reg <= 0:
             raise ValueError(f"reg must be positive, got {reg}")
         if n_iters <= 0:
@@ -321,10 +345,11 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
     Unbalanced entropic optimal-transport coupling with per-pair weights.
 
     Computes a KL-marginal-relaxed transport plan (unbalanced Sinkhorn), pairs
-    each source with a row-conditional draw, and returns the row masses as
-    per-pair importance `weights` on the `CouplingResult` (normalized so the
-    balanced case is all-ones). Sources that are expensive to transport
-    (outliers, unmatched mass) receive low weight, which weight-aware
+    each target with a source drawn from its conditional plan, and returns
+    the target masses as per-pair importance `weights` on the
+    `CouplingResult` (normalized so the balanced case is all-ones). Targets
+    that are expensive to transport (outliers, unmatched mass) receive low
+    weight, which weight-aware
     consumers (e.g. `EnergyMatchingLoss`'s flow term) use to down-weight
     those pairs. Used by UOT-FM and single-cell trajectory settings where
     mass is not conserved.
@@ -334,6 +359,8 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
         reg_marginal: KL marginal-relaxation strength \(\rho\); larger values
             approach balanced Sinkhorn (uniform weights).
         n_iters: Number of Sinkhorn iterations.
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
         ```python
@@ -352,8 +379,9 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
         reg_marginal: float = 1.0,
         n_iters: int = 100,
         process_group=None,
+        conditional: bool = False,
     ):
-        super().__init__(process_group=process_group)
+        super().__init__(process_group=process_group, conditional=conditional)
         if reg <= 0:
             raise ValueError(f"reg must be positive, got {reg}")
         if reg_marginal <= 0:
@@ -372,14 +400,14 @@ class UnbalancedSinkhornCoupling(BaseCostCoupling):
             return CouplingResult(x0, x1)
         cost = self.compute_cost(x0, x1, **kwargs)
         plan = _unbalanced_sinkhorn_log(
-            cost, reg=self.reg, reg_marginal=self.reg_marginal, n_iters=self.n_iters
+            cost.T, reg=self.reg, reg_marginal=self.reg_marginal, n_iters=self.n_iters
         )
         mass = plan.sum(dim=1)
         weights = mass / mass.mean().clamp(min=1e-12)
         idx = torch.multinomial(
             plan.clamp(min=1e-30), 1, generator=generator
         ).squeeze(-1)
-        return CouplingResult(x0, x1[idx], weights=weights)
+        return CouplingResult(x0[idx], x1, weights=weights)
 
     def _solve(
         self, cost: torch.Tensor, generator: Optional[torch.Generator] = None
@@ -408,6 +436,10 @@ class GreedyCoupling(BaseCostCoupling):
 
     Rejects `process_group` at construction; use `SinkhornCoupling` for
     global-batch coupling.
+
+    Args:
+        conditional: Pair only samples with equal class labels ``y``; see
+            `BaseCostCoupling`.
 
     Example:
         ```python

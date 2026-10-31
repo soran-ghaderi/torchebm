@@ -193,9 +193,9 @@ def test_sinkhorn_coupling_generator_is_reproducible():
     coupling = SinkhornCoupling(reg=0.5, n_iters=10)
     x0 = torch.randn(16, DIM)
     x1 = torch.randn(16, DIM)
-    _, a = coupling(x0, x1, generator=gen(0))
-    _, b = coupling(x0, x1, generator=gen(0))
-    _, c = coupling(x0, x1, generator=gen(1))
+    a, _ = coupling(x0, x1, generator=gen(0))
+    b, _ = coupling(x0, x1, generator=gen(0))
+    c, _ = coupling(x0, x1, generator=gen(1))
     assert torch.equal(a, b)
     assert not torch.equal(a, c)
 
@@ -206,8 +206,8 @@ def test_deterministic_coupling_accepts_generator():
     x0 = torch.randn(8, DIM)
     x1 = torch.randn(8, DIM)
     for coupling in (IndependentCoupling(), ExactOTCoupling()):
-        _, paired = coupling(x0, x1, generator=gen(0))
-        _, again = coupling(x0, x1, generator=gen(1))
+        paired, _ = coupling(x0, x1, generator=gen(0))
+        again, _ = coupling(x0, x1, generator=gen(1))
         assert torch.equal(paired, again)
 
 

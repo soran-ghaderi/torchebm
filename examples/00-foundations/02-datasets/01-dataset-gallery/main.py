@@ -1,7 +1,9 @@
 """Synthetic 2D benchmarks: the standard toy targets used across flow and EBM papers.
 
 Each dataset is a torch Dataset generating (n_samples, 2) points on construction;
-get_data() returns the full tensor for direct batching.
+get_data() returns the full tensor for direct batching, and len(dataset) and
+dataset[i] work as usual. All share seed, device and dtype, plus per-shape knobs
+(n_samples, noise, std, radius, ...; the grid counts points per dimension).
 """
 
 import torch
@@ -27,16 +29,13 @@ datasets = {
     "circle": CircleDataset(n_samples=N, seed=SEED),
     "checkerboard": CheckerboardDataset(n_samples=N, seed=SEED),
     "pinwheel": PinwheelDataset(n_samples=N, seed=SEED),
-    "grid": GridDataset(n_samples_per_dim=45, seed=SEED),  # 45^2 = 2025 points
+    "grid": GridDataset(n_samples_per_dim=45, seed=SEED),
 }
 
-for name, ds in datasets.items():
-    x = ds.get_data()                        # (N, 2)
-    extent = x.abs().max().item()            # how far the support reaches
+for name, dataset in datasets.items():
+    x = dataset.get_data()
+    extent = x.abs().max().item()
     print(f"{name:17s} shape {tuple(x.shape)}   mean {x.mean(0).round(decimals=2).tolist()}"
           f"   std {x.std(0).round(decimals=2).tolist()}   extent {extent:.2f}")
 
-# Shared constructor contract: seed, device, dtype, plus per-shape knobs
-# (n_samples, noise, std, radius, ...; the grid counts per dimension).
-# len(ds) and ds[i] also work: every generator is a torch Dataset.
 print("len(two_moons) =", len(datasets["two_moons"]))

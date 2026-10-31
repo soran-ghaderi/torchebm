@@ -2,12 +2,17 @@ import logging
 import warnings
 from contextlib import nullcontext
 import torch
-from typing import Dict, Optional, Tuple, Union, Any, List, Callable
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union, Any, List, Callable
 from torch.utils.data import DataLoader
 
+from torchebm._deprecation import deprecated
 from .base_model import BaseModel
 from .base_sampler import BaseSampler
 from .base_loss import BaseLoss
+from .schedulable import Schedulable
+
+if TYPE_CHECKING:
+    from torchebm.utils.replay_buffer import ReplayBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +21,15 @@ torch.set_float32_matmul_precision("high")
 
 
 class BaseTrainer:
-    """
+    r"""
     Base class for training energy-based models.
 
     This class provides a generic interface for training EBMs, supporting various
-    training methods and mixed precision training.
+    training methods and mixed precision training. `compute_loss` turns a batch
+    into the loss: with a `sampler`, it draws the negatives of a contrastive
+    loss (`ContrastiveDivergenceLoss`) from `buffer` or noise and returns
+    ``loss_fn(model(x), model(x_neg))``; override it for objectives that build
+    their own inputs.
 
     Args:
         model: Energy function to train
@@ -30,14 +39,42 @@ class BaseTrainer:
         dtype: Data type for computations
         use_mixed_precision: Whether to use mixed precision training
         callbacks: List of callback functions for training events
+        sampler: Sampler drawing the negatives, called as
+            ``sampler(model, x0, n_steps=n_steps, model_kwargs=...)`` with
+            ``x0`` from `buffer`, or Gaussian noise without one. ``None``
+            (default) calls `loss_fn` on the batch (losses holding the model)
+            or leaves the work to an overridden `compute_loss`.
+        buffer: `ReplayBuffer` of persistent chains: sampled for the start
+            points and refilled with every step's negatives; moved to the
+            trainer device and saved with the checkpoint.
+        n_steps: Sampler steps per training step (CD-k).
 
     Methods:
+        compute_loss: Loss of one batch
         train_step: Perform a single training step
         train_epoch: Train for a full epoch
         train: Train for multiple epochs
         validate: Validate the model
         save_checkpoint: Save model checkpoint
         load_checkpoint: Load model from checkpoint
+
+    Example:
+        The \(p(x)\) training of JEM (Grathwohl et al., 2020) on CIFAR-10:
+        Adam at 1e-4 for 150 epochs, 20 SGLD steps at step 1 and noise 0.01
+        from a 10000-sample buffer (JEM also decays the learning rate by 0.3
+        at epochs 50 and 100):
+
+        ```python
+        trainer = BaseTrainer(
+            model,
+            torch.optim.Adam(model.parameters(), lr=1e-4),
+            ContrastiveDivergenceLoss(),
+            sampler=LangevinDynamics(step_size=1.0, noise_scale=0.01 / 2**0.5),
+            buffer=ReplayBuffer(capacity=10000, sample_shape=(3, 32, 32)),
+            n_steps=20,
+        )
+        trainer.train(loader, num_epochs=150)
+        ```
     """
 
     def __init__(
@@ -50,6 +87,10 @@ class BaseTrainer:
         use_mixed_precision: bool = False,
         grad_accum_steps: int = 1,
         callbacks: Optional[List[Callable]] = None,
+        *,
+        sampler: Optional[BaseSampler] = None,
+        buffer: Optional["ReplayBuffer"] = None,
+        n_steps: int = 10,
     ):
         if grad_accum_steps < 1:
             raise ValueError(
@@ -61,6 +102,9 @@ class BaseTrainer:
         self.model = model
         self.optimizer = optimizer
         self.loss_fn = loss_fn
+        self.sampler = sampler
+        self.buffer = buffer
+        self.n_steps = int(n_steps)
 
         # Set up device
         if isinstance(device, str):
@@ -101,6 +145,8 @@ class BaseTrainer:
         self.model = self.model.to(device=self.device, dtype=self.dtype)
         if hasattr(self.loss_fn, "to"):
             self.loss_fn = self.loss_fn.to(device=self.device, dtype=self.dtype)
+        if self.buffer is not None:
+            self.buffer = self.buffer.to(device=self.device, dtype=self.dtype)
 
         # Create metrics dictionary for tracking
         self.metrics: Dict[str, Any] = {"loss": []}
@@ -147,6 +193,38 @@ class BaseTrainer:
             "(data, cond) pair, or dict."
         )
 
+    def compute_loss(
+        self, batch: torch.Tensor, model_kwargs: Dict[str, Any]
+    ) -> torch.Tensor:
+        r"""Loss of one batch; override for objectives that build their own inputs.
+
+        With a `sampler`, the negatives start from `buffer` (refilled with the
+        result) or from Gaussian noise, and `loss_fn` receives the energies
+        ``loss_fn(model(batch), model(negative))``. Without one, `loss_fn` is
+        called on the batch and ``model_kwargs`` (losses holding the model).
+
+        Args:
+            batch: Data on the trainer device and dtype.
+            model_kwargs: Conditioning forwarded to the model and the sampler.
+
+        Returns:
+            The loss, a tensor the caller backpropagates.
+        """
+        if self.sampler is None:
+            return self.loss_fn(batch, model_kwargs=model_kwargs)
+        if self.buffer is None:
+            x0 = torch.randn_like(batch)
+        else:
+            x0 = self.buffer.sample(batch.shape[0])
+        negative = self.sampler(
+            self.model, x0, n_steps=self.n_steps, model_kwargs=model_kwargs
+        )
+        if self.buffer is not None:
+            self.buffer.add(negative)
+        return self.loss_fn(
+            self.model(batch, **model_kwargs), self.model(negative, **model_kwargs)
+        )
+
     def train_step(
         self, batch: Any, model_kwargs: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -156,7 +234,8 @@ class BaseTrainer:
         When ``grad_accum_steps > 1``, gradients accumulate across calls and the
         optimizer only steps on the accumulation boundary. The loss is scaled by
         ``1 / grad_accum_steps`` so the accumulated gradient matches a single
-        step at the larger effective batch size.
+        step at the larger effective batch size. The schedulers of `loss_fn`
+        advance once per optimizer step.
 
         Args:
             batch: Batch of training data. A bare ``Tensor``, a ``(data, cond)``
@@ -176,11 +255,11 @@ class BaseTrainer:
 
         if self.use_mixed_precision and self.autocast_available:
             with self.autocast_context():
-                loss = self.loss_fn(batch, model_kwargs=batch_kwargs)
+                loss = self.compute_loss(batch, batch_kwargs)
             scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
             self.grad_scaler.scale(scaled).backward()
         else:
-            loss = self.loss_fn(batch, model_kwargs=batch_kwargs)
+            loss = self.compute_loss(batch, batch_kwargs)
             scaled = loss / self.grad_accum_steps if self.grad_accum_steps > 1 else loss
             scaled.backward()
 
@@ -191,6 +270,8 @@ class BaseTrainer:
                 self.grad_scaler.update()
             else:
                 self.optimizer.step()
+            if isinstance(self.loss_fn, Schedulable):
+                self.loss_fn.step_schedulers()
             self._accum_step_count = 0
 
         # Metrics stay device-resident; .item() here syncs the host every step.
@@ -324,6 +405,8 @@ class BaseTrainer:
 
         if self.use_mixed_precision and hasattr(self, "grad_scaler"):
             checkpoint["grad_scaler_state_dict"] = self.grad_scaler.state_dict()
+        if self.buffer is not None:
+            checkpoint["buffer_state_dict"] = self.buffer.state_dict()
 
         torch.save(checkpoint, path)
 
@@ -341,6 +424,8 @@ class BaseTrainer:
 
         if "metrics" in checkpoint:
             self.metrics = checkpoint["metrics"]
+        if self.buffer is not None and "buffer_state_dict" in checkpoint:
+            self.buffer.load_state_dict(checkpoint["buffer_state_dict"])
 
         if (
             self.use_mixed_precision
@@ -350,6 +435,19 @@ class BaseTrainer:
             self.grad_scaler.load_state_dict(checkpoint["grad_scaler_state_dict"])
 
 
+@deprecated(
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="BaseTrainer(model, optimizer, ContrastiveDivergenceLoss(), sampler=..., buffer=...)",
+    message=(
+        "ContrastiveDivergenceTrainer is deprecated: use BaseTrainer(model, "
+        "optimizer, ContrastiveDivergenceLoss(), sampler=..., buffer=..., "
+        "n_steps=...) instead."
+    ),
+    removal="ContrastiveDivergenceTrainer",
+)
 class ContrastiveDivergenceTrainer(BaseTrainer):
     """
     Specialized trainer for contrastive divergence training of EBMs.

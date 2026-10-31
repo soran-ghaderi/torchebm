@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If TorchEBM is useful in your research, please cite it as below."
 type: software
-title: "TorchEBM: A Composable PyTorch Library for Energy-Based and Transport-Based Generative Models"
+title: "TorchEBM: A Composable PyTorch Library for Energy-Based and Transport-Based Generative Modeling"
 abstract: >-
   TorchEBM is a PyTorch library for generative models defined either by a scalar
   potential or by a transport between densities. Energy-based models, diffusion,
@@ -21,7 +21,7 @@ url: "https://soran-ghaderi.github.io/torchebm/"
 license: MIT
 preferred-citation:
   type: software
-  title: "TorchEBM: A Composable PyTorch Library for Energy-Based and Transport-Based Generative Models"
+  title: "TorchEBM: A Composable PyTorch Library for Energy-Based and Transport-Based Generative Modeling"
   authors:
     - family-names: Ghaderi
       given-names: Soran

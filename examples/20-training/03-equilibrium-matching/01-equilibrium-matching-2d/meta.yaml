@@ -1,5 +1,5 @@
 title: "Equilibrium Matching in 2D"
-summary: "Train a generative vector field with EquilibriumMatchingLoss and sample it every coherent way: the probability-flow ODE, gradient descent on the EqMEnergy landscape, and repulsive diverse sampling."
+summary: "Train a time-invariant field and an explicit potential with EquilibriumMatchingLoss; sample the field by ODE integration and by fixed-point iteration, and the potential by descent with optional repulsion."
 order: 1000
 difficulty: intermediate
 tags: [eqm, training, flow, sampling, 2d-energy]

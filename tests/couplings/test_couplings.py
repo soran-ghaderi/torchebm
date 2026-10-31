@@ -198,12 +198,12 @@ def test_unbalanced_weights_uniform_on_matched_clusters():
     assert res.weights.std().item() < 0.2
 
 
-def test_unbalanced_downweights_outlier_source():
-    """A source far from every target loses mass under marginal relaxation."""
+def test_unbalanced_downweights_outlier_target():
+    """A target far from every source loses mass under marginal relaxation."""
     torch.manual_seed(0)
     x1 = torch.randn(16, 2) * 0.1
     x0 = torch.randn(16, 2) * 0.1
-    x0[0] = torch.tensor([50.0, 50.0])  # transport cost ~ max for this source
+    x1[0] = torch.tensor([50.0, 50.0])
     res = UnbalancedSinkhornCoupling(reg=0.05, reg_marginal=0.1)(x0, x1)
     assert res.weights[0] < res.weights[1:].min()
 
@@ -216,7 +216,7 @@ def test_unbalanced_seeded_reproducibility():
     a = coupling(x0, x1)
     torch.manual_seed(3)
     b = coupling(x0, x1)
-    assert torch.equal(a.x1, b.x1)
+    assert torch.equal(a.x0, b.x0)
     assert torch.equal(a.weights, b.weights)
 
 
@@ -268,19 +268,32 @@ def test_ot_coupling_exact_preserves_shape_dtype_device(device):
     x1 = torch.randn(8, 3, 4, 4, device=device, dtype=torch.float32)
     y0, y1 = coupling(x0, x1)
     assert y0.shape == x0.shape and y1.shape == x1.shape
-    assert y1.dtype == x1.dtype and y1.device == x1.device
+    assert y0.dtype == x0.dtype and y0.device == x0.device
 
 
-def test_ot_coupling_exact_is_permutation_of_targets():
+def test_ot_coupling_exact_is_permutation_of_sources():
     torch.manual_seed(0)
     x0 = torch.randn(16, 2)
     x1 = torch.randn(16, 2)
     y0, y1 = ExactOTCoupling()(x0, x1)
-    assert y0 is x0
-    # Every original target appears exactly once.
-    matches = (y1.unsqueeze(1) - x1.unsqueeze(0)).abs().sum(-1) == 0
+    assert y1 is x1
+    matches = (y0.unsqueeze(1) - x0.unsqueeze(0)).abs().sum(-1) == 0
     assert bool(matches.any(dim=1).all())
     assert bool(matches.any(dim=0).all())
+
+
+@pytest.mark.parametrize(
+    "coupling_cls",
+    [ExactOTCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling],
+)
+def test_ot_coupling_keeps_targets_in_place(coupling_cls):
+    """Only sources move, so conditioning aligned with x1 stays aligned."""
+    torch.manual_seed(0)
+    x0 = torch.randn(16, 2)
+    x1 = torch.randn(16, 2)
+    y0, y1 = coupling_cls()(x0, x1, y=torch.arange(16))
+    assert y1 is x1
+    assert bool((y0.unsqueeze(1) == x0.unsqueeze(0)).all(-1).any(dim=1).all())
 
 
 @pytest.mark.parametrize(
@@ -298,8 +311,8 @@ def test_ot_coupling_no_grad():
     """Coupled tensors carry no graph even for differentiable inputs."""
     x0 = torch.randn(8, 2, requires_grad=True)
     x1 = torch.randn(8, 2, requires_grad=True)
-    _, y1 = ExactOTCoupling()(x0, x1)
-    assert y1.grad_fn is None
+    y0, _ = ExactOTCoupling()(x0, x1)
+    assert y0.grad_fn is None
 
 
 def test_sinkhorn_coupling_invalid_args():
@@ -309,13 +322,13 @@ def test_sinkhorn_coupling_invalid_args():
         SinkhornCoupling(n_iters=0)
 
 
-def test_greedy_coupling_is_permutation_of_targets():
+def test_greedy_coupling_is_permutation_of_sources():
     torch.manual_seed(0)
     x0 = torch.randn(16, 2)
     x1 = torch.randn(16, 2)
     y0, y1 = GreedyCoupling()(x0, x1)
-    assert y0 is x0
-    matches = (y1.unsqueeze(1) - x1.unsqueeze(0)).abs().sum(-1) == 0
+    assert y1 is x1
+    matches = (y0.unsqueeze(1) - x0.unsqueeze(0)).abs().sum(-1) == 0
     assert bool(matches.any(dim=1).all())
     assert bool(matches.any(dim=0).all())
 
@@ -324,3 +337,50 @@ def test_ot_coupling_repr():
     assert "ExactOTCoupling" in repr(ExactOTCoupling())
     assert "SinkhornCoupling" in repr(SinkhornCoupling())
     assert "GreedyCoupling" in repr(GreedyCoupling())
+
+
+# Conditional (per-class) OT
+# ==========================
+
+
+def _source_index(y0, x0):
+    return (y0.unsqueeze(1) == x0.unsqueeze(0)).all(-1).int().argmax(dim=1)
+
+
+@pytest.mark.parametrize("one_hot", [False, True])
+@pytest.mark.parametrize(
+    "coupling_cls",
+    [ExactOTCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling],
+)
+def test_conditional_coupling_pairs_within_classes(coupling_cls, one_hot):
+    """Every target is paired with a source carrying its own label."""
+    torch.manual_seed(0)
+    labels = torch.arange(4).repeat(8)
+    x0 = torch.randn(32, 2)
+    x1 = torch.randn(32, 2)
+    y = torch.nn.functional.one_hot(labels).float() if one_hot else labels
+    y0, y1 = coupling_cls(conditional=True)(x0, x1, y=y)
+    assert y1 is x1
+    assert torch.equal(labels[_source_index(y0, x0)], labels)
+
+
+def test_conditional_exact_ot_is_optimal_within_each_class():
+    """Conditional exact OT equals the brute-force optimum of every class."""
+    torch.manual_seed(0)
+    labels = torch.arange(3).repeat(5)
+    x0 = torch.randn(15, 2)
+    x1 = torch.randn(15, 2)
+    y0, _ = ExactOTCoupling(tol=1e-6, conditional=True)(x0, x1, y=labels)
+    for c in range(3):
+        s0, s1 = x0[labels == c], x1[labels == c]
+        cost = torch.cdist(s1, s0).square()
+        best = min(
+            itertools.permutations(range(5)),
+            key=lambda p: cost[torch.arange(5), list(p)].sum().item(),
+        )
+        assert torch.equal(y0[labels == c], s0[list(best)])
+
+
+def test_conditional_coupling_requires_y():
+    with pytest.raises(ValueError, match="class labels as y"):
+        SinkhornCoupling(conditional=True)(torch.randn(8, 2), torch.randn(8, 2))

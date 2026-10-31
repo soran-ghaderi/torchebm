@@ -9,6 +9,20 @@
   --md-code-bg-color: #161616;
 }
 
+/* Brand colors: lime links and buttons, mint accent */
+[data-md-color-primary="black"] {
+  --md-accent-fg-color: #4de8a0;
+  --md-accent-fg-color--transparent: #4de8a01a;
+  --md-accent-bg-color: #0a2818;
+  --md-accent-bg-color--light: #0a28188a;
+}
+[data-md-color-scheme="slate"][data-md-color-primary="black"] {
+  --md-typeset-a-color: #c7ff00;
+}
+[data-md-color-scheme="default"][data-md-color-primary="black"] {
+  --md-typeset-a-color: #1a7848;
+}
+
 /* Dark header & tabs in dark mode */
 [data-md-color-scheme="slate"] .md-header,
 [data-md-color-scheme="slate"] .md-tabs {
@@ -183,6 +197,11 @@ figcaption {
 /* Buttons */
 .md-button {
   border-radius: 0.25rem;
+}
+[data-md-color-primary="black"] .md-button--primary {
+  background-color: #c7ff00;
+  border-color: #c7ff00;
+  color: #0a2818;
 }
 
 /* Spotlight effect for highlighted images */
