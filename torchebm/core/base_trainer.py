@@ -436,7 +436,7 @@ class BaseTrainer:
 
 
 @deprecated(
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,

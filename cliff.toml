@@ -29,6 +29,9 @@ filter_unconventional = false
 protect_breaking_commits = true
 ignore_tags = ".*"
 commit_parsers = [
+  { sha = "a84a6310d09939a515976ac8c5f0e750570c9262", skip = true },
+  { sha = "a588b75df64ce705d2dd9e200026043fe8b17f95", skip = true },
+  { sha = "81035fd37e132a71720084db2a2a7e601d7a2e4c", skip = true },
   { message = "^feat", group = "<!-- 0 -->Added" },
   { message = "^refactor", group = "<!-- 1 -->Changed" },
   { message = "^deprecate", group = "<!-- 2 -->Deprecated" },

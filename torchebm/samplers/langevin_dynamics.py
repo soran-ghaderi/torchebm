@@ -17,7 +17,7 @@ from torchebm.integrators.integrator_utils import resolve_integrator
 _MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
     name="model-bound LangevinDynamics",
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
