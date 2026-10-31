@@ -5,7 +5,7 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.10](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.8.10) - 2026-10-31
+## [0.9.0](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.9.0) - 2026-10-31
 
 ### Added
 
@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`2e7c825`](https://github.com/soran-ghaderi/torchebm/commit/2e7c8259adca58bd9634a79f3674bbfa4ec7a738) - show only the call-form api in every docstring example
 - [`b91535e`](https://github.com/soran-ghaderi/torchebm/commit/b91535e7e01eeb98f56c19f18ec1d6b917c978a3) - reproduce each paper's own setup in the docstring examples
 - [`eb6c373`](https://github.com/soran-ghaderi/torchebm/commit/eb6c373e6edd2271dd50ab87343d68013e895477) - stamp the deprecations for the 0.9.0 release
+- [`9417b01`](https://github.com/soran-ghaderi/torchebm/commit/9417b0116a61bbda4f0c730eb8ebd438d9e7ed6a) - exit workers before interpreter teardown to avoid the abort at exit
 
 ## [0.8.9](https://github.com/soran-ghaderi/torchebm/compare/v0.8.8...v0.8.9) - 2026-09-16
 
