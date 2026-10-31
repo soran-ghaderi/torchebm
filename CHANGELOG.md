@@ -5,25 +5,66 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.10](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.8.10) - 2026-10-11
+## [0.8.10](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.8.10) - 2026-10-31
 
 ### Added
 
 - [`bc41ec9`](https://github.com/soran-ghaderi/torchebm/commit/bc41ec9238cf7fd8321f356938fabe8e4af5cca0) - expose differentiable energy gradient
-- [`87a0c2b`](https://github.com/soran-ghaderi/torchebm/commit/87a0c2b0b00658fb335b3eed35fa64d23ae063ea) - add fixed-time conditioning wrapper
-- [`a84a631`](https://github.com/soran-ghaderi/torchebm/commit/a84a6310d09939a515976ac8c5f0e750570c9262) - expose flow matching preparation
+- [`176ed4f`](https://github.com/soran-ghaderi/torchebm/commit/176ed4f8e473e2ba4c9e634c524073393295624f) - add prediction_type to energy models and backbones
+- [`a566d9b`](https://github.com/soran-ghaderi/torchebm/commit/a566d9b60d6acf91a5b2f44bea83aef38f24486c) - add prediction_type with velocity, epsilon and sample targets
+- [`42d29a2`](https://github.com/soran-ghaderi/torchebm/commit/42d29a2ca199cb70322113407e174f8e94330279) - train through score predictions under fsdp2 with functional_call
+- [`a9e7256`](https://github.com/soran-ghaderi/torchebm/commit/a9e7256e62872bb882e86bfe25b0b419f17011e1) - add variance exploding interpolant
+- [`ebcecba`](https://github.com/soran-ghaderi/torchebm/commit/ebcecba44556b4c67cd720f7b32e612cd1ad4da2) - add functional losses and delegate the loss classes to them
+- [`f8df64f`](https://github.com/soran-ghaderi/torchebm/commit/f8df64fe50e05fb19d0d637335e459d1da8304c1) - add replay buffer for persistent sampling chains
+- [`1fc213d`](https://github.com/soran-ghaderi/torchebm/commit/1fc213ddd107bcabe8c2983470c31ae9ccaeeeb4) - add criterion mode on model outputs and deprecate model-bound losses
+- [`b00b50f`](https://github.com/soran-ghaderi/torchebm/commit/b00b50f08ebdff29511df4823263129a398a7433) - add the step contract and pipeline and deprecate model-bound sampling
+- [`91faa06`](https://github.com/soran-ghaderi/torchebm/commit/91faa0655790d3320ef890089829c14d15099cb0) - take the model at call time with one forward loop per sampler
+- [`cb077af`](https://github.com/soran-ghaderi/torchebm/commit/cb077af6ff09fdbcb4cd7f770a5fa6e8381d8e24) - step a call-time model's schedules and accept an undeclared prediction_type
+- [`05fd701`](https://github.com/soran-ghaderi/torchebm/commit/05fd7017f89a33fc5cc1a79d3f5d629a70cfb3bb) - name the removal release with until and close the api refactor window at 0.12.0
+- [`27f4558`](https://github.com/soran-ghaderi/torchebm/commit/27f4558509b35f3e9afb979ed637d68d89068ba0) - wrappers report prediction_type and eqmenergy is deprecated
+- [`06aac92`](https://github.com/soran-ghaderi/torchebm/commit/06aac92f15db1c674664dd16c29047fc00f3bd65) - add analyticmodel with closed-form scores for the analytic energies
+- [`5235fbf`](https://github.com/soran-ghaderi/torchebm/commit/5235fbf63e5c7a110701f2dc42b194f5080949bc) - draw contrastive negatives in basetrainer and keep ema over averagedmodel
+- [`c1be4f1`](https://github.com/soran-ghaderi/torchebm/commit/c1be4f186b64e55dc791d3af657dd63889f0cd59) - add conditional per-class ot to cost couplings
+- [`5aa3274`](https://github.com/soran-ghaderi/torchebm/commit/5aa3274d799397d4790ae23f93ec85d00e382496) - add lookahead_only to nesterovsampler for the equilibrium matching nag-gd update
+
+### Changed
+
+- [`011598b`](https://github.com/soran-ghaderi/torchebm/commit/011598b41f3777faf094e450d2fd2e4bc0427f2d) - replace the step contract with one forward loop per sampler
+- [`f165251`](https://github.com/soran-ghaderi/torchebm/commit/f165251c2a8fae6ada8afe427b5f1c046ea173de) - rename criterion to loss_fn and document the model-centric api with the potential-or-field framing
+
+### Deprecated
+
+- [`61f5197`](https://github.com/soran-ghaderi/torchebm/commit/61f51970c724835b71be118e2e26eb9d11d0773e) - deprecate basemodel.gradient and document the migration to the model-centric api
+- [`fb1c810`](https://github.com/soran-ghaderi/torchebm/commit/fb1c810c821c0825768883bb62d62a784b5e619a) - deprecate reflowcoupling for a sampler call in the training loop
+- [`3741ae0`](https://github.com/soran-ghaderi/torchebm/commit/3741ae0132d0ab8478c5c057b772b94e72ef24c3) - deprecate ema in favor of torch averagedmodel and update styles and docs
+
+### Removed
+
+- [`9e381d3`](https://github.com/soran-ghaderi/torchebm/commit/9e381d37387d2f5c04de7aaa1a5a6910643fd1a5) - drop conditionaltransformer2d after its deprecation window and benchmark dit instead
+- [`1228e1a`](https://github.com/soran-ghaderi/torchebm/commit/1228e1a64dfcc09b5051742448533fbc46e8da37) - drop the expired bare kwargs, cd call options, rmhmc solver arguments and eqm model_time
 
 ### Fixed
 
-- [`fe8317a`](https://github.com/soran-ghaderi/torchebm/commit/fe8317a2fde25a6aaf6360c408fb23624b73c67c) - preserve fixed-time precision
-- [`a588b75`](https://github.com/soran-ghaderi/torchebm/commit/a588b75df64ce705d2dd9e200026043fe8b17f95) - preserve subclass loss terms
-- [`81035fd`](https://github.com/soran-ghaderi/torchebm/commit/81035fd37e132a71720084db2a2a7e601d7a2e4c) - align functional t_sampler signature with loss classes
+- [`3ae2720`](https://github.com/soran-ghaderi/torchebm/commit/3ae2720129a58536a78776ca1b60347557f19ba4) - draw noise, momentum and metropolis uniforms on the device of x
+- [`47c7543`](https://github.com/soran-ghaderi/torchebm/commit/47c75432e20efd30c9ad34c70476d525115afc2b) - reindex sources instead of targets so conditioning stays aligned with the data
+
+### Performance
+
+- [`7ca1bb6`](https://github.com/soran-ghaderi/torchebm/commit/7ca1bb69172dc72057982e3e10301479d627e794) - hoist dtensor imports out of the sharded score path
 
 ### Other
 
 - [`6e2c012`](https://github.com/soran-ghaderi/torchebm/commit/6e2c012e9e7f99504b41c388a74637e54c6bf009) - eliminate Griffe API warnings
 - [`27b3623`](https://github.com/soran-ghaderi/torchebm/commit/27b3623f27ae51811de183a78a60938d65b51867) - address Griffe review feedback
 - [`5280391`](https://github.com/soran-ghaderi/torchebm/commit/52803915b3cbae90c3fa21b0dffa489e53ffd579) - address remaining Griffe review nits
+- [`d737bd5`](https://github.com/soran-ghaderi/torchebm/commit/d737bd5182b8d54c7e9a7f101f65f71da6623f78) - benchmark loss criteria beside the legacy losses
+- [`c7671ba`](https://github.com/soran-ghaderi/torchebm/commit/c7671baae07fbd688b58fdf74ed1d9c6efb42991) - benchmark sampler pipelines beside the legacy samplers
+- [`460b77c`](https://github.com/soran-ghaderi/torchebm/commit/460b77cf0ddb7051c80479a8028b3ed9366a1bbc) - benchmark the sampler call beside the legacy samplers
+- [`61a9224`](https://github.com/soran-ghaderi/torchebm/commit/61a9224ae61f9eca0ac8ee69d7afdb9f284d5d57) - close the model-bound deprecation windows at 0.12.0
+- [`d61b5d0`](https://github.com/soran-ghaderi/torchebm/commit/d61b5d0d1e8ab8445f2119ecbb1b256c00bc8066) - document the baseloss keywords of contrastivedivergenceloss and slicedscorematchingloss
+- [`2e7c825`](https://github.com/soran-ghaderi/torchebm/commit/2e7c8259adca58bd9634a79f3674bbfa4ec7a738) - show only the call-form api in every docstring example
+- [`b91535e`](https://github.com/soran-ghaderi/torchebm/commit/b91535e7e01eeb98f56c19f18ec1d6b917c978a3) - reproduce each paper's own setup in the docstring examples
+- [`eb6c373`](https://github.com/soran-ghaderi/torchebm/commit/eb6c373e6edd2271dd50ab87343d68013e895477) - stamp the deprecations for the 0.9.0 release
 
 ## [0.8.9](https://github.com/soran-ghaderi/torchebm/compare/v0.8.8...v0.8.9) - 2026-09-16
 
