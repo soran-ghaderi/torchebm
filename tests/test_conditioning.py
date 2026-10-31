@@ -190,29 +190,21 @@ def test_dsm_threads_conditioning():
 
 
 # --------------------------------------------------------------------------- #
-# Deprecation of the bare-kwargs paths
+# Removed bare-kwargs paths raise
 # --------------------------------------------------------------------------- #
-def test_flow_bare_kwargs_deprecated_but_works():
+def test_bare_kwargs_raise():
     field = RecordingField()
     sampler = FlowSampler(field, interpolant="linear", integrator="euler")
-    with pytest.warns(DeprecationWarning):
+    with pytest.raises(TypeError):
         sampler.sample(x=torch.randn(4, 2), n_steps=2, cond=_labels(4))
-    assert field.seen
-
-
-def test_eqm_bare_kwargs_deprecated():
-    field = RecordingField()
     loss_fn = EquilibriumMatchingLoss(model=field, energy_type="none")
-    with pytest.warns(DeprecationWarning):
+    with pytest.raises(TypeError):
         loss_fn(torch.randn(6, 2), cond=_labels(6))
-
-
-def test_cd_option_kwargs_deprecated():
     model = RecordingEnergy()
     cd = ContrastiveDivergence(
         model=model, sampler=LangevinDynamics(model, step_size=0.01), k_steps=1
     )
-    with pytest.warns(DeprecationWarning):
+    with pytest.raises(TypeError):
         cd(torch.randn(4, 2), energy_reg_weight=0.01)
 
 

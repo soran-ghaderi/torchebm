@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 import torchebm.models as models
-from torchebm.models import DiT, FixedTime, LabelEmbedder, dit_s_4
+from torchebm.models import DiT, LabelEmbedder, dit_s_4
 from torchebm.models.dit import _DIT_CONFIGS
 
 
@@ -77,34 +77,18 @@ def test_unconditional_has_no_label_table():
     assert _tiny().y_embedder is None
 
 
-def test_uncond_pins_model_clock_to_zero_in_float64():
+def test_time_invariant_pins_model_clock_to_zero_in_float64():
     torch.manual_seed(0)
-    model = _tiny(uncond=True).double()
-    reference = _tiny(uncond=False).double()
-    reference.load_state_dict(model.state_dict())
+    model = _tiny(time_invariant=True).double()
+    reference = _tiny().double()
     with torch.no_grad():
         model.head.proj.weight.normal_()
         model.head.modulation[-1].weight.normal_()
-        reference.load_state_dict(model.state_dict())
+    reference.load_state_dict(model.state_dict())
     x = torch.randn(2, 3, 8, 8, dtype=torch.float64)
-    y = model(x, torch.tensor([0.25, 0.75], dtype=torch.float64))
     expected = reference(x, torch.zeros(2, dtype=torch.float64))
-    assert torch.equal(y, expected)
-
-
-def test_fixed_time_zero_matches_uncond_dit_in_float64():
-    torch.manual_seed(0)
-    dit = _tiny().double()
-    uncond = _tiny(uncond=True).double()
-    uncond.load_state_dict(dit.state_dict())
-    with torch.no_grad():
-        dit.head.proj.weight.normal_()
-        dit.head.modulation[-1].weight.normal_()
-        uncond.load_state_dict(dit.state_dict())
-    x = torch.randn(2, 3, 8, 8, dtype=torch.float64)
-    caller_t = torch.tensor([0.25, 0.75], dtype=torch.float64)
-
-    assert torch.equal(FixedTime(dit, 0.0)(x, caller_t), uncond(x, caller_t))
+    assert torch.equal(model(x, torch.tensor([0.25, 0.75], dtype=torch.float64)), expected)
+    assert torch.equal(model(x), expected)
 
 
 def test_label_table_always_has_null_row():

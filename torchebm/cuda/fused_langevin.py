@@ -221,8 +221,10 @@ def _main():
 
     def run_library():
         model = DoubleWellModel(barrier_height=bh, b=b, device=device)
-        sampler = LangevinDynamics(model, step_size, noise_scale, device=device)
-        return sampler.sample(x=x0.clone(), n_steps=n_steps)
+        sampler = LangevinDynamics(
+            step_size=step_size, noise_scale=noise_scale, device=device
+        )
+        return sampler(model, x0.clone(), n_steps=n_steps)
 
     def run_eager_analytic():
         x = x0.clone()
@@ -254,7 +256,7 @@ def _main():
     t_eager = _bench(run_eager_analytic)
     t_step = _bench(run_fused_step)
     t_chain = _bench(run_fused_chain)
-    print(f"  LangevinDynamics.sample (autograd grad) : {t_lib:9.2f} ms   1.0x")
+    print(f"  LangevinDynamics call (autograd grad)   : {t_lib:9.2f} ms   1.0x")
     print(f"  eager loop, analytic grad               : {t_eager:9.2f} ms  {t_lib / t_eager:4.1f}x")
     print(f"  analytic grad + fused step kernel       : {t_step:9.2f} ms  {t_lib / t_step:4.1f}x")
     print(f"  whole chain in one kernel               : {t_chain:9.2f} ms  {t_lib / t_chain:4.1f}x")

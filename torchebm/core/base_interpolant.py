@@ -36,7 +36,31 @@ class BaseInterpolant(ABC):
     where \(x_0 \sim \mathcal{N}(0, I)\) and \(x_1 \sim p_{\text{data}}\).
 
     Subclasses must implement `compute_alpha_t` and `compute_sigma_t`.
+
+    Calling the interpolant returns ``(x_t, target)``, with the regression
+    target selected by `prediction_type`:
+
+    - ``"velocity"`` (default): \(\dot x_t\), the time derivative of the path.
+    - ``"epsilon"``: the source sample \(x_0\).
+    - ``"sample"``: the data sample \(x_1\).
+
+    Non-affine paths (curved, learned, or on a manifold) override `interpolate`
+    to return \((x_t, \dot x_t)\), for example from one `torch.func.jvp` over
+    \(t\); every prediction type follows from it.
+
+    Args:
+        prediction_type: Regression target returned by the call; keyword-only.
     """
+
+    prediction_type: str = "velocity"
+
+    def __init__(self, *, prediction_type: str = "velocity"):
+        if prediction_type not in ("velocity", "epsilon", "sample"):
+            raise ValueError(
+                "prediction_type must be 'velocity', 'epsilon', or 'sample', "
+                f"got {prediction_type!r}"
+            )
+        self.prediction_type = prediction_type
 
     @abstractmethod
     def compute_alpha_t(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -103,6 +127,26 @@ class BaseInterpolant(ABC):
         ut = d_alpha * x1 + d_sigma * x0
 
         return xt, ut
+
+    def __call__(
+        self, x0: torch.Tensor, x1: torch.Tensor, t: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        r"""Sample the path at `t` and return the regression target.
+
+        Args:
+            x0: Source samples of shape (batch_size, ...).
+            x1: Data samples of shape (batch_size, ...).
+            t: Time values of shape (batch_size,).
+
+        Returns:
+            Tuple ``(x_t, target)`` with `target` selected by `prediction_type`.
+        """
+        x_t, velocity = self.interpolate(x0, x1, t)
+        if self.prediction_type == "velocity":
+            return x_t, velocity
+        if self.prediction_type == "epsilon":
+            return x_t, x0
+        return x_t, x1
 
     def compute_drift(
         self, x: torch.Tensor, t: torch.Tensor

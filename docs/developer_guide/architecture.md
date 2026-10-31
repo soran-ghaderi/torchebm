@@ -8,9 +8,10 @@ icon: material/folder-outline
 
 TorchEBM is organised around a small set of base classes (`BaseModel`,
 `BaseSampler`, `BaseLoss`, `BaseIntegrator`, `BaseInterpolant`,
-`BaseCoupling`). Everything else is composition: a loss uses a sampler or a
-coupling, a sampler uses an integrator, an integrator steps a field derived
-from a model. The user-facing statement of this design is
+`BaseCoupling`). Everything else is composition in the training loop: a
+coupling and an interpolant build the regression target, a loss compares
+model outputs, a sampler drives the model through an integrator. The
+user-facing statement of this design is
 [Design and Scope](../concepts/design.md); this page is the contributor view.
 
 ## Package layout
@@ -26,7 +27,7 @@ Mirror this layout under `tests/` when adding tests.
 
 One contract per axis. The table is generated at build time from the root base
 classes exported by `torchebm.core` and the first line of their docstrings, so
-it tracks the code by construction:
+it always matches the code:
 
 <!-- torchebm:table contracts -->
 
@@ -44,45 +45,66 @@ the family a consumer requires. Every component exported through
 
 ## How the pieces compose
 
-Training wiring depends on the loss family; two patterns cover the library.
+Training is the standard PyTorch loop: the model is called on inputs, a
+loss function compares its outputs with targets, the optimizer steps. Losses
+never hold the model; samplers take it as an argument of the call,
+`sampler(model, x, n_steps=...)`, the `torchdiffeq` form. Two patterns cover
+the library.
 
 ### Sampler-free (score, flow, EqM, EM warm-up)
 
-The loss computes its target from data plus a coupling and an interpolation
-step; no sampler runs during training. Each step is: couple the batch, draw
-\(t\), interpolate, regress. Samplers only appear at generation time.
+The loop builds the target from data with a coupling and an interpolant:
+couple the batch, draw \(t\), interpolate, call the model, regress.
+
+```python
+x0, x1 = coupling(torch.randn_like(x1), x1)
+x_t, u_t = path(x0, x1, t)
+loss = loss_fn(model(x_t, t), u_t)
+```
+
+Samplers only appear at generation time.
 
 ### Sampler-based (CD family, EM joint phase)
 
-Contrastive divergence draws negatives from the current model via a sampler
-every step:
+Contrastive divergence draws negatives from the current model every step,
+from a replay buffer for persistent chains, and the loss compares the
+energies of data and negatives:
 
 ```mermaid
 graph LR
-    data[data x] --> loss
+    buffer[replay buffer] --> sampler
     model --> sampler
-    sampler -- negatives --> loss
-    loss -- grad --> opt[optimizer]
-    opt --> model
+    sampler -- negatives x_neg --> model
+    data[data x] --> model
+    model -- "E(x), E(x_neg)" --> loss_fn
+    loss_fn -- grad --> optimizer
+    optimizer --> model
 ```
+
+`BaseTrainer.compute_loss` implements exactly this step given a `sampler`
+and a `buffer`; other objectives override it.
 
 ### Generation (all objectives)
 
-A sampler drives a field derived from the trained model through an integrator:
-MCMC samplers step the energy's force, `FlowSampler` integrates the velocity
-(or converted score/noise prediction) as an ODE or SDE. Swapping any one piece
-(e.g. `integrator="heun"` for `"rk4"`) never requires touching the others.
+A sampler drives the trained model through an integrator. MCMC samplers
+consume a score: an energy model is differentiated on the fly, a
+`prediction_type="score"` model passes through, an `("energy", "score")`
+pair is indexed. `FlowSampler` integrates a velocity, score or noise
+prediction as an ODE or SDE on a uniform or custom time grid. Each piece can
+be swapped (e.g. `integrator="heun"` for `"rk4"`) without changing the
+others.
 
 ## Time conditioning
 
 Not all objectives condition the model on \( t \):
 
-- **EquilibriumMatching**: time-invariant; the model receives no time input,
-  and `FlowSampler(negate_velocity=True)` integrates it.
+- **EquilibriumMatching**: time-invariant; the model is called as
+  `model(x_t)` in training and declares no `prediction_type`, so every
+  sampler consumes the raw field: `FlowSampler` integrates it as the velocity
+  and the gradient samplers apply \( x \leftarrow x + \eta f(x) \) to it.
 - **FlowSampler with velocity/score models**: time-conditional; the field is
   \( v(x, t) \) and the sampler feeds \( t \) every step.
 - **EnergyMatching**: the potential \(V(x)\) is time-independent; time lives
   in the temperature schedule of the generation sweep.
 
-See `torchebm/losses/equilibrium_matching.py` and
-`torchebm/samplers/flow.py` for the reference patterns.
+See `examples/20-training` for the reference loops.

@@ -26,11 +26,37 @@ from torch import nn
 
 from torchebm.core import BaseCoupling, BaseInterpolant, BaseScheduler
 from torchebm.core.base_loss import BaseInterpolantLoss
-from torchebm.losses.functional import prepare_flow_matching, weighted_mse_loss
+from torchebm.losses.functional import flow_matching_loss
+from torchebm._deprecation import declare_deprecation
+
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound FlowMatchingLoss",
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="FlowMatchingLoss() on model outputs",
+    message=(
+        "FlowMatchingLoss(model=...) is deprecated: build the path in the "
+        "training loop and use FlowMatchingLoss()(model(x_t, t), u_t) instead."
+    ),
+    removal=(
+        "the model argument, _legacy_forward, compute_loss, training_losses, "
+        "negate_velocity and the interpolant, coupling and time-sampling "
+        "arguments of FlowMatchingLoss"
+    ),
+)
 
 
 class FlowMatchingLoss(BaseInterpolantLoss):
     r"""Conditional Flow Matching training loss.
+
+    Built without ``model``, the loss acts on model outputs,
+    ``loss = loss_fn(model(x_t, t), u_t)``, with ``x_t, u_t`` from an
+    interpolant and ``reduction`` as in `torch.nn`; only ``reduction`` applies.
+    Built with ``model`` (deprecated), it runs the training step itself as
+    described below.
 
     Trains ``model(x_t, t, **model_kwargs)`` to predict the interpolant
     velocity \(u_t\). The model receives the true training time (unlike
@@ -53,29 +79,51 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         loss_weight_fn: Optional per-timestep weight hook ``t -> w(t)``
             multiplied into the per-sample loss.
         negate_velocity: Regress onto \(-u_t\) (data -> noise) instead of
-            \(u_t\), the sign the gradient-descent samplers and `EqMEnergy`
-            assume, so the trained field drops into them without a wrapper.
-            Sample it with ``FlowSampler(negate_velocity=True)``. Mirrors the
-            sampler flag of the same name. Default False.
+            \(u_t\), the sign of the deprecated model-bound
+            `EquilibriumMatchingLoss` and of `EqMEnergy`. Sample it with
+            ``FlowSampler(negate_velocity=True)``. Mirrors the sampler flag of
+            the same name. Default False.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
+        SiT-XL/2 (Ma et al., 2024) on ImageNet 256: ``x1`` are SD-VAE latents
+        scaled by 0.18215, ``y`` their labels, batches of 256; sampling uses
+        the reference dopri5 ODE solver and guidance 1.5 on the first three
+        latent channels.
+
         ```python
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+        from torchebm.interpolants import LinearInterpolant
         from torchebm.losses import FlowMatchingLoss
+        from torchebm.models import ClassifierFreeGuidance, dit_xl_2
         from torchebm.samplers import FlowSampler
 
-        loss_fn = FlowMatchingLoss(model=velocity_net, interpolant="linear")
-        loss = loss_fn(x_batch)
-        # ... train, then:
-        sampler = FlowSampler(velocity_net, interpolant="linear")
-        samples = sampler.sample(n_samples=64, dim=2, n_steps=50)
+        model = dit_xl_2(
+            input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1
+        )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
+        path, loss_fn = LinearInterpolant(), FlowMatchingLoss()
+
+        x0, t = torch.randn_like(x1), torch.rand(len(x1))
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t, t, y=y), u_t)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        ema.update_parameters(model)
+
+        guided = ClassifierFreeGuidance(
+            ema.module.eval(), guidance_scale=1.5, null_condition=1000, guide_channels=3
+        )
+        samples = FlowSampler()(guided, torch.randn(64, 4, 32, 32), model_kwargs={"y": y})
         ```
     """
 
     def __init__(
         self,
-        model: nn.Module,
+        model: Optional[nn.Module] = None,
         interpolant: Union[str, BaseInterpolant] = "linear",
         coupling: Union[str, BaseCoupling, None] = None,
         train_eps: Union[float, BaseScheduler] = 0.0,
@@ -107,6 +155,8 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         )
         self.model = model
         self.negate_velocity = bool(negate_velocity)
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn()
 
     def _probe_forward(self, px: torch.Tensor, pmk: dict) -> torch.Tensor:
         r"""Field convention for the conditioning probe: fixed mid-path time."""
@@ -115,13 +165,38 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
     def forward(
         self,
+        input: torch.Tensor,
+        target: Optional[torch.Tensor] = None,
+        weight: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        r"""Flow matching loss on a predicted velocity.
+
+        Args:
+            input: Predicted velocity \(v_\theta(x_t, t)\), shape (batch_size, ...).
+            target: Path velocity \(u_t\), same shape.
+            weight: Per-sample weight, shape (batch_size,).
+            **kwargs: Arguments of the deprecated model-bound mode.
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        if self.model is not None:
+            return self._legacy_forward(input, **kwargs)
+        if target is None:
+            raise TypeError("FlowMatchingLoss() takes (input, target[, weight])")
+        return flow_matching_loss(
+            input, target, weight=weight, reduction=self.reduction
+        )
+
+    def _legacy_forward(
+        self,
         x: torch.Tensor,
         *args,
         y: Optional[torch.Tensor] = None,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""Compute the FM loss (nn.Module interface).
 
@@ -133,7 +208,6 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             x0: Optional source samples of shape (batch_size, ...). Defaults to
                 standard Gaussian noise.
             model_kwargs: Conditioning arguments forwarded to the model.
-            **kwargs: Deprecated bare model kwargs; pass ``model_kwargs={...}``.
 
         Returns:
             Scalar loss value.
@@ -144,7 +218,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator
             )
         return loss
 
@@ -166,59 +240,40 @@ class FlowMatchingLoss(BaseInterpolantLoss):
                 sampling; the global RNG when ``None``.
 
         Returns:
-            Dictionary containing ``loss`` (per-sample weighted MSE), ``pred``
-            (model prediction), ``target`` (interpolant velocity, optionally
-            negated), ``weights`` (per-pair coupling weights or ``None``), and
-            ``loss_weights`` (per-timestep objective weights or ``None``).
+            Dictionary with 'loss' (per-sample), 'pred', and 'weights'
+            (per-pair coupling weights or None).
         """
         if model_kwargs is None:
             model_kwargs = {}
 
         x1 = x1.to(device=self.device, dtype=self.dtype)
-        batch = prepare_flow_matching(
-            x1,
-            interpolant=self.interpolant,
-            coupling=self.coupling,
-            x0=x0,
-            generator=generator,
-            model_kwargs=model_kwargs,
-            t_sampler=self._time_sampler,
-            negate_velocity=self.negate_velocity,
-        )
+        batch = x1.shape[0]
+
+        if x0 is None:
+            x0 = torch.randn_like(x1, generator=generator)
+        else:
+            x0 = x0.to(device=self.device, dtype=self.dtype)
+            if x0.shape != x1.shape:
+                raise ValueError(
+                    f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
+                )
+
+        coupled = self.coupling(x0, x1, generator=generator, **model_kwargs)
+        x0, x1 = coupled
+
+        t = self._sample_t(batch, generator)
+        xt, ut = self.interpolant.interpolate(x0, x1, t)
+        target = -ut if self.negate_velocity else ut
 
         with self.autocast_context():
-            pred = self.model(batch.xt, batch.model_time, **model_kwargs)
+            pred = self.model(xt, t, **model_kwargs)
         if isinstance(pred, tuple):
             pred = pred[0]
 
-        loss_weights = (
-            None if self.loss_weight_fn is None else self.loss_weight_fn(batch.t)
-        )
-        loss = weighted_mse_loss(
-            pred,
-            batch.target,
-            loss_weights=loss_weights,
-            reduction="none",
-        )
+        weight = self.loss_weight_fn(t) if self.loss_weight_fn is not None else None
+        loss = flow_matching_loss(pred, target, weight=weight, reduction="none")
 
-        return {
-            "loss": loss,
-            "pred": pred,
-            "target": batch.target,
-            "weights": batch.weights,
-            "loss_weights": loss_weights,
-        }
-
-    def _time_sampler(
-        self,
-        batch: int,
-        *,
-        device: torch.device,
-        dtype: torch.dtype,
-        generator: Optional[torch.Generator],
-    ) -> torch.Tensor:
-        r"""Draw training times with the public ``t_sampler`` call signature."""
-        return self._sample_t(batch, generator)
+        return {"loss": loss, "pred": pred, "weights": coupled.weights}
 
     def __repr__(self) -> str:
         return (

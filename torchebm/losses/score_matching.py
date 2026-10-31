@@ -9,13 +9,240 @@ from torch import nn
 from torch.func import grad as func_grad, vmap, jacrev
 
 
-from torchebm.core import BaseModel, BaseScoreMatching
+from torchebm._deprecation import deprecated
+from torchebm.core import BaseLoss, BaseModel, BaseScoreMatching
+from torchebm.losses.functional import (
+    denoising_score_matching_loss,
+    score_matching_loss,
+    sliced_score_matching_loss,
+)
 # from torchebm.core.base_loss import BaseScoreMatching
 
+_PROJECTION_TYPES = ("rademacher", "sphere", "gaussian")
 
+
+def _random_projections(
+    like: torch.Tensor, projection_type: str, generator: Optional[torch.Generator]
+) -> torch.Tensor:
+    r"""Projection directions shaped like ``like``.
+
+    ``"rademacher"``: random signs; ``"sphere"``: uniform on the sphere of
+    radius \(\sqrt{d}\); ``"gaussian"``: standard normal.
+    """
+    vectors = torch.randn_like(like, generator=generator)
+    if projection_type == "rademacher":
+        return vectors.sign()
+    if projection_type == "sphere":
+        return torch.nn.functional.normalize(vectors, dim=-1) * math.sqrt(
+            vectors.shape[-1]
+        )
+    return vectors
+
+
+class ScoreMatchingLoss(BaseLoss):
+    r"""Score matching loss (Hyvärinen, 2005) on a score and its divergence.
+
+    \[
+    L = \tfrac{1}{2}\|s_\theta(x)\|^2 + \nabla_x \cdot s_\theta(x)
+    \]
+
+    The divergence is a model-side quantity: compute it with `torch.func`
+    (``vmap(jacrev(...))`` for the exact trace) or a Hutchinson estimate.
+    See `score_matching_loss`.
+
+    Args:
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        ```python
+        loss_fn = ScoreMatchingLoss()
+        loss = loss_fn(score, divergence)
+        ```
+    """
+
+    def forward(self, input: torch.Tensor, divergence: torch.Tensor) -> torch.Tensor:
+        r"""Compute the loss from the score and its divergence.
+
+        Args:
+            input: Score \(s_\theta(x)\), shape (batch_size, ...).
+            divergence: \(\nabla_x \cdot s_\theta(x)\), shape (batch_size,).
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        return score_matching_loss(input, divergence, self.reduction)
+
+
+class DenoisingScoreMatchingLoss(BaseLoss):
+    r"""Denoising score matching loss (Vincent, 2011).
+
+    \[
+    L = \tfrac{1}{2}\, w\, \|s_\theta(\tilde x) - \nabla_{\tilde x} \log q(\tilde x \mid x)\|^2
+    \]
+
+    For \(\tilde x = x + \sigma \epsilon\) the kernel score is
+    \(-\epsilon / \sigma\), and ``weight`` \(= \sigma^2\) is the noise-level
+    weighting of Song and Ermon (2019). See `denoising_score_matching_loss`.
+
+    Args:
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+        dtype: Data type for computations.
+        device: Device for computations.
+
+    Example:
+        NCSN (Song and Ermon, 2019) on CIFAR-10: ten noise levels from 1 to
+        0.01 in geometric progression, one level per sample passed to the
+        model as its label, weight \(\sigma^2\), and annealed Langevin
+        sampling with 100 steps per level at step
+        \(2 \times 10^{-5} (\sigma_i / \sigma_L)^2\), as in the reference
+        code:
+
+        ```python
+        from torchebm.losses import DenoisingScoreMatchingLoss
+        from torchebm.samplers import LangevinDynamics
+
+        sigmas = torch.logspace(0, -2, 10)
+        loss_fn = DenoisingScoreMatchingLoss()
+
+        i = torch.randint(len(sigmas), (len(x),))
+        sigma = sigmas[i].view(-1, 1, 1, 1)
+        noise = torch.randn_like(x)
+        loss = loss_fn(model(x + sigma * noise, y=i), -noise / sigma, weight=sigmas[i] ** 2)
+
+        x = torch.rand(64, 3, 32, 32)
+        for i, sigma in enumerate(sigmas.tolist()):
+            sampler = LangevinDynamics(step_size=2e-5 * (sigma / 0.01) ** 2)
+            x = sampler(model, x, n_steps=100, model_kwargs={"y": torch.full((64,), i)})
+        ```
+    """
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        target: torch.Tensor,
+        weight: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        r"""Compute the loss from the score at the perturbed input.
+
+        Args:
+            input: Score \(s_\theta(\tilde x)\), shape (batch_size, ...).
+            target: Score of the perturbation kernel, same shape.
+            weight: Per-sample weight, shape (batch_size,).
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        return denoising_score_matching_loss(input, target, weight, self.reduction)
+
+
+class SlicedScoreMatchingLoss(BaseLoss):
+    r"""Sliced score matching loss (Song et al., 2019).
+
+    \[
+    L = \mathbb{E}_v\left[ v^\top \nabla_x \big(v^\top s_\theta(x)\big)
+        + \tfrac{1}{2} \big(v^\top s_\theta(x)\big)^2 \right]
+    \]
+
+    Projections are drawn inside the call, as `torch.nn.Dropout` draws its
+    mask. The score must be evaluated on inputs tiled ``n_projections`` times
+    and keep its graph to them. See `sliced_score_matching_loss`.
+
+    Args:
+        n_projections: Projections per sample.
+        projection_type: ``"rademacher"`` (default), ``"sphere"``, or
+            ``"gaussian"``.
+        *args: Positional arguments of `BaseLoss`.
+        **kwargs: Keyword arguments of `BaseLoss`: ``reduction`` (``"mean"``,
+            ``"sum"``, or ``"none"``), ``dtype`` and ``device``.
+
+    Example:
+        The setting of Song et al. (2019) for density estimation: one
+        Rademacher projection per sample, the defaults:
+
+        ```python
+        from torchebm.losses import SlicedScoreMatchingLoss
+
+        loss_fn = SlicedScoreMatchingLoss()
+        x = x.requires_grad_(True)
+        loss = loss_fn(model(x), x)
+        ```
+    """
+
+    def __init__(
+        self,
+        n_projections: int = 1,
+        projection_type: str = "rademacher",
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if n_projections < 1:
+            raise ValueError(f"n_projections must be positive, got {n_projections}")
+        if projection_type not in _PROJECTION_TYPES:
+            raise ValueError(
+                f"projection_type must be one of {_PROJECTION_TYPES}, "
+                f"got {projection_type!r}"
+            )
+        self.n_projections = int(n_projections)
+        self.projection_type = projection_type
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        x: torch.Tensor,
+        *,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        r"""Compute the loss from the score at the tiled inputs.
+
+        Args:
+            input: Score at the tiled inputs, shape
+                (n_projections * batch_size, ...), differentiable w.r.t. ``x``.
+            x: The tiled inputs, same shape, requiring grad.
+            generator: RNG for the projections; the global RNG when ``None``.
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+
+        Raises:
+            ValueError: If the batch dimension is not a multiple of
+                ``n_projections``.
+        """
+        if input.shape[0] % self.n_projections:
+            raise ValueError(
+                f"batch dimension {input.shape[0]} must be a multiple of "
+                f"n_projections={self.n_projections}"
+            )
+        projections = _random_projections(x, self.projection_type, generator)
+        return sliced_score_matching_loss(
+            input,
+            x,
+            projections,
+            n_projections=self.n_projections,
+            reduction=self.reduction,
+        )
+
+
+@deprecated(
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="ScoreMatchingLoss on the model's score and its divergence",
+    message=(
+        "ScoreMatching(model) is deprecated: compute the score and its "
+        "divergence from the model and use ScoreMatchingLoss()(score, divergence)."
+    ),
+    removal="ScoreMatching and its tests",
+)
 class ScoreMatching(BaseScoreMatching):
     r"""
     Original Score Matching loss from Hyvärinen (2005).
+
+    Deprecated: compute the score and its divergence in the training loop and
+    apply `ScoreMatchingLoss`, as in the example.
 
     Trains an energy-based model by matching the model's score function
     \(\nabla_x \log p_\theta(x)\) to the data's score. Avoids MCMC sampling
@@ -31,14 +258,17 @@ class ScoreMatching(BaseScoreMatching):
 
     Example:
         ```python
-        from torchebm.losses import ScoreMatching
-        from torchebm.core import DoubleWellModel
-        import torch
+        from torch.func import grad, jacrev, vmap
 
-        energy = DoubleWellModel()
-        loss_fn = ScoreMatching(model=energy, hessian_method="exact")
+        from torchebm.core import DoubleWellModel
+        from torchebm.losses import ScoreMatchingLoss
+
+        model = DoubleWellModel()
         x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        score_fn = grad(lambda xi: -model(xi.unsqueeze(0)).squeeze())
+        score = vmap(score_fn)(x)
+        divergence = vmap(lambda xi: jacrev(score_fn)(xi).trace())(x)
+        loss = ScoreMatchingLoss()(score, divergence)
         ```
     """
 
@@ -84,7 +314,6 @@ class ScoreMatching(BaseScoreMatching):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the score matching loss for a batch of data.
@@ -97,7 +326,6 @@ class ScoreMatching(BaseScoreMatching):
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. Supported for ``hessian_method="approx"``; the exact
                 Hessian path raises if conditioning is passed (see below).
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar score matching loss.
@@ -108,11 +336,11 @@ class ScoreMatching(BaseScoreMatching):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, model_kwargs=model_kwargs, generator=generator
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+            mk = self._prepare_model_kwargs(model_kwargs)
             loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
@@ -123,7 +351,6 @@ class ScoreMatching(BaseScoreMatching):
         *args,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the score matching loss using the specified Hessian computation method.
@@ -133,12 +360,11 @@ class ScoreMatching(BaseScoreMatching):
             *args: Additional arguments.
             model_kwargs: Conditioning arguments forwarded to the model
                 (``hessian_method="approx"`` only).
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar score matching loss.
         """
-        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+        mk = self._prepare_model_kwargs(model_kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         if self.hessian_method == "approx":
@@ -191,8 +417,7 @@ class ScoreMatching(BaseScoreMatching):
         score = vmap(score_fn)(x_flat)
         laplacian = vmap(laplacian_fn)(x_flat)
 
-        term1 = 0.5 * score.square().sum(dim=-1)
-        return (term1 + laplacian).mean()
+        return score_matching_loss(score, laplacian)
 
     def _approx_score_matching(
         self,
@@ -241,9 +466,25 @@ class ScoreMatching(BaseScoreMatching):
 
         return loss
 
+
+@deprecated(
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="DenoisingScoreMatchingLoss on the model's score at the perturbed input",
+    message=(
+        "DenoisingScoreMatching(model) is deprecated: perturb the data in the "
+        "training loop and use DenoisingScoreMatchingLoss()(model(x_noisy), target)."
+    ),
+    removal="DenoisingScoreMatching, BaseScoreMatching and their tests",
+)
 class DenoisingScoreMatching(BaseScoreMatching):
     r"""
     Denoising Score Matching (DSM) from Vincent (2011).
+
+    Deprecated: perturb the data in the training loop and apply
+    `DenoisingScoreMatchingLoss` to the score, as in the example.
 
     Avoids computing the Hessian trace by matching the score of noise-perturbed
     data. More computationally efficient and often more stable than standard
@@ -259,14 +500,13 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
     Example:
         ```python
-        from torchebm.losses import DenoisingScoreMatching
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.losses import DenoisingScoreMatchingLoss
 
-        energy = DoubleWellModel()
-        loss_fn = DenoisingScoreMatching(model=energy, noise_scale=0.1)
+        model = DoubleWellModel(prediction_type="score")
         x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        noise = torch.randn_like(x)
+        loss = DenoisingScoreMatchingLoss()(model(x + 0.1 * noise), -noise / 0.1)
         ```
     """
 
@@ -303,7 +543,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the denoising score matching loss for a batch of data.
@@ -315,7 +554,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
                 for ``model_kwargs={'y': y}``.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. ``None`` (default) is the unconditional path.
-            **kwargs: Deprecated bare model kwargs (see `model_kwargs`).
 
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
@@ -326,11 +564,11 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, model_kwargs=model_kwargs, generator=generator
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+            mk = self._prepare_model_kwargs(model_kwargs)
             loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
@@ -341,7 +579,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
         *args,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the denoising score matching loss.
@@ -350,12 +587,11 @@ class DenoisingScoreMatching(BaseScoreMatching):
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional arguments.
             model_kwargs: Conditioning arguments forwarded to the model.
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
         """
-        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+        mk = self._prepare_model_kwargs(model_kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         x_perturbed, noise = self.perturb_data(x, generator=generator)
@@ -364,19 +600,27 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
         target_score = noise / (self.noise_scale**2)
 
-        loss = (
-            0.5
-            * torch.sum(
-                (score - target_score) ** 2, dim=list(range(1, len(x.shape)))
-            ).mean()
-        )
-
-        return loss
+        return denoising_score_matching_loss(score, target_score)
 
 
+@deprecated(
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="SlicedScoreMatchingLoss on the model's score at tiled inputs",
+    message=(
+        "SlicedScoreMatching(model) is deprecated: tile the batch in the "
+        "training loop and use SlicedScoreMatchingLoss()(model(x_tiled), x_tiled)."
+    ),
+    removal="SlicedScoreMatching and its tests",
+)
 class SlicedScoreMatching(BaseScoreMatching):
     r"""
     Sliced Score Matching (SSM) from Song et al. (2019).
+
+    Deprecated: tile the batch in the training loop and apply
+    `SlicedScoreMatchingLoss` to the score, as in the example.
 
     A scalable variant that uses random projections to efficiently approximate
     the score matching objective, avoiding expensive Hessian trace computation.
@@ -392,14 +636,13 @@ class SlicedScoreMatching(BaseScoreMatching):
 
     Example:
         ```python
-        from torchebm.losses import SlicedScoreMatching
         from torchebm.core import DoubleWellModel
-        import torch
+        from torchebm.losses import SlicedScoreMatchingLoss
 
-        energy = DoubleWellModel()
-        loss_fn = SlicedScoreMatching(model=energy, n_projections=5)
-        x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        model = DoubleWellModel(prediction_type="score")
+        loss_fn = SlicedScoreMatchingLoss(n_projections=5)
+        x_tiled = torch.randn(32, 2).repeat(5, 1).requires_grad_(True)
+        loss = loss_fn(model(x_tiled), x_tiled)
         ```
     """
 
@@ -456,15 +699,7 @@ class SlicedScoreMatching(BaseScoreMatching):
         Returns:
             torch.Tensor: A tensor of random projection vectors.
         """
-        vectors = torch.randn_like(shape, generator=generator)
-        if self.projection_type == "rademacher":
-            return vectors.sign()
-        elif self.projection_type == "sphere":
-            return torch.nn.functional.normalize(vectors, dim=-1) * math.sqrt(
-                vectors.shape[-1]
-            )
-        else:
-            return vectors
+        return _random_projections(shape, self.projection_type, generator)
 
     def forward(
         self,
@@ -473,7 +708,6 @@ class SlicedScoreMatching(BaseScoreMatching):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the sliced score matching loss for a batch of data.
@@ -487,7 +721,6 @@ class SlicedScoreMatching(BaseScoreMatching):
             model_kwargs: Conditioning is not supported (the projection tiling
                 expands the batch, so per-sample conditioning cannot be aligned);
                 a non-empty mapping raises in `compute_loss`.
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
@@ -498,7 +731,7 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, model_kwargs=model_kwargs, generator=generator
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
@@ -512,7 +745,6 @@ class SlicedScoreMatching(BaseScoreMatching):
         *args,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the sliced score matching loss using random projections.
@@ -521,12 +753,11 @@ class SlicedScoreMatching(BaseScoreMatching):
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional arguments.
             model_kwargs: Not supported; a non-empty mapping raises.
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
         """
-        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+        mk = self._prepare_model_kwargs(model_kwargs)
         if mk:
             raise NotImplementedError(
                 "Conditional sliced score matching is not supported (random "
@@ -552,18 +783,10 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         logp = (-self.model(dup_x)).sum()
         grad1 = torch.autograd.grad(logp, dup_x, create_graph=True)[0]
-        v_score = torch.sum(grad1 * n_vectors, dim=-1)
-        term1 = 0.5 * v_score.square()
 
-        grad_v = torch.autograd.grad(v_score.sum(), dup_x, create_graph=True)[0]
-        term2 = torch.sum(n_vectors * grad_v, dim=-1)
-
-        term1 = term1.view(self.n_projections, -1).mean(dim=0)
-        term2 = term2.view(self.n_projections, -1).mean(dim=0)
-
-        loss = term2 + term1
-
-        return loss.mean()
+        return sliced_score_matching_loss(
+            grad1, dup_x, n_vectors, n_projections=self.n_projections
+        )
 
     def _functional_sliced_loss(
         self, dup_x: torch.Tensor, generator: Optional[torch.Generator] = None

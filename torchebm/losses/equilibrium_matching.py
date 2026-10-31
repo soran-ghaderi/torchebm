@@ -1,9 +1,10 @@
 r"""Equilibrium Matching (EqM) loss.
 
-Implements time-invariant equilibrium training objectives for learning energy
-landscapes, following the EqM paper:
+Implements the time-invariant objectives of the EqM paper for two kinds of
+model:
 
-- **Implicit EqM** ($L_{EqM}$): Learns gradient field directly
+- **Implicit EqM** ($L_{EqM}$): Learns a vector field \(f\) directly; it is not
+  constrained to be the gradient of an energy
   
     \[
     L_{EqM} = \|f(x_\gamma) - (\epsilon - x) \cdot c(\gamma)\|^2
@@ -16,14 +17,19 @@ landscapes, following the EqM paper:
     \]
 
 where $\epsilon$ is noise (x0), $x$ is data (x1), and the target $(\epsilon - x)$
-points from data toward noise (opposite of FM velocity).
+points from data toward noise (opposite of FM velocity). Built without
+``model``, the loss acts on model outputs and trains toward
+\(c(t)\, u_t\), from noise to data, so the field drops into the samplers
+unchanged.
 
 Key differences from Flow Matching:
 
 - Time-invariant: the model receives a zeroed clock by default
   (``time_invariant=True``); ``time_invariant=False`` passes the sampled time
-- Gradient direction: EqM learns $(\epsilon - x)$, FM learns $(x - \epsilon)$
-- Sampling: Use ``negate_velocity=True`` with FlowSampler for ODE sampling
+- Scaling: the target is multiplied by the decay \(c(\gamma)\), which vanishes
+  at the data
+- Direction on the deprecated model-bound path: EqM learns $(\epsilon - x)$,
+  FM learns $(x - \epsilon)$, and ODE sampling uses ``negate_velocity=True``
 
 The field-sign and clock conventions of both losses are tabulated in
 ``docs/concepts/objectives.md``.
@@ -44,32 +50,49 @@ from torchebm.core import (
 )
 from torchebm.core.base_loss import BaseInterpolantLoss, _has_dtensor_params
 from torchebm._deprecation import declare_deprecation
+from torchebm.losses.functional import equilibrium_matching_loss
 from torchebm.losses import (
     mean_flat,
     compute_eqm_ct,
     dispersive_loss,
 )
 
-_MODEL_TIME_DEPRECATION = declare_deprecation(
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
-    name="EquilibriumMatchingLoss model_time argument",
-    since="0.8.7",
-    deprecated_on="2026-09-02",
-    replacement="time_invariant=True ('zero') or time_invariant=False ('true')",
+    name="model-bound EquilibriumMatchingLoss",
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="EquilibriumMatchingLoss() on model outputs",
     message=(
-        "model_time on EquilibriumMatchingLoss is deprecated; pass "
-        "time_invariant=True for 'zero' or time_invariant=False for 'true'."
+        "EquilibriumMatchingLoss(model=...) is deprecated: build the path in "
+        "the training loop and use EquilibriumMatchingLoss()(model(x_t), u_t, t) "
+        "instead."
     ),
-    removal="the model_time parameter of EquilibriumMatchingLoss.__init__",
+    removal=(
+        "the model argument, _legacy_forward, compute_loss, training_losses, "
+        "_compute_explicit_energy_gradient, the prediction, energy_type, "
+        "loss_weight, time_invariant, dispersion and the interpolant, coupling "
+        "and time-sampling arguments of EquilibriumMatchingLoss"
+    ),
 )
 
 
 class EquilibriumMatchingLoss(BaseInterpolantLoss):
     r"""Equilibrium Matching (EqM) training loss.
 
-    Implements gradient matching for learning equilibrium energy landscapes.
-    Supports both implicit (vector field) and explicit (energy-based) formulations,
-    with multiple prediction types and loss weighting schemes.
+    Built without ``model``, the loss acts on model outputs,
+    ``loss = loss_fn(model(x_t), u_t, t)``, which trains the field toward
+    \(c(t)\, u_t\) (noise to data) so a ``prediction_type="score"`` model
+    drops into the gradient samplers unchanged; ``ct``, ``ct_threshold``,
+    ``ct_multiplier`` and ``reduction`` apply. Built with ``model``
+    (deprecated), it runs the training step itself as described below.
+
+    Supports an implicit formulation, where the model is a vector field that
+    need not be a gradient, and explicit ones, where the model is a scalar
+    energy fitted through its gradient, with multiple prediction types and loss
+    weighting schemes.
 
     The target is $(\epsilon - x) \cdot c(\gamma)$ where:
 
@@ -85,7 +108,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         prediction: Network prediction type ('velocity', 'score', or 'noise').
         energy_type: Energy formulation type:
 
-            - 'none': Implicit EqM, model predicts gradient directly
+            - 'none': Implicit EqM, the model predicts the field directly
             - 'dot': $g(x) = x \cdot f(x)$, dot product energy formulation
             - 'l2': $g(x) = -\frac{1}{2}\|f(x)\|^2$ (experimental)
             - 'mean': Same as dot (alias)
@@ -137,40 +160,55 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
             $t$, training a time-conditioned field; sample it with
             ``FlowSampler(negate_velocity=True)`` (`EqMEnergy` evaluates the
             field at $t = 0$). The conditioning probe always runs at $t = 0$.
-        model_time: Deprecated spelling of ``time_invariant``: ``"zero"`` maps
-            to True and ``"true"`` to False, with a ``DeprecationWarning``.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
+        EqM-XL/2 (Wang and Du, 2025) on ImageNet 256: ``x1`` are SD-VAE
+        latents scaled by 0.18215, ``y`` their labels, batches of 256; the
+        defaults are the paper's truncated decay (\(a = 0.8\), \(\lambda = 4\)),
+        and sampling is the paper's best sampler, NAG-GD with
+        \(\eta = 0.0017\) and \(\mu = 0.3\) for 250 steps, with guidance 1.5
+        on the first three latent channels.
+
         ```python
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+        from torchebm.interpolants import LinearInterpolant
         from torchebm.losses import EquilibriumMatchingLoss
-        import torch.nn as nn
-        import torch
+        from torchebm.models import ClassifierFreeGuidance, dit_xl_2
+        from torchebm.samplers import NesterovSampler
 
-        # Implicit EqM with velocity prediction (default)
-        model = MyTimeConditionedModel()
-        loss_fn = EquilibriumMatchingLoss(
-            model=model,
-            prediction="velocity",
-            energy_type="none",
+        model = dit_xl_2(
+            input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1,
+            time_invariant=True, prediction_type="score",
         )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
+        path, loss_fn = LinearInterpolant(), EquilibriumMatchingLoss()
 
-        # Explicit EqM-E with dot product (for OOD detection)
-        loss_fn_explicit = EquilibriumMatchingLoss(
-            model=model,
-            prediction="velocity",
-            energy_type="dot",
+        x0, t = torch.randn_like(x1), torch.rand(len(x1))
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t, y=y), u_t, t)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        ema.update_parameters(model)
+
+        guided = ClassifierFreeGuidance(
+            ema.module.eval(), guidance_scale=1.5, null_condition=1000, guide_channels=3
         )
-
-        x = torch.randn(32, 2)
-        loss = loss_fn(x)
+        sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True)
+        samples = sampler(guided, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
         ```
+
+        The explicit variant (EqM-E) trains a scalar `BaseModel` built with
+        ``prediction_type="score"`` the same way; the paper recommends the
+        dot-product energy \(g(x) = x \cdot f(x)\).
     """
 
     def __init__(
         self,
-        model: nn.Module,
+        model: Optional[nn.Module] = None,
         prediction: Literal["velocity", "score", "noise"] = "velocity",
         energy_type: Literal["none", "dot", "l2", "mean"] = "none",
         interpolant: Union[str, BaseInterpolant] = "linear",
@@ -193,7 +231,6 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         apply_dispersion: bool = False,
         dispersion_weight: float = 0.5,
         time_invariant: bool = True,
-        model_time: Optional[Literal["zero", "true"]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -223,15 +260,9 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
                 f"{ct_threshold}; use ct='linear' for the threshold -> 0 "
                 "endpoint or ct='constant' for the threshold -> 1 endpoint"
             )
-        if model_time is not None:
-            if model_time not in ("zero", "true"):
-                raise ValueError(
-                    f"model_time must be 'zero' or 'true', got {model_time!r}; "
-                    "use time_invariant= instead"
-                )
-            _MODEL_TIME_DEPRECATION.warn()
-            time_invariant = model_time == "zero"
         self.model = model
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn()
         self.time_invariant = bool(time_invariant)
         self.prediction = prediction
         self.energy_type = energy_type
@@ -305,13 +336,44 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
     def forward(
         self,
+        input: torch.Tensor,
+        target: Optional[torch.Tensor] = None,
+        t: Optional[torch.Tensor] = None,
+        weight: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        r"""Equilibrium matching loss on a predicted field.
+
+        Trains ``input`` toward \(c(t)\, \text{target}\).
+
+        Args:
+            input: Predicted field \(f_\theta(x_t)\), shape (batch_size, ...).
+            target: Path velocity \(u_t\) (noise to data), same shape.
+            t: Times, shape (batch_size,), for \(c(t)\).
+            weight: Per-sample weight, shape (batch_size,).
+            **kwargs: Arguments of the deprecated model-bound mode.
+
+        Returns:
+            Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+        """
+        if self.model is not None:
+            return self._legacy_forward(input, **kwargs)
+        if target is None or t is None:
+            raise TypeError(
+                "EquilibriumMatchingLoss() takes (input, target, t[, weight])"
+            )
+        return equilibrium_matching_loss(
+            input, target, self._compute_ct(t), weight=weight, reduction=self.reduction
+        )
+
+    def _legacy_forward(
+        self,
         x: torch.Tensor,
         *args,
         y: Optional[torch.Tensor] = None,
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Compute EqM loss (nn.Module interface).
@@ -327,9 +389,6 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
                 distribution for arbitrary source-to-target transport.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. ``None`` (default) is the unconditional path.
-            **kwargs: Deprecated. Bare keyword arguments are still forwarded to
-                the model for one release but emit a ``DeprecationWarning``; pass
-                ``model_kwargs={...}`` instead.
 
         Returns:
             Scalar loss value.
@@ -340,7 +399,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator
             )
 
         return loss
@@ -413,8 +472,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         # For VP/cosine, ut encodes the schedule-specific velocity coefficients.
         # Sampling with negate_velocity=True recovers the positive velocity ut*c(t).
         ct = self._compute_ct(t)
-        ct = ct.view(batch, *([1] * (xt.ndim - 1)))
-        target = -ut * ct
+        target = -ut
 
         # For explicit energy, we need gradients w.r.t. xt
         if self.energy_type != "none":
@@ -444,13 +502,17 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         if self.prediction == "velocity":
             if self.energy_type == "none":
                 # Implicit EqM: model directly predicts gradient field
-                terms["loss"] = mean_flat((model_output - target).square())
+                terms["loss"] = equilibrium_matching_loss(
+                    model_output, target, ct, reduction="none"
+                )
             else:
                 # Explicit EqM-E: compute gradient of energy function
                 grad, energy = self._compute_explicit_energy_gradient(
                     xt, model_output, training=self.model.training
                 )
-                terms["loss"] = mean_flat((grad - target).square())
+                terms["loss"] = equilibrium_matching_loss(
+                    grad, target, ct, reduction="none"
+                )
                 terms["energy"] = energy
         else:
             # Score or noise prediction with optional weighting

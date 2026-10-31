@@ -9,9 +9,8 @@ from torchebm.core import GaussianModel
 from torchebm.samplers import LangevinDynamics
 
 model = GaussianModel(mean=torch.zeros(2), cov=torch.tensor([[1.0, 0.8], [0.8, 1.0]]))
-samples = LangevinDynamics(model=model, step_size=0.02, noise_scale=1.0).sample(
-    dim=2, n_samples=2000, n_steps=500
-)
+sampler = LangevinDynamics(step_size=0.02, noise_scale=1.0)
+samples = sampler(model, torch.randn(2000, 2), n_steps=500)
 
 s = samples.numpy()
 plt.figure(figsize=(4, 4), dpi=130)

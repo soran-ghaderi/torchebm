@@ -119,6 +119,29 @@ class TestNesterovSampler:
         assert_close(samples[0, 0], torch.tensor([0.9], device=device))
         assert_close(samples[0, 1], torch.tensor([0.729], device=device))
 
+    def test_lookahead_only_matches_eqm_nag_gd(self):
+        def field(x):
+            return torch.sin(x) - x.pow(3)
+
+        x0 = torch.randn(16, 3, dtype=torch.float64, generator=torch.Generator().manual_seed(0))
+        eta, mu = 0.05, 0.3
+        x, m = x0.clone(), torch.zeros_like(x0)
+        for _ in range(25):
+            m = field(x + eta * m * mu)
+            x = x + m * eta
+        sampler = NesterovSampler(step_size=eta, momentum=mu, lookahead_only=True, dtype=torch.float64)
+        assert_close(sampler(field, x0, n_steps=25), x)
+
+    def test_lookahead_only_manual_step(self, device, dtype):
+        model = QuadraticEnergy()
+        sampler = NesterovSampler(
+            model, step_size=0.1, momentum=0.9, lookahead_only=True, device=device, dtype=dtype
+        )
+        x = torch.ones(1, 1, device=device, dtype=dtype)
+        samples = sampler.sample(x, n_steps=2, return_trajectory=True)
+        assert_close(samples[0, 0], torch.tensor([0.9], device=device))
+        assert_close(samples[0, 1], torch.tensor([0.819], device=device))
+
     def test_scheduler(self, device, dtype):
         # Test with decaying step size
         class DecayingScheduler(BaseScheduler):

@@ -1,11 +1,11 @@
 # Examples
 
-A runnable curriculum. Every example is one folder teaching one idea, it runs
-with nothing but `pip install torchebm`, and CI executes all of them on every
-commit, so nothing here can drift from the library.
+A runnable curriculum. Every example is one folder teaching one idea; its
+`main.py` runs on a bare `pip install torchebm`, and CI runs every example
+outside the showcase tier on each commit.
 
-Each page in this section is generated from the folder it documents: the code
-you read is the code that runs.
+Each page in this section is generated from the `main.py` and `index.md` of
+the folder it documents.
 
 ## The four tiers
 
@@ -42,10 +42,9 @@ the examples exercise.
 ```
 
 **`main.py` is the lesson.** It imports only `torchebm` and the standard library,
-so it runs on a bare install. No `argparse`, no `def main()`, no device flags: a
-few constants at the top, then a linear body that ends by printing the key result
-(a shape, a metric, a recovered statistic). It should read like a docstring you
-can run.
+so it runs on a bare install. It is a linear script: a few constants at the top,
+then a body that ends by printing the key result (a shape, a metric, a recovered
+statistic), with no `argparse`, `main()` function or device flags.
 
 **Smoke mode.** Every `main.py` honours `TORCHEBM_SMOKE=1` by shrinking its
 iteration counts so CI can execute it in seconds:
@@ -55,10 +54,9 @@ SMOKE = os.getenv("TORCHEBM_SMOKE") == "1"
 N_STEPS = 20 if SMOKE else 500
 ```
 
-**Visualization is decoupled.** Pages here are text: prose and code. Plotting is
-not part of the lesson, so where a picture genuinely helps, the folder carries a
-`plot.py` that writes into a local, gitignored `assets/` folder. Nothing is
-committed or embedded.
+**Visualization is separate.** Pages show prose and code only. Where a figure
+helps, the folder carries a `plot.py` that writes into a local, gitignored
+`assets/` folder.
 
 ## `meta.yaml`
 
@@ -68,16 +66,19 @@ with a `meta.yaml` *is* an example.
 ```yaml
 title: "Langevin Dynamics 101"
 summary: "Sample a 2D energy with Langevin; trade step size against noise."
-order: 400            # position in the global learning path; bands:
-                      #   0-399 Foundations, 400-799 Sampling,
-                      #   800-1199 Training, 1200+ Showcase
-difficulty: intro     # intro | intermediate | advanced
+order: 400
+difficulty: intro
 tags: [langevin, sampling, mcmc, 2d-energy]
 entrypoint: main.py
-ci:                   # optional
-  timeout: 120        # seconds (default 120)
-  # skip: true        # heavy showcases only
+ci:
+  timeout: 120
 ```
+
+`order` places the example in the global learning path: 0-399 Foundations,
+400-799 Sampling, 800-1199 Training, 1200+ Showcase. `difficulty` is `intro`,
+`intermediate` or `advanced`. The `ci` block is optional: `timeout` is in
+seconds (default 120), and `skip: true` excludes a heavy showcase from the
+smoke run.
 
 ## Adding an example
 
@@ -92,8 +93,8 @@ ci:                   # optional
    mkdocs serve
    ```
 
-You never write a docs page: the nav entry, the tier table, and the page itself
-are all generated from the folder.
+The nav entry, the tier table, and the page itself are all generated from the
+folder.
 
 ## Tags
 

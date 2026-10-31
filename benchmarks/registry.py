@@ -21,6 +21,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 import torch
 import torch.nn as nn
 
+from torchebm.couplings import resolve_coupling
+from torchebm.interpolants import LinearInterpolant
+
 
 # ---------------------------------------------------------------------------
 # Spec dataclass — one per benchmarked component
@@ -44,6 +47,9 @@ class BenchSpec:
     needs_sampler: bool = False  # losses: needs an MCMC sampler
     needs_grad: bool = False  # losses: x.requires_grad_(True)
     returns_tuple: bool = False  # loss forward returns (loss, extras)
+    on_outputs: bool = False  # losses: loss_fn on model outputs
+    prediction_type: str = "energy"  # losses: output of the benchmark energy model
+    call_time_model: bool = False  # samplers: sampler(model, x), no bound model
     max_dim: Optional[int] = None  # cap dim for O(dim²) methods
     max_batch: Optional[int] = None  # cap batch_size
     # -- custom benchmark function --
@@ -126,42 +132,96 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "returns_tuple": True,
         "init_kwargs": {"k_steps": 10},
     },
+    # Losses on model outputs: the standard training step with the same
+    # work as the legacy entry above (CD-10 negatives, exact score matching
+    # capped like score_matching_exact, 5 projections, phase-1 EM).
+    "ContrastiveDivergenceLoss": {"model_type": "ebm", "on_outputs": True},
+    "ScoreMatchingLoss": {
+        "model_type": "ebm",
+        "on_outputs": True,
+        "max_dim": 16,
+        "max_batch": 128,
+    },
+    "DenoisingScoreMatchingLoss": {
+        "model_type": "ebm",
+        "prediction_type": "score",
+        "on_outputs": True,
+    },
+    "SlicedScoreMatchingLoss": {
+        "model_type": "ebm",
+        "prediction_type": "score",
+        "on_outputs": True,
+        "init_kwargs": {"n_projections": 5},
+    },
     "EquilibriumMatchingLoss": {
         "model_type": "velocity",
-        "init_kwargs": {
-            "prediction": "velocity",
-            "energy_type": "none",
-            "interpolant": "linear",
+        "variants": {
+            "EquilibriumMatchingLoss": {
+                "init_kwargs": {
+                    "prediction": "velocity",
+                    "energy_type": "none",
+                    "interpolant": "linear",
+                },
+            },
+            "equilibrium_matching_loss_fn": {"on_outputs": True},
         },
     },
     "FlowMatchingLoss": {
         "model_type": "velocity",
-        "init_kwargs": {"interpolant": "linear"},
+        "variants": {
+            "FlowMatchingLoss": {"init_kwargs": {"interpolant": "linear"}},
+            "flow_matching_loss_fn": {"on_outputs": True},
+        },
     },
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
         # the expensive Langevin negative-sampling chains.
         "init_kwargs": {"lambda_cd": 0.0},
+        "variants": {
+            "EnergyMatchingLoss": {},
+            "energy_matching_loss_fn": {
+                "on_outputs": True,
+                "prediction_type": "score",
+            },
+        },
     },
     # ── Samplers ──
     "LangevinDynamics": {
         "model_type": "ebm_double_well",
         "init_kwargs": {"noise_scale": 1.0},
+        "variants": {
+            "LangevinDynamics": {},
+            "langevin_call": {"call_time_model": True},
+        },
     },
     "HamiltonianMonteCarlo": {
         "model_type": "ebm_double_well",
         "init_kwargs": {"n_leapfrog_steps": 10},
+        "variants": {
+            "HamiltonianMonteCarlo": {},
+            "hmc_call": {"call_time_model": True},
+        },
     },
     "RiemannianManifoldHMC": {
         "model_type": "ebm_double_well",
         "needs_metric_fn": True,
-        "init_kwargs": {"n_leapfrog_steps": 5, "solver_max_iter": 4},
+        "init_kwargs": {"n_leapfrog_steps": 5},
     },
-    "GradientDescentSampler": {"model_type": "ebm_double_well"},
+    "GradientDescentSampler": {
+        "model_type": "ebm_double_well",
+        "variants": {
+            "GradientDescentSampler": {},
+            "gradient_descent_call": {"call_time_model": True},
+        },
+    },
     "NesterovSampler": {
         "model_type": "ebm_double_well",
         "init_kwargs": {"momentum": 0.9},
+        "variants": {
+            "NesterovSampler": {},
+            "nesterov_call": {"call_time_model": True},
+        },
     },
     "FlowSampler": {
         "model_type": "velocity",
@@ -180,6 +240,14 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
                     "integrator": "dopri5",
                 },
             },
+            "flow_sampler_euler_call": {
+                "call_time_model": True,
+                "init_kwargs": {"interpolant": "linear", "integrator": "euler"},
+            },
+            "flow_sampler_dopri5_call": {
+                "call_time_model": True,
+                "init_kwargs": {"interpolant": "linear", "integrator": "dopri5"},
+            },
         },
     },
     # ── Interpolants (defaults are fine — no overrides needed) ──
@@ -187,7 +255,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "init_kwargs": {"sigma_min": 0.1, "sigma_max": 20.0},
     },
     # ── Models (completely custom configs) ──
-    "ConditionalTransformer2D": {
+    "DiT": {
         "model_configs": {
             "small": {
                 "input_size": 16,
@@ -338,6 +406,9 @@ def _build_spec(name: str, module: str, cls: Type, overrides: Dict) -> BenchSpec
         needs_sampler=overrides.get("needs_sampler", False),
         needs_grad=overrides.get("needs_grad", False),
         returns_tuple=overrides.get("returns_tuple", False),
+        on_outputs=overrides.get("on_outputs", False),
+        prediction_type=overrides.get("prediction_type", "energy"),
+        call_time_model=overrides.get("call_time_model", False),
         max_dim=overrides.get("max_dim"),
         max_batch=overrides.get("max_batch"),
         bench_fn=overrides.get("bench_fn"),
@@ -376,6 +447,9 @@ _STEP_SIZE = 1e-3
 _DIFFUSION_COEFF = 0.1
 _BARRIER_HEIGHT = 2.0
 _CD_STEP_SIZE = 1e-2
+_CD_K_STEPS = 10
+_DSM_NOISE_SCALE = 1e-2
+_EM_SIGMA = 0.1
 _MLP_HIDDEN = 128
 
 
@@ -417,12 +491,12 @@ class _MLPVelocity(nn.Module):
         return self.net(xt).view_as(x)
 
 
-def _wrap_ebm(net, device, dtype):
+def _wrap_ebm(net, device, dtype, prediction_type="energy"):
     from torchebm.core.base_model import BaseModel
 
     class _W(BaseModel):
         def __init__(self, n, d, dt):
-            super().__init__(dtype=dt)
+            super().__init__(dtype=dt, prediction_type=prediction_type)
             self.net = n
             self._device = d
             self.to(d)
@@ -588,6 +662,115 @@ def build_interpolant_bench(
     return fn, info
 
 
+def _path_sample(path, x, device, dtype, coupling=None):
+    x0 = torch.randn_like(x)
+    if coupling is not None:
+        x0, x = coupling(x0, x)
+    t = torch.rand(x.shape[0], device=device, dtype=dtype)
+    x_t, u_t = path(x0, x, t)
+    return x_t, u_t, t
+
+
+def _step_contrastive_divergence(loss_fn, model, x, device, dtype):
+    from torchebm.samplers.langevin_dynamics import LangevinDynamics
+
+    sampler = LangevinDynamics(
+        model=model, step_size=_CD_STEP_SIZE, device=device, dtype=dtype
+    )
+
+    def step():
+        x_neg = sampler.sample(x=x, n_steps=_CD_K_STEPS)
+        return loss_fn(model(x), model(x_neg))
+
+    return step
+
+
+def _step_score_matching(loss_fn, model, x, device, dtype):
+    from torch.func import grad, jacrev, vmap
+
+    score_fn = grad(lambda x_i: -model(x_i.unsqueeze(0)).squeeze())
+
+    def divergence_fn(x_i):
+        return jacrev(score_fn)(x_i).diagonal().sum()
+
+    def step():
+        x_in = x.detach().requires_grad_(True)
+        return loss_fn(vmap(score_fn)(x_in), vmap(divergence_fn)(x_in))
+
+    return step
+
+
+def _step_denoising_score_matching(loss_fn, model, x, device, dtype):
+    def step():
+        noise = torch.randn_like(x) * _DSM_NOISE_SCALE
+        return loss_fn(model(x + noise), -noise / _DSM_NOISE_SCALE**2)
+
+    return step
+
+
+def _step_sliced_score_matching(loss_fn, model, x, device, dtype):
+    x_tiled = x.repeat(loss_fn.n_projections, 1)
+
+    def step():
+        x_in = x_tiled.detach().requires_grad_(True)
+        return loss_fn(model(x_in), x_in)
+
+    return step
+
+
+def _step_flow_matching(loss_fn, model, x, device, dtype):
+    path = LinearInterpolant()
+
+    def step():
+        x_t, u_t, t = _path_sample(path, x, device, dtype)
+        return loss_fn(model(x_t, t), u_t)
+
+    return step
+
+
+def _step_equilibrium_matching(loss_fn, model, x, device, dtype):
+    path = LinearInterpolant()
+
+    def step():
+        x_t, u_t, t = _path_sample(path, x, device, dtype)
+        return loss_fn(model(x_t, torch.zeros_like(t)), u_t, t)
+
+    return step
+
+
+def _step_energy_matching(loss_fn, model, x, device, dtype):
+    path = LinearInterpolant()
+    coupling = resolve_coupling("ot", default="ot", owner="benchmark")
+
+    def step():
+        x_t, u_t, t = _path_sample(path, x, device, dtype, coupling)
+        x_t = x_t + _EM_SIGMA * torch.randn_like(x_t)
+        return loss_fn(model(x_t), u_t, t)
+
+    return step
+
+
+_LOSS_FN_STEPS = {
+    "ContrastiveDivergenceLoss": _step_contrastive_divergence,
+    "ScoreMatchingLoss": _step_score_matching,
+    "DenoisingScoreMatchingLoss": _step_denoising_score_matching,
+    "SlicedScoreMatchingLoss": _step_sliced_score_matching,
+    "FlowMatchingLoss": _step_flow_matching,
+    "EquilibriumMatchingLoss": _step_equilibrium_matching,
+    "EnergyMatchingLoss": _step_energy_matching,
+}
+
+
+def _loss_info(spec, eff_bs, eff_dim, net):
+    return {
+        "module": spec.module,
+        "batch_size": eff_bs,
+        "dim": eff_dim,
+        "n_params": sum(p.numel() for p in net.parameters()),
+        "includes_backward": True,
+    }
+
+
 def build_loss_bench(
     spec: BenchSpec,
     dim: int,
@@ -602,12 +785,32 @@ def build_loss_bench(
     # Build model
     if spec.model_type == "ebm":
         net = _MLPEnergy(eff_dim).to(device, dtype)
-        model = _wrap_ebm(net, device, dtype)
+        model = _wrap_ebm(net, device, dtype, spec.prediction_type)
     elif spec.model_type == "velocity":
         net = _MLPVelocity(eff_dim).to(device, dtype)
         model = net
     else:
         raise ValueError(f"Unknown model_type {spec.model_type!r} for loss {spec.name}")
+
+    if spec.on_outputs:
+        loss_fn = spec.cls(device=device, dtype=dtype, **spec.init_kwargs)
+        x = _make_data(eff_bs, eff_dim, device, dtype)
+        step = _LOSS_FN_STEPS[spec.cls.__name__](loss_fn, model, x, device, dtype)
+
+        def fn():
+            step().backward()
+            net.zero_grad()
+
+        def _quality_fn():
+            loss_val = step().detach()
+            return {
+                "loss_value": round(loss_val.item(), 6),
+                "loss_is_finite": bool(torch.isfinite(loss_val).item()),
+            }
+
+        info = _loss_info(spec, eff_bs, eff_dim, net)
+        info["_quality_fn"] = _quality_fn
+        return fn, info
 
     # Build loss
     init_kw: Dict[str, Any] = {"device": device, "dtype": dtype, **spec.init_kwargs}
@@ -642,13 +845,7 @@ def build_loss_bench(
             loss.backward()
             net.zero_grad()
 
-    info = {
-        "module": spec.module,
-        "batch_size": eff_bs,
-        "dim": eff_dim,
-        "n_params": sum(p.numel() for p in net.parameters()),
-        "includes_backward": True,
-    }
+    info = _loss_info(spec, eff_bs, eff_dim, net)
 
     # Loss sanity check (run once, not timed)
     _loss_fn_q = loss_fn
@@ -686,7 +883,15 @@ def build_sampler_bench(
     if spec.model_type == "ebm_double_well":
         from torchebm.core.base_model import DoubleWellModel
 
-        model = DoubleWellModel(barrier_height=_BARRIER_HEIGHT, dtype=dtype).to(device)
+        model = DoubleWellModel(
+            barrier_height=_BARRIER_HEIGHT,
+            dtype=dtype,
+            prediction_type=(
+                "score"
+                if spec.call_time_model and spec.cls.prediction_type == "score"
+                else "energy"
+            ),
+        ).to(device)
         init_kw["model"] = model
         init_kw.setdefault("step_size", _STEP_SIZE)
     elif spec.model_type == "velocity":
@@ -698,6 +903,8 @@ def build_sampler_bench(
         )
 
     if spec.needs_metric_fn:
+        from torchebm.integrators import GeneralisedLeapfrogIntegrator
+
         # Identity metric — reduces RMHMC to plain HMC but exercises the
         # full Riemannian code path (Cholesky, solves, GLI Picard loops).
         _dim = dim
@@ -707,11 +914,25 @@ def build_sampler_bench(
             return eye.expand(x.shape[0], _dim, _dim).contiguous()
 
         init_kw["metric_fn"] = _metric_fn
+        init_kw["integrator"] = GeneralisedLeapfrogIntegrator(
+            device=device, dtype=dtype, solver_max_iter=4
+        )
 
-    sampler = spec.cls(**init_kw)
     x0 = _make_data(bs, dim, device, dtype)
 
-    if spec.bench_fn:
+    if spec.call_time_model:
+        model = init_kw.pop("model")
+        sampler = spec.cls(**init_kw)
+
+        def fn():
+            sampler(model, x0, n_steps=n_steps)
+
+    else:
+        sampler = spec.cls(**init_kw)
+
+    if spec.call_time_model:
+        pass
+    elif spec.bench_fn:
         method = getattr(sampler, spec.bench_fn)
         call_kwargs = {"num_steps": n_steps, **spec.bench_kwargs}
 
@@ -739,6 +960,7 @@ def build_sampler_bench(
     if (
         spec.cls.__name__ in ("HamiltonianMonteCarlo", "LangevinDynamics")
         and not spec.bench_fn
+        and not spec.call_time_model
     ):
         _sampler_q = sampler
         _x0_q = x0
@@ -808,7 +1030,7 @@ def build_model_bench(
         target = torch.randn_like(x)
 
         def fn():
-            out = model(x, cond)
+            out = model(x, cond=cond)
             loss = (out - target).pow(2).mean()
             loss.backward()
             model.zero_grad()
@@ -816,7 +1038,7 @@ def build_model_bench(
     else:
 
         def fn():
-            model(x, cond)
+            model(x, cond=cond)
 
     info = {
         "module": spec.module,

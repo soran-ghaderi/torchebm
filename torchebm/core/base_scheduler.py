@@ -895,16 +895,18 @@ class TemperatureScheduler(BaseScheduler):
             `n_steps <= 0`, or `t_end < t_start`.
 
     !!! example "Energy Matching generation (one SDE pass)"
+        \(T = 3.25\) with \(dt = 0.01\) gives 325 steps: noise-free below
+        \(\tau^*\), Langevin above.
+
         ```python
         from torchebm.core import TemperatureScheduler
         from torchebm.samplers import LangevinDynamics
 
-        # T = 3.25, dt = 0.01 -> 325 steps; noise-free below tau*, Langevin above
         temp = TemperatureScheduler(
             epsilon_max=0.15, tau_star=0.8, n_steps=325, t_end=3.25
         )
-        sampler = LangevinDynamics(model=potential, step_size=0.01, noise_scale=temp)
-        samples = sampler.sample(x=torch.randn(1000, 2), n_steps=325)
+        sampler = LangevinDynamics(step_size=0.01, noise_scale=temp)
+        samples = sampler(model, torch.randn(1000, 2), n_steps=325)
         ```
     """
 

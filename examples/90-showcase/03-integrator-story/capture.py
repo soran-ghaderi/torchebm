@@ -2,8 +2,9 @@ r"""Render the explainer to an MP4 by driving headless Chrome via the DevTools
 protocol. For each frame we call window.__seek(t) (deterministic) and grab the
 canvas with window.__snap(), then pipe the JPEGs to ffmpeg (from imageio-ffmpeg).
 
-Run:  python examples/visualization/integrator_story/capture.py [--fps 30]
-Output: integrator_story.mp4  (1280x720, H.264, yuv420p — LinkedIn/Twitter ready)
+Run:  python examples/90-showcase/03-integrator-story/capture.py [--fps 30]
+Output: integrator_story.mp4 (1280x720, H.264, yuv420p). Needs the
+websocket-client and imageio-ffmpeg packages.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-import websocket  # websocket-client
+import websocket
 import imageio_ffmpeg
 
 HERE = Path(__file__).resolve().parent

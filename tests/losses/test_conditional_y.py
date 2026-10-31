@@ -12,6 +12,12 @@ import torch
 import torch.nn as nn
 
 from torchebm.core import BaseModel
+from torchebm.couplings import (
+    ExactOTCoupling,
+    GreedyCoupling,
+    SinkhornCoupling,
+    UnbalancedSinkhornCoupling,
+)
 from torchebm.losses import (
     ContrastiveDivergence,
     DenoisingScoreMatching,
@@ -49,6 +55,7 @@ class RecordingField(nn.Module):
         self.received_y = None
 
     def forward(self, x, t=None, y=None, **kwargs):
+        self.received_x = x
         self.received_y = y
         out = self.linear(x)
         if y is not None:
@@ -152,6 +159,30 @@ def test_y_conflict_with_model_kwargs_raises():
     y = torch.randint(0, 3, (4,))
     with pytest.raises(ValueError, match="model_kwargs"):
         loss_fn(torch.randn(4, 4), y=y, model_kwargs={"y": y})
+
+
+@pytest.mark.parametrize(
+    "coupling_cls",
+    [ExactOTCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling],
+)
+def test_y_stays_aligned_with_ot_coupled_targets(coupling_cls):
+    """OT pairing moves the noise, never the data its y belongs to.
+
+    At t = 1 the linear interpolant returns the coupled target, so the model
+    must see each data row next to its own label. The crossed x0 forces a
+    non-identity pairing.
+    """
+    model = RecordingField(dim=1)
+    loss_fn = FlowMatchingLoss(
+        model=model,
+        coupling=coupling_cls(),
+        t_sampler=lambda batch, **kwargs: torch.ones(batch),
+    )
+    y = torch.arange(8)
+    x1 = 10.0 * y.float().unsqueeze(1)
+    loss_fn(x1, x0=x1.flip(0), y=y)
+    assert torch.equal(model.received_x, x1)
+    assert torch.equal(model.received_y, y)
 
 
 def test_conditional_model_trains():

@@ -20,12 +20,34 @@ from typing import Any, Callable, Optional, Union
 
 import torch
 
+from torchebm._deprecation import deprecated
 from torchebm.core import BaseModelCoupling
 
 
+@deprecated(
+    since="0.9.0",
+    deprecated_on="2026-10-30",
+    until="0.12.0",
+    grace_months=4,
+    replacement="x1 = sampler(model, x0, n_steps=...) in the training loop",
+    message=(
+        "ReflowCoupling is deprecated: generate the reflow targets in the "
+        "training loop with x1 = sampler(model, x0, n_steps=50, "
+        "model_kwargs=...) and train on the pairs (x0, x1)."
+    ),
+    removal=(
+        "torchebm/couplings/model_induced.py, its export in "
+        "torchebm/couplings/__init__.py and the ReflowCoupling tests in "
+        "tests/couplings/test_model_couplings.py"
+    ),
+)
 class ReflowCoupling(BaseModelCoupling):
     r"""
     Rectified-flow reflow coupling: \(x_1 = \Phi(x_0)\).
+
+    Deprecated: the reflow targets come from a sampler call in the training
+    loop, ``x1 = sampler(model, x0, n_steps=50)``, so no coupling holds the
+    model.
 
     Pairs each source sample with its image under a learned flow, producing
     the (noise, generated-data) pairs that reflow training regresses on to
@@ -42,12 +64,10 @@ class ReflowCoupling(BaseModelCoupling):
 
     Example:
         ```python
-        from torchebm.couplings import ReflowCoupling
         from torchebm.samplers import FlowSampler
 
-        teacher = FlowSampler(model=velocity_net, interpolant="linear")
-        coupling = ReflowCoupling(teacher, n_steps=50)
-        x0, x1 = coupling(torch.randn(256, 2))   # x1 generated, no data needed
+        x0 = torch.randn(256, 2)
+        x1 = FlowSampler(integrator="heun")(model, x0, n_steps=50)
         ```
     """
 

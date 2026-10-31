@@ -8,12 +8,12 @@ with TorchEBM's `LangevinDynamics` through a custom `BaseModel` energy.
 
 - An image's pixel intensity defines a Boltzmann density \(p(x) \propto \rho(x)\),
   so the energy is \(E(x) = -\log \rho(x)\). A differentiable bilinear lookup
-  (`grid_sample`) lets autograd supply the score \(\nabla_x \log \rho(x)\) the
-  sampler rides.
+  (`grid_sample`) lets autograd supply the score \(\nabla_x \log \rho(x)\) that
+  the sampler follows.
 - Coarse-to-fine **annealing**, blur the density then sharpen it in stages, gives
-  broad basins of attraction first and crisp detail last. This is the same
-  intuition as annealed Langevin / score-based generative sampling, with a real
-  image as the target instead of a toy mixture.
+  broad basins of attraction first and crisp detail last. This is the intuition
+  behind annealed Langevin and score-based generative sampling, applied to a
+  real image.
 
 ## Requires
 

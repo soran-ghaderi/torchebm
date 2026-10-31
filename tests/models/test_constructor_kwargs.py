@@ -23,7 +23,6 @@ from torchebm.core import (
 )
 from torchebm.models import (
     ClassifierFreeGuidance,
-    ConditionalTransformer2D,
     DiT,
     EqMEnergy,
     InteractionModel,
@@ -70,18 +69,6 @@ FIXED_SIGNATURE = [
             _Potential(), guidance_scale=1.0, null_condition=3, **kw
         ),
         id="ClassifierFreeGuidance",
-    ),
-    pytest.param(
-        lambda **kw: ConditionalTransformer2D(
-            in_channels=1,
-            out_channels=1,
-            input_size=4,
-            patch_size=2,
-            embed_dim=8,
-            depth=1,
-            **kw,
-        ),
-        id="ConditionalTransformer2D",
     ),
     pytest.param(
         lambda **kw: DiT(

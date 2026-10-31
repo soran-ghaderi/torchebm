@@ -5,7 +5,8 @@ functions) or a module-level `declare_deprecation` (in-function paths).
 Declaring registers a `DeprecationInfo` in `DEPRECATIONS` at import time;
 ``tests/test_deprecations.py`` imports every package module, cross-checks
 each declaration site against this registry, and fails the suite once a
-removal window closes. No removal version is ever written down.
+removal window closes. A removal release is written down only when one is
+planned, as ``until``.
 
 Window rule (the policy's single home): a window closes only when BOTH
 conditions hold, releases and calendar time.
@@ -15,7 +16,8 @@ conditions hold, releases and calendar time.
   re-stamp on merge). The window stays open for ``grace`` releases starting
   at ``since`` (the release automation bumps one patch per release) and
   version-expires after that, or at any newer minor/major, whichever comes
-  first.
+  first. A deprecation planned for a named release declares it as
+  ``until``; the window then version-expires at that release instead.
 - Time: ``deprecated_on`` is the declaration date; the window never closes
   earlier than ``GRACE_MONTHS`` calendar months after it, so a burst of
   releases cannot strip users of migration time.
@@ -145,6 +147,7 @@ class DeprecationInfo:
     grace_months: int = GRACE_MONTHS
     message: str = ""
     removal: str = ""
+    until: str = ""
 
     @property
     def key(self) -> Tuple[str, str]:
@@ -187,13 +190,16 @@ class DeprecationInfo:
         r"""Whether the window is past for ``current_version`` on ``today``.
 
         Both conditions of the module-docstring rule must hold: the release
-        window is version-expired AND at least ``grace_months`` calendar
-        months have passed since ``deprecated_on``. A current release below
-        ``since`` is never due: stale dev installs lag the released anchors.
+        window is version-expired (``until`` reached, or ``grace`` releases
+        past ``since``) AND at least ``grace_months`` calendar months have
+        passed since ``deprecated_on``. A current release below ``since`` is
+        never due: stale dev installs lag the released anchors.
         """
         cur = _parse_release(current_version)
         anchor = _parse_release(self.since)
-        if cur[:2] != anchor[:2]:
+        if self.until:
+            version_due = cur >= _parse_release(self.until)
+        elif cur[:2] != anchor[:2]:
             version_due = cur[:2] > anchor[:2]
         else:
             version_due = cur[2] - anchor[2] >= self.grace
@@ -232,6 +238,7 @@ def declare_deprecation(
     grace_months: int = GRACE_MONTHS,
     message: str = "",
     removal: str = "",
+    until: str = "",
 ) -> DeprecationInfo:
     r"""Declare a deprecated in-function path; call at module level.
 
@@ -252,11 +259,17 @@ def declare_deprecation(
         grace_months: Calendar months the window stays open at minimum.
         message: Full warning text; derived from name/replacement if empty.
         removal: What to delete when the window closes (shown by the gate).
+        until: Release at which removal is due, in place of the ``grace``
+            count; must be later than ``since`` (validated eagerly).
     """
     if module is None:
         module = sys._getframe(1).f_globals.get("__name__", "<unknown>")
     _parse_release(since)
     datetime.date.fromisoformat(deprecated_on)
+    if until and _parse_release(until) <= _parse_release(since):
+        raise ValueError(
+            f"until={until!r} must be a later release than since={since!r}"
+        )
     return _register(
         DeprecationInfo(
             name=name,
@@ -268,6 +281,7 @@ def declare_deprecation(
             grace_months=int(grace_months),
             message=message,
             removal=removal,
+            until=until,
         )
     )
 
@@ -281,6 +295,7 @@ def deprecated(
     grace_months: int = GRACE_MONTHS,
     message: str = "",
     removal: str = "",
+    until: str = "",
 ) -> Callable:
     r"""Decorator deprecating a class or function.
 
@@ -305,6 +320,7 @@ def deprecated(
             grace_months=grace_months,
             message=message,
             removal=removal,
+            until=until,
         )
         msg = info._full_message()
         if isinstance(obj, type):

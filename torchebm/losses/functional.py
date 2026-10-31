@@ -1,158 +1,254 @@
-r"""Functional building blocks for matching losses."""
+r"""Loss functions on tensors, the `torch.nn.functional` counterpart of `torchebm.losses`.
 
-from __future__ import annotations
+Each function takes model outputs and targets and returns a loss. None holds
+state, calls a model, samples, or draws times; the loss classes compute those
+inputs and call these. ``reduction`` follows `torch.nn.functional`: ``"mean"``
+and ``"sum"`` reduce over the batch, ``"none"`` returns one value per sample.
+"""
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Optional
 
 import torch
 
-from torchebm.core import BaseCoupling, BaseInterpolant
-from torchebm.losses.loss_utils import mean_flat
+from torchebm.losses.loss_utils import compute_flow_weight, mean_flat, trimmed_mean
 
 
-@dataclass(frozen=True)
-class MatchingBatch:
-    r"""Prepared tensors for an externally evaluated matching objective.
-
-    Attributes:
-        xt: Interpolated model input.
-        t: Sampled interpolation time.
-        model_time: Time passed to the model. This equals ``t`` for flow
-            matching; objectives with a time-invariant field may replace it.
-        target: Tensor prediction target.
-        weights: Optional per-pair coupling weights.
-    """
-
-    xt: torch.Tensor
-    t: torch.Tensor
-    model_time: torch.Tensor
-    target: torch.Tensor
-    weights: Optional[torch.Tensor] = None
-
-
-def prepare_flow_matching(
-    x1: torch.Tensor,
-    *,
-    interpolant: BaseInterpolant,
-    coupling: BaseCoupling,
-    x0: Optional[torch.Tensor] = None,
-    t: Optional[torch.Tensor] = None,
-    generator: Optional[torch.Generator] = None,
-    model_kwargs: Optional[Mapping[str, Any]] = None,
-    t_sampler: Optional[Callable[..., torch.Tensor]] = None,
-    negate_velocity: bool = False,
-) -> MatchingBatch:
-    r"""Prepare a conditional flow-matching batch without evaluating a model.
-
-    Random draws retain the class API's order: source noise first, stochastic
-    coupling second, and interpolation time last. Passing ``x0`` or ``t``
-    skips the corresponding draw. When ``t`` is omitted, ``t_sampler`` is used
-    if provided; otherwise time is sampled uniformly on ``[0, 1)``.
-
-    Args:
-        x1: Target samples of shape ``(batch, ...)``.
-        interpolant: Interpolant used to construct ``xt`` and its velocity.
-        coupling: Source-target coupling.
-        x0: Optional source samples. Defaults to standard Gaussian noise.
-        t: Optional explicit interpolation times of shape ``(batch,)``.
-        generator: Generator shared by source, coupling, and time draws.
-        model_kwargs: Optional conditioning forwarded to the coupling.
-        t_sampler: Optional time sampler called after coupling as
-            ``t_sampler(batch, device=, dtype=, generator=)``, the same
-            convention as the loss classes' ``t_sampler``. When omitted, times
-            are drawn uniformly on ``[0, 1)``.
-        negate_velocity: Use ``-ut`` rather than ``ut`` as the target.
-
-    Returns:
-        Prepared matching tensors and optional coupling weights.
-    """
-    model_kwargs = {} if model_kwargs is None else dict(model_kwargs)
-    batch = x1.shape[0]
-
-    if x0 is None:
-        x0 = torch.randn_like(x1, generator=generator)
-    else:
-        x0 = x0.to(device=x1.device, dtype=x1.dtype)
-        if x0.shape != x1.shape:
-            raise ValueError(
-                f"x0 shape {tuple(x0.shape)} must match x1 shape {tuple(x1.shape)}"
-            )
-
-    coupled = coupling(x0, x1, generator=generator, **model_kwargs)
-    x0, x1 = coupled
-
-    if t is None:
-        if t_sampler is None:
-            t = torch.rand(
-                batch,
-                device=x1.device,
-                dtype=x1.dtype,
-                generator=generator,
-            )
-        else:
-            t = t_sampler(batch, device=x1.device, dtype=x1.dtype, generator=generator)
-    else:
-        t = t.to(device=x1.device, dtype=x1.dtype)
-
-    if t.shape != (batch,):
-        raise ValueError(f"t shape {tuple(t.shape)} must be ({batch},)")
-
-    xt, ut = interpolant.interpolate(x0, x1, t)
-    target = -ut if negate_velocity else ut
-    return MatchingBatch(
-        xt=xt,
-        t=t,
-        model_time=t,
-        target=target,
-        weights=coupled.weights,
-    )
-
-
-def weighted_mse_loss(
-    prediction: torch.Tensor,
-    target: torch.Tensor,
-    *,
-    weights: Optional[torch.Tensor] = None,
-    loss_weights: Optional[torch.Tensor] = None,
-    reduction: Literal["none", "mean"] = "mean",
+def _reduce(
+    loss: torch.Tensor, reduction: str, weight: Optional[torch.Tensor] = None
 ) -> torch.Tensor:
-    r"""Compute per-sample MSE with optional objective and coupling weights.
-
-    ``loss_weights`` multiply individual per-sample losses. ``weights`` are
-    coupling masses and therefore also define the denominator of the weighted
-    mean, matching the class API's existing reduction.
-
-    Args:
-        prediction: Model prediction with a leading batch dimension.
-        target: Prediction target, with the same shape as ``prediction``.
-        weights: Optional per-sample coupling masses. These affect both the
-            numerator and denominator when ``reduction="mean"``.
-        loss_weights: Optional per-sample objective multipliers. These affect
-            the numerator only.
-        reduction: ``"none"`` returns the per-sample losses after applying
-            ``loss_weights``; ``"mean"`` returns their plain or
-            coupling-weighted mean.
-
-    Returns:
-        A per-sample tensor for ``reduction="none"`` or a scalar mean for
-        ``reduction="mean"``.
-
-    Raises:
-        ValueError: If ``reduction`` is not ``"none"`` or ``"mean"``.
-    """
-    loss = mean_flat((prediction - target).square())
-    if loss_weights is not None:
-        loss = loss * loss_weights
-
+    if weight is not None:
+        loss = loss * weight
+    if reduction == "mean":
+        return loss.mean()
+    if reduction == "sum":
+        return loss.sum()
     if reduction == "none":
         return loss
-    if reduction != "mean":
-        raise ValueError(f"Unknown reduction: {reduction}")
-    if weights is not None:
-        return (weights * loss).sum() / weights.sum().clamp_min(1e-12)
-    return loss.mean()
+    raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got {reduction!r}")
 
 
-__all__ = ["MatchingBatch", "prepare_flow_matching", "weighted_mse_loss"]
+def contrastive_divergence_loss(
+    positive: torch.Tensor,
+    negative: torch.Tensor,
+    *,
+    energy_reg_weight: float = 0.0,
+    trim_fraction: float = 0.0,
+) -> torch.Tensor:
+    r"""Contrastive divergence from the energies of data and model samples.
+
+    \[
+    L = \mathbb{E}[E(x^+)] - \widetilde{\mathbb{E}}[E(x^-)]
+        + \lambda \left(\mathbb{E}[E(x^+)^2] + \mathbb{E}[E(x^-)^2]\right)
+    \]
+
+    where \(\widetilde{\mathbb{E}}\) drops the ``trim_fraction`` largest
+    negative energies (the robust statistic of Energy Matching) and
+    \(\lambda\) is the squared-energy regularization weight.
+
+    Args:
+        positive: Energies of data samples, shape (batch_size,).
+        negative: Energies of model samples, shape (batch_size,).
+        energy_reg_weight: Weight \(\lambda\) of the squared-energy penalty.
+        trim_fraction: Fraction of the largest negative energies to drop, in [0, 1).
+
+    Returns:
+        Scalar loss.
+    """
+    loss = positive.mean() - trimmed_mean(negative, trim_fraction)
+    if energy_reg_weight > 0:
+        loss = loss + energy_reg_weight * (
+            positive.square().mean() + negative.square().mean()
+        )
+    return loss
+
+
+def flow_matching_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    weight: Optional[torch.Tensor] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Conditional flow matching: squared error to the path velocity.
+
+    \[
+    L = w\, \|v_\theta(x_t, t) - u_t\|^2
+    \]
+
+    with the squared error averaged over the non-batch dimensions.
+
+    Args:
+        input: Predicted velocity, shape (batch_size, ...).
+        target: Conditional velocity \(u_t\), same shape.
+        weight: Per-sample weight \(w\), shape (batch_size,).
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    return _reduce(mean_flat((input - target).square()), reduction, weight)
+
+
+def equilibrium_matching_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    ct: torch.Tensor,
+    weight: Optional[torch.Tensor] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Equilibrium matching: squared error to the \(c(t)\)-scaled target.
+
+    \[
+    L = w\, \|f_\theta(x_t) - c(t)\, u\|^2
+    \]
+
+    with the squared error averaged over the non-batch dimensions.
+
+    Args:
+        input: Predicted equilibrium field, shape (batch_size, ...).
+        target: Direction regressed onto before scaling, same shape.
+        ct: Scale \(c(t)\), shape (batch_size,); see `compute_eqm_ct`.
+        weight: Per-sample weight \(w\), shape (batch_size,).
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    ct = ct.view(-1, *([1] * (input.ndim - 1)))
+    return _reduce(mean_flat((input - target * ct).square()), reduction, weight)
+
+
+def energy_matching_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    t: torch.Tensor,
+    *,
+    flow_weight_cutoff: float = 0.8,
+    weight: Optional[torch.Tensor] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Energy matching flow term: time-gated regression of \(-\nabla V\) onto the displacement.
+
+    \[
+    L_{OT} = w(t)\, \|-\nabla_x V_\theta(x_t) - u_t\|^2, \qquad
+    w(t) = \min\left(1, \max\left(0, \frac{1 - t}{1 - a}\right)\right)
+    \]
+
+    (Balcerak et al., 2025). The contrastive term of the joint phase is
+    `contrastive_divergence_loss` with its ``trim_fraction``.
+
+    Args:
+        input: \(-\nabla_x V_\theta(x_t)\), shape (batch_size, ...).
+        target: Displacement \(u_t\), same shape.
+        t: Times, shape (batch_size,).
+        flow_weight_cutoff: Gate onset \(a\); a value >= 1 disables the gate.
+        weight: Extra per-sample weight, shape (batch_size,).
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    gate = compute_flow_weight(t, cutoff=flow_weight_cutoff)
+    if weight is not None:
+        gate = gate * weight
+    return flow_matching_loss(input, target, weight=gate, reduction=reduction)
+
+
+def score_matching_loss(
+    input: torch.Tensor, divergence: torch.Tensor, reduction: str = "mean"
+) -> torch.Tensor:
+    r"""Score matching (Hyvärinen, 2005) from the score and its divergence.
+
+    \[
+    L = \tfrac{1}{2}\|s_\theta(x)\|^2 + \nabla_x \cdot s_\theta(x)
+    \]
+
+    Args:
+        input: Score \(s_\theta(x) = \nabla_x \log p_\theta(x)\), shape (batch_size, ...).
+        divergence: \(\nabla_x \cdot s_\theta(x)\), shape (batch_size,).
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    squared_norm = input.square().sum(dim=list(range(1, input.ndim)))
+    return _reduce(0.5 * squared_norm + divergence, reduction)
+
+
+def denoising_score_matching_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    weight: Optional[torch.Tensor] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Denoising score matching (Vincent, 2011): half squared error to the kernel score.
+
+    \[
+    L = \tfrac{1}{2}\, w\, \|s_\theta(\tilde x) - \nabla_{\tilde x} \log q(\tilde x \mid x)\|^2
+    \]
+
+    For Gaussian noise \(\tilde x = x + \sigma \epsilon\) the kernel score is
+    \(-\epsilon / \sigma\) (\(+\epsilon / \sigma\) for an energy gradient), and
+    \(w = \sigma^2\) is the noise-level weighting of Song and Ermon (2019).
+
+    Args:
+        input: Score at the perturbed input, shape (batch_size, ...).
+        target: Score of the perturbation kernel, same shape.
+        weight: Per-sample weight \(w\), shape (batch_size,).
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    squared_error = (input - target).square().sum(dim=list(range(1, input.ndim)))
+    return _reduce(0.5 * squared_error, reduction, weight)
+
+
+def sliced_score_matching_loss(
+    input: torch.Tensor,
+    x: torch.Tensor,
+    projections: torch.Tensor,
+    *,
+    n_projections: int,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Sliced score matching (Song et al., 2019) along random projections.
+
+    \[
+    L = \mathbb{E}_v\left[ v^\top \nabla_x \big(v^\top s_\theta(x)\big)
+        + \tfrac{1}{2} \big(v^\top s_\theta(x)\big)^2 \right]
+    \]
+
+    The directional derivative is taken by autograd through ``input``, which
+    must have been computed from ``x`` with ``create_graph=True``.
+
+    Args:
+        input: Score at the projection-tiled inputs, shape
+            (n_projections * batch_size, ...).
+        x: The tiled inputs ``input`` was computed from, same shape, requiring grad.
+        projections: Projection directions \(v\), same shape.
+        n_projections: Number of projections per sample.
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    dims = list(range(1, input.ndim))
+    projected_score = torch.sum(input * projections, dim=dims)
+    directional = torch.autograd.grad(projected_score.sum(), x, create_graph=True)[0]
+    term1 = 0.5 * projected_score.square()
+    term2 = torch.sum(projections * directional, dim=dims)
+    loss = term2.view(n_projections, -1).mean(dim=0) + term1.view(
+        n_projections, -1
+    ).mean(dim=0)
+    return _reduce(loss, reduction)
+
+
+__all__ = [
+    "contrastive_divergence_loss",
+    "flow_matching_loss",
+    "equilibrium_matching_loss",
+    "energy_matching_loss",
+    "score_matching_loss",
+    "denoising_score_matching_loss",
+    "sliced_score_matching_loss",
+]

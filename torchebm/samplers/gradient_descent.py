@@ -9,8 +9,29 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
+from torch import nn
 
+from torchebm._deprecation import declare_deprecation
 from torchebm.core import BaseModel, BaseSampler, BaseScheduler
+
+_MODEL_BOUND_DEPRECATION = declare_deprecation(
+    module=__name__,
+    name="model-bound optimization samplers",
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="sampler(model, x, n_steps=...)",
+    message=(
+        "GradientDescentSampler(model=...), NesterovSampler(model=...) and "
+        "sample() are deprecated: construct the sampler without a model and "
+        "call sampler(model, x, ...)."
+    ),
+    removal=(
+        "the model argument, sample and _require_model, and the model field of "
+        "__repr__ in GradientDescentSampler and NesterovSampler"
+    ),
+)
 
 
 class GradientDescentSampler(BaseSampler):
@@ -25,28 +46,37 @@ class GradientDescentSampler(BaseSampler):
 
     This is a deterministic optimization-based sampler that finds low-energy
     configurations by following the negative gradient of the energy function.
+    The call consumes the score \(-\nabla_x E(x_k)\); see `BaseSampler` for the
+    call contract.
+
+    A model whose output is a field \(f\) that is not the gradient of an
+    energy, such as an implicit equilibrium-matching model, gets the same
+    update \(x_{k+1} = x_k + \eta f(x_k)\): a fixed-point iteration toward the
+    stable zeros of \(f\), and the explicit Euler step of \(\dot x = f(x)\).
 
     Args:
-        model: Energy-based model with `gradient()` method.
+        model: Deprecated. Energy-based model sampled by `sample()`; construct
+            without it and call ``sampler(model, x, ...)``.
         step_size: Step size \(\eta\) or scheduler.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
+        The sampler of Equilibrium Matching (Wang and Du, 2025) on EqM-XL/2,
+        a class-conditional model on ImageNet 256 latents (see
+        `EquilibriumMatchingLoss`):
+
         ```python
         from torchebm.samplers import GradientDescentSampler
-        from torchebm.core import DoubleWellModel
-        import torch
 
-        energy = DoubleWellModel()
-        sampler = GradientDescentSampler(energy, step_size=0.1)
-        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        sampler = GradientDescentSampler(step_size=0.0017)
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
         ```
     """
 
     def __init__(
         self,
-        model: BaseModel,
+        model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
@@ -56,7 +86,35 @@ class GradientDescentSampler(BaseSampler):
             dtype=dtype,
             device=device,
         )
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         self._register_param("step_size", step_size, positive=True)
+
+    @torch.no_grad()
+    def forward(
+        self,
+        model: nn.Module,
+        x: torch.Tensor,
+        *,
+        n_steps: int = 50,
+        generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
+    ) -> torch.Tensor:
+        r"""Run `n_steps` gradient descent updates of `model` from `x`; see
+        `BaseSampler.forward` for the arguments. `generator` is unused: the
+        updates are deterministic."""
+        score = self._model_fn(model, model_kwargs)
+        self.reset_schedulers(model)
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            x = torch.add(x, score(x), alpha=self.get_scheduled_value("step_size"))
+            self.step_schedulers(model)
+            if trajectory is not None:
+                trajectory[:, i] = x
+        return x if trajectory is None else trajectory
 
     @torch.no_grad()
     def sample(
@@ -98,6 +156,7 @@ class GradientDescentSampler(BaseSampler):
         Raises:
             ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
         """
+        self._require_model()
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
@@ -165,30 +224,45 @@ class NesterovSampler(BaseSampler):
 
     where \(\mu\) is the momentum coefficient and \(\eta\) is the step size.
 
+    With ``lookahead_only=True`` the momentum only moves the point where the
+    score is evaluated, \(v_{k+1} = -\eta \nabla_x E(x_k + \mu v_k)\), so
+    \(x_{k+1} = x_k - \eta \nabla_x E(x_k + \mu (x_k - x_{k-1}))\): the NAG-GD
+    sampler of Equilibrium Matching (Wang and Du, 2025, Eq. 9).
+
+    Called as ``sampler(model, x, n_steps=...)``, the model giving
+    the score \(-\nabla_x E\) at the lookahead point \(x_k + \mu v_k\); see
+    `BaseSampler`. On a field that is not a gradient, the update is
+    momentum-accelerated fixed-point iteration toward the field's stable zeros.
+
     Args:
-        model: Energy-based model with `gradient()` method.
+        model: Deprecated. Energy-based model sampled by `sample()`; construct
+            without it and call ``sampler(model, x, ...)``.
         step_size: Step size \(\eta\) or scheduler.
         momentum: Momentum coefficient \(\mu \in [0, 1)\).
+        lookahead_only: Step with the lookahead score alone, without the
+            momentum term. Default False, standard Nesterov momentum.
         dtype: Data type for computations.
         device: Device for computations.
 
     Example:
+        The NAG-GD sampler of Equilibrium Matching (Wang and Du, 2025) on
+        EqM-XL/2, a class-conditional model on ImageNet 256 latents (see
+        `EquilibriumMatchingLoss`):
+
         ```python
         from torchebm.samplers import NesterovSampler
-        from torchebm.core import DoubleWellModel
-        import torch
 
-        energy = DoubleWellModel()
-        sampler = NesterovSampler(energy, step_size=0.1, momentum=0.9)
-        samples = sampler.sample(n_samples=100, dim=2, n_steps=500)
+        sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True)
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
         ```
     """
 
     def __init__(
         self,
-        model: BaseModel,
+        model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         momentum: float = 0.9,
+        lookahead_only: bool = False,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
@@ -197,11 +271,46 @@ class NesterovSampler(BaseSampler):
             dtype=dtype,
             device=device,
         )
+        if model is not None:
+            _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         if not (0 <= momentum < 1):
             raise ValueError("momentum must be in [0, 1)")
         self.momentum = momentum
+        self.lookahead_only = bool(lookahead_only)
 
         self._register_param("step_size", step_size, positive=True)
+
+    @torch.no_grad()
+    def forward(
+        self,
+        model: nn.Module,
+        x: torch.Tensor,
+        *,
+        n_steps: int = 50,
+        generator: Optional[torch.Generator] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        return_trajectory: bool = False,
+    ) -> torch.Tensor:
+        r"""Run `n_steps` Nesterov updates of `model` from `x`; see
+        `BaseSampler.forward` for the arguments. `generator` is unused: the
+        updates are deterministic."""
+        score = self._model_fn(model, model_kwargs)
+        self.reset_schedulers(model)
+        v = torch.zeros_like(x)
+        mu = self.momentum
+        carry = 0.0 if self.lookahead_only else mu
+        trajectory = None
+        if return_trajectory:
+            trajectory = x.new_empty((x.shape[0], n_steps, *x.shape[1:]))
+        for i in range(n_steps):
+            eta = self.get_scheduled_value("step_size")
+            lookahead_score = score(torch.add(x, v, alpha=mu))
+            v.mul_(carry).add_(lookahead_score, alpha=eta)
+            x = x + v
+            self.step_schedulers(model)
+            if trajectory is not None:
+                trajectory[:, i] = x
+        return x if trajectory is None else trajectory
 
     @torch.no_grad()
     def sample(
@@ -243,6 +352,7 @@ class NesterovSampler(BaseSampler):
         Raises:
             ValueError: If `thin < 1`, or if `x` and `dim` are both `None`.
         """
+        self._require_model()
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if reset_schedulers:
@@ -267,13 +377,14 @@ class NesterovSampler(BaseSampler):
             }
 
         mu = self.momentum
+        carry = 0.0 if self.lookahead_only else mu
         keep_idx = 0
         with self.autocast_context():
             for i in range(n_steps):
                 eta = self.get_scheduled_value("step_size")
                 lookahead = torch.add(x, v, alpha=mu)
                 grad = self._model_gradient(lookahead, model_kwargs)
-                v.mul_(mu).sub_(grad, alpha=eta)
+                v.mul_(carry).sub_(grad, alpha=eta)
                 x = x + v
 
                 if (i + 1) % thin == 0:

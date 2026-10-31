@@ -233,6 +233,39 @@ def test_time_floor_clamps_month_end():
         DEPRECATIONS.pop(entry.key, None)
 
 
+def test_until_names_the_removal_release():
+    entry = declare_deprecation(
+        module=__name__,
+        name="until-probe",
+        since="0.8.10",
+        deprecated_on="2026-09-29",
+        replacement="x",
+        grace_months=4,
+        until="0.12.0",
+    )
+    late = datetime.date(2027, 1, 29)
+    try:
+        assert not entry.removal_due("0.8.14", late)
+        assert not entry.removal_due("0.9.0", late)
+        assert not entry.removal_due("0.11.9", late)
+        assert entry.removal_due("0.12.0", late)
+        assert entry.removal_due("0.12.0rc1", late)
+        assert entry.removal_due("0.13.0", late)
+        assert entry.removal_due("1.0.0", late)
+        assert not entry.removal_due("0.12.0", datetime.date(2027, 1, 28))
+    finally:
+        DEPRECATIONS.pop(entry.key, None)
+    with pytest.raises(ValueError, match="until"):
+        declare_deprecation(
+            module=__name__,
+            name="until-before-since",
+            since="0.8.10",
+            deprecated_on="2026-09-29",
+            replacement="x",
+            until="0.8.10",
+        )
+
+
 def _lint_file(py: Path, errors: list) -> None:
     tree = ast.parse(py.read_text(encoding="utf-8"))
     rel = py.relative_to(_REPO_ROOT).as_posix()

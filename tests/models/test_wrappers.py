@@ -1,71 +1,17 @@
+import warnings
+
 import pytest
 import torch
 from torch import nn
 
+from torchebm._deprecation import TorchEBMDeprecationWarning
 from torchebm.core import BaseModel, TemperatureScheduler
-from torchebm.models import FixedTime
-from torchebm.models.wrappers import ClassifierFreeGuidance, InteractionModel
-from torchebm.samplers import LangevinDynamics
-
-
-class _TimeRecorder(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weight = nn.Parameter(torch.tensor(2.0))
-        self.seen_t = None
-
-    def forward(self, x, t, scale=1.0):
-        self.seen_t = t
-        return x * self.weight * scale + t[:, None]
-
-
-class _TimeConditionedEnergy(nn.Module):
-    def forward(self, x, t):
-        return (x.square() + t[:, None]).sum(dim=1)
-
-
-def test_fixed_time_ignores_caller_clock_and_forwards_kwargs():
-    model = _TimeRecorder().double()
-    wrapped = FixedTime(model, 0.25)
-    x = torch.ones(3, 2, dtype=torch.float64)
-
-    out = wrapped(x, torch.tensor([0.1, 0.5, 0.9]), scale=3.0)
-
-    assert torch.equal(model.seen_t, torch.full((3,), 0.25, dtype=torch.float64))
-    assert torch.equal(out, torch.full_like(x, 6.25))
-    assert wrapped.model is model
-
-
-def test_fixed_time_stores_clock_as_python_float_without_rounding_to_float32():
-    wrapped = FixedTime(_TimeRecorder().double(), 0.1)
-    x = torch.ones(2, 1, dtype=torch.float64)
-
-    wrapped(x)
-
-    assert isinstance(wrapped.t, float)
-    assert torch.equal(
-        wrapped.model.seen_t,
-        torch.full((2,), 0.1, dtype=torch.float64),
-    )
-
-
-def test_fixed_time_inherits_base_model_gradient():
-    wrapped = FixedTime(_TimeConditionedEnergy(), 0.25)
-    x = torch.tensor([[1.0, -2.0], [3.0, 0.5]])
-
-    assert torch.equal(wrapped.gradient(x), 2 * x)
-
-
-def test_fixed_time_builds_batch_clock_when_caller_omits_it():
-    model = _TimeRecorder()
-    out = FixedTime(model, 0.0)(torch.ones(4, 2))
-    assert out.shape == (4, 2)
-    assert torch.equal(model.seen_t, torch.zeros(4))
-
-
-def test_fixed_time_rejects_non_scalar_clock():
-    with pytest.raises(ValueError, match="scalar"):
-        FixedTime(_TimeRecorder(), torch.tensor([0.0, 1.0]))
+from torchebm.models.wrappers import (
+    ClassifierFreeGuidance,
+    EqMEnergy,
+    InteractionModel,
+)
+from torchebm.samplers import FlowSampler, LangevinDynamics
 
 
 class _DummyBase(nn.Module):
@@ -186,3 +132,127 @@ def test_interaction_model_repulsion_increases_spread():
 def test_interaction_model_invalid_sigma_w():
     with pytest.raises(ValueError, match="sigma_w"):
         InteractionModel(_Quadratic(), sigma_w=0.0)
+
+
+# The sampler call: sampler(model, x, ...)
+# ========================================
+
+
+class _ConditionalQuadratic(BaseModel):
+    def forward(self, x, y=None):
+        energy = 0.5 * x.flatten(1).square().sum(dim=1)
+        return energy if y is None else energy + y
+
+
+class _Field(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(2, 2)
+
+    def forward(self, x, t, y=None, **kwargs):
+        out = self.linear(x)
+        return out if y is None else out + y.view(-1, 1)
+
+
+class _VelocityField(_Field):
+    prediction_type = "velocity"
+
+
+def _seeded():
+    return torch.Generator().manual_seed(3)
+
+
+@pytest.mark.parametrize(
+    "model, expected",
+    [
+        (_Field(), None),
+        (_VelocityField(), "velocity"),
+        (_ConditionalQuadratic(), "energy"),
+        (_ConditionalQuadratic(prediction_type="score"), "score"),
+        (_ConditionalQuadratic(prediction_type=("energy", "score")), "energy"),
+    ],
+)
+def test_cfg_reports_the_wrapped_prediction_type(model, expected):
+    guided = ClassifierFreeGuidance(model, guidance_scale=2.0, null_condition=0.0)
+    assert guided.prediction_type == expected
+
+
+def test_cfg_call_time_flow_sampling_matches_the_null_labels():
+    torch.manual_seed(0)
+    field = _Field()
+    guided = ClassifierFreeGuidance(field, guidance_scale=0.0, null_condition=0.0)
+    x = torch.randn(4, 2, generator=_seeded())
+    y = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    sampler = FlowSampler(integrator="euler")
+    out = sampler(guided, x, n_steps=5, model_kwargs={"y": y})
+    plain = sampler(field, x, n_steps=5, model_kwargs={"y": torch.zeros(4)})
+    assert torch.equal(out, plain)
+
+
+def test_cfg_call_time_langevin_sampling_matches_the_null_labels():
+    energy = _ConditionalQuadratic()
+    guided = ClassifierFreeGuidance(energy, guidance_scale=0.0, null_condition=0.0)
+    x = torch.randn(4, 2, generator=_seeded())
+    y = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    sampler = LangevinDynamics(step_size=0.01)
+    out = sampler(guided, x, n_steps=10, model_kwargs={"y": y}, generator=_seeded())
+    plain = sampler(
+        energy, x, n_steps=10, model_kwargs={"y": torch.zeros(4)}, generator=_seeded()
+    )
+    assert torch.equal(out, plain)
+
+
+def test_cfg_over_a_score_model_matches_the_guided_energy():
+    kwargs = dict(guidance_scale=2.5, null_condition=0.0)
+    energy = ClassifierFreeGuidance(_ConditionalQuadratic(), **kwargs)
+    score = ClassifierFreeGuidance(
+        _ConditionalQuadratic(prediction_type="score"), **kwargs
+    )
+    x = torch.randn(4, 2, generator=_seeded())
+    y = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    sampler = LangevinDynamics(step_size=0.01)
+    from_energy = sampler(
+        energy, x, n_steps=10, model_kwargs={"y": y}, generator=_seeded()
+    )
+    from_score = sampler(
+        score, x, n_steps=10, model_kwargs={"y": y}, generator=_seeded()
+    )
+    assert torch.allclose(from_energy, from_score, atol=1e-6)
+
+
+def test_interaction_model_rejects_a_score_potential():
+    with pytest.raises(ValueError, match="prediction_type"):
+        InteractionModel(_Quadratic(prediction_type="score"), sigma_w=1.0)
+
+
+def test_interaction_model_score_output_is_the_negative_gradient():
+    model = InteractionModel(
+        _Quadratic(), sigma_w=1.0, strength=1.0, prediction_type="score"
+    )
+    x = torch.tensor([[0.5, -0.5], [1.5, 2.0]])
+    assert torch.equal(model(x), -model.gradient(x))
+
+
+def test_interaction_model_schedule_advances_with_the_call():
+    strength = TemperatureScheduler(
+        epsilon_max=0.1, tau_star=0.5, n_steps=10, sqrt=False
+    )
+    model = InteractionModel(_Quadratic(), sigma_w=1.0, strength=strength)
+    sampler = LangevinDynamics(step_size=0.01, noise_scale=1.0)
+    sampler(model, torch.randn(4, 2), n_steps=7)
+    assert strength.step_count == 7
+    sampler(model, torch.randn(4, 2), n_steps=3)
+    assert strength.step_count == 3
+
+
+def test_eqm_energy_is_deprecated():
+    with pytest.warns(TorchEBMDeprecationWarning, match=r"sampler\(model"):
+        EqMEnergy(_Field(), energy_type="implicit")
+
+
+def test_eqm_energy_legacy_sampling_does_not_raise_the_gradient_deprecation():
+    sampler = LangevinDynamics(EqMEnergy(_Field(), energy_type="dot"), step_size=0.01)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampler.sample(x=torch.randn(4, 2), n_steps=2)
+    assert not any("BaseModel.gradient" in str(w.message) for w in caught)

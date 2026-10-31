@@ -819,20 +819,6 @@ def test_time_invariant_changes_loss_only_for_time_conditioned_model():
     assert torch.equal(loss(invariant, True), loss(invariant, False))
 
 
-@pytest.mark.parametrize("model_time, expected", [("zero", True), ("true", False)])
-def test_model_time_maps_to_time_invariant_with_warning(model_time, expected):
-    from torchebm._deprecation import TorchEBMDeprecationWarning
-
-    with pytest.warns(TorchEBMDeprecationWarning, match="time_invariant"):
-        loss_fn = EquilibriumMatchingLoss(model=DummyModel(), model_time=model_time)
-    assert loss_fn.time_invariant is expected
-
-
-def test_model_time_invalid_raises():
-    with pytest.raises(ValueError, match="use time_invariant"):
-        EquilibriumMatchingLoss(model=DummyModel(), model_time=lambda t: t)
-
-
 def test_time_invariant_in_repr():
     assert "time_invariant=True" in repr(EquilibriumMatchingLoss(model=DummyModel()))
     assert "time_invariant=False" in repr(

@@ -6,29 +6,119 @@ import torch
 from torch import nn
 from abc import abstractmethod
 
-from torchebm.core import BaseContrastiveDivergence, BaseSampler, BaseModel
-from torchebm._deprecation import declare_deprecation
+from torchebm.core import BaseContrastiveDivergence, BaseLoss, BaseSampler, BaseModel
+from torchebm._deprecation import deprecated
+from torchebm.losses.functional import contrastive_divergence_loss
 
-# First warned in v0.7.5; window restarted when the deprecation ledger was
-# adopted.
-_CD_OPTION_KWARGS_DEPRECATION = declare_deprecation(
-    module=__name__,
-    name="ContrastiveDivergence loss-option call kwargs",
-    since="0.8.5",
-    deprecated_on="2026-08-31",
-    replacement="the energy_reg_weight/add_noise_to_real/noise_scale constructor parameters",
+
+class ContrastiveDivergenceLoss(BaseLoss):
+    r"""Contrastive divergence loss on the energies of data and model samples.
+
+    \[
+    L = \mathbb{E}[E(x^+)] - \widetilde{\mathbb{E}}[E(x^-)]
+        + \lambda \left(\mathbb{E}[E(x^+)^2] + \mathbb{E}[E(x^-)^2]\right)
+    \]
+
+    The negatives \(x^-\) come from a sampler in the training loop, as the
+    generator's output does in a GAN step; `torchebm.utils.ReplayBuffer`
+    keeps them persistent. See `contrastive_divergence_loss`.
+
+    Args:
+        energy_reg_weight: Weight \(\lambda\) of the squared-energy penalty.
+        trim_fraction: Fraction of the largest negative energies dropped from
+            their mean, in [0, 1) (the robust statistic of Energy Matching).
+        clamp: Floor \(-c\) applied to the loss; ``None`` (default) disables it.
+        *args: Positional arguments of `BaseLoss`.
+        **kwargs: Keyword arguments of `BaseLoss`, e.g. ``dtype`` and ``device``.
+
+    Example:
+        The \(p(x)\) term of JEM (Grathwohl et al., 2020) on CIFAR-10 scaled
+        to [-1, 1]: ``model`` is the energy \(-\mathrm{LogSumExp}_y f(x)[y]\)
+        of a WRN-28-10 classifier, the negatives run 20 SGLD steps at step 1
+        and noise 0.01 (``noise_scale`` times \(\sqrt{2\eta}\)) from a
+        10000-sample buffer that reinitializes 5% of the chains. JEM draws
+        fresh chains from U(-1, 1) and writes them back in place; the buffer
+        draws from N(0, I) and stores first in, first out.
+
+        ```python
+        from torchebm.losses import ContrastiveDivergenceLoss
+        from torchebm.samplers import LangevinDynamics
+        from torchebm.utils import ReplayBuffer
+
+        buffer = ReplayBuffer(capacity=10000, sample_shape=(3, 32, 32), new_sample_ratio=0.05)
+        sampler = LangevinDynamics(step_size=1.0, noise_scale=0.01 / 2**0.5)
+        loss_fn = ContrastiveDivergenceLoss()
+
+        x_neg = sampler(model, buffer.sample(len(x)), n_steps=20)
+        buffer.add(x_neg)
+        loss = loss_fn(model(x), model(x_neg))
+        ```
+    """
+
+    def __init__(
+        self,
+        energy_reg_weight: float = 0.0,
+        trim_fraction: float = 0.0,
+        clamp: Optional[float] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if energy_reg_weight < 0:
+            raise ValueError(
+                f"energy_reg_weight must be >= 0, got {energy_reg_weight}"
+            )
+        if not 0.0 <= trim_fraction < 1.0:
+            raise ValueError(f"trim_fraction must be in [0, 1), got {trim_fraction}")
+        if clamp is not None and clamp < 0:
+            raise ValueError(f"clamp must be >= 0 or None, got {clamp}")
+        self.energy_reg_weight = float(energy_reg_weight)
+        self.trim_fraction = float(trim_fraction)
+        self.clamp = clamp
+
+    def forward(self, positive: torch.Tensor, negative: torch.Tensor) -> torch.Tensor:
+        r"""Compute the loss from the energies of data and model samples.
+
+        Args:
+            positive: Energies of data samples, shape (batch_size,).
+            negative: Energies of model samples, shape (n,).
+
+        Returns:
+            Scalar loss.
+        """
+        loss = contrastive_divergence_loss(
+            positive,
+            negative,
+            energy_reg_weight=self.energy_reg_weight,
+            trim_fraction=self.trim_fraction,
+        )
+        if self.clamp is not None:
+            loss = loss.clamp(min=-self.clamp)
+        return loss
+
+
+@deprecated(
+    since="0.9.0",
+    deprecated_on="2026-09-29",
+    until="0.12.0",
+    grace_months=4,
+    replacement="ContrastiveDivergenceLoss on the energies of data and sampled negatives",
     message=(
-        "Passing energy_reg_weight/add_noise_to_real/noise_scale to "
-        "ContrastiveDivergence.__call__ is deprecated; set them on the "
-        "constructor instead."
+        "ContrastiveDivergence(model, sampler) is deprecated: draw negatives "
+        "with a sampler (and ReplayBuffer) in the training loop and use "
+        "ContrastiveDivergenceLoss()(energy(x), energy(x_neg)) instead."
     ),
-    removal="the _CD_OPTION_KEYS forwarding shim in ContrastiveDivergence.forward",
+    removal=(
+        "ContrastiveDivergence, PersistentContrastiveDivergence, "
+        "BaseContrastiveDivergence with its replay buffer, and their tests"
+    ),
 )
-
-
 class ContrastiveDivergence(BaseContrastiveDivergence):
     r"""
     Standard Contrastive Divergence (CD-k) loss.
+
+    Deprecated: draw the negatives with a sampler call in the training loop
+    and apply `ContrastiveDivergenceLoss` to their energies, as in the example.
 
     CD approximates the log-likelihood gradient by running an MCMC sampler
     for `k_steps` to generate negative samples.
@@ -51,15 +141,16 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
     Example:
         ```python
-        from torchebm.losses import ContrastiveDivergence
-        from torchebm.samplers import LangevinDynamics
         from torchebm.core import DoubleWellModel
+        from torchebm.losses import ContrastiveDivergenceLoss
+        from torchebm.samplers import LangevinDynamics
 
-        energy = DoubleWellModel()
-        sampler = LangevinDynamics(energy, step_size=0.01)
-        cd_loss = ContrastiveDivergence(model=energy, sampler=sampler, k_steps=10)
+        model = DoubleWellModel()
+        sampler = LangevinDynamics(step_size=0.01)
+        loss_fn = ContrastiveDivergenceLoss(energy_reg_weight=0.001)
         x = torch.randn(32, 2)
-        loss, neg_samples = cd_loss(x)
+        x_neg = sampler(model, x, n_steps=10)
+        loss = loss_fn(model(x), model(x_neg))
         ```
     """
 
@@ -97,8 +188,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         self.add_noise_to_real = add_noise_to_real
         self.noise_scale = noise_scale
 
-    _CD_OPTION_KEYS = ("energy_reg_weight", "add_noise_to_real", "noise_scale")
-
     def forward(
         self,
         x: torch.Tensor,
@@ -106,7 +195,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Computes the Contrastive Divergence loss and generates negative samples.
@@ -125,10 +213,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
                 optional real-data noise; the global RNG when ``None``. In
                 distributed runs, a per-rank generator keeps the negative chains
                 of each rank independent.
-            **kwargs: Deprecated. The loss options ``energy_reg_weight``,
-                ``add_noise_to_real`` and ``noise_scale`` are now constructor
-                parameters; passing them here still works for one release but
-                emits a ``DeprecationWarning``.
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
@@ -140,8 +224,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         )
         self._check_condition(x, model_kwargs)
         model_kwargs = self._apply_cfg_dropout(model_kwargs, generator)
-        if any(key in kwargs for key in self._CD_OPTION_KEYS):
-            _CD_OPTION_KWARGS_DEPRECATION.warn()
 
         batch_size = x.shape[0]
         data_shape = x.shape[1:]
@@ -161,10 +243,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             with torch.no_grad():
                 self.update_buffer(pred_samples)
 
-        kwargs.setdefault("energy_reg_weight", self.energy_reg_weight)
-        kwargs.setdefault("add_noise_to_real", self.add_noise_to_real)
-        kwargs.setdefault("noise_scale", self.noise_scale)
-
         # Compute contrastive divergence loss
         loss = self.compute_loss(
             x,
@@ -172,7 +250,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             *args,
             model_kwargs=model_kwargs,
             generator=generator,
-            **kwargs,
         )
 
         return loss, pred_samples
@@ -221,21 +298,11 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
 
             pred_x_energy = self.model(pred_x, **mk)
 
-        # Compute mean energies with improved numerical stability
-        mean_x_energy = torch.mean(x_energy)
-        mean_pred_energy = torch.mean(pred_x_energy)
-
-        # Basic contrastive divergence loss: E[data] - E[model]
-        loss = mean_x_energy - mean_pred_energy
-
-        # Optional: Regularization to prevent energies from becoming too large
-        # This helps with stability especially in the early phases of training
-        energy_reg_weight = kwargs.get("energy_reg_weight", self.energy_reg_weight)
-        if energy_reg_weight > 0:
-            energy_reg = energy_reg_weight * (
-                torch.mean(x_energy**2) + torch.mean(pred_x_energy**2)
-            )
-            loss = loss + energy_reg
+        loss = contrastive_divergence_loss(
+            x_energy,
+            pred_x_energy,
+            energy_reg_weight=kwargs.get("energy_reg_weight", self.energy_reg_weight),
+        )
 
         # Sync-free NaN/Inf guard: substitute a small constant on-device when
         # the loss is non-finite. Avoids the per-step CPU sync that

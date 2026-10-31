@@ -31,13 +31,14 @@ class LeapfrogIntegrator(BaseSymplecticIntegrator):
 
     Example:
         ```python
-        from torchebm.integrators import LeapfrogIntegrator
         import torch
+        from torchebm.core import GaussianModel
+        from torchebm.integrators import LeapfrogIntegrator
 
-        energy_fn = ...  # an energy model with .gradient()
+        model = GaussianModel(torch.zeros(2), torch.eye(2), prediction_type="score")
         integrator = LeapfrogIntegrator()
         state = {"x": torch.randn(100, 2), "p": torch.randn(100, 2)}
-        drift = lambda x, t: -energy_fn.gradient(x)
+        drift = lambda x, t: model(x)
         result = integrator.integrate(state, step_size=0.01, n_steps=10, drift=drift)
         ```
     """

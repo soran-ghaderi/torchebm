@@ -4,7 +4,12 @@ import pytest
 import torch
 
 from torchebm.core.base_interpolant import BaseInterpolant, expand_t_like_x
-from torchebm.interpolants import LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant
+from torchebm.interpolants import (
+    LinearInterpolant,
+    CosineInterpolant,
+    VariancePreservingInterpolant,
+    VarianceExplodingInterpolant,
+)
 from tests.conftest import requires_cuda
 
 
@@ -119,6 +124,7 @@ def test_default_d_alpha_alpha_ratio():
     LinearInterpolant,
     CosineInterpolant,
     VariancePreservingInterpolant,
+    VarianceExplodingInterpolant,
 ])
 def any_interpolant(request):
     """Fixture providing all interpolant types."""
@@ -217,6 +223,89 @@ def test_all_interpolants_noise_recovery(any_interpolant):
     noise_pred = any_interpolant.velocity_to_noise(ut, xt, t)
     
     assert torch.allclose(noise_pred, x0, atol=1e-3)
+
+
+################################ Prediction Type Tests #####################################
+
+
+class CurvedInterpolant(LinearInterpolant):
+    def interpolate(self, x0, x1, t):
+        def path(t):
+            t_expanded = expand_t_like_x(t, x0)
+            return (
+                (1 - t_expanded) * x0
+                + t_expanded * x1
+                + t_expanded * (1 - t_expanded) * torch.tanh(x0 * x1)
+            )
+
+        return torch.func.jvp(path, (t,), (torch.ones_like(t),))
+
+
+def test_prediction_type_defaults_to_velocity(any_interpolant):
+    assert any_interpolant.prediction_type == "velocity"
+
+
+def test_velocity_target_is_time_derivative_of_path(any_interpolant):
+    torch.manual_seed(42)
+    x0 = torch.randn(16, 4, dtype=torch.float64)
+    x1 = torch.randn(16, 4, dtype=torch.float64)
+    t = torch.rand(16, dtype=torch.float64) * 0.8 + 0.1
+
+    _, velocity = any_interpolant(x0, x1, t)
+    _, dx_t = torch.func.jvp(
+        lambda t: any_interpolant(x0, x1, t)[0], (t,), (torch.ones_like(t),)
+    )
+
+    assert torch.allclose(velocity, dx_t)
+
+
+def test_epsilon_and_sample_targets_are_path_endpoints(any_interpolant):
+    torch.manual_seed(42)
+    x0, x1, t = torch.randn(16, 4), torch.randn(16, 4), torch.rand(16)
+    interpolant_type = type(any_interpolant)
+
+    x_t, epsilon = interpolant_type(prediction_type="epsilon")(x0, x1, t)
+    _, sample = interpolant_type(prediction_type="sample")(x0, x1, t)
+
+    assert torch.equal(x_t, any_interpolant(x0, x1, t)[0])
+    assert epsilon is x0
+    assert sample is x1
+
+
+def test_non_affine_path_defines_every_prediction_type():
+    torch.manual_seed(42)
+    x0, x1, t = torch.randn(16, 4), torch.randn(16, 4), torch.rand(16)
+    t_expanded = expand_t_like_x(t, x0)
+    curve = torch.tanh(x0 * x1)
+    expected_x_t = (
+        (1 - t_expanded) * x0 + t_expanded * x1 + t_expanded * (1 - t_expanded) * curve
+    )
+    expected_velocity = x1 - x0 + (1 - 2 * t_expanded) * curve
+
+    x_t, velocity = CurvedInterpolant()(x0, x1, t)
+    epsilon_x_t, epsilon = CurvedInterpolant(prediction_type="epsilon")(x0, x1, t)
+
+    assert torch.allclose(x_t, expected_x_t)
+    assert torch.allclose(velocity, expected_velocity)
+    assert torch.allclose(epsilon_x_t, expected_x_t)
+    assert epsilon is x0
+
+
+@pytest.mark.parametrize("prediction_type", ["score", "noise", "bogus"])
+def test_invalid_prediction_type_raises(prediction_type):
+    with pytest.raises(ValueError, match="prediction_type"):
+        LinearInterpolant(prediction_type=prediction_type)
+
+
+def test_subclass_without_base_init_defaults_to_velocity():
+    class ScaledInterpolant(ConcreteInterpolant):
+        def __init__(self, scale=1.0):
+            self.scale = scale
+
+    x0, x1, t = torch.randn(8, 4), torch.randn(8, 4), torch.rand(8)
+    _, velocity = ScaledInterpolant()(x0, x1, t)
+
+    assert torch.allclose(velocity, x1 - x0)
 
 
 ################################ Shape Consistency Tests ###################################
