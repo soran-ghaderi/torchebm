@@ -86,6 +86,7 @@ def _entry(rank, fn, world_size, tmpdir, args):
         fn(rank, world_size, tmpdir, *args)
     finally:
         dist.destroy_process_group()
+    os._exit(0)
 
 
 def _crash_logs(tmpdir: str, world_size: int) -> str:
