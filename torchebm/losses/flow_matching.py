@@ -93,17 +93,17 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         latent channels.
 
         ```python
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
         from torchebm.interpolants import LinearInterpolant
         from torchebm.losses import FlowMatchingLoss
         from torchebm.models import ClassifierFreeGuidance, dit_xl_2
         from torchebm.samplers import FlowSampler
-        from torchebm.utils import EMA
 
         model = dit_xl_2(
             input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1
         )
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
-        ema = EMA(model, decay=0.9999)
+        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
         path, loss_fn = LinearInterpolant(), FlowMatchingLoss()
 
         x0, t = torch.randn_like(x1), torch.rand(len(x1))
@@ -112,10 +112,10 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        ema.update(model)
+        ema.update_parameters(model)
 
         guided = ClassifierFreeGuidance(
-            ema.module, guidance_scale=1.5, null_condition=1000, guide_channels=3
+            ema.module.eval(), guidance_scale=1.5, null_condition=1000, guide_channels=3
         )
         samples = FlowSampler()(guided, torch.randn(64, 4, 32, 32), model_kwargs={"y": y})
         ```

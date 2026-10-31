@@ -71,6 +71,7 @@ warn once per process.
 | `model.gradient(x)` | `model(x)` on a model built with `prediction_type="score"`, which returns \(-\nabla_x E\); a closed-form gradient goes in `AnalyticModel._score` |
 | `ContrastiveDivergenceTrainer` | `BaseTrainer(model, optimizer, ContrastiveDivergenceLoss(), sampler=..., buffer=...)` |
 | `ReflowCoupling(flow)` | `x1 = sampler(model, x0, n_steps=...)` in the training loop |
+| `EMA(model, decay=d)` | `torch.optim.swa_utils.AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(d))` with `ema.update_parameters(model)`; sample from `ema.module.eval()` |
 
 The deprecated paths are removed in release 0.12.0, and not before
 2027-01-29; `tests/test_deprecations.py` enforces the window. The scripts in

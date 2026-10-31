@@ -234,3 +234,10 @@ def test_fallback_bucket_math_matches_foreach():
     twin.update(model)
     for a, b in zip(ema.module.parameters(), twin.module.parameters()):
         assert torch.allclose(a, b)
+
+
+def test_ema_is_deprecated():
+    from torchebm._deprecation import TorchEBMDeprecationWarning
+
+    with pytest.warns(TorchEBMDeprecationWarning, match="AveragedModel"):
+        EMA(_model())

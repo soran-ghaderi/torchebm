@@ -175,6 +175,50 @@ icon: octicons/home-fill-16
       border-top: 1px solid var(--md-default-fg-color--lightest);
     }
 
+    /* Built with TorchEBM */
+    .home-papers {
+      border-top: 1px solid var(--md-default-fg-color--lightest);
+    }
+    .md-typeset .home-paper {
+      display: grid;
+      grid-template-columns: 3.5em 1fr auto;
+      align-items: baseline;
+      gap: 16px;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--md-default-fg-color--lightest);
+      color: inherit;
+      transition: background-color 0.2s, box-shadow 0.2s;
+    }
+    .md-typeset a.home-paper:hover {
+      color: inherit;
+      background-color: var(--md-accent-fg-color--transparent);
+      box-shadow: inset 3px 0 var(--md-accent-fg-color);
+    }
+    .home-paper-year {
+      font-family: var(--md-code-font-family);
+      font-size: 0.85em;
+      color: var(--md-default-fg-color--light);
+    }
+    .home-paper-title {
+      font-weight: 600;
+    }
+    .home-paper-title small {
+      display: block;
+      font-weight: 400;
+      color: var(--md-default-fg-color--light);
+    }
+    .home-paper-tag {
+      font-size: 0.75em;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      padding: 2px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--md-typeset-a-color);
+      color: var(--md-typeset-a-color);
+    }
+
     @media (max-width: 600px) {
       .home-nabla { width: 160px; height: 160px; }
       .home-title { font-size: 2.4em; }
@@ -203,18 +247,10 @@ icon: octicons/home-fill-16
 
 ## Overview
 
-TorchEBM is a PyTorch library for simulation-free, GPU-first generative
-modeling: scalable, stable training of energy-based models, diffusion, flow
-matching, and equilibrium and energy matching. Each of these methods defines a
-dynamical system on data space through a learned model: a scalar energy whose
-gradient drives Langevin or Hamiltonian dynamics, or a vector field (a
-velocity, score, or noise prediction) that an ODE or SDE integrates. The
-methods share their components (models, probability paths, couplings,
-objectives, samplers, and integrators), and TorchEBM implements each as a
-composable, high-throughput PyTorch primitive.
-
-The [Design and Scope](concepts/design.md) page states this framing precisely,
-places each method family within it, and lists what is on the roadmap.
+A PyTorch library of composable, GPU-first primitives for energy-based models,
+diffusion, flow matching, and equilibrium and energy matching. Every method is a
+composition of the same parts: models, paths, couplings, objectives, samplers
+and integrators. See [Design and Scope](concepts/design.md).
 
 ---
 
@@ -247,54 +283,65 @@ places each method family within it, and lists what is on the roadmap.
 pip install torchebm
 ```
 
-Train a time-invariant field with **equilibrium matching**, then sample it two
-ways:
+Train **EqM-XL/2** with
+[equilibrium matching](https://arxiv.org/abs/2510.02300) on ImageNet 256, as in
+the paper:
 
 ```python
 import torch
-from torch import nn
+from diffusers.models import AutoencoderKL
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 from torch.utils.data import DataLoader
-from torchebm.datasets import EightGaussiansDataset
+from torchvision import datasets, transforms
 from torchebm.interpolants import LinearInterpolant
 from torchebm.losses import EquilibriumMatchingLoss
-from torchebm.samplers import FlowSampler, GradientDescentSampler
+from torchebm.models import ClassifierFreeGuidance, dit_xl_2
+from torchebm.samplers import NesterovSampler
 
-class MLP(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.net = nn.Sequential(nn.Linear(2, 256), nn.SiLU(),
-                                 nn.Linear(256, 256), nn.SiLU(), nn.Linear(256, 2))
-    def forward(self, x, t=None, **kwargs):
-        return self.net(x)
+transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(256),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+])
+dataset = datasets.ImageFolder("imagenet/train", transform)
+loader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=8, drop_last=True)
+vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").cuda()
 
-loader = DataLoader(EightGaussiansDataset(n_samples=8192), batch_size=256, shuffle=True)
-model = MLP()
-path = LinearInterpolant()
-loss_fn = EquilibriumMatchingLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+model = dit_xl_2(
+    input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1,
+    time_invariant=True, prediction_type="score",
+).cuda()
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
+path, loss_fn = LinearInterpolant(), EquilibriumMatchingLoss()
 
-for epoch in range(50):
-    for x1 in loader:
-        x0 = torch.randn_like(x1)
-        t = torch.rand(len(x1))
+for epoch in range(1400):
+    for images, y in loader:
+        images, y = images.cuda(), y.cuda()
+        with torch.no_grad():
+            x1 = vae.encode(images).latent_dist.sample() * 0.18215
+        x0, t = torch.randn_like(x1), torch.rand(len(x1), device="cuda")
         x_t, u_t = path(x0, x1, t)
-        loss = loss_fn(model(x_t), u_t, t)
+        loss = loss_fn(model(x_t, y=y), u_t, t)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        ema.update_parameters(model)
 
-x0 = torch.randn(1000, 2)
-samples_ode = FlowSampler(integrator="euler")(model, x0, n_steps=100)
-samples_gd = GradientDescentSampler(step_size=0.05)(model, x0, n_steps=200)
+guided = ClassifierFreeGuidance(
+    ema.module.eval(), guidance_scale=1.5, null_condition=1000, guide_channels=3
+)
+sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True)
+y = torch.randint(1000, (64,), device="cuda")
+noise = torch.randn(64, 4, 32, 32, device="cuda")
+latents = sampler(guided, noise, n_steps=250, model_kwargs={"y": y})
+with torch.no_grad():
+    samples = vae.decode(latents / 0.18215).sample
 ```
 
-Both samplers apply the update \(x \leftarrow x + \eta f(x)\) of the learned
-field: `FlowSampler` integrates it over a fixed time horizon, and the
-gradient-descent sampler iterates it further toward the field's attractors.
-Swapping the sampler leaves the model and the training loop unchanged.
-
-See the [concepts](concepts/) and [examples](examples/) for the theory behind
-each component and a runnable, CI-tested curriculum.
+More in the [concepts](concepts/) and [examples](examples/).
 
 <div class="home-star-callout">
   <p>
@@ -308,6 +355,18 @@ each component and a runnable, CI-tested curriculum.
 
 ---
 
+## Built with TorchEBM
+
+<div class="home-papers">
+  <div class="home-paper">
+    <span class="home-paper-year">2026</span>
+    <span class="home-paper-title">Mixed-Field Matching</span>
+    <span class="home-paper-tag">Preprint soon</span>
+  </div>
+</div>
+
+---
+
 ## Citation
 
 If TorchEBM is useful in your research, please cite it:
@@ -315,7 +374,7 @@ If TorchEBM is useful in your research, please cite it:
 ```bibtex
 @misc{ghaderi2024torchebm,
   author       = {Ghaderi, Soran},
-  title        = {{TorchEBM}: A Composable {PyTorch} Library for Energy-Based and Transport-Based Generative Models},
+  title        = {{TorchEBM}: A Composable {PyTorch} Library for Energy-Based and Transport-Based Generative Modeling},
   year         = {2024},
   howpublished = {\url{https://github.com/soran-ghaderi/torchebm}},
 }

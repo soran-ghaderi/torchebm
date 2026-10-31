@@ -10,6 +10,7 @@ from typing import Callable, List, Literal, Tuple, Union
 import torch
 import torch.nn as nn
 
+from torchebm._deprecation import deprecated
 from torchebm.utils.training import requires_grad
 
 _SCHEDULES = ("constant", "warmup")
@@ -38,8 +39,33 @@ def _copy_all_(dsts: List[torch.Tensor], srcs: List[torch.Tensor]) -> None:
         d.copy_(s)
 
 
+@deprecated(
+    since="0.8.10",
+    deprecated_on="2026-10-31",
+    until="0.12.0",
+    grace_months=4,
+    replacement=(
+        "torch.optim.swa_utils.AveragedModel(model, "
+        "multi_avg_fn=get_ema_multi_avg_fn(decay))"
+    ),
+    message=(
+        "EMA is deprecated: use torch.optim.swa_utils.AveragedModel(model, "
+        "multi_avg_fn=get_ema_multi_avg_fn(decay)), call "
+        "update_parameters(model) after each optimizer step and sample from "
+        "its .module in eval mode."
+    ),
+    removal=(
+        "torchebm/utils/ema.py, its export in torchebm/utils/__init__.py and "
+        "tests/utils/test_ema.py"
+    ),
+)
 class EMA(nn.Module):
     r"""Exponential moving average of a model's weights.
+
+    Deprecated: use `torch.optim.swa_utils.AveragedModel` with
+    ``multi_avg_fn=get_ema_multi_avg_fn(decay)``. Its per-step blend is the
+    same ``lerp``, the averages agree bitwise once both start from the same
+    weights, and the training step costs the same.
 
     Keeps a frozen, eval-mode copy of ``model`` and blends it toward the live
     weights on every `update`:
@@ -56,26 +82,18 @@ class EMA(nn.Module):
 
     Performance: parameter pairs are bucketed once at construction; plain
     same-device/dtype pairs update through a single fused
-    ``torch._foreach_lerp_`` call per bucket and everything else (e.g.
-    identically-sharded DTensor pairs) takes a per-tensor in-place fallback.
+    ``torch._foreach_lerp_`` call per bucket and everything else takes a
+    per-tensor in-place fallback.
     No tensors are allocated per step and nothing synchronizes with the host:
     the step counter is a Python int, persisted through ``state_dict`` via
     the extra-state hooks.
 
     Contract: keep model structure, devices, and dtypes fixed after
     construction (move the `EMA` module alongside the model if you move
-    either; mismatches fail loudly). Under DDP/FSDP wrappers, construct from
-    and update with the same unwrapped module; for sharded checkpoint-style
-    workflows the functional `torchebm.utils.update_ema` remains available.
-
-    Relation to `torch.optim.swa_utils.AveragedModel` with
-    ``get_ema_multi_avg_fn(decay)``: the per-step blend is the same
-    ``lerp`` and the averages agree bitwise once both start from the same
-    weights. `EMA` is kept because it starts from the construction-time
-    weights (the DiT/ADM convention; `AveragedModel` copies the weights of
-    its first update instead), copies buffers on every update, offers the
-    warmup schedule, and never synchronizes with the host
-    (`AveragedModel.update_parameters` reads ``n_averaged`` on every call).
+    either; mismatches fail loudly). Under DDP, construct from and update
+    with the unwrapped module. FSDP2 forbids copying a sharded module; copy
+    before sharding, shard both the same way, and use the functional
+    `torchebm.utils.update_ema`.
 
     Args:
         model: Module to shadow. Deep-copied at construction.
@@ -88,21 +106,22 @@ class EMA(nn.Module):
             validated into [0, 1]).
 
     Example:
-        The DiT recipe (Peebles and Xie, 2023): AdamW at 1e-4 without weight
-        decay, EMA 0.9999 updated after every step, samples from the average:
+        The DiT recipe (Peebles and Xie, 2023) with the replacement: AdamW at
+        1e-4 without weight decay, EMA 0.9999 updated after every step,
+        samples from the average:
 
         ```python
-        from torchebm.utils import EMA
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
-        ema = EMA(model, decay=0.9999)
+        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
         for x1, y in loader:
             loss = compute_loss(x1, y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            ema.update(model)
-        samples = sampler(ema.module, torch.randn(64, 4, 32, 32), model_kwargs={"y": y})
+            ema.update_parameters(model)
+        samples = sampler(ema.module.eval(), torch.randn(64, 4, 32, 32), model_kwargs={"y": y})
         ```
     """
 

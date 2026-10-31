@@ -38,40 +38,28 @@
 
 ## What is ∇ TorchEBM 🍓?
 
-TorchEBM is a PyTorch library for simulation-free, GPU-first generative modeling: scalable, stable training of energy-based models, diffusion, flow matching, and equilibrium and energy matching, with Schrödinger bridges and flow maps on the roadmap. Simulation-free objectives (flow matching, equilibrium matching, denoising score matching) fit the model with no sampler in the training loop, so training scales like supervised learning; sampling-based objectives (contrastive divergence) stay available where a calibrated energy is worth the MCMC. One set of composable primitives covers both.
+A PyTorch library of composable, GPU-first primitives for energy-based models, diffusion, flow matching, and equilibrium and energy matching. Every method is a composition of the same parts:
 
-Every model in TorchEBM defines a dynamical system on data space that carries samples to the data distribution, and describes it in one of two ways. A **scalar potential** $E_\theta(x)$ gives the drift $-\nabla_x E_\theta$ of Langevin dynamics, whose stationary density at temperature $\varepsilon$ is the Boltzmann density
-
-$$p_\theta(x) \;\propto\; e^{-E_\theta(x)/\varepsilon}.$$
-
-A **vector field** (a velocity, a score, or a noise prediction, conditioned on time or autonomous) gives the drift directly and need not be the gradient of any potential. Generation either transports a source distribution over a fixed time horizon (ODE or SDE integration, as in diffusion and flow matching) or refines samples toward the field's attractors or its stationary distribution (MCMC, fixed-point iteration). Energy-based models are the case of a potential with refinement; the library takes its name from them and covers all of the cases above.
-
-TorchEBM implements the components of these systems once:
-
-| Component | The question it answers | Package |
+| Component | Role | Package |
 |---|---|---|
-| **Model** | which potential or field defines the dynamics? | `torchebm.core`, `torchebm.models` |
-| **Interpolant** | along which path do the source and the data connect? | `torchebm.interpolants` |
-| **Coupling** | which source sample is paired with which datum? | `torchebm.couplings` |
-| **Objective** | how is the model fit to data? | `torchebm.losses` |
-| **Sampler** | which dynamics produce samples? | `torchebm.samplers` |
-| **Integrator** | how are those dynamics discretized? | `torchebm.integrators` |
+| **Model** | the energy or vector field | `torchebm.core`, `torchebm.models` |
+| **Interpolant** | the path from noise to data | `torchebm.interpolants` |
+| **Coupling** | which noise pairs with which datum | `torchebm.couplings` |
+| **Objective** | how the model fits the data | `torchebm.losses` |
+| **Sampler** | the dynamics that generate | `torchebm.samplers` |
+| **Integrator** | how the dynamics are discretized | `torchebm.integrators` |
 
-Flow matching with optimal-transport couplings, contrastive divergence with Langevin negatives, and equilibrium matching sampled by ODE integration or fixed-point iteration are three compositions of the same pieces. The [Design and Scope](https://soran-ghaderi.github.io/torchebm/latest/concepts/design/) page places every method family along these axes, including the ones on the roadmap, with references.
-
-📚 Full documentation: [**the TorchEBM website**](https://soran-ghaderi.github.io/torchebm/) · ⚡ [**Benchmarks dashboard**](https://soran-ghaderi.github.io/torchebm-benchmarks/)
+📚 [Documentation](https://soran-ghaderi.github.io/torchebm/) · 🧭 [Design and scope](https://soran-ghaderi.github.io/torchebm/latest/concepts/design/) · ⚡ [Benchmarks](https://soran-ghaderi.github.io/torchebm-benchmarks/)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/animations/8gaussians_flow.gif" alt="Equilibrium matching transporting noise onto eight gaussians" width="700"/>
   <br>
-  <em><b>Equilibrium matching</b>: a time-invariant field trained on eight gaussians, then integrated from noise with <code>FlowSampler</code>.</em>
+  <em>Equilibrium matching on eight gaussians.</em>
 </p>
 
 ## What's inside
 
 ### Training objectives (`torchebm.losses`)
-
-Sampling-based objectives buy a calibrated energy at the cost of MCMC in the loop; transport-based objectives are simulation-free, replacing that inner loop with regression along a path so training scales like supervised learning.
 
 | Objective | Idea | Inner sampling |
 |---|---|---|
@@ -96,8 +84,6 @@ Sampling-based objectives buy a calibrated energy at the cost of MCMC in the loo
 
 ### Numerical integrators (`torchebm.integrators`)
 
-Every sampler takes `integrator=` as a registry name or an instance, so the numerics are swappable without touching the model.
-
 | Family | Integrators |
 |---|---|
 | Explicit Runge-Kutta | `MidpointIntegrator`, `HeunIntegrator`, `Bosh3Integrator`, `RK4Integrator`, `RK438Integrator` |
@@ -106,8 +92,6 @@ Every sampler takes `integrator=` as a registry name or an instance, so the nume
 | Symplectic (Hamiltonian) | `LeapfrogIntegrator`, `GeneralisedLeapfrogIntegrator` (non-separable) |
 
 ### Paths and pairings (`torchebm.interpolants`, `torchebm.couplings`)
-
-The path decides how the source becomes data, and the coupling decides which source sample becomes which datum; OT pairings straighten the learned flow, so generation needs fewer steps.
 
 | Interpolants | Couplings |
 |---|---|
@@ -118,7 +102,7 @@ The path decides how the source becomes data, and the coupling decides which sou
 
 ### And the rest
 
-**Energies**: `AnalyticModel` and nine closed-form landscapes (`GaussianModel`, `DoubleWellModel`, `HarmonicModel`, `RastriginModel`, `AckleyModel`, `RosenbrockModel`, ...) with known statistics and analytic scores, so sampler behavior is measurable. **Architectures**: `DiT` with the standard size presets, `TimeConditionedMLP`, `ClassifierFreeGuidance`, and `InteractionModel` for diverse sampling. **Training utilities**: `ReplayBuffer` for persistent chains, `EMA`, and `BaseTrainer`. **Schedulers** (`CosineScheduler`, `WarmupScheduler`, `TemperatureScheduler`, ...) for any parameter that should anneal. **Datasets**: eight synthetic 2D benchmarks. **CUDA** acceleration and mixed precision throughout.
+Analytic energies (`GaussianModel`, `DoubleWellModel`, ...), `DiT` presets, `TimeConditionedMLP`, `ClassifierFreeGuidance`, `InteractionModel`, `ReplayBuffer`, `BaseTrainer`, schedulers, 2D datasets, CUDA kernels and mixed precision.
 
 ## Install
 
@@ -128,63 +112,82 @@ pip install torchebm
 
 ## Usage
 
-Each block below implements one published method. The blocks are sketches that share `data` and a few small networks; complete, runnable versions live in the [examples gallery](https://soran-ghaderi.github.io/torchebm/latest/examples/), which CI executes. Simulation-free training comes first, sampling-based training after it, and the MCMC samplers close the section.
+Each block implements one published method. Runnable versions are in the [examples](https://soran-ghaderi.github.io/torchebm/latest/examples/).
 
 ### Equilibrium matching
 
-<a href="https://arxiv.org/abs/2510.02300">Equilibrium Matching: Generative Modeling with Implicit Energy-Based Models</a>, Wang & Du 2025. Drop time conditioning: learn one time-invariant field, trained to vanish on the data, and sample it by integrating it as an ODE or by iterating it toward its attractors. The paper reads the field as the gradient of an implicit energy; the network is not constrained to be a gradient, and the explicit variant (EqM-E) parameterizes the energy directly.
+<a href="https://arxiv.org/abs/2510.02300">Equilibrium Matching: Generative Modeling with Implicit Energy-Based Models</a>, Wang & Du 2025. One time-invariant field that vanishes on the data, sampled by descending it.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/equilibrium_matching_field.png" alt="Flow matching's field changes with t; equilibrium matching learns a single time-invariant field" width="820"/>
   <br>
-  <em>Fig. 1 of <a href="https://arxiv.org/abs/2510.02300">Wang & Du (2025)</a>: flow matching needs a different field at every $t$ (left); EqM learns one time-invariant field (right) and samples by iterating it toward the data.</em>
+  <em>Fig. 1 of <a href="https://arxiv.org/abs/2510.02300">Wang & Du (2025)</a>.</em>
 </p>
+
+EqM-XL/2 on ImageNet 256, as in the paper:
 
 ```python
 import torch
-from torch import nn
-from torchebm.datasets import TwoMoonsDataset
+from diffusers.models import AutoencoderKL
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 from torchebm.interpolants import LinearInterpolant
 from torchebm.losses import EquilibriumMatchingLoss
-from torchebm.samplers import FlowSampler, GradientDescentSampler
+from torchebm.models import ClassifierFreeGuidance, dit_xl_2
+from torchebm.samplers import NesterovSampler
 
-class MLP(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.net = nn.Sequential(nn.Linear(2, 256), nn.SiLU(),
-                                 nn.Linear(256, 256), nn.SiLU(), nn.Linear(256, 2))
-    def forward(self, x, t=None, **kwargs):
-        return self.net(x)
+transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(256),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+])
+dataset = datasets.ImageFolder("imagenet/train", transform)
+loader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=8, drop_last=True)
+vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-ema").cuda()
 
-data = TwoMoonsDataset(n_samples=3000, noise=0.05).get_data()
-model = MLP()
-path = LinearInterpolant()
-loss_fn = EquilibriumMatchingLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+model = dit_xl_2(
+    input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1,
+    time_invariant=True, prediction_type="score",
+).cuda()
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
+path, loss_fn = LinearInterpolant(), EquilibriumMatchingLoss()
 
-for _ in range(3000):
-    x1 = data[torch.randint(len(data), (256,))]
-    x0 = torch.randn_like(x1)
-    t = torch.rand(len(x1))
-    x_t, u_t = path(x0, x1, t)
-    loss = loss_fn(model(x_t), u_t, t)
-    optimizer.zero_grad(); loss.backward(); optimizer.step()
+for epoch in range(1400):
+    for images, y in loader:
+        images, y = images.cuda(), y.cuda()
+        with torch.no_grad():
+            x1 = vae.encode(images).latent_dist.sample() * 0.18215
+        x0, t = torch.randn_like(x1), torch.rand(len(x1), device="cuda")
+        x_t, u_t = path(x0, x1, t)
+        loss = loss_fn(model(x_t, y=y), u_t, t)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        ema.update_parameters(model)
 
-x0 = torch.randn(1000, 2)
-samples = FlowSampler(integrator="euler")(model, x0, n_steps=100)
-modes = GradientDescentSampler(step_size=0.05)(model, x0, n_steps=200)
+guided = ClassifierFreeGuidance(
+    ema.module.eval(), guidance_scale=1.5, null_condition=1000, guide_channels=3
+)
+sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True)
+y = torch.randint(1000, (64,), device="cuda")
+noise = torch.randn(64, 4, 32, 32, device="cuda")
+latents = sampler(guided, noise, n_steps=250, model_kwargs={"y": y})
+with torch.no_grad():
+    samples = vae.decode(latents / 0.18215).sample
 ```
-
-Both samplers apply the update $x \leftarrow x + \eta f(x)$ of the learned field: `FlowSampler` integrates it over a fixed time horizon, and `GradientDescentSampler` iterates it for longer toward the field's attractors.
 
 ### Energy matching
 
-<a href="https://arxiv.org/abs/2504.10612">Energy Matching: Unifying Flow Matching and Energy-Based Models</a>, Balcerak et al. 2025. One time-independent potential does both jobs: an optimal-transport flow warm-up shapes it far from the data, then a contrastive phase sharpens its Boltzmann density near the data. Generation is a single temperature-scheduled Langevin sweep.
+<a href="https://arxiv.org/abs/2504.10612">Energy Matching: Unifying Flow Matching and Energy-Based Models</a>, Balcerak et al. 2025. One time-independent potential: an OT flow warm-up, then contrastive sharpening near the data.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/energy_matching_transport.png" alt="Action matching, OT flow matching, EBM and energy matching transporting eight gaussians onto two moons" width="820"/>
   <br>
-  <em>Fig. 1 of <a href="https://arxiv.org/abs/2504.10612">Balcerak et al. (2025)</a>: a time-independent potential $V_\theta(x)$ (right) both transports and equilibrates, where flow matching needs $v_\theta(x, t)$ and a plain EBM needs long MCMC. Reproduced in <a href="https://github.com/soran-ghaderi/torchebm/tree/master/examples/20-training/04-energy-matching">the examples</a>.</em>
+  <em>Fig. 1 of <a href="https://arxiv.org/abs/2504.10612">Balcerak et al. (2025)</a>.</em>
 </p>
 
 ```python
@@ -222,8 +225,6 @@ sampler = LangevinDynamics(step_size=0.01, noise_scale=temperature)
 samples = sampler(model, torch.randn(4000, 2), n_steps=200)
 ```
 
-`EnergyMLP` is the scalar energy net of the contrastive-divergence block below; built with `prediction_type=("energy", "score")`, one call returns $V(x)$ and $-\nabla V(x)$. Phase one is pure OT flow matching; from step 20 000 the contrastive term enters with the paper's negatives, half swept from noise along the temperature profile and half held at $\varepsilon_{\max}$ from data.
-
 ### Flow matching
 
 <a href="https://arxiv.org/abs/2210.02747">Flow Matching for Generative Modeling</a>, Lipman et al. 2023. Regress a time-conditioned velocity field onto the conditional velocity of a probability path.
@@ -231,7 +232,7 @@ samples = sampler(model, torch.randn(4000, 2), n_steps=200)
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/flow_matching_diffusion_vs_ot.png" alt="Diffusion path conditional score field versus optimal-transport path conditional vector field" width="820"/>
   <br>
-  <em>Fig. 2 of <a href="https://arxiv.org/abs/2210.02747">Lipman et al. (2023)</a>: the diffusion path's conditional score (left) against the OT path's conditional vector field (right). The <code>interpolant</code> selects between them.</em>
+  <em>Fig. 2 of <a href="https://arxiv.org/abs/2210.02747">Lipman et al. (2023)</a>.</em>
 </p>
 
 ```python
@@ -253,12 +254,12 @@ sampler = FlowSampler(interpolant="linear", integrator="heun")
 samples = sampler(model, torch.randn(1000, 2), n_steps=50)
 ```
 
-Swap `interpolant="vp"` and `mode="sde"` and the same sampler runs score-based diffusion (<a href="https://arxiv.org/abs/2011.13456">Song et al. 2021</a>); `prediction_type=` names whether the network emits velocity, score, or noise (`"epsilon"`).
+With `interpolant="vp"` and `mode="sde"`, the same sampler runs score-based diffusion (<a href="https://arxiv.org/abs/2011.13456">Song et al. 2021</a>):
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/score_sde_forward_reverse.png" alt="Forward SDE to a prior, reverse SDE and probability flow ODE back to data" width="820"/>
   <br>
-  <em>Fig. 2 of <a href="https://arxiv.org/abs/2011.13456">Song et al. (2021)</a>: the reverse SDE and its probability-flow ODE are the two modes of one sampler (<code>mode="sde"</code> and <code>mode="ode"</code>).</em>
+  <em>Fig. 2 of <a href="https://arxiv.org/abs/2011.13456">Song et al. (2021)</a>.</em>
 </p>
 
 ```python
@@ -268,12 +269,12 @@ samples = sampler(model, torch.randn(1000, 2), n_steps=250)
 
 ### Optimal-transport couplings
 
-<a href="https://arxiv.org/abs/2302.00482">Improving and generalizing flow-based generative models with minibatch optimal transport</a>, Tong et al. 2024. Pairing noise with data by minibatch optimal transport reduces path crossings, so the learned flow is straighter and generation needs fewer steps.
+<a href="https://arxiv.org/abs/2302.00482">Improving and generalizing flow-based generative models with minibatch optimal transport</a>, Tong et al. 2024. Minibatch OT pairing straightens the flow.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/flow_matching_probability_paths.png" alt="Flow matching, conditional flow matching and OT conditional flow matching probability paths" width="820"/>
   <br>
-  <em>Fig. 1 of <a href="https://arxiv.org/abs/2302.00482">Tong et al. (2024)</a>: an OT coupling turns crossing, curved transport into straight transport. The objective stays the same; only the coupling applied to each batch changes.</em>
+  <em>Fig. 1 of <a href="https://arxiv.org/abs/2302.00482">Tong et al. (2024)</a>.</em>
 </p>
 
 ```python
@@ -283,25 +284,20 @@ coupling = SinkhornCoupling(reg=0.05)
 x0, x1 = coupling(x0, x1)
 ```
 
-`SinkhornCoupling` is entropic OT and `ExactOTCoupling` the assignment optimum; the re-paired batch then goes through the interpolant as above.
-
 ### Rectified flow
 
-<a href="https://arxiv.org/abs/2209.03003">Flow Straight and Fast</a>, Liu et al. 2023. Retrain on the flow's own (noise, generation) pairs and the trajectories become straight enough for few-step sampling.
+<a href="https://arxiv.org/abs/2209.03003">Flow Straight and Fast</a>, Liu et al. 2023. Retrain on the flow's own (noise, sample) pairs for straight, few-step paths.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/rectified_flow_straightening.png" alt="Linear interpolation crosses; the rectified flow induced by its own pairs is straight" width="820"/>
   <br>
-  <em>Fig. 2 of <a href="https://arxiv.org/abs/2209.03003">Liu et al. (2023)</a>: paths that cross (left) are rewired by the flow's own pairing into straight ones (right).</em>
+  <em>Fig. 2 of <a href="https://arxiv.org/abs/2209.03003">Liu et al. (2023)</a>.</em>
 </p>
 
 ```python
 x0 = torch.randn(256, 2)
 x1 = FlowSampler(integrator="heun")(model, x0, n_steps=50)
 ```
-
-The ODE of the trained flow maps the noise to $x_1 = \Phi(x_0)$, the model's own output, so no data is needed; the pairs then go through the interpolant as above.
-
 
 ### Contrastive divergence
 
@@ -310,7 +306,7 @@ The ODE of the trained flow maps the noise to $x_1 = \Phi(x_0)$, the model's own
 <p align="center">
   <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/contrastive_divergence_replay_buffer.png" alt="Replay buffer, Langevin negatives, and the CD objective" width="520"/>
   <br>
-  <em>Fig. 1 of <a href="https://arxiv.org/abs/1903.08689">Du & Mordatch (2019)</a>: Langevin draws the negatives, the buffer persists the chains, the objective separates them from data. That is <code>ContrastiveDivergenceLoss</code> on the energies of data and negatives, with a <code>ReplayBuffer</code> persisting the chains.</em>
+  <em>Fig. 1 of <a href="https://arxiv.org/abs/1903.08689">Du & Mordatch (2019)</a>.</em>
 </p>
 
 ```python
@@ -341,7 +337,7 @@ for _ in range(1000):
     optimizer.zero_grad(); loss.backward(); optimizer.step()
 ```
 
-The energy maps `(b, 2)` to `(b,)`, the sampler runs ten Langevin steps from the data batch (CD-10), and the loss compares the two energies. Persistent CD (<a href="https://www.cs.toronto.edu/~tijmen/pcd/pcd.pdf">Tieleman 2008</a>) starts the chains from a replay buffer that persists across updates:
+Persistent CD (<a href="https://www.cs.toronto.edu/~tijmen/pcd/pcd.pdf">Tieleman 2008</a>) keeps the chains in a replay buffer:
 
 ```python
 from torchebm.utils import ReplayBuffer
@@ -353,7 +349,7 @@ buffer.add(negatives)
 
 ### Score matching
 
-<a href="https://jmlr.org/papers/v6/hyvarinen05a.html">Estimation of non-normalized statistical models by score matching</a>, Hyvärinen 2005. Fit $\nabla_x \log p_\theta$ directly, with no MCMC. Denoising (<a href="https://www.iro.umontreal.ca/~vincentp/Publications/smdae_techreport.pdf">Vincent 2011</a>) and sliced (<a href="https://arxiv.org/abs/1905.07088">Song et al. 2019</a>) variants avoid the Hessian trace.
+<a href="https://jmlr.org/papers/v6/hyvarinen05a.html">Estimation of non-normalized statistical models by score matching</a>, Hyvärinen 2005, with denoising (<a href="https://www.iro.umontreal.ca/~vincentp/Publications/smdae_techreport.pdf">Vincent 2011</a>) and sliced (<a href="https://arxiv.org/abs/1905.07088">Song et al. 2019</a>) variants.
 
 ```python
 from torchebm.losses import DenoisingScoreMatchingLoss
@@ -364,11 +360,9 @@ noise = torch.randn_like(x)
 loss = DenoisingScoreMatchingLoss()(model(x + 0.1 * noise), -noise / 0.1)
 ```
 
-Built with `prediction_type="score"`, the model's call returns $-\nabla_x E$ with its graph, so the regression trains the energy. `ScoreMatchingLoss` takes the score and its divergence, `SlicedScoreMatchingLoss` the score and the input it was evaluated at; none needs a sampler.
-
 ### Sampling an energy
 
-Langevin dynamics takes gradient steps on the energy with injected Gaussian noise. Chains are a batch dimension: the call below advances 10,000 of them as one batch. The model is an argument of the call, as in `torchdiffeq`, and the same samplers that generate from a trained energy also draw the negatives for contrastive divergence.
+Chains are a batch dimension, and the model is an argument of the call.
 
 ```python
 import torch
@@ -383,7 +377,7 @@ samples = sampler(model, torch.randn(10_000, 2), n_steps=500)
 
 ### Hamiltonian Monte Carlo
 
-<a href="https://arxiv.org/abs/1206.1901">MCMC using Hamiltonian dynamics</a>, Neal 2011. Momentum plus a symplectic integrator buys long, decorrelated proposals.
+<a href="https://arxiv.org/abs/1206.1901">MCMC using Hamiltonian dynamics</a>, Neal 2011.
 
 ```python
 from torchebm.samplers import HamiltonianMonteCarlo
@@ -394,7 +388,7 @@ samples = sampler(model, torch.randn(1000, 2), n_steps=500)
 
 ### Riemannian manifold HMC
 
-<a href="https://rss.onlinelibrary.wiley.com/doi/10.1111/j.1467-9868.2010.00765.x">Riemann manifold Langevin and Hamiltonian Monte Carlo</a>, Girolami & Calderhead 2011. A position-dependent metric makes the geometry local; the non-separable Hamiltonian is solved by an implicit generalised leapfrog. `metric_fn` maps points `(b, d)` to SPD matrices `(b, d, d)`.
+<a href="https://rss.onlinelibrary.wiley.com/doi/10.1111/j.1467-9868.2010.00765.x">Riemann manifold Langevin and Hamiltonian Monte Carlo</a>, Girolami & Calderhead 2011. `metric_fn` maps `(b, d)` points to `(b, d, d)` SPD matrices.
 
 ```python
 from torchebm.samplers import RiemannianManifoldHMC
@@ -407,34 +401,9 @@ sampler = RiemannianManifoldHMC(metric_fn=metric_fn, step_size=0.05, n_leapfrog_
 samples = sampler(model, torch.randn(1000, 2), n_steps=200)
 ```
 
-### Image-scale backbones
-
-`DiT` (<a href="https://arxiv.org/abs/2212.09748">Peebles & Xie 2023</a>) for energies and fields on images, with adaLN-Zero blocks and the standard size presets (`dit_s_2` through `dit_xl_8`). `ClassifierFreeGuidance` wraps any label-conditioned model `model(x, t, y=...)` for classifier-free guidance (<a href="https://arxiv.org/abs/2207.12598">Ho & Salimans 2022</a>).
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/images/papers/dit_adaln_zero.png" alt="The DiT architecture and its adaLN-Zero conditioning block" width="820"/>
-  <br>
-  <em>Fig. 3 of <a href="https://arxiv.org/abs/2212.09748">Peebles & Xie (2023)</a>: the DiT block with adaLN-Zero conditioning, shipped as <code>DiT</code> and <code>AdaLNZeroBlock</code>.</em>
-</p>
-
-```python
-from torchebm.models import ClassifierFreeGuidance, DiT
-
-model = DiT(input_size=32, in_channels=3, patch_size=4, embed_dim=384, depth=12,
-            num_heads=6, num_classes=10)
-guided = ClassifierFreeGuidance(model, guidance_scale=2.0, null_condition=10)
-out = guided(torch.randn(8, 3, 32, 32), torch.rand(8), y=torch.randint(0, 10, (8,)))
-```
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/soran-ghaderi/torchebm/master/docs/assets/animations/circles_flow.gif" alt="Linear, VP and cosine interpolants transporting noise onto concentric circles" width="700"/>
-  <br>
-  <em>One objective trained with three <b>interpolants</b> (linear, variance-preserving, cosine).</em>
-</p>
-
 ## Examples
 
-The [`examples/`](https://github.com/soran-ghaderi/torchebm/tree/master/examples) tree is a tiered, runnable curriculum, executed in CI so it cannot drift from the library. Browse it on the [website](https://soran-ghaderi.github.io/torchebm/latest/examples/).
+Runnable and tested in CI: [`examples/`](https://github.com/soran-ghaderi/torchebm/tree/master/examples), also on the [website](https://soran-ghaderi.github.io/torchebm/latest/examples/).
 
 | Tier | You learn to |
 |---|---|
@@ -449,178 +418,24 @@ python examples/10-sampling/01-mcmc/01-langevin-101/main.py
 
 ## Contributing
 
-Contributions are welcome. Please read the [CONTRIBUTING.md](CONTRIBUTING.md) guide before getting started. The [Developer Guide](https://soran-ghaderi.github.io/torchebm/latest/developer_guide/) covers setup, architecture, and the PR workflow; adding an example is a good first contribution. Check the [issues](https://github.com/soran-ghaderi/torchebm/issues) for open tasks, several labelled `good first issue`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Developer Guide](https://soran-ghaderi.github.io/torchebm/latest/developer_guide/).
 
-## Show your support for ∇ TorchEBM 🍓
+## Built with TorchEBM
 
-If TorchEBM helps your research, please ⭐️ the repository and spread the word. It helps others find the project.
+| Year | Paper | |
+|---|---|---|
+| 2026 | **Mixed-Field Matching** | Preprint soon |
 
 ## Citation
 
-If TorchEBM is useful in your research, please cite it:
+If TorchEBM helps your research, please ⭐️ the repository and cite it:
 
 ```bibtex
 @misc{ghaderi2024torchebm,
   author       = {Ghaderi, Soran},
-  title        = {{TorchEBM}: A Composable {PyTorch} Library for Energy-Based and Transport-Based Generative Models},
+  title        = {{TorchEBM}: A Composable {PyTorch} Library for Energy-Based and Transport-Based Generative Modeling},
   year         = {2024},
   howpublished = {\url{https://github.com/soran-ghaderi/torchebm}},
-}
-```
-
-## References
-
-```bibtex
-@article{hinton2002training,
-  title   = {Training products of experts by minimizing contrastive divergence},
-  author  = {Hinton, Geoffrey E.},
-  journal = {Neural Computation},
-  volume  = {14},
-  number  = {8},
-  year    = {2002},
-}
-```
-
-```bibtex
-@article{hyvarinen2005estimation,
-  title   = {Estimation of non-normalized statistical models by score matching},
-  author  = {Hyv{\"a}rinen, Aapo},
-  journal = {Journal of Machine Learning Research},
-  volume  = {6},
-  year    = {2005},
-}
-```
-
-```bibtex
-@article{vincent2011connection,
-  title   = {A connection between score matching and denoising autoencoders},
-  author  = {Vincent, Pascal},
-  journal = {Neural Computation},
-  volume  = {23},
-  number  = {7},
-  year    = {2011},
-}
-```
-
-```bibtex
-@article{girolami2011riemann,
-  title   = {Riemann manifold {L}angevin and {H}amiltonian {M}onte {C}arlo methods},
-  author  = {Girolami, Mark and Calderhead, Ben},
-  journal = {Journal of the Royal Statistical Society: Series B},
-  volume  = {73},
-  number  = {2},
-  year    = {2011},
-}
-```
-
-```bibtex
-@inproceedings{song2019sliced,
-  title   = {Sliced Score Matching: A Scalable Approach to Density and Score Estimation},
-  author  = {Song, Yang and Garg, Sahaj and Shi, Jiaxin and Ermon, Stefano},
-  year    = {2019},
-  eprint  = {1905.07088},
-  url     = {https://arxiv.org/abs/1905.07088},
-}
-```
-
-```bibtex
-@inproceedings{du2019implicit,
-  title   = {Implicit Generation and Generalization in Energy-Based Models},
-  author  = {Du, Yilun and Mordatch, Igor},
-  year    = {2019},
-  eprint  = {1903.08689},
-  url     = {https://arxiv.org/abs/1903.08689},
-}
-```
-
-```bibtex
-@inproceedings{song2021scorebased,
-  title   = {Score-Based Generative Modeling through Stochastic Differential Equations},
-  author  = {Song, Yang and Sohl-Dickstein, Jascha and Kingma, Diederik P. and Kumar, Abhishek and Ermon, Stefano and Poole, Ben},
-  year    = {2021},
-  eprint  = {2011.13456},
-  url     = {https://arxiv.org/abs/2011.13456},
-}
-```
-
-```bibtex
-@inproceedings{lipman2023flow,
-  title   = {Flow Matching for Generative Modeling},
-  author  = {Lipman, Yaron and Chen, Ricky T. Q. and Ben-Hamu, Heli and Nickel, Maximilian and Le, Matt},
-  year    = {2023},
-  eprint  = {2210.02747},
-  url     = {https://arxiv.org/abs/2210.02747},
-}
-```
-
-```bibtex
-@inproceedings{liu2023flow,
-  title   = {Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow},
-  author  = {Liu, Xingchao and Gong, Chengyue and Liu, Qiang},
-  year    = {2023},
-  eprint  = {2209.03003},
-  url     = {https://arxiv.org/abs/2209.03003},
-}
-```
-
-```bibtex
-@article{albergo2023stochastic,
-  title   = {Stochastic Interpolants: A Unifying Framework for Flows and Diffusions},
-  author  = {Albergo, Michael S. and Boffi, Nicholas M. and Vanden-Eijnden, Eric},
-  year    = {2023},
-  eprint  = {2303.08797},
-  url     = {https://arxiv.org/abs/2303.08797},
-}
-```
-
-```bibtex
-@article{tong2024improving,
-  title   = {Improving and generalizing flow-based generative models with minibatch optimal transport},
-  author  = {Tong, Alexander and Fatras, Kilian and Malkin, Nikolay and Huguet, Guillaume and Zhang, Yanlei and Rector-Brooks, Jarrid and Wolf, Guy and Bengio, Yoshua},
-  journal = {Transactions on Machine Learning Research},
-  year    = {2024},
-  eprint  = {2302.00482},
-  url     = {https://arxiv.org/abs/2302.00482},
-}
-```
-
-```bibtex
-@article{wang2025equilibrium,
-  title   = {Equilibrium Matching: Generative Modeling with Implicit Energy-Based Models},
-  author  = {Wang, Runqian and Du, Yilun},
-  year    = {2025},
-  eprint  = {2510.02300},
-  url     = {https://arxiv.org/abs/2510.02300},
-}
-```
-
-```bibtex
-@article{balcerak2025energy,
-  title   = {Energy Matching: Unifying Flow Matching and Energy-Based Models for Generative Modeling},
-  author  = {Balcerak, Michal and Amiranashvili, Tamaz and Terpin, Antonio and Shit, Suprosanna and Bogensperger, Lea and Kaltenbach, Sebastian and Koumoutsakos, Petros and Menze, Bjoern},
-  year    = {2025},
-  eprint  = {2504.10612},
-  url     = {https://arxiv.org/abs/2504.10612},
-}
-```
-
-```bibtex
-@inproceedings{peebles2023scalable,
-  title   = {Scalable Diffusion Models with Transformers},
-  author  = {Peebles, William and Xie, Saining},
-  year    = {2023},
-  eprint  = {2212.09748},
-  url     = {https://arxiv.org/abs/2212.09748},
-}
-```
-
-```bibtex
-@article{debortoli2021diffusion,
-  title   = {Diffusion {S}chr{\"o}dinger Bridge with Applications to Score-Based Generative Modeling},
-  author  = {De Bortoli, Valentin and Thornton, James and Heng, Jeremy and Doucet, Arnaud},
-  year    = {2021},
-  eprint  = {2106.01357},
-  url     = {https://arxiv.org/abs/2106.01357},
 }
 ```
 
@@ -634,4 +449,4 @@ MIT License. See [LICENSE](https://github.com/soran-ghaderi/torchebm/blob/master
 
 ## Research collaboration
 
-If you are interested in collaborating on research around energy-based, flow-based, or diffusion models, feel free to reach out. Contributions to TorchEBM 🍓 and research discussions are welcome.
+Interested in research on energy-based, flow or diffusion models? Reach out.
