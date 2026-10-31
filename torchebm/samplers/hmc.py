@@ -14,13 +14,12 @@ from torchebm.core import (
     BaseSymplecticIntegrator,
 )
 from torchebm.core.base_sampler import _score_from_energy
-from torchebm.integrators import GeneralisedLeapfrogIntegrator
 from torchebm.integrators.integrator_utils import resolve_integrator
 
 _MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
     name="model-bound HMC samplers",
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -58,28 +57,6 @@ def _energy_and_drift(
         f"{type(sampler).__name__} needs the energy for the Metropolis-Hastings "
         f"correction; the model outputs {produced!r}"
     )
-
-
-# First warned in v0.6.2; window restarted when the deprecation ledger was
-# adopted.
-_SOLVER_ARGS_DEPRECATION = declare_deprecation(
-    module=__name__,
-    name="RiemannianManifoldHMC solver_max_iter/solver_tol/solver_check_every",
-    since="0.8.5",
-    deprecated_on="2026-08-31",
-    replacement="GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) passed as integrator=",
-    message=(
-        "solver_max_iter/solver_tol/solver_check_every on "
-        "RiemannianManifoldHMC are deprecated; construct "
-        "GeneralisedLeapfrogIntegrator(solver_max_iter=..., ...) "
-        "and pass it as integrator=."
-    ),
-    removal=(
-        "the solver_* parameters and their deprecated-path handling in "
-        "RiemannianManifoldHMC.__init__, and the solver_max_iter init kwarg "
-        "in benchmarks/registry.py (switch it to integrator=)"
-    ),
-)
 
 
 class HamiltonianMonteCarlo(BaseSampler):
@@ -514,11 +491,6 @@ class RiemannianManifoldHMC(BaseSampler):
             force, so ``metric_fn`` must be differentiable w.r.t. ``x``.
         step_size: Step size for the generalised-leapfrog integrator.
         n_leapfrog_steps: Number of integrator steps per MH proposal.
-        solver_max_iter: Deprecated. Construct a
-            `GeneralisedLeapfrogIntegrator` with the desired solver
-            settings and pass it as ``integrator`` instead.
-        solver_tol: Deprecated. See ``solver_max_iter``.
-        solver_check_every: Deprecated. See ``solver_max_iter``.
         dtype: Data type for computations.
         device: Device for computations.
         integrator: Non-separable symplectic integrator used for
@@ -526,7 +498,10 @@ class RiemannianManifoldHMC(BaseSampler):
             `GeneralisedLeapfrogIntegrator`; a registry name (e.g.
             `"generalised_leapfrog"`) constructs that integrator with
             defaults; a non-separable `BaseSymplecticIntegrator` instance
-            is used as-is and must match the sampler's device/dtype.
+            is used as-is and must match the sampler's device/dtype. Set the
+            Picard solver options (``solver_max_iter``, ``solver_tol``,
+            ``solver_check_every``) on the `GeneralisedLeapfrogIntegrator`
+            instance.
 
     Example:
         Bayesian logistic regression of Girolami and Calderhead (2011,
@@ -568,9 +543,6 @@ class RiemannianManifoldHMC(BaseSampler):
         metric_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
         n_leapfrog_steps: int = 10,
-        solver_max_iter: Optional[int] = None,
-        solver_tol: Optional[float] = None,
-        solver_check_every: Optional[int] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         integrator: Union[str, BaseSymplecticIntegrator, None] = None,
@@ -588,42 +560,14 @@ class RiemannianManifoldHMC(BaseSampler):
         self.n_leapfrog_steps = n_leapfrog_steps
         self._active_energy = lambda x_: self._model_energy(x_, None)
 
-        solver_kwargs_given = not (
-            solver_max_iter is None
-            and solver_tol is None
-            and solver_check_every is None
+        integ = resolve_integrator(
+            integrator,
+            default="generalised_leapfrog",
+            family=BaseSymplecticIntegrator,
+            owner="RiemannianManifoldHMC",
+            device=self.device,
+            dtype=self.dtype,
         )
-        if solver_kwargs_given:
-            if integrator is not None:
-                raise ValueError(
-                    "Pass either integrator= or the deprecated solver_* "
-                    "arguments, not both. Set the solver options on the "
-                    "GeneralisedLeapfrogIntegrator instance instead."
-                )
-            _SOLVER_ARGS_DEPRECATION.warn()
-        if solver_kwargs_given:
-            # Deprecated path (integrator= excluded above): thread the old
-            # solver options into a directly constructed integrator.
-            integ = GeneralisedLeapfrogIntegrator(
-                device=self.device,
-                dtype=self.dtype,
-                solver_max_iter=(
-                    solver_max_iter if solver_max_iter is not None else 8
-                ),
-                solver_tol=solver_tol if solver_tol is not None else 1e-6,
-                solver_check_every=(
-                    solver_check_every if solver_check_every is not None else 0
-                ),
-            )
-        else:
-            integ = resolve_integrator(
-                integrator,
-                default="generalised_leapfrog",
-                family=BaseSymplecticIntegrator,
-                owner="RiemannianManifoldHMC",
-                device=self.device,
-                dtype=self.dtype,
-            )
         if integ.separable:
             raise TypeError(
                 "RiemannianManifoldHMC requires a non-separable "

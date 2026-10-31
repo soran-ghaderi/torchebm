@@ -1321,11 +1321,16 @@ def test_rmhmc_stiff_metric_recovers_gaussian():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dim = 2
     model = _gaussian_target(dim, device)
+    from torchebm.integrators import GeneralisedLeapfrogIntegrator
+
+    integrator = GeneralisedLeapfrogIntegrator(
+        solver_max_iter=20, solver_check_every=1, solver_tol=1e-8,
+        dtype=torch.float64, device=device,
+    )
     sampler = RiemannianManifoldHMC(
         model, metric_fn=_stiff_metric(dim, alpha=4.0, beta=3.0),
         step_size=0.05, n_leapfrog_steps=6,
-        solver_max_iter=20, solver_check_every=1, solver_tol=1e-8,
-        dtype=torch.float64, device=device,
+        dtype=torch.float64, device=device, integrator=integrator,
     )
     torch.manual_seed(7)
     samples = sampler.sample(n_samples=200, dim=dim, n_steps=150)
@@ -1509,29 +1514,6 @@ def test_rmhmc_rejects_separable_integrator():
             _integrator_arg_model(), metric_fn=_eye_metric,
             step_size=0.1,
             integrator=LeapfrogIntegrator(dtype=torch.float32),
-        )
-
-
-def test_rmhmc_solver_kwargs_deprecated_but_honored():
-    with pytest.warns(DeprecationWarning, match="solver_max_iter"):
-        sampler = RiemannianManifoldHMC(
-            _integrator_arg_model(), metric_fn=_eye_metric,
-            step_size=0.1, solver_max_iter=20,
-        )
-    assert sampler.integrator.solver_max_iter == 20
-    # Untouched solver options keep their integrator defaults.
-    assert sampler.integrator.solver_tol == 1e-6
-    assert sampler.integrator.solver_check_every == 0
-
-
-def test_rmhmc_solver_kwargs_conflict_with_integrator():
-    from torchebm.integrators import GeneralisedLeapfrogIntegrator
-
-    inst = GeneralisedLeapfrogIntegrator(dtype=torch.float32)
-    with pytest.raises(ValueError, match="not both"):
-        RiemannianManifoldHMC(
-            _integrator_arg_model(), metric_fn=_eye_metric,
-            step_size=0.1, solver_max_iter=20, integrator=inst,
         )
 
 

@@ -57,23 +57,10 @@ from torchebm.losses import (
     dispersive_loss,
 )
 
-_MODEL_TIME_DEPRECATION = declare_deprecation(
-    module=__name__,
-    name="EquilibriumMatchingLoss model_time argument",
-    since="0.8.7",
-    deprecated_on="2026-09-02",
-    replacement="time_invariant=True ('zero') or time_invariant=False ('true')",
-    message=(
-        "model_time on EquilibriumMatchingLoss is deprecated; pass "
-        "time_invariant=True for 'zero' or time_invariant=False for 'true'."
-    ),
-    removal="the model_time parameter of EquilibriumMatchingLoss.__init__",
-)
-
 _MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
     name="model-bound EquilibriumMatchingLoss",
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -173,8 +160,6 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
             $t$, training a time-conditioned field; sample it with
             ``FlowSampler(negate_velocity=True)`` (`EqMEnergy` evaluates the
             field at $t = 0$). The conditioning probe always runs at $t = 0$.
-        model_time: Deprecated spelling of ``time_invariant``: ``"zero"`` maps
-            to True and ``"true"`` to False, with a ``DeprecationWarning``.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -246,7 +231,6 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         apply_dispersion: bool = False,
         dispersion_weight: float = 0.5,
         time_invariant: bool = True,
-        model_time: Optional[Literal["zero", "true"]] = None,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -276,14 +260,6 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
                 f"{ct_threshold}; use ct='linear' for the threshold -> 0 "
                 "endpoint or ct='constant' for the threshold -> 1 endpoint"
             )
-        if model_time is not None:
-            if model_time not in ("zero", "true"):
-                raise ValueError(
-                    f"model_time must be 'zero' or 'true', got {model_time!r}; "
-                    "use time_invariant= instead"
-                )
-            _MODEL_TIME_DEPRECATION.warn()
-            time_invariant = model_time == "zero"
         self.model = model
         if model is not None:
             _MODEL_BOUND_DEPRECATION.warn()
@@ -398,7 +374,6 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Compute EqM loss (nn.Module interface).
@@ -414,9 +389,6 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
                 distribution for arbitrary source-to-target transport.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. ``None`` (default) is the unconditional path.
-            **kwargs: Deprecated. Bare keyword arguments are still forwarded to
-                the model for one release but emit a ``DeprecationWarning``; pass
-                ``model_kwargs={...}`` instead.
 
         Returns:
             Scalar loss value.
@@ -427,7 +399,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator
             )
 
         return loss

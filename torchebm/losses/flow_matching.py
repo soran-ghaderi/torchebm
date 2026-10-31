@@ -32,7 +32,7 @@ from torchebm._deprecation import declare_deprecation
 _MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
     name="model-bound FlowMatchingLoss",
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -197,7 +197,6 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""Compute the FM loss (nn.Module interface).
 
@@ -209,7 +208,6 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             x0: Optional source samples of shape (batch_size, ...). Defaults to
                 standard Gaussian noise.
             model_kwargs: Conditioning arguments forwarded to the model.
-            **kwargs: Deprecated bare model kwargs; pass ``model_kwargs={...}``.
 
         Returns:
             Scalar loss value.
@@ -220,7 +218,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator
             )
         return loss
 

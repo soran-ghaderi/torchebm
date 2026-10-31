@@ -69,7 +69,6 @@ class Case:
     supports_trajectory: bool = True
     tuple_dim: tuple = (2,)
     has_integrator: bool = True
-    allows_var_keyword: bool = False
 
 
 CASES = [
@@ -108,7 +107,6 @@ CASES = [
         "flow_ode_fixed",
         lambda: FlowSampler(ConstantVelocity(), integrator="euler"),
         tuple_dim=(2, 3),
-        allows_var_keyword=True,
     ),
     Case(
         "flow_sde",
@@ -121,14 +119,12 @@ CASES = [
             integrator="euler",
         ),
         tuple_dim=(2, 3),
-        allows_var_keyword=True,
     ),
     Case(
         "flow_ode_adaptive",
         lambda: FlowSampler(ConstantVelocity()),
         supports_trajectory=False,
         tuple_dim=(2, 3),
-        allows_var_keyword=True,
     ),
 ]
 
@@ -168,15 +164,9 @@ class TestSignatures:
         var_keyword = [
             p.name for p in params if p.kind is inspect.Parameter.VAR_KEYWORD
         ]
-        if case.allows_var_keyword:
-            # FlowSampler keeps a var-keyword for one deprecation cycle: bare
-            # conditioning kwargs still work but warn (see the explicit
-            # model_kwargs param above). Renamed to make the legacy status clear.
-            assert var_keyword == ["legacy_model_kwargs"]
-        else:
-            assert (
-                not var_keyword
-            ), f"{sampler_cls.__name__}.sample must not take **kwargs"
+        assert (
+            not var_keyword
+        ), f"{sampler_cls.__name__}.sample must not take **kwargs"
 
         defaults = {p.name: p.default for p in params}
         for name, expected in _SAMPLE_DEFAULTS.items():

@@ -7,24 +7,8 @@ from torch import nn
 from abc import abstractmethod
 
 from torchebm.core import BaseContrastiveDivergence, BaseLoss, BaseSampler, BaseModel
-from torchebm._deprecation import declare_deprecation, deprecated
+from torchebm._deprecation import deprecated
 from torchebm.losses.functional import contrastive_divergence_loss
-
-# First warned in v0.7.5; window restarted when the deprecation ledger was
-# adopted.
-_CD_OPTION_KWARGS_DEPRECATION = declare_deprecation(
-    module=__name__,
-    name="ContrastiveDivergence loss-option call kwargs",
-    since="0.8.5",
-    deprecated_on="2026-08-31",
-    replacement="the energy_reg_weight/add_noise_to_real/noise_scale constructor parameters",
-    message=(
-        "Passing energy_reg_weight/add_noise_to_real/noise_scale to "
-        "ContrastiveDivergence.__call__ is deprecated; set them on the "
-        "constructor instead."
-    ),
-    removal="the _CD_OPTION_KEYS forwarding shim in ContrastiveDivergence.forward",
-)
 
 
 class ContrastiveDivergenceLoss(BaseLoss):
@@ -114,7 +98,7 @@ class ContrastiveDivergenceLoss(BaseLoss):
 
 
 @deprecated(
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -204,8 +188,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         self.add_noise_to_real = add_noise_to_real
         self.noise_scale = noise_scale
 
-    _CD_OPTION_KEYS = ("energy_reg_weight", "add_noise_to_real", "noise_scale")
-
     def forward(
         self,
         x: torch.Tensor,
@@ -213,7 +195,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Computes the Contrastive Divergence loss and generates negative samples.
@@ -232,10 +213,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
                 optional real-data noise; the global RNG when ``None``. In
                 distributed runs, a per-rank generator keeps the negative chains
                 of each rank independent.
-            **kwargs: Deprecated. The loss options ``energy_reg_weight``,
-                ``add_noise_to_real`` and ``noise_scale`` are now constructor
-                parameters; passing them here still works for one release but
-                emits a ``DeprecationWarning``.
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
@@ -247,8 +224,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
         )
         self._check_condition(x, model_kwargs)
         model_kwargs = self._apply_cfg_dropout(model_kwargs, generator)
-        if any(key in kwargs for key in self._CD_OPTION_KEYS):
-            _CD_OPTION_KWARGS_DEPRECATION.warn()
 
         batch_size = x.shape[0]
         data_shape = x.shape[1:]
@@ -268,10 +243,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             with torch.no_grad():
                 self.update_buffer(pred_samples)
 
-        kwargs.setdefault("energy_reg_weight", self.energy_reg_weight)
-        kwargs.setdefault("add_noise_to_real", self.add_noise_to_real)
-        kwargs.setdefault("noise_scale", self.noise_scale)
-
         # Compute contrastive divergence loss
         loss = self.compute_loss(
             x,
@@ -279,7 +250,6 @@ class ContrastiveDivergence(BaseContrastiveDivergence):
             *args,
             model_kwargs=model_kwargs,
             generator=generator,
-            **kwargs,
         )
 
         return loss, pred_samples

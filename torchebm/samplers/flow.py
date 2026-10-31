@@ -28,25 +28,10 @@ from torchebm.interpolants import (
 )
 from torchebm.interpolants.interpolant_utils import resolve_interpolant
 
-# First warned in v0.7.5; window restarted when the deprecation ledger was
-# adopted.
-_BARE_SAMPLE_KWARGS_DEPRECATION = declare_deprecation(
-    module=__name__,
-    name="FlowSampler.sample bare conditioning kwargs",
-    since="0.8.5",
-    deprecated_on="2026-08-31",
-    replacement="model_kwargs={...}",
-    message=(
-        "Passing conditioning to FlowSampler.sample() as bare keyword "
-        "arguments is deprecated; pass model_kwargs={...} instead."
-    ),
-    removal="the **legacy_model_kwargs parameter and its merge in FlowSampler.sample",
-)
-
 _MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
     name="model-bound FlowSampler",
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -62,28 +47,6 @@ _MODEL_BOUND_DEPRECATION = declare_deprecation(
         "_grid_and_drift, _sde_dynamics, _apply_last_step, _record_stats, "
         "_batch_stats and the PredictionType export in FlowSampler"
     ),
-)
-
-# Sampling-call kwargs removed with the sample_ode/sample_sde retirement.
-# Guarded so stale call sites fail loudly instead of silently forwarding
-# these to the model.
-_REMOVED_SAMPLE_KWARGS = frozenset(
-    {
-        "mode",
-        "shape",
-        "ode_method",
-        "sde_method",
-        "method",
-        "atol",
-        "rtol",
-        "reverse",
-        "diffusion_form",
-        "diffusion_norm",
-        "last_step",
-        "last_step_size",
-        "num_steps",
-        "z",
-    }
 )
 
 # Sentinel distinguishing "not passed" from the legitimate last_step=None.
@@ -629,7 +592,6 @@ class FlowSampler(BaseSampler):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **legacy_model_kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         r"""Sample by integrating the configured ODE or SDE.
 
@@ -665,10 +627,6 @@ class FlowSampler(BaseSampler):
             generator: RNG for the initial state and, in SDE mode, the per-step
                 diffusion noise; the global RNG when ``None``. ODE mode is
                 deterministic once the initial state is fixed.
-            **legacy_model_kwargs: Deprecated. Passing conditioning as bare
-                keyword arguments still works for one release but emits a
-                ``DeprecationWarning``; pass ``model_kwargs={...}`` instead. When
-                both are given, keys in the explicit dict win.
 
         Returns:
             Sample tensor (or trajectory if `return_trajectory=True`),
@@ -679,24 +637,10 @@ class FlowSampler(BaseSampler):
                 both `None`.
             NotImplementedError: If `return_trajectory=True` or `thin != 1`
                 with an adaptive integrator.
-            TypeError: If a removed legacy sampling kwarg is passed.
         """
         self._require_model()
-        removed = _REMOVED_SAMPLE_KWARGS.intersection(legacy_model_kwargs)
-        if removed:
-            raise TypeError(
-                f"{', '.join(sorted(removed))}: removed from "
-                "FlowSampler.sample(). mode/reverse/diffusion/"
-                "last-step options and the integrator moved to the "
-                "constructor; use x/n_steps instead of z/num_steps and "
-                "dim=(...) instead of shape."
-            )
-        if legacy_model_kwargs:
-            _BARE_SAMPLE_KWARGS_DEPRECATION.warn()
         model_kwargs = self._prepare_model_kwargs(
-            self._merge_condition(
-                {**legacy_model_kwargs, **(model_kwargs or {})}, y
-            )
+            self._merge_condition(model_kwargs, y)
         )
         if thin < 1:
             raise ValueError("thin must be >= 1")

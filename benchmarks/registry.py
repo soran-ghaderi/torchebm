@@ -206,7 +206,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "RiemannianManifoldHMC": {
         "model_type": "ebm_double_well",
         "needs_metric_fn": True,
-        "init_kwargs": {"n_leapfrog_steps": 5, "solver_max_iter": 4},
+        "init_kwargs": {"n_leapfrog_steps": 5},
     },
     "GradientDescentSampler": {
         "model_type": "ebm_double_well",
@@ -903,6 +903,8 @@ def build_sampler_bench(
         )
 
     if spec.needs_metric_fn:
+        from torchebm.integrators import GeneralisedLeapfrogIntegrator
+
         # Identity metric — reduces RMHMC to plain HMC but exercises the
         # full Riemannian code path (Cholesky, solves, GLI Picard loops).
         _dim = dim
@@ -912,6 +914,9 @@ def build_sampler_bench(
             return eye.expand(x.shape[0], _dim, _dim).contiguous()
 
         init_kw["metric_fn"] = _metric_fn
+        init_kw["integrator"] = GeneralisedLeapfrogIntegrator(
+            device=device, dtype=dtype, solver_max_iter=4
+        )
 
     x0 = _make_data(bs, dim, device, dtype)
 

@@ -71,7 +71,7 @@ from torchebm.samplers import LangevinDynamics
 _MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
     name="model-bound EnergyMatchingLoss",
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -364,7 +364,6 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""Compute the Energy Matching loss (nn.Module interface).
 
@@ -380,9 +379,6 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the potential on both the positive and negative (Langevin) paths.
                 ``None`` (default) is the unconditional path.
-            **kwargs: Deprecated. Bare keyword arguments are still forwarded to
-                the model for one release but emit a ``DeprecationWarning``; pass
-                ``model_kwargs={...}`` instead.
 
         Returns:
             Scalar loss value.
@@ -392,7 +388,7 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             x = x.to(device=self.device, dtype=self.dtype)
 
         return self.compute_loss(
-            x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator, **kwargs
+            x, *args, x0=x0, model_kwargs=model_kwargs, generator=generator
         )
 
     def compute_loss(
@@ -402,7 +398,6 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
         x0: Optional[torch.Tensor] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""Compute the Energy Matching loss.
 
@@ -411,14 +406,11 @@ class EnergyMatchingLoss(BaseInterpolantLoss):
             *args: Additional positional arguments.
             x0: Optional source samples (see `forward`).
             model_kwargs: Conditioning arguments forwarded to the potential.
-            **kwargs: Deprecated bare model kwargs (see `forward`).
 
         Returns:
             Scalar loss value.
         """
-        mk = self._resolve_model_kwargs(
-            model_kwargs, kwargs
-        )
+        mk = self._prepare_model_kwargs(model_kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         terms = self.training_losses(

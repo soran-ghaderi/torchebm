@@ -226,7 +226,7 @@ class SlicedScoreMatchingLoss(BaseLoss):
 
 
 @deprecated(
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -314,7 +314,6 @@ class ScoreMatching(BaseScoreMatching):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the score matching loss for a batch of data.
@@ -327,7 +326,6 @@ class ScoreMatching(BaseScoreMatching):
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. Supported for ``hessian_method="approx"``; the exact
                 Hessian path raises if conditioning is passed (see below).
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar score matching loss.
@@ -338,11 +336,11 @@ class ScoreMatching(BaseScoreMatching):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, model_kwargs=model_kwargs, generator=generator
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+            mk = self._prepare_model_kwargs(model_kwargs)
             loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
@@ -353,7 +351,6 @@ class ScoreMatching(BaseScoreMatching):
         *args,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the score matching loss using the specified Hessian computation method.
@@ -363,12 +360,11 @@ class ScoreMatching(BaseScoreMatching):
             *args: Additional arguments.
             model_kwargs: Conditioning arguments forwarded to the model
                 (``hessian_method="approx"`` only).
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar score matching loss.
         """
-        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+        mk = self._prepare_model_kwargs(model_kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         if self.hessian_method == "approx":
@@ -472,7 +468,7 @@ class ScoreMatching(BaseScoreMatching):
 
 
 @deprecated(
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -547,7 +543,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the denoising score matching loss for a batch of data.
@@ -559,7 +554,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
                 for ``model_kwargs={'y': y}``.
             model_kwargs: Conditioning arguments (e.g. class labels) forwarded to
                 the model. ``None`` (default) is the unconditional path.
-            **kwargs: Deprecated bare model kwargs (see `model_kwargs`).
 
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
@@ -570,11 +564,11 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, model_kwargs=model_kwargs, generator=generator
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
-            mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+            mk = self._prepare_model_kwargs(model_kwargs)
             loss = self.add_regularization(loss, x, model_kwargs=mk)
 
         return loss
@@ -585,7 +579,6 @@ class DenoisingScoreMatching(BaseScoreMatching):
         *args,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the denoising score matching loss.
@@ -594,12 +587,11 @@ class DenoisingScoreMatching(BaseScoreMatching):
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional arguments.
             model_kwargs: Conditioning arguments forwarded to the model.
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar denoising score matching loss.
         """
-        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+        mk = self._prepare_model_kwargs(model_kwargs)
         self._check_condition(x, mk)
         mk = self._apply_cfg_dropout(mk, generator)
         x_perturbed, noise = self.perturb_data(x, generator=generator)
@@ -612,7 +604,7 @@ class DenoisingScoreMatching(BaseScoreMatching):
 
 
 @deprecated(
-    since="0.8.10",
+    since="0.9.0",
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
@@ -716,7 +708,6 @@ class SlicedScoreMatching(BaseScoreMatching):
         y: Optional[torch.Tensor] = None,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the sliced score matching loss for a batch of data.
@@ -730,7 +721,6 @@ class SlicedScoreMatching(BaseScoreMatching):
             model_kwargs: Conditioning is not supported (the projection tiling
                 expands the batch, so per-sample conditioning cannot be aligned);
                 a non-empty mapping raises in `compute_loss`.
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
@@ -741,7 +731,7 @@ class SlicedScoreMatching(BaseScoreMatching):
 
         with self.autocast_context():
             loss = self.compute_loss(
-                x, *args, model_kwargs=model_kwargs, generator=generator, **kwargs
+                x, *args, model_kwargs=model_kwargs, generator=generator
             )
 
         if self.regularization_strength > 0 or self.custom_regularization is not None:
@@ -755,7 +745,6 @@ class SlicedScoreMatching(BaseScoreMatching):
         *args,
         model_kwargs: Optional[dict] = None,
         generator: Optional[torch.Generator] = None,
-        **kwargs,
     ) -> torch.Tensor:
         r"""
         Computes the sliced score matching loss using random projections.
@@ -764,12 +753,11 @@ class SlicedScoreMatching(BaseScoreMatching):
             x (torch.Tensor): Input data tensor of shape `(batch_size, *data_dims)`.
             *args: Additional arguments.
             model_kwargs: Not supported; a non-empty mapping raises.
-            **kwargs: Deprecated bare model kwargs.
 
         Returns:
             torch.Tensor: The scalar sliced score matching loss.
         """
-        mk = self._resolve_model_kwargs(model_kwargs, kwargs)
+        mk = self._prepare_model_kwargs(model_kwargs)
         if mk:
             raise NotImplementedError(
                 "Conditional sliced score matching is not supported (random "
