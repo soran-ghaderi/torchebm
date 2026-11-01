@@ -43,9 +43,10 @@ class ClassifierFreeGuidance(BaseModel):
             the non-batch dims (e.g. a zero or learned null embedding), or a
             callable ``(y, mask) -> y``.
         guide_channels: If set, apply guidance only to the first
-            ``guide_channels`` entries of dim 1 and keep the unconditional
-            output for the rest (models whose extra channels, e.g. a learned
-            sigma, must not be guided). ``None`` (default) guides everything.
+            ``guide_channels`` entries of dim 1 and keep the conditional
+            output for the rest, as in the DiT reference (models whose extra
+            channels, e.g. a learned sigma, must not be guided). ``None``
+            (default) guides everything.
 
     Example:
         The guidance of DiT (Peebles and Xie, 2023): scale 1.5 on the first
@@ -126,7 +127,7 @@ class ClassifierFreeGuidance(BaseModel):
             c = min(self.guide_channels, cond.shape[1])
             guided = uncond[:, :c] + w * (cond[:, :c] - uncond[:, :c])
             if c < cond.shape[1]:
-                guided = torch.cat([guided, uncond[:, c:]], dim=1)
+                guided = torch.cat([guided, cond[:, c:]], dim=1)
             return guided
         return uncond + w * (cond - uncond)
 
