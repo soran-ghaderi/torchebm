@@ -166,3 +166,21 @@ class TestNesterovSampler:
 
         assert_close(samples[0, 0], torch.tensor([0.9], device=device))
         assert_close(samples[0, 1], torch.tensor([0.891], device=device))
+
+
+class VelocityField(nn.Module):
+    prediction_type = "velocity"
+
+    def forward(self, x):
+        return -x
+
+
+@pytest.mark.parametrize("sampler_cls", [GradientDescentSampler, NesterovSampler])
+def test_velocity_prediction_type(sampler_cls):
+    x = torch.ones(1, 2)
+    with pytest.raises(ValueError, match="consumes 'score'"):
+        sampler_cls(step_size=0.1)(VelocityField(), x, n_steps=1)
+    sampler = sampler_cls(step_size=0.1, prediction_type="velocity")
+    assert_close(sampler(VelocityField(), x, n_steps=1), torch.full((1, 2), 0.9))
+    with pytest.raises(ValueError, match="prediction_type"):
+        sampler_cls(prediction_type="energy")
