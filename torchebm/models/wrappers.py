@@ -261,10 +261,14 @@ class InteractionModel(Schedulable, BaseModel):
     deprecated_on="2026-09-29",
     until="0.12.0",
     grace_months=4,
-    replacement="a prediction_type='score' model passed to the sampler call",
+    replacement=(
+        "the field passed to GradientDescentSampler or NesterovSampler with "
+        "prediction_type='velocity'"
+    ),
     message=(
-        "EqMEnergy is deprecated: the samplers consume a prediction_type='score' "
-        "model directly, sampler(model, x, n_steps=...). Train the field with "
+        "EqMEnergy is deprecated: GradientDescentSampler and NesterovSampler "
+        "built with prediction_type='velocity' follow the field directly, "
+        "sampler(model, x, n_steps=...). Train the field with "
         "EquilibriumMatchingLoss()(model(x_t), target, t), which points it from "
         "noise to data, and use a scalar BaseModel(prediction_type='score') for "
         "the explicit energy."
@@ -278,9 +282,9 @@ class EqMEnergy(BaseModel):
     r"""Scalar-energy adapter for sampling Equilibrium Matching fields.
 
     Deprecated: train the field with `EquilibriumMatchingLoss()` on model
-    outputs, which points it from noise to data, and pass it, or a scalar
-    energy built with ``prediction_type="score"``, to the sampler call, as in
-    the example. A field trained by the deprecated model-bound loss points
+    outputs, which points it from noise to data, and pass it to a sampler
+    built with ``prediction_type="velocity"``, as in the example, or a scalar
+    energy built with ``prediction_type="score"`` to the default sampler. A field trained by the deprecated model-bound loss points
     from data to noise; sample it with ``FlowSampler(negate_velocity=True)``.
 
     Equilibrium Matching trains a vector field \(f(x, t)\)
@@ -322,8 +326,8 @@ class EqMEnergy(BaseModel):
         ```python
         from torchebm.samplers import GradientDescentSampler
 
-        sampler = GradientDescentSampler(step_size=0.0017)
-        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
+        sampler = GradientDescentSampler(step_size=0.0017, prediction_type="velocity")
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=249, model_kwargs={"y": y})
         ```
     """
 
