@@ -124,7 +124,21 @@ Each block implements one published method. Runnable versions are in the [exampl
   <em>Fig. 1 of <a href="https://arxiv.org/abs/2510.02300">Wang & Du (2025)</a>.</em>
 </p>
 
-EqM-XL/2 on ImageNet 256, as in the paper, with the VAE moments of each image and its mirror encoded once:
+EqM-XL/2 on ImageNet 256 latents `x1` with labels `y` at times `t`:
+
+```python
+model = dit_xl_2(input_size=32, in_channels=4, num_classes=1000, time_invariant=True)
+path, loss_fn = LinearInterpolant(), EquilibriumMatchingLoss()
+sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True,
+                          prediction_type="velocity")
+
+x_t, u_t = path(torch.randn_like(x1), x1, t)
+loss = loss_fn(model(x_t, y=y), u_t, t)
+samples = sampler(model, torch.randn_like(x1), n_steps=249, model_kwargs={"y": y})
+```
+
+<details>
+<summary>Full recipe as in the paper: VAE moments encoded once, EMA, guidance and decoding</summary>
 
 ```python
 import torch
@@ -188,6 +202,8 @@ latents = sampler(guided, noise, n_steps=249, model_kwargs={"y": y})
 with torch.no_grad():
     samples = vae.decode(latents / 0.18215).sample
 ```
+
+</details>
 
 ### Energy matching
 

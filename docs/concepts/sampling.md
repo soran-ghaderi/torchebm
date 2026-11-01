@@ -49,7 +49,7 @@ samples = sampler(model, torch.randn(1000, 2), n_steps=300)
 Optimization-based samplers (plain gradient descent and momentum variants such
 as `NesterovSampler`) are the noise-free members of the family. On an energy
 they descend to its minima; on a field that is not a gradient, such as an
-implicit equilibrium-matching model, the same update
+implicit equilibrium-matching model (`prediction_type="velocity"`), the same update
 \(x \leftarrow x + \eta f(x)\) is a fixed-point iteration toward the field's
 attractors.
 
