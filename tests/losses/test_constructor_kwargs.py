@@ -18,6 +18,7 @@ from torchebm.losses import (
     EnergyMatchingLoss,
     EquilibriumMatchingLoss,
     FlowMatchingLoss,
+    NoiseContrastiveEstimation,
     ScoreMatching,
     SlicedScoreMatching,
 )
@@ -72,6 +73,11 @@ LOSS_FACTORIES = [
         FlowMatchingLoss,
         lambda **kw: FlowMatchingLoss(model=VelocityModel(), **kw),
         id="FlowMatchingLoss",
+    ),
+    pytest.param(
+        NoiseContrastiveEstimation,
+        lambda **kw: NoiseContrastiveEstimation(model=QuadraticModel(), **kw),
+        id="NoiseContrastiveEstimation",
     ),
 ]
 
