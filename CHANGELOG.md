@@ -5,6 +5,21 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1](https://github.com/soran-ghaderi/torchebm/compare/v0.9.0...v0.9.1) - 2026-11-02
+
+### Added
+
+- [`4022099`](https://github.com/soran-ghaderi/torchebm/commit/402209973f66c8c7557cf20db638af7decc6fecf) - add prediction_type to the gradient descent and nesterov samplers for velocity fields
+
+### Fixed
+
+- [`08b01fc`](https://github.com/soran-ghaderi/torchebm/commit/08b01fcca3b05c87387c56c59db59a9401e8ea4c) - keep the conditional output on unguided channels as in the dit reference
+
+### Other
+
+- [`0ecf739`](https://github.com/soran-ghaderi/torchebm/commit/0ecf739cf000fb75f3d49fa4762323da349fbac4) - label the implicit field as velocity, pre-encode the vae moments and sample 249 nag-gd updates
+- [`abb9b96`](https://github.com/soran-ghaderi/torchebm/commit/abb9b9605805d56b2de58a316242c105aec5b061) - name the velocity prediction type of the implicit field
+
 ## [0.9.0](https://github.com/soran-ghaderi/torchebm/compare/v0.8.9...v0.9.0) - 2026-10-31
 
 ### Added
