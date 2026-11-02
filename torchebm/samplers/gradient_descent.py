@@ -49,15 +49,19 @@ class GradientDescentSampler(BaseSampler):
     The call consumes the score \(-\nabla_x E(x_k)\); see `BaseSampler` for the
     call contract.
 
-    A model whose output is a field \(f\) that is not the gradient of an
-    energy, such as an implicit equilibrium-matching model, gets the same
-    update \(x_{k+1} = x_k + \eta f(x_k)\): a fixed-point iteration toward the
-    stable zeros of \(f\), and the explicit Euler step of \(\dot x = f(x)\).
+    With ``prediction_type="velocity"`` the update follows a time-invariant
+    velocity field \(f\) that need not be the gradient of an energy, such as
+    an implicit equilibrium-matching model: \(x_{k+1} = x_k + \eta f(x_k)\), a
+    fixed-point iteration toward the stable zeros of \(f\), and the explicit
+    Euler step of \(\dot x = f(x)\).
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct
             without it and call ``sampler(model, x, ...)``.
         step_size: Step size \(\eta\) or scheduler.
+        prediction_type: Model output the update follows: ``"score"``
+            (default), \(-\nabla_x E\), or ``"velocity"``, a time-invariant
+            field such as an implicit equilibrium-matching model.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -69,8 +73,8 @@ class GradientDescentSampler(BaseSampler):
         ```python
         from torchebm.samplers import GradientDescentSampler
 
-        sampler = GradientDescentSampler(step_size=0.0017)
-        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
+        sampler = GradientDescentSampler(step_size=0.0017, prediction_type="velocity")
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=249, model_kwargs={"y": y})
         ```
     """
 
@@ -78,6 +82,7 @@ class GradientDescentSampler(BaseSampler):
         self,
         model: Optional[BaseModel] = None,
         step_size: Union[float, BaseScheduler] = 1e-3,
+        prediction_type: str = "score",
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
@@ -88,6 +93,11 @@ class GradientDescentSampler(BaseSampler):
         )
         if model is not None:
             _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
+        if prediction_type not in ("score", "velocity"):
+            raise ValueError(
+                f"prediction_type must be 'score' or 'velocity', got {prediction_type!r}"
+            )
+        self.prediction_type = prediction_type
         self._register_param("step_size", step_size, positive=True)
 
     @torch.no_grad()
@@ -231,8 +241,10 @@ class NesterovSampler(BaseSampler):
 
     Called as ``sampler(model, x, n_steps=...)``, the model giving
     the score \(-\nabla_x E\) at the lookahead point \(x_k + \mu v_k\); see
-    `BaseSampler`. On a field that is not a gradient, the update is
-    momentum-accelerated fixed-point iteration toward the field's stable zeros.
+    `BaseSampler`. With ``prediction_type="velocity"``, on a time-invariant
+    velocity field such as an implicit equilibrium-matching model, the update
+    is momentum-accelerated fixed-point iteration toward the field's stable
+    zeros.
 
     Args:
         model: Deprecated. Energy-based model sampled by `sample()`; construct
@@ -241,6 +253,9 @@ class NesterovSampler(BaseSampler):
         momentum: Momentum coefficient \(\mu \in [0, 1)\).
         lookahead_only: Step with the lookahead score alone, without the
             momentum term. Default False, standard Nesterov momentum.
+        prediction_type: Model output the update follows: ``"score"``
+            (default), \(-\nabla_x E\), or ``"velocity"``, a time-invariant
+            field such as an implicit equilibrium-matching model.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -252,8 +267,10 @@ class NesterovSampler(BaseSampler):
         ```python
         from torchebm.samplers import NesterovSampler
 
-        sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True)
-        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
+        sampler = NesterovSampler(
+            step_size=0.0017, momentum=0.3, lookahead_only=True, prediction_type="velocity"
+        )
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=249, model_kwargs={"y": y})
         ```
     """
 
@@ -263,6 +280,7 @@ class NesterovSampler(BaseSampler):
         step_size: Union[float, BaseScheduler] = 1e-3,
         momentum: float = 0.9,
         lookahead_only: bool = False,
+        prediction_type: str = "score",
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
     ):
@@ -275,6 +293,11 @@ class NesterovSampler(BaseSampler):
             _MODEL_BOUND_DEPRECATION.warn(type(self).__name__)
         if not (0 <= momentum < 1):
             raise ValueError("momentum must be in [0, 1)")
+        if prediction_type not in ("score", "velocity"):
+            raise ValueError(
+                f"prediction_type must be 'score' or 'velocity', got {prediction_type!r}"
+            )
+        self.prediction_type = prediction_type
         self.momentum = momentum
         self.lookahead_only = bool(lookahead_only)
 

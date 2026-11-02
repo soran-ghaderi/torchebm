@@ -84,10 +84,11 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
     Built without ``model``, the loss acts on model outputs,
     ``loss = loss_fn(model(x_t), u_t, t)``, which trains the field toward
-    \(c(t)\, u_t\) (noise to data) so a ``prediction_type="score"`` model
-    drops into the gradient samplers unchanged; ``ct``, ``ct_threshold``,
-    ``ct_multiplier`` and ``reduction`` apply. Built with ``model``
-    (deprecated), it runs the training step itself as described below.
+    \(c(t)\, u_t\) (noise to data), a time-invariant velocity that the
+    gradient samplers follow with ``prediction_type="velocity"``; ``ct``,
+    ``ct_threshold``, ``ct_multiplier`` and ``reduction`` apply. Built with
+    ``model`` (deprecated), it runs the training step itself as described
+    below.
 
     Supports an implicit formulation, where the model is a vector field that
     need not be a gradient, and explicit ones, where the model is a scalar
@@ -168,8 +169,9 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         latents scaled by 0.18215, ``y`` their labels, batches of 256; the
         defaults are the paper's truncated decay (\(a = 0.8\), \(\lambda = 4\)),
         and sampling is the paper's best sampler, NAG-GD with
-        \(\eta = 0.0017\) and \(\mu = 0.3\) for 250 steps, with guidance 1.5
-        on the first three latent channels.
+        \(\eta = 0.0017\) and \(\mu = 0.3\) for 250 steps (249 updates, as
+        in the official loop), with guidance 1.5 on the first three latent
+        channels.
 
         ```python
         from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
@@ -180,7 +182,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
         model = dit_xl_2(
             input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1,
-            time_invariant=True, prediction_type="score",
+            time_invariant=True,
         )
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
         ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
@@ -197,8 +199,10 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
         guided = ClassifierFreeGuidance(
             ema.module.eval(), guidance_scale=1.5, null_condition=1000, guide_channels=3
         )
-        sampler = NesterovSampler(step_size=0.0017, momentum=0.3, lookahead_only=True)
-        samples = sampler(guided, torch.randn(64, 4, 32, 32), n_steps=250, model_kwargs={"y": y})
+        sampler = NesterovSampler(
+            step_size=0.0017, momentum=0.3, lookahead_only=True, prediction_type="velocity"
+        )
+        samples = sampler(guided, torch.randn(64, 4, 32, 32), n_steps=249, model_kwargs={"y": y})
         ```
 
         The explicit variant (EqM-E) trains a scalar `BaseModel` built with

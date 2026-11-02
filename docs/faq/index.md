@@ -67,7 +67,7 @@ warn once per process.
 | `ScoreMatching`, `DenoisingScoreMatching`, `SlicedScoreMatching` | `ScoreMatchingLoss`, `DenoisingScoreMatchingLoss`, `SlicedScoreMatchingLoss` on the output of a `prediction_type="score"` model |
 | `LangevinDynamics(model=...)`, `HamiltonianMonteCarlo(model=...)`, `FlowSampler(model=...)` and `sampler.sample(x=...)` | `sampler(model, x, n_steps=...)` |
 | `FlowSampler(prediction=, negate_velocity=, train_eps=)` | `prediction_type=` on the model or the sampler; trained fields point from noise to data |
-| `EqMEnergy` | a `prediction_type="score"` model sampled directly |
+| `EqMEnergy` | the field passed to `GradientDescentSampler` or `NesterovSampler` with `prediction_type="velocity"`; an explicit energy built with `prediction_type="score"` |
 | `model.gradient(x)` | `model(x)` on a model built with `prediction_type="score"`, which returns \(-\nabla_x E\); a closed-form gradient goes in `AnalyticModel._score` |
 | `ContrastiveDivergenceTrainer` | `BaseTrainer(model, optimizer, ContrastiveDivergenceLoss(), sampler=..., buffer=...)` |
 | `ReflowCoupling(flow)` | `x1 = sampler(model, x0, n_steps=...)` in the training loop |

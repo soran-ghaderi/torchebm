@@ -96,7 +96,9 @@ paper, which vanishes at the data. `FlowSampler` integrates the learned field
 over a fixed horizon, and the gradient-descent sampler iterates
 \(x \leftarrow x + \eta f(x)\) toward its attractors; both apply the same
 update with different step sizes and horizons. With the implicit formulation
-the model is a vector field that declares no `prediction_type`, and it is not
+the model is a time-invariant velocity field (a model that declares
+`prediction_type="velocity"`, such as `DiT`, needs the same on the gradient
+samplers), and it is not
 constrained to be the gradient of an energy; its population optimum is not
 one in general, because the target averages noise levels with weights that
 depend on \(x\). With the explicit one (EqM-E) the model is a scalar potential

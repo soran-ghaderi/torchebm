@@ -49,8 +49,8 @@ def test_cfg_applies_guidance_to_first_channels_only():
     assert out.shape == (1, 4, 4, 4)
     # First 3 channels: uncond(0) + 2.0 * (cond(1) - uncond(0)) = 2.0
     assert torch.allclose(out[:, :3], torch.full_like(out[:, :3], 2.0))
-    # Last channel: uncond == 0
-    assert torch.allclose(out[:, 3:], torch.zeros_like(out[:, 3:]))
+    # Last channel: cond == 1, as in the DiT reference
+    assert torch.allclose(out[:, 3:], torch.ones_like(out[:, 3:]))
 
 
 def test_cfg_guide_channels_exceeds_output_clamps():
