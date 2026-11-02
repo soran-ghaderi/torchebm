@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg viewBox="0 0 500 440" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Penrose Impossible Nabla - TorchEBM Logo
+    An impossible inverted triangle (nabla) inspired by the Penrose triangle.
+    Three L-shaped faces with distinct shading create the optical illusion.
+    Based on: Julien Cretel's Penrose triangle (2013), rotated 180° for nabla shape.
+    Parameters: a=2.5, b=0.9, scale=40, center=(250,195)
+  -->
+
+  <defs>
+    <!-- TorchEBM brand gradient (for optional use) -->
+    <linearGradient id="nablaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C7FF00"/>
+      <stop offset="50%" stop-color="#7affF2"/>
+      <stop offset="100%" stop-color="#2ECC71"/>
+    </linearGradient>
+
+    <!-- Optional glow filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!--
+    Drawing order matters for the Penrose illusion.
+    Each face is an L-shaped hexagon; overlaps at corners create the impossible cycle.
+    Face 0° (medium) → Face 120° (light) → Face 240° (dark, drawn last/on top)
+  -->
+
+  <!-- Face 0° — Medium shade (right arm of nabla) -->
+  <polygon
+    points="163.4,145 127.4,145 268,388.5 426.6,113.8 408.6,82.7 268,326.2"
+    fill="#4DE8A0"
+    stroke="#0a2818"
+    stroke-width="2"
+    stroke-linejoin="bevel"/>
+
+  <!-- Face 120° — Light shade (left arm of nabla) -->
+  <polygon
+    points="336.6,145 354.6,113.8 73.4,113.8 232,388.5 268,388.5 127.4,145"
+    fill="#C7FF00"
+    stroke="#0a2818"
+    stroke-width="2"
+    stroke-linejoin="bevel"/>
+
+  <!-- Face 240° — Dark shade (top bar of nabla, drawn last for illusion) -->
+  <polygon
+    points="250,295 268,326.2 408.6,82.6 91.4,82.7 73.4,113.8 354.6,113.8"
+    fill="#1A7848"
+    stroke="#0a2818"
+    stroke-width="2"
+    stroke-linejoin="bevel"/>
+</svg>
