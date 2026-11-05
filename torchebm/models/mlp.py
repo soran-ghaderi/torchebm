@@ -63,11 +63,19 @@ class TimeConditionedMLP(_ConditionalBackbone):
             ``None`` builds an `MLPTimestepEmbedder`.
         y_embedder: Module mapping labels to ``(B, cond_dim)``. Mutually
             exclusive with ``num_classes``/``class_dropout_prob``.
+        dt_embedder: Module mapping ``(B,)`` intervals \(t - s\) to
+            ``(B, cond_dim)`` for the two-time prediction types. ``None``
+            (default) builds an `MLPTimestepEmbedder` when ``prediction_type``
+            is ``"average_velocity"`` or ``"flow_map"``, and nothing otherwise.
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
             Matching model convention; labels and ``cond`` still apply.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
-            ``"score"``, or ``"epsilon"``. A declaration for consumers; the
-            computation is unchanged.
+            ``"score"``, or ``"epsilon"``, a declaration for consumers that
+            leaves the computation unchanged; or a two-time output,
+            ``"average_velocity"`` \(u(x_s, s, t)\) or ``"flow_map"``
+            \(F(x_s, s, t) = x_s + (t - s)\, u(x_s, s, t)\), which adds
+            ``dt_embedder`` and requires ``s=`` and ``t`` on every call.
+            ``"flow_map"`` requires ``out_dim == in_dim``.
 
     Example:
         ```python
@@ -95,6 +103,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
         class_dropout_prob: float = 0.0,
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
+        dt_embedder: Optional[nn.Module] = None,
         time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
@@ -113,6 +122,11 @@ class TimeConditionedMLP(_ConditionalBackbone):
             raise ValueError("adaln_zero conditioning requires cond_dim > 0")
         if conditioning == "concat" and mlp_ratio is not None:
             raise ValueError("mlp_ratio applies only to adaln_zero conditioning")
+        if prediction_type == "flow_map" and out_dim is not None and out_dim != in_dim:
+            raise ValueError(
+                "prediction_type='flow_map' requires out_dim == in_dim, "
+                f"got {out_dim} and {in_dim}"
+            )
 
         super().__init__(
             cond_dim=resolved_cond,
@@ -120,6 +134,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
             class_dropout_prob=class_dropout_prob,
             t_embedder=t_embedder,
             y_embedder=y_embedder,
+            dt_embedder=dt_embedder,
             time_invariant=time_invariant,
             prediction_type=prediction_type,
         )
@@ -179,35 +194,44 @@ class TimeConditionedMLP(_ConditionalBackbone):
         t: Optional[torch.Tensor] = None,
         y: Optional[torch.Tensor] = None,
         *,
+        s: Optional[torch.Tensor] = None,
         cond: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         r"""Map ``(B, in_dim)`` to ``(B, out_dim)``.
 
+        Two-time models are called as ``model(x_s, t, s=s)`` and embed
+        \(s\) and \(t - s\) in place of \(t\).
+
         Args:
-            x: Input of shape ``(B, in_dim)``.
-            t: Timesteps of shape ``(B,)``. Ignored when the model is
-                unconditional (``cond_dim=0``), so library losses that always
-                pass ``t`` drive a time-invariant field unchanged.
+            x: Input of shape ``(B, in_dim)``; \(x_s\) for the two-time
+                prediction types.
+            t: Timesteps of shape ``(B,)``; the target time for the two-time
+                prediction types. Ignored when the model is unconditional
+                (``cond_dim=0``), so library losses that always pass ``t``
+                drive a time-invariant field unchanged.
             y: Integer class labels of shape ``(B,)``.
+            s: Times of ``x`` of shape ``(B,)`` for the two-time prediction
+                types: ``t_embedder`` embeds \(s\) and ``dt_embedder``
+                embeds \(t - s\). Rejected by the one-time types.
             cond: Pre-built conditioning vector of shape ``(B, cond_dim)``.
 
         Returns:
             torch.Tensor: Output of shape ``(B, out_dim)``.
         """
         if self.cond_dim == 0:
-            if y is not None or cond is not None:
+            if y is not None or cond is not None or s is not None:
                 raise ValueError(
                     f"{type(self).__name__} was built unconditional (cond_dim=0); "
-                    "y and cond are not accepted"
+                    "y, s and cond are not accepted"
                 )
             return self.net(x)
-        c = self._condition(x, t, y, cond)
+        c = self._condition(x, t, y, cond, s)
         if self.conditioning == "adaln_zero":
             h = self.stem(x)
             for block in self.blocks:
                 h = block(h, c)
-            return self.head(h, c)
-        return self.net(torch.cat([x, c], dim=-1))
+            return self._output(x, self.head(h, c), s, t)
+        return self._output(x, self.net(torch.cat([x, c], dim=-1)), s, t)
 
 
 def _tanh_gelu() -> nn.Module:
