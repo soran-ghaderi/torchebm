@@ -5,6 +5,16 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2](https://github.com/soran-ghaderi/torchebm/compare/v0.9.1...v0.9.2) - 2026-11-05
+
+### Added
+
+- [`d9630a0`](https://github.com/soran-ghaderi/torchebm/commit/d9630a017bbf3cf4e5186d60d0a6fa71a11f3d85) - add two-time conditioning with average velocity and flow map prediction types
+
+### Other
+
+- [`346f95b`](https://github.com/soran-ghaderi/torchebm/commit/346f95bc92e940530b7a2d126323eede24744a60) - check two-time conditioning, flow map jvp, compile and fsdp2
+
 ## [0.9.1](https://github.com/soran-ghaderi/torchebm/compare/v0.9.0...v0.9.1) - 2026-11-02
 
 ### Added
