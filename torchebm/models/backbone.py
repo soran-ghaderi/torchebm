@@ -9,6 +9,9 @@ import torch.nn as nn
 
 from torchebm.models.components import LabelEmbedder, MLPTimestepEmbedder
 
+_TWO_TIME_PREDICTION_TYPES = ("average_velocity", "flow_map")
+_PREDICTION_TYPES = ("velocity", "score", "epsilon", *_TWO_TIME_PREDICTION_TYPES)
+
 
 def _xavier_linear_init(module: nn.Module) -> None:
     if isinstance(module, nn.Linear):
@@ -30,6 +33,16 @@ class _ConditionalBackbone(nn.Module):
     so the backbone defines one field for all times. ``prediction_type``
     declares what ``forward`` returns (``"velocity"``, ``"score"``, or
     ``"epsilon"``); it does not change the computation.
+
+    The two-time prediction types ``"average_velocity"`` and ``"flow_map"``
+    condition on the time \(s\) of the input and the interval \(t - s\), as
+    in MeanFlow (Geng et al., 2025): ``t_embedder`` embeds \(s\), a second
+    embedder ``dt_embedder`` embeds \(t - s\), and both are summed into the
+    conditioning vector, so the network computes the average velocity
+    \(u(x_s, s, t)\) of the flow from time \(s\) to time \(t\).
+    ``"average_velocity"`` returns \(u\); ``"flow_map"`` returns the flow map
+    \(F(x_s, s, t) = x_s + (t - s)\, u(x_s, s, t)\), which satisfies
+    \(F(x_s, s, s) = x_s\) by construction.
     """
 
     prediction_type: str = "velocity"
@@ -42,14 +55,25 @@ class _ConditionalBackbone(nn.Module):
         class_dropout_prob: float = 0.0,
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
+        dt_embedder: Optional[nn.Module] = None,
         time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
         super().__init__()
-        if prediction_type not in ("velocity", "score", "epsilon"):
+        if prediction_type not in _PREDICTION_TYPES:
             raise ValueError(
-                "prediction_type must be 'velocity', 'score', or 'epsilon', "
+                f"prediction_type must be one of {_PREDICTION_TYPES}, "
                 f"got {prediction_type!r}"
+            )
+        two_time = prediction_type in _TWO_TIME_PREDICTION_TYPES
+        if dt_embedder is not None and not two_time:
+            raise ValueError(
+                "dt_embedder requires prediction_type 'average_velocity' or 'flow_map'"
+            )
+        if two_time and (cond_dim <= 0 or time_invariant):
+            raise ValueError(
+                f"prediction_type={prediction_type!r} conditions on s and t; it "
+                "requires cond_dim > 0 and time_invariant=False"
             )
         if cond_dim < 0:
             raise ValueError(f"cond_dim must be non-negative, got {cond_dim}")
@@ -77,10 +101,12 @@ class _ConditionalBackbone(nn.Module):
         self.prediction_type = prediction_type
         self._default_t_embedder = t_embedder is None and self.cond_dim > 0
         self._default_y_embedder = y_embedder is None and self.num_classes is not None
+        self._default_dt_embedder = dt_embedder is None and two_time
 
         if self.cond_dim == 0:
             self.t_embedder = None
             self.y_embedder = None
+            self.dt_embedder = None
         else:
             self.t_embedder = (
                 t_embedder
@@ -98,6 +124,14 @@ class _ConditionalBackbone(nn.Module):
                 )
             else:
                 self.y_embedder = None
+            if two_time:
+                self.dt_embedder = (
+                    dt_embedder
+                    if dt_embedder is not None
+                    else MLPTimestepEmbedder(self.cond_dim)
+                )
+            else:
+                self.dt_embedder = None
 
     def _condition(
         self,
@@ -105,11 +139,23 @@ class _ConditionalBackbone(nn.Module):
         t: Optional[torch.Tensor],
         y: Optional[torch.Tensor],
         cond: Optional[torch.Tensor],
+        s: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.time_invariant:
             t = x.new_zeros(x.shape[0])
         c = None
-        if t is not None:
+        if self.dt_embedder is not None:
+            if s is None or t is None:
+                raise ValueError(
+                    f"prediction_type={self.prediction_type!r} requires both s and t"
+                )
+            c = self.t_embedder(s) + self.dt_embedder(t - s)
+        elif s is not None:
+            raise ValueError(
+                f"s was given but this {type(self).__name__} is a one-time model; "
+                "construct it with prediction_type='average_velocity' or 'flow_map'"
+            )
+        elif t is not None:
             c = self.t_embedder(t)
         if y is not None:
             if self.y_embedder is None:
@@ -134,11 +180,26 @@ class _ConditionalBackbone(nn.Module):
             )
         return c
 
+    def _output(
+        self,
+        x: torch.Tensor,
+        u: torch.Tensor,
+        s: Optional[torch.Tensor],
+        t: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        if self.prediction_type != "flow_map":
+            return u
+        return x + (t - s).to(x.dtype).reshape(-1, *(1,) * (x.ndim - 1)) * u
+
     def _init_default_embedder_weights(self) -> None:
         r"""Reference init for default-built embedders; user modules untouched."""
-        if self._default_t_embedder:
-            self.t_embedder.apply(_xavier_linear_init)
-            nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
-            nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
+        for embedder, is_default in (
+            (self.t_embedder, self._default_t_embedder),
+            (self.dt_embedder, self._default_dt_embedder),
+        ):
+            if is_default:
+                embedder.apply(_xavier_linear_init)
+                nn.init.normal_(embedder.mlp[0].weight, std=0.02)
+                nn.init.normal_(embedder.mlp[2].weight, std=0.02)
         if self._default_y_embedder:
             nn.init.normal_(self.y_embedder.embedding.weight, std=0.02)

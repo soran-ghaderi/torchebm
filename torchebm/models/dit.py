@@ -101,6 +101,10 @@ class DiT(_ConditionalBackbone):
             carries it unused.
         y_embedder: Module mapping labels to ``(B, cond_dim)``. Mutually
             exclusive with ``num_classes``/``class_dropout_prob``.
+        dt_embedder: Module mapping ``(B,)`` intervals \(t - s\) to
+            ``(B, cond_dim)`` for the two-time prediction types. ``None``
+            (default) builds an `MLPTimestepEmbedder` when ``prediction_type``
+            is ``"average_velocity"`` or ``"flow_map"``, and nothing otherwise.
         head_dim: Token width of the head. ``None`` (default) keeps
             ``embed_dim`` and adds no projection.
         head_depth: Number of extra adaLN-Zero blocks in the head.
@@ -111,8 +115,12 @@ class DiT(_ConditionalBackbone):
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
             Matching model convention; labels and ``cond`` still apply.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
-            ``"score"``, or ``"epsilon"``. A declaration for consumers; the
-            computation is unchanged.
+            ``"score"``, or ``"epsilon"``, a declaration for consumers that
+            leaves the computation unchanged; or a two-time output,
+            ``"average_velocity"`` \(u(x_s, s, t)\) or ``"flow_map"``
+            \(F(x_s, s, t) = x_s + (t - s)\, u(x_s, s, t)\), which adds
+            ``dt_embedder`` and requires ``s=`` and ``t`` on every call.
+            ``"flow_map"`` requires ``out_channels == in_channels``.
 
     Example:
         DiT-XL/2 of the paper on the 32x32x4 SD-VAE latents of ImageNet 256,
@@ -145,6 +153,7 @@ class DiT(_ConditionalBackbone):
         class_dropout_prob: float = 0.0,
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
+        dt_embedder: Optional[nn.Module] = None,
         head_dim: Optional[int] = None,
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
@@ -170,6 +179,15 @@ class DiT(_ConditionalBackbone):
         resolved_cond = int(cond_dim) if cond_dim is not None else int(embed_dim)
         if resolved_cond <= 0:
             raise ValueError(f"cond_dim must be positive, got {resolved_cond}")
+        if (
+            prediction_type == "flow_map"
+            and out_channels is not None
+            and out_channels != in_channels
+        ):
+            raise ValueError(
+                "prediction_type='flow_map' requires out_channels == in_channels, "
+                f"got {out_channels} and {in_channels}"
+            )
 
         super().__init__(
             cond_dim=resolved_cond,
@@ -177,6 +195,7 @@ class DiT(_ConditionalBackbone):
             class_dropout_prob=class_dropout_prob,
             t_embedder=t_embedder,
             y_embedder=y_embedder,
+            dt_embedder=dt_embedder,
             time_invariant=time_invariant,
             prediction_type=prediction_type,
         )
@@ -275,6 +294,7 @@ class DiT(_ConditionalBackbone):
         t: Optional[torch.Tensor] = None,
         y: Optional[torch.Tensor] = None,
         *,
+        s: Optional[torch.Tensor] = None,
         cond: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         r"""Map ``(B, C, H, W)`` to ``(B, out_channels, H, W)``.
@@ -282,20 +302,26 @@ class DiT(_ConditionalBackbone):
         Follows the library's ``model(x, t, y=)`` convention. The adaLN
         conditioning vector is the sum of the embeddings of whichever of
         ``t``, ``y``, and ``cond`` are given; passing none raises.
+        Two-time models are called as ``model(x_s, t, s=s)`` and embed
+        \(s\) and \(t - s\) in place of \(t\).
 
         Args:
             x: Input of shape ``(B, in_channels, H, W)`` matching
-                ``input_size``.
-            t: Timesteps of shape ``(B,)``, embedded by ``t_embedder``.
+                ``input_size``; \(x_s\) for the two-time prediction types.
+            t: Timesteps of shape ``(B,)``, embedded by ``t_embedder``; the
+                target time for the two-time prediction types.
             y: Integer class labels of shape ``(B,)``, embedded by
                 ``y_embedder`` (id ``num_classes`` is the null token).
+            s: Times of ``x`` of shape ``(B,)`` for the two-time prediction
+                types: ``t_embedder`` embeds \(s\) and ``dt_embedder``
+                embeds \(t - s\). Rejected by the one-time types.
             cond: Pre-built conditioning vector of shape ``(B, cond_dim)``,
                 added as-is.
 
         Returns:
             torch.Tensor: Output of shape ``(B, out_channels, H, W)``.
         """
-        c = self._condition(x, t, y, cond)
+        c = self._condition(x, t, y, cond, s)
         if tuple(x.shape[-2:]) != self.input_size:
             raise ValueError(
                 f"input has spatial size {tuple(x.shape[-2:])}, "
@@ -310,7 +336,7 @@ class DiT(_ConditionalBackbone):
             tokens = self.head_proj(tokens)
         for block in self.head_blocks:
             tokens = block(tokens, c)
-        return self.head(tokens, c)
+        return self._output(x, self.head(tokens, c), s, t)
 
 
 def _preset(size: str, patch_size: int, kwargs: dict) -> DiT:
