@@ -1,6 +1,5 @@
 import pytest
 import torch
-from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from torchebm.models import DiT, TimeConditionedMLP
 
@@ -168,11 +167,8 @@ def test_flow_map_jvp_matches_finite_differences(backbone):
     def along(model, eps):
         return model(x + eps * v, t, s=s + eps * ds)
 
-    with sdpa_kernel(SDPBackend.MATH):
-        _, dF = torch.func.jvp(lambda x, s: flow_map(x, t, s=s), (x, s), (v, ds))
-        u, du = torch.func.jvp(
-            lambda x, s: average_velocity(x, t, s=s), (x, s), (v, ds)
-        )
+    _, dF = torch.func.jvp(lambda x, s: flow_map(x, t, s=s), (x, s), (v, ds))
+    u, du = torch.func.jvp(lambda x, s: average_velocity(x, t, s=s), (x, s), (v, ds))
     eps = 1e-6
     finite_difference = (along(flow_map, eps) - along(flow_map, -eps)) / (2 * eps)
     step = (t - s).reshape(-1, *(1,) * (x.ndim - 1))
