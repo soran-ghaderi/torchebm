@@ -131,7 +131,8 @@ _TRITON_CASES = [
     (dtype, rtol, n_q, n_kv, head_dim)
     for dtype, rtol in ((torch.float32, 1e-5), (torch.bfloat16, 1e-2), (torch.float16, 2e-3))
     for n_q, n_kv, head_dim in (
-        (256, 256, 64), (257, 100, 72), (100, 257, 48), (16, 16, 16), (64, 64, 128), (33, 17, 20)
+        (256, 256, 64), (257, 100, 72), (100, 257, 48), (16, 16, 16), (64, 64, 128), (33, 17, 20),
+        (130, 190, 96),
     )
     if head_dim * dtype.itemsize <= 256
 ]
@@ -139,9 +140,14 @@ _TRITON_CASES = [
 
 @requires_cuda
 @pytest.mark.usefixtures("highest_matmul_precision")
+@pytest.mark.parametrize("tma", [True, False], ids=["tma", "pointers"])
 @pytest.mark.parametrize("dtype, rtol, n_q, n_kv, head_dim", _TRITON_CASES)
-def test_triton_jvp_matches_float64_reference(dtype, rtol, n_q, n_kv, head_dim):
+def test_triton_jvp_matches_float64_reference(monkeypatch, tma, dtype, rtol, n_q, n_kv, head_dim):
     attention = pytest.importorskip("torchebm.cuda.attention")
+    if not tma:
+        monkeypatch.setattr(attention, "_supports_tma", lambda device_index: False)
+    elif not attention._supports_tma(torch.cuda.current_device()):
+        pytest.skip("TMA needs compute capability 9.0 or newer")
     torch.manual_seed(0)
     primals, tangents = _inputs(n_q, n_kv, head_dim, dtype=dtype, device="cuda")
     out = F.scaled_dot_product_attention(*primals)
