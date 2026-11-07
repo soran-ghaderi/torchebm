@@ -186,6 +186,65 @@ def test_gradient_flows():
     assert any(g is not None and (g.abs() > 0).any() for g in grads)
 
 
+requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+
+
+def _jvp_setup(device, dtype=torch.float32):
+    torch.manual_seed(0)
+    model = _tiny(patch_size=2, embed_dim=144, num_heads=2, num_classes=4)
+    with torch.no_grad():
+        for p in model.parameters():
+            p.add_(0.1 * torch.randn_like(p))
+    model = model.to(device, dtype)
+    x = torch.randn(4, 3, 8, 8, device=device, dtype=dtype)
+    t = torch.rand(4, device=device, dtype=dtype)
+    y = torch.arange(4, device=device)
+    return model, x, t, y, torch.randn_like(x), torch.ones_like(t)
+
+
+@pytest.mark.usefixtures("highest_matmul_precision")
+@pytest.mark.parametrize(
+    "device, dtype, autocast_dtype, rtol",
+    [
+        ("cpu", torch.float64, None, 1e-8),
+        pytest.param("cuda", torch.float32, None, 1e-4, marks=requires_cuda),
+        pytest.param("cuda", torch.float32, torch.bfloat16, 5e-2, marks=requires_cuda),
+    ],
+)
+def test_jvp_matches_finite_differences(device, dtype, autocast_dtype, rtol):
+    model, x, t, y, v, dt = _jvp_setup(device, dtype)
+    with torch.autocast(device, autocast_dtype or torch.bfloat16, enabled=autocast_dtype is not None):
+        _, out_t = torch.func.jvp(lambda x, t: model(x, t, y), (x, t), (v, dt))
+    reference = model.double()
+    x, t, v = x.double(), t.double(), v.double()
+    eps = 1e-6
+    finite_difference = (
+        reference(x + eps * v, t + eps, y) - reference(x - eps * v, t - eps, y)
+    ) / (2 * eps)
+    error = (out_t.double() - finite_difference).norm() / finite_difference.norm()
+    assert error < rtol
+
+
+@pytest.mark.usefixtures("highest_matmul_precision")
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=requires_cuda)])
+def test_jvp_and_backward_compile_without_graph_breaks(device):
+    model, x, t, y, v, dt = _jvp_setup(device)
+
+    def jvp(x, t):
+        return torch.func.jvp(lambda x, t: model(x, t, y), (x, t), (v, dt))
+
+    results = []
+    for fn in (jvp, torch.compile(jvp, fullgraph=True)):
+        out, out_t = fn(x, t)
+        grads = torch.autograd.grad(out.square().mean(), list(model.parameters()))
+        results.append((out, out_t, grads))
+    (out, out_t, grads), (c_out, c_out_t, c_grads) = results
+    assert torch.allclose(c_out, out, atol=1e-5)
+    assert torch.allclose(c_out_t, out_t, atol=1e-4, rtol=1e-4)
+    for grad, c_grad in zip(grads, c_grads):
+        assert torch.allclose(c_grad, grad, atol=1e-5, rtol=1e-4)
+
+
 def test_preset_table_matches_paper():
     assert _DIT_CONFIGS == {
         "S": {"embed_dim": 384, "depth": 12, "num_heads": 6},
