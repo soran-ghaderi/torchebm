@@ -46,10 +46,11 @@ def scaled_dot_product_attention(
 
     with \(P = \mathrm{softmax}(s\, Q K^\top)\). On CUDA the tangent comes
     from a Triton kernel with an online softmax, as in the rCM
-    FlashAttention-2 JVP kernel (Zheng et al., 2025), so \(P\) is never
-    stored; elsewhere it is computed with dense matrix products. In eager
-    mode the backward pass of the output recomputes the forward with
-    `F.scaled_dot_product_attention`. Under `torch.compile` the output uses
+    FlashAttention-2 JVP kernel (Zheng et al., 2025), and on Hopper from a
+    warp-specialized kernel with the FlashAttention-3 design (Shah et al.,
+    2024), so \(P\) is never stored; elsewhere it is computed with dense
+    matrix products. In eager mode the backward pass of the output
+    recomputes the forward with `F.scaled_dot_product_attention`. Under `torch.compile` the output uses
     the flash, cuDNN or math kernel with its own backward; the
     memory-efficient kernel is left out there, as its backward rejects the
     logsumexp layout traced under forward-mode AD. Under autocast the inputs

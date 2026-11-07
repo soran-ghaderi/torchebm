@@ -21,7 +21,9 @@ Blocks are loaded with TMA descriptors on compute capability 9.0 and newer
 when every stride is a multiple of 16 bytes, and with pointers otherwise.
 Pointer offsets then carry that alignment as a hint, so loads stay
 vectorized for head dimensions such as 72 whose strides Triton cannot prove
-aligned on its own.
+aligned on its own. On compute capability 9.0, float16 and bfloat16 inputs
+with TMA-aligned strides run the warp-specialized kernel of
+`torchebm.cuda.attention_sm90` instead.
 """
 
 import functools
@@ -31,7 +33,13 @@ import triton
 import triton.language as tl
 from triton.tools.tensor_descriptor import TensorDescriptor
 
+try:
+    from torchebm.cuda.attention_sm90 import attention_jvp_sm90 as _attention_jvp_sm90
+except ImportError:
+    _attention_jvp_sm90 = None
+
 _LOG2E = tl.constexpr(1.4426950408889634)
+_SM90_DTYPES = (torch.float16, torch.bfloat16)
 _QUERY_ROWS = ("Q", "O", "TQ", "TO", "Q2", "O2", "TQ2", "TO2")
 _KEY_ROWS = ("K", "V", "TK", "TV", "K2", "V2", "TK2", "TV2")
 
@@ -249,6 +257,11 @@ def _supports_tma(device_index):
     return torch.cuda.get_device_capability(device_index)[0] >= 9
 
 
+@functools.cache
+def _supports_sm90(device_index):
+    return torch.cuda.get_device_capability(device_index) == (9, 0)
+
+
 def _head_dim_blocks(head_dim):
     full = max(16, triton.next_power_of_2(head_dim))
     low = full // 2
@@ -303,6 +316,14 @@ def attention_jvp(
         and _supports_tma(query.device.index)
         and all(x.data_ptr() % 16 == 0 for x in tensors)
     )
+    if (
+        tma
+        and _attention_jvp_sm90 is not None
+        and query.dtype in _SM90_DTYPES
+        and block_d + block_d2 <= 128
+        and _supports_sm90(query.device.index)
+    ):
+        return _attention_jvp_sm90(*tensors, scale, block_d, block_d2)
     if tma:
         first = [TensorDescriptor.from_tensor(x, [1, 1, 1, block_d]) for x in tensors]
         second = [TensorDescriptor.from_tensor(x, [1, 1, 1, block_d2]) for x in tensors] if block_d2 else first

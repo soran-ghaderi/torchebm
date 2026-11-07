@@ -138,13 +138,21 @@ _TRITON_CASES = [
 ]
 
 
+def _sm90_available(attention):
+    return attention._attention_jvp_sm90 is not None and attention._supports_sm90(torch.cuda.current_device())
+
+
 @requires_cuda
 @pytest.mark.usefixtures("highest_matmul_precision")
-@pytest.mark.parametrize("tma", [True, False], ids=["tma", "pointers"])
+@pytest.mark.parametrize("kernel", ["sm90", "tma", "pointers"])
 @pytest.mark.parametrize("dtype, rtol, n_q, n_kv, head_dim", _TRITON_CASES)
-def test_triton_jvp_matches_float64_reference(monkeypatch, tma, dtype, rtol, n_q, n_kv, head_dim):
+def test_triton_jvp_matches_float64_reference(monkeypatch, kernel, dtype, rtol, n_q, n_kv, head_dim):
     attention = pytest.importorskip("torchebm.cuda.attention")
-    if not tma:
+    if kernel == "sm90" and (dtype == torch.float32 or not _sm90_available(attention)):
+        pytest.skip("the sm_90 kernel needs compute capability 9.0 and float16 or bfloat16")
+    if kernel != "sm90":
+        monkeypatch.setattr(attention, "_attention_jvp_sm90", None)
+    if kernel == "pointers":
         monkeypatch.setattr(attention, "_supports_tma", lambda device_index: False)
     elif not attention._supports_tma(torch.cuda.current_device()):
         pytest.skip("TMA needs compute capability 9.0 or newer")
@@ -157,3 +165,23 @@ def test_triton_jvp_matches_float64_reference(monkeypatch, tma, dtype, rtol, n_q
     )
     assert out_t.dtype == dtype and out_t.stride() == torch.empty_like(out).stride()
     assert (out_t.double() - ref_t).norm() / ref_t.norm() < rtol
+
+
+@requires_cuda
+@pytest.mark.parametrize("head_dim", [64, 72, 128])
+def test_sm90_jvp_with_more_tiles_than_sms(head_dim):
+    attention = pytest.importorskip("torchebm.cuda.attention")
+    if not _sm90_available(attention):
+        pytest.skip("the sm_90 kernel needs compute capability 9.0")
+    torch.manual_seed(0)
+    primals = tuple(
+        torch.randn(8, n, 16, head_dim, device="cuda", dtype=torch.bfloat16).transpose(1, 2)
+        for n in (300, 200, 200)
+    )
+    tangents = tuple(torch.randn_like(x) for x in primals)
+    out = F.scaled_dot_product_attention(*primals)
+    out_t = attention.attention_jvp(*primals, out, *tangents, head_dim**-0.5)
+    _, ref_t = _math_jvp(
+        tuple(x.double() for x in primals), tuple(t.double() for t in tangents)
+    )
+    assert (out_t.double() - ref_t).norm() / ref_t.norm() < 1e-2
