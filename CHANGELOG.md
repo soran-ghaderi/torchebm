@@ -5,6 +5,19 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3](https://github.com/soran-ghaderi/torchebm/compare/v0.9.2...v0.9.3) - 2026-11-12
+
+### Added
+
+- [`f970a84`](https://github.com/soran-ghaderi/torchebm/commit/f970a843ef5cd73fb0e99423e8536228ff1a99e0) - add flow map sampler for one-step and few-step generation
+- [`8eca53c`](https://github.com/soran-ghaderi/torchebm/commit/8eca53cc6fbd6938994495d90cd8a89f34025751) - add shortcut model self-consistency loss
+
+### Other
+
+- [`5ab9eae`](https://github.com/soran-ghaderi/torchebm/commit/5ab9eaedc586ac442d7a4be15a0fc930fec4ca87) - check flow map sampler against the exact gaussian flow map
+- [`5f3dd54`](https://github.com/soran-ghaderi/torchebm/commit/5f3dd544b1a95685d6a2e963f242e89f27c583a4) - check shortcut loss against the reference code
+- [`392aef3`](https://github.com/soran-ghaderi/torchebm/commit/392aef3fc9b5ec6ffcb52b0100047e189b2239f6) - add shortcut models 2d example with one-step sampling
+
 ## [0.9.2](https://github.com/soran-ghaderi/torchebm/compare/v0.9.1...v0.9.2) - 2026-11-11
 
 ### Added
