@@ -2,7 +2,7 @@ r"""General training utilities for TorchEBM."""
 
 import math
 from collections import OrderedDict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
 
 import torch
@@ -68,6 +68,64 @@ def compute_density_for_timestep_sampling(
     if weighting_scheme == "mode":
         return 1 - u - mode_scale * (torch.cos(math.pi * u / 2) ** 2 - 1 + u)
     return u
+
+
+def sample_time_pairs(
+    batch_size: int,
+    weighting_scheme: str = "logit_normal",
+    logit_mean: float = 0.4,
+    logit_std: float = 1.0,
+    flow_matching_ratio: float = 0.75,
+    *,
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    generator: Optional[torch.Generator] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    r"""Draw time pairs \(s \le t\) for training two-time models.
+
+    The `sample_tr` of MeanFlow (Geng et al., 2025) in torchebm time, with
+    noise at 0 and data at 1: two times are drawn independently from
+    `compute_density_for_timestep_sampling`, the smaller is the time \(s\)
+    of the input and the larger the target time \(t\), and the first
+    ``int(batch_size * flow_matching_ratio)`` pairs get \(t = s\), where the
+    MeanFlow loss reduces to flow matching. The defaults are the MeanFlow
+    ImageNet settings, a logit-normal with \(P_{mean} = -0.4\),
+    \(P_{std} = 1\) and 25% of pairs with \(s \ne t\); flipping time negates
+    the logit mean.
+
+    Args:
+        batch_size: Number of pairs.
+        weighting_scheme: Density of each draw: ``"uniform"``,
+            ``"logit_normal"`` (default), or ``"mode"``.
+        logit_mean: Mean of the logit-normal density, in torchebm time.
+        logit_std: Standard deviation of the logit-normal density.
+        flow_matching_ratio: Share of pairs with \(t = s\).
+        device: Device of the result.
+        dtype: Data type of the result.
+        generator: RNG for the draws; the global RNG when ``None``.
+
+    Returns:
+        Tuple ``(s, t)`` of tensors of shape (batch_size,) with ``s <= t``.
+
+    Example:
+        ```python
+        from torchebm.utils import sample_time_pairs
+
+        s, t = sample_time_pairs(len(x1))
+        ```
+    """
+    draws = compute_density_for_timestep_sampling(
+        weighting_scheme,
+        2 * batch_size,
+        logit_mean,
+        logit_std,
+        device=device,
+        dtype=dtype,
+        generator=generator,
+    ).view(2, batch_size)
+    s, t = draws.aminmax(dim=0)
+    equal = torch.arange(batch_size, device=s.device) < int(batch_size * flow_matching_ratio)
+    return s, torch.where(equal, s, t)
 
 
 @torch.no_grad()
