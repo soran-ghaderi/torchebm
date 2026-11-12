@@ -146,7 +146,7 @@ plugins:
         flow maps, and discrete or manifold state spaces are on the roadmap.
 
         Key components:
-        - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, GradientDescentSampler, NesterovSampler, FlowSampler
+        - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, GradientDescentSampler, NesterovSampler, FlowSampler, FlowMapSampler
         - Losses: ContrastiveDivergenceLoss, ScoreMatchingLoss, DenoisingScoreMatchingLoss, SlicedScoreMatchingLoss, FlowMatchingLoss, EquilibriumMatchingLoss, EnergyMatchingLoss
         - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant, VarianceExplodingInterpolant
         - Couplings: IndependentCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling, ExactOTCoupling

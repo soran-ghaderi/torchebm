@@ -250,6 +250,12 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
             },
         },
     },
+    "FlowMapSampler": {
+        "model_type": "velocity",
+        "variants": {
+            "flow_map_sampler_call": {"call_time_model": True},
+        },
+    },
     # ── Interpolants (defaults are fine — no overrides needed) ──
     "VariancePreservingInterpolant": {
         "init_kwargs": {"sigma_min": 0.1, "sigma_max": 20.0},

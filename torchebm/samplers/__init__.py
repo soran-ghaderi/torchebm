@@ -17,6 +17,7 @@ __all__ = [
     "NesterovSampler",
     # Flow/diffusion samplers
     "FlowSampler",
+    "FlowMapSampler",
     "PredictionType",
 ]
 
@@ -27,6 +28,7 @@ _LAZY_IMPORTS = {
     "GradientDescentSampler": ".gradient_descent",
     "NesterovSampler": ".gradient_descent",
     "FlowSampler": ".flow",
+    "FlowMapSampler": ".flow_map",
     "PredictionType": ".flow",
 }
 
