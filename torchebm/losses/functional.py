@@ -243,6 +243,40 @@ def sliced_score_matching_loss(
     return _reduce(loss, reduction)
 
 
+def shortcut_loss(
+    input: torch.Tensor,
+    first_step: torch.Tensor,
+    second_step: torch.Tensor,
+    weight: Optional[torch.Tensor] = None,
+    target_clip: Optional[float] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Shortcut model self-consistency: one jump of size \(2d\) matches two of size \(d\).
+
+    \[
+    L = w\, \big\|u_\theta(x_t, t, t + 2d) - \mathrm{sg}\big(\tfrac{1}{2}(u_1 + u_2)\big)\big\|^2
+    \]
+
+    with \(u_1 = u(x_t, t, t + d)\), \(u_2 = u(x_t + d\, u_1, t + d, t + 2d)\)
+    and the squared error averaged over the non-batch dimensions.
+
+    Args:
+        input: Average velocity of the jump of size \(2d\), shape (batch_size, ...).
+        first_step: Average velocity \(u_1\) of the first jump of size \(d\), same shape.
+        second_step: Average velocity \(u_2\) of the second jump of size \(d\), same shape.
+        weight: Per-sample weight \(w\), shape (batch_size,).
+        target_clip: If set, the target is clamped to ``[-target_clip, target_clip]``.
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    target = (0.5 * (first_step + second_step)).detach()
+    if target_clip is not None:
+        target = target.clamp(-target_clip, target_clip)
+    return _reduce(mean_flat((input - target).square()), reduction, weight)
+
+
 __all__ = [
     "contrastive_divergence_loss",
     "flow_matching_loss",
@@ -251,4 +285,5 @@ __all__ = [
     "score_matching_loss",
     "denoising_score_matching_loss",
     "sliced_score_matching_loss",
+    "shortcut_loss",
 ]

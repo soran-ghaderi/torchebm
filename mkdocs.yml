@@ -147,7 +147,7 @@ plugins:
 
         Key components:
         - Samplers: LangevinDynamics, HamiltonianMonteCarlo, RiemannianManifoldHMC, GradientDescentSampler, NesterovSampler, FlowSampler, FlowMapSampler
-        - Losses: ContrastiveDivergenceLoss, ScoreMatchingLoss, DenoisingScoreMatchingLoss, SlicedScoreMatchingLoss, FlowMatchingLoss, EquilibriumMatchingLoss, EnergyMatchingLoss
+        - Losses: ContrastiveDivergenceLoss, ScoreMatchingLoss, DenoisingScoreMatchingLoss, SlicedScoreMatchingLoss, FlowMatchingLoss, EquilibriumMatchingLoss, EnergyMatchingLoss, ShortcutLoss
         - Interpolants: LinearInterpolant, CosineInterpolant, VariancePreservingInterpolant, VarianceExplodingInterpolant
         - Couplings: IndependentCoupling, GreedyCoupling, SinkhornCoupling, UnbalancedSinkhornCoupling, ExactOTCoupling
         - Integrators: EulerMaruyama, Heun, RK4, Dopri5, Leapfrog, GeneralisedLeapfrog
