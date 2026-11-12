@@ -4,7 +4,8 @@ from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
+from .attention import scaled_dot_product_attention
 
 
 def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
@@ -18,6 +19,8 @@ class MultiheadSelfAttention(nn.Module):
     Uses ``F.scaled_dot_product_attention`` so the flash-attention and
     memory-efficient kernels are selected automatically on supported hardware
     (Ampere+ GPUs in fp16/bf16, any CUDA device via mem-efficient fallback).
+    Under ``torch.func.jvp`` the output tangent comes from the JVP of
+    attention in `scaled_dot_product_attention`.
     """
 
     def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0):
@@ -41,7 +44,7 @@ class MultiheadSelfAttention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
         dropout_p = self.dropout if self.training else 0.0
-        y = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p, is_causal=False)
+        y = scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
         y = y.transpose(1, 2).reshape(B, N, D)
         return self.out_proj(y)
 

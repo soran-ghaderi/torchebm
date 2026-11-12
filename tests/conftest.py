@@ -12,6 +12,15 @@ def _reset_warn_once():
     yield
 
 
+@pytest.fixture
+def highest_matmul_precision():
+    """Run float32 matmuls without TF32, whatever an earlier import set."""
+    previous = torch.get_float32_matmul_precision()
+    torch.set_float32_matmul_precision("highest")
+    yield
+    torch.set_float32_matmul_precision(previous)
+
+
 def requires_cuda(func):
     """Skip test if CUDA is not available or no NVIDIA driver is found.
     
