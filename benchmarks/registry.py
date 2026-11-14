@@ -173,6 +173,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
             "flow_matching_loss_fn": {"on_outputs": True},
         },
     },
+    "ShortcutLoss": {"model_type": "velocity", "on_outputs": True},
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
@@ -248,6 +249,12 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
                 "call_time_model": True,
                 "init_kwargs": {"interpolant": "linear", "integrator": "dopri5"},
             },
+        },
+    },
+    "FlowMapSampler": {
+        "model_type": "velocity",
+        "variants": {
+            "flow_map_sampler_call": {"call_time_model": True},
         },
     },
     # ── Interpolants (defaults are fine — no overrides needed) ──
@@ -738,6 +745,20 @@ def _step_equilibrium_matching(loss_fn, model, x, device, dtype):
     return step
 
 
+def _step_shortcut(loss_fn, model, x, device, dtype):
+    path = LinearInterpolant()
+
+    def step():
+        x_t, _, t = _path_sample(path, x, device, dtype)
+        d = 0.5 * (1 - t)
+        with torch.no_grad():
+            u1 = model(x_t, t + d)
+            u2 = model(x_t + d.unsqueeze(-1) * u1, t + 2 * d)
+        return loss_fn(model(x_t, t + 2 * d), u1, u2)
+
+    return step
+
+
 def _step_energy_matching(loss_fn, model, x, device, dtype):
     path = LinearInterpolant()
     coupling = resolve_coupling("ot", default="ot", owner="benchmark")
@@ -758,6 +779,7 @@ _LOSS_FN_STEPS = {
     "FlowMatchingLoss": _step_flow_matching,
     "EquilibriumMatchingLoss": _step_equilibrium_matching,
     "EnergyMatchingLoss": _step_energy_matching,
+    "ShortcutLoss": _step_shortcut,
 }
 
 

@@ -6,6 +6,7 @@ inputs and call these. ``reduction`` follows `torch.nn.functional`: ``"mean"``
 and ``"sum"`` reduce over the batch, ``"none"`` returns one value per sample.
 """
 
+import math
 from typing import Optional
 
 import torch
@@ -243,6 +244,108 @@ def sliced_score_matching_loss(
     return _reduce(loss, reduction)
 
 
+def shortcut_loss(
+    input: torch.Tensor,
+    first_step: torch.Tensor,
+    second_step: torch.Tensor,
+    weight: Optional[torch.Tensor] = None,
+    target_clip: Optional[float] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Shortcut model self-consistency: one jump of size \(2d\) matches two of size \(d\).
+
+    \[
+    L = w\, \big\|u_\theta(x_t, t, t + 2d) - \mathrm{sg}\big(\tfrac{1}{2}(u_1 + u_2)\big)\big\|^2
+    \]
+
+    with \(u_1 = u(x_t, t, t + d)\), \(u_2 = u(x_t + d\, u_1, t + d, t + 2d)\)
+    and the squared error averaged over the non-batch dimensions.
+
+    Args:
+        input: Average velocity of the jump of size \(2d\), shape (batch_size, ...).
+        first_step: Average velocity \(u_1\) of the first jump of size \(d\), same shape.
+        second_step: Average velocity \(u_2\) of the second jump of size \(d\), same shape.
+        weight: Per-sample weight \(w\), shape (batch_size,).
+        target_clip: If set, the target is clamped to ``[-target_clip, target_clip]``.
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    target = (0.5 * (first_step + second_step)).detach()
+    if target_clip is not None:
+        target = target.clamp(-target_clip, target_clip)
+    return _reduce(mean_flat((input - target).square()), reduction, weight)
+
+
+def adaptive_weight(
+    squared_error: torch.Tensor, p: float = 1.0, c: float = 0.01
+) -> torch.Tensor:
+    r"""Adaptive loss weight of MeanFlow (Geng et al., 2025), detached.
+
+    \[
+    w = \mathrm{sg}\big(1 / (\|\Delta\|^2 + c)^p\big)
+    \]
+
+    Multiplying the per-sample squared error by \(w\) gives the MeanFlow
+    loss (Eq. 22); ``p=0.5`` is similar to the pseudo-Huber metric and
+    ``p=0`` is the squared error. The defaults are those of the MeanFlow
+    code (``norm_p=1.0``, ``norm_eps=0.01``); the paper uses \(p = 1\) on
+    ImageNet and \(p = 0.75\) on CIFAR-10, and gives \(c = 10^{-3}\) as an
+    example.
+
+    Args:
+        squared_error: Per-sample \(\|\Delta\|^2\), summed over the non-batch
+            dimensions, shape (batch_size,).
+        p: Power \(p\).
+        c: Constant \(c\).
+
+    Returns:
+        Weight of shape (batch_size,), without gradient.
+
+    Example:
+        ```python
+        squared_error = (u - u_target).square().flatten(1).sum(1)
+        loss = (adaptive_weight(squared_error) * squared_error).mean()
+        ```
+    """
+    return (squared_error.detach() + c).pow(-p)
+
+
+def pseudo_huber_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    c: Optional[float] = None,
+    weight: Optional[torch.Tensor] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Pseudo-Huber metric of improved consistency training (Song and Dhariwal, 2023, Eq. 8).
+
+    \[
+    L = w \left(\sqrt{\|x - y\|^2 + c^2} - c\right)
+    \]
+
+    with the squared norm summed over the non-batch dimensions. It is close
+    to \(\|x - y\|^2 / (2c)\) for small errors and to \(\|x - y\|\) for large
+    ones.
+
+    Args:
+        input: Model output \(x\), shape (batch_size, ...).
+        target: Target \(y\), same shape.
+        c: Constant \(c\); ``None`` uses the iCT choice
+            \(0.00054 \sqrt{d}\) with \(d\) the number of non-batch elements.
+        weight: Per-sample weight \(w\), shape (batch_size,).
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    if c is None:
+        c = 0.00054 * math.sqrt(input[0].numel())
+    squared_norm = (input - target).square().flatten(1).sum(1)
+    return _reduce(torch.sqrt(squared_norm + c**2) - c, reduction, weight)
+
+
 __all__ = [
     "contrastive_divergence_loss",
     "flow_matching_loss",
@@ -251,4 +354,7 @@ __all__ = [
     "score_matching_loss",
     "denoising_score_matching_loss",
     "sliced_score_matching_loss",
+    "shortcut_loss",
+    "adaptive_weight",
+    "pseudo_huber_loss",
 ]

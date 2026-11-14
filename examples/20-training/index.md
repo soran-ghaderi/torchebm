@@ -13,6 +13,8 @@ objective to the most recent.
   and Boltzmann sampling.
 - **Couplings**: which noise sample is paired with which datum, which decides how
   straight the transport paths are, and so how few steps generation needs.
+- **Flow maps**: two-time models that jump from noise to data in one call,
+  trained here with the self-consistency loss of shortcut models.
 
 Start with **CD-k on Two Moons**, then **Equilibrium Matching in 2D** to sample
 one time-invariant field two ways and an explicit energy with repulsion.
