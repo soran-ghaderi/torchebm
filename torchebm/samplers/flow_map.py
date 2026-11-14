@@ -33,7 +33,9 @@ class FlowMapSampler(BaseSampler):
     \(\hat x_1 = F(x_{t_i}, t_i, 1)\), and the next step starts from the
     interpolant path at the next grid time,
     \(x_{t_{i+1}} = \alpha(t_{i+1})\, \hat x_1 + \sigma(t_{i+1})\, \epsilon\)
-    with \(\epsilon \sim \mathcal{N}(0, I)\).
+    with \(\epsilon \sim \mathcal{N}(0, I)\). This is Algorithm 1 written for
+    the interpolant; the paper states it for the variance-exploding path,
+    \(\hat x_\tau = x + \sqrt{\tau^2 - \epsilon^2}\, z\).
 
     The model is called as ``model(x_s, t, s=s, **model_kwargs)``, the
     two-time call of `DiT` and `TimeConditionedMLP`.

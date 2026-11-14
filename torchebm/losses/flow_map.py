@@ -37,10 +37,11 @@ class ShortcutLoss(BaseLoss):
         device: Device for computations.
 
     Example:
-        One training step of the reference code on a class-conditional `DiT`
-        with ``prediction_type="average_velocity"`` over ImageNet 256
-        latents: \(M = 128\), one eighth of the batch on the self-consistency
-        loss with big jumps \(2d \in \{1, 1/2, \dots, 1/64\}\) and \(t\) on
+        One training step of the reference code (kvfrans/shortcut-models,
+        ``targets_shortcut.py``) on a class-conditional `DiT` with
+        ``prediction_type="average_velocity"`` over ImageNet 256 latents:
+        \(M = 128\), one eighth of the batch on the self-consistency loss
+        (``bootstrap_every=8``; the paper states \(k = 1/4\)) with big jumps \(2d \in \{1, 1/2, \dots, 1/64\}\) and \(t\) on
         the grid of \(2d\), targets from the EMA model (decay 0.999), the
         intermediate state and the target clamped to \([-4, 4]\), and the
         flow-matching term on the rest at \(t \in \{0, 1/128, \dots\}\):
