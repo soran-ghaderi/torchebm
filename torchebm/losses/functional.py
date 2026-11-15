@@ -312,6 +312,56 @@ def adaptive_weight(
     return (squared_error.detach() + c).pow(-p)
 
 
+def meanflow_loss(
+    input: torch.Tensor,
+    du_ds: torch.Tensor,
+    velocity: torch.Tensor,
+    s: torch.Tensor,
+    t: torch.Tensor,
+    p: float = 1.0,
+    c: float = 0.01,
+    weight: Optional[torch.Tensor] = None,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""MeanFlow loss (Geng et al., 2025, Eq. 9 and Eq. 22) in torchebm time.
+
+    \[
+    L = w\, \mathrm{sg}(\lambda)\, \big\|u_\theta(x_s, s, t)
+    - \mathrm{sg}\big(v + (t - s)\, \tfrac{d}{ds} u_\theta\big)\big\|^2,
+    \qquad \lambda = 1 / (\|\Delta\|^2 + c)^p,
+    \]
+
+    with \(\Delta\) the regression error, the squared norm summed over the
+    non-batch dimensions as in the MeanFlow code, and
+    \(\tfrac{d}{ds} u_\theta = v\, \partial_x u_\theta + \partial_s u_\theta\)
+    the JVP along \((v, 1)\) in \((x_s, s)\) at fixed \(t\). With noise at
+    \(t = 0\) the paper's identity \(u = v - (t - r)\, \tfrac{d}{dt} u\)
+    becomes \(u = v + (t - s)\, \tfrac{d}{ds} u\). Improved MeanFlow
+    (Geng et al., 2025b, Algorithm 1) computes the same loss with the JVP
+    along the model velocity \(u_\theta(x_s, s, s)\) instead of \(v\).
+    ``p=0`` gives the squared error.
+
+    Args:
+        input: Average velocity \(u_\theta(x_s, s, t)\), shape (batch_size, ...).
+        du_ds: Total derivative \(\tfrac{d}{ds} u_\theta\), same shape.
+        velocity: Conditional velocity \(v\) of the path, or the guided
+            velocity (Eq. 21) under classifier-free guidance, same shape.
+        s: Times of the input, shape (batch_size,).
+        t: Target times, shape (batch_size,).
+        p: Power \(p\) of the adaptive weight.
+        c: Constant \(c\) of the adaptive weight.
+        weight: Per-sample weight \(w\), shape (batch_size,).
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    interval = (t - s).to(input.dtype).reshape(-1, *(1,) * (input.ndim - 1))
+    target = (velocity + interval * du_ds).detach()
+    squared_error = (input - target).square().flatten(1).sum(1)
+    return _reduce(adaptive_weight(squared_error, p, c) * squared_error, reduction, weight)
+
+
 def pseudo_huber_loss(
     input: torch.Tensor,
     target: torch.Tensor,
@@ -356,5 +406,6 @@ __all__ = [
     "sliced_score_matching_loss",
     "shortcut_loss",
     "adaptive_weight",
+    "meanflow_loss",
     "pseudo_huber_loss",
 ]
