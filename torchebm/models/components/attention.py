@@ -84,7 +84,7 @@ def scaled_dot_product_attention(
         )
         ```
     """
-    if all(fwAD.unpack_dual(x).tangent is None for x in (query, key, value)):
+    if all(fwAD.unpack_dual(x, level=0).tangent is None for x in (query, key, value)):
         return F.scaled_dot_product_attention(
             query, key, value, dropout_p=dropout_p, scale=scale
         )
