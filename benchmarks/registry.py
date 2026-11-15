@@ -174,6 +174,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         },
     },
     "ShortcutLoss": {"model_type": "velocity", "on_outputs": True},
+    "MeanFlowLoss": {"model_type": "velocity", "on_outputs": True},
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
@@ -759,6 +760,17 @@ def _step_shortcut(loss_fn, model, x, device, dtype):
     return step
 
 
+def _step_meanflow(loss_fn, model, x, device, dtype):
+    path = LinearInterpolant()
+
+    def step():
+        x_s, v, s = _path_sample(path, x, device, dtype)
+        u, du_ds = torch.func.jvp(model, (x_s, s), (v, torch.ones_like(s)))
+        return loss_fn(u, du_ds, v, s, torch.ones_like(s))
+
+    return step
+
+
 def _step_energy_matching(loss_fn, model, x, device, dtype):
     path = LinearInterpolant()
     coupling = resolve_coupling("ot", default="ot", owner="benchmark")
@@ -780,6 +792,7 @@ _LOSS_FN_STEPS = {
     "EquilibriumMatchingLoss": _step_equilibrium_matching,
     "EnergyMatchingLoss": _step_energy_matching,
     "ShortcutLoss": _step_shortcut,
+    "MeanFlowLoss": _step_meanflow,
 }
 
 

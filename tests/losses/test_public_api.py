@@ -26,6 +26,7 @@ def test_all_public_loss_classes_can_be_constructed():
         "FlowMatchingLoss": lambda: losses.FlowMatchingLoss(model),
         "EnergyMatchingLoss": lambda: losses.EnergyMatchingLoss(model),
         "ShortcutLoss": losses.ShortcutLoss,
+        "MeanFlowLoss": losses.MeanFlowLoss,
     }
     public_classes = {
         name for name in losses.__all__ if inspect.isclass(getattr(losses, name))
