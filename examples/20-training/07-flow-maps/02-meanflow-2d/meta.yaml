@@ -1,0 +1,6 @@
+title: "MeanFlow in 2D"
+summary: "Train a two-time average-velocity model with MeanFlowLoss, using torch.func.jvp for the time derivative, then sample in one, two or four jumps with FlowMapSampler."
+order: 1110
+difficulty: intermediate
+tags: [flow-maps, meanflow, training, one-step, 2d-energy]
+entrypoint: main.py
