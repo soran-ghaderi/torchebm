@@ -2,11 +2,14 @@ r"""General training utilities for TorchEBM."""
 
 import math
 from collections import OrderedDict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
 
 import torch
+import torch.autograd.forward_ad as fwAD
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.overrides import TorchFunctionMode
 
 
 def compute_density_for_timestep_sampling(
@@ -68,6 +71,170 @@ def compute_density_for_timestep_sampling(
     if weighting_scheme == "mode":
         return 1 - u - mode_scale * (torch.cos(math.pi * u / 2) ** 2 - 1 + u)
     return u
+
+
+def sample_time_pairs(
+    batch_size: int,
+    weighting_scheme: str = "logit_normal",
+    logit_mean: float = 0.4,
+    logit_std: float = 1.0,
+    flow_matching_ratio: float = 0.75,
+    *,
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+    generator: Optional[torch.Generator] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    r"""Draw time pairs \(s \le t\) for training two-time models.
+
+    The `sample_tr` of MeanFlow (Geng et al., 2025) in torchebm time, with
+    noise at 0 and data at 1: two times are drawn independently from
+    `compute_density_for_timestep_sampling`, the smaller is the time \(s\)
+    of the input and the larger the target time \(t\), and the first
+    ``int(batch_size * flow_matching_ratio)`` pairs get \(t = s\), where the
+    MeanFlow loss reduces to flow matching. The defaults are the MeanFlow
+    ImageNet settings, a logit-normal with \(P_{mean} = -0.4\),
+    \(P_{std} = 1\) and 25% of pairs with \(s \ne t\); flipping time negates
+    the logit mean.
+
+    Args:
+        batch_size: Number of pairs.
+        weighting_scheme: Density of each draw: ``"uniform"``,
+            ``"logit_normal"`` (default), or ``"mode"``.
+        logit_mean: Mean of the logit-normal density, in torchebm time.
+        logit_std: Standard deviation of the logit-normal density.
+        flow_matching_ratio: Share of pairs with \(t = s\).
+        device: Device of the result.
+        dtype: Data type of the result.
+        generator: RNG for the draws; the global RNG when ``None``.
+
+    Returns:
+        Tuple ``(s, t)`` of tensors of shape (batch_size,) with ``s <= t``.
+
+    Example:
+        ```python
+        from torchebm.utils import sample_time_pairs
+
+        s, t = sample_time_pairs(len(x1))
+        ```
+    """
+    draws = compute_density_for_timestep_sampling(
+        weighting_scheme,
+        2 * batch_size,
+        logit_mean,
+        logit_std,
+        device=device,
+        dtype=dtype,
+        generator=generator,
+    ).view(2, batch_size)
+    s, t = draws.aminmax(dim=0)
+    equal = torch.arange(batch_size, device=s.device) < int(batch_size * flow_matching_ratio)
+    return s, torch.where(equal, s, t)
+
+
+class _LinearTangentMode(TorchFunctionMode):
+    r"""Forward-mode tangent of `F.linear` with a tangent on the input only.
+
+    The tangent is \(\dot y = \dot x W^\top\), one matrix product computed
+    without gradient. PyTorch's forward-mode rule also multiplies the input
+    by the zero tangent of the weight, a second matrix product per layer
+    under `torch.compile`, and records the tangent for the backward pass.
+    Calls whose weight or bias has a tangent run unchanged.
+    """
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        kwargs = kwargs or {}
+        if func is F.linear:
+            return self._linear(*args, **kwargs)
+        return func(*args, **kwargs)
+
+    @staticmethod
+    def _linear(input, weight, bias=None):
+        primal, tangent = fwAD.unpack_dual(input, level=0)
+        if tangent is None or any(
+            fwAD.unpack_dual(p, level=0).tangent is not None for p in (weight, bias) if p is not None
+        ):
+            return F.linear(input, weight, bias)
+        with torch.no_grad():
+            output_t = F.linear(tangent, weight)
+        return fwAD.make_dual(F.linear(primal, weight, bias), output_t, level=0)
+
+
+def average_velocity_jvp(
+    model: nn.Module,
+    x_s: torch.Tensor,
+    s: torch.Tensor,
+    t: torch.Tensor,
+    tangent: torch.Tensor,
+    y: Optional[torch.Tensor] = None,
+    flow_matching_ratio: float = 0.75,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    r"""Average velocity of a two-time model and its JVP, the inputs of `MeanFlowLoss`.
+
+    Returns \(u = u_\theta(x_s, s, t)\) and its total derivative along the
+    path at fixed \(t\),
+
+    \[
+    \frac{d u}{d s} = \partial_x u \; \dot x + \partial_s u,
+    \]
+
+    the JVP of the model along ``(tangent, 1)`` in \((x_s, s)\). The tangent
+    \(\dot x\) is the path velocity in MeanFlow (Geng et al., 2025) and the
+    model velocity \(u_\theta(x_s, s, s)\) in Improved MeanFlow (Geng et al.,
+    2025b, Algorithm 1).
+
+    The first ``int(B * flow_matching_ratio)`` pairs must have \(t = s\), as
+    `sample_time_pairs` returns them with the same ratio. There the MeanFlow
+    target \(v + (t - s) \frac{du}{ds}\) is \(v\), so these rows run the
+    forward pass only, their derivative is zero, and `torch.func.jvp` runs
+    on the remaining rows. At the MeanFlow ratio of 75% this skips three
+    quarters of the forward-mode work of a full-batch JVP; a ratio of 0 runs
+    the JVP on the full batch. The JVP rows are copied out of the batch
+    first, as `torch.compile` does not trace forward-mode AD through views.
+
+    The derivative carries no gradient, as MeanFlow and Improved MeanFlow use
+    it under stop-gradient: the tangents of linear layers take one matrix
+    product each and are not recorded, so the backward pass keeps no tangent
+    activations and, under `torch.compile`, no product with the zero tangent
+    of the weights is formed.
+
+    Args:
+        model: Two-time model, called as ``model(x_s, t, y, s=s)``.
+        x_s: Inputs at time \(s\), of shape ``(B, ...)``.
+        s: Times of ``x_s``, of shape ``(B,)``.
+        t: Target times, of shape ``(B,)``.
+        tangent: Tangent \(\dot x\) of ``x_s``, of the shape of ``x_s``.
+        y: Class labels of shape ``(B,)``, or ``None``.
+        flow_matching_ratio: Share of leading pairs with \(t = s\).
+
+    Returns:
+        Tuple ``(u, du_ds)`` of tensors of the shape of ``x_s``; ``du_ds`` is
+        detached.
+
+    Example:
+        ```python
+        from torchebm.utils import average_velocity_jvp, sample_time_pairs
+
+        s, t = sample_time_pairs(len(x1))
+        x_s, v = path(torch.randn_like(x1), x1, s)
+        u, du_ds = average_velocity_jvp(model, x_s, s, t, v, y)
+        loss = loss_fn(u, du_ds, v, s, t)
+        ```
+    """
+    n = int(len(x_s) * flow_matching_ratio)
+    rows = (x_s, s, t, tangent, y)
+    if n > 0:
+        rows = tuple(None if a is None else a[n:].clone() for a in rows)
+    x_jvp, s_jvp, t_jvp, tangent_jvp, y_jvp = rows
+    with _LinearTangentMode():
+        u, du_ds = torch.func.jvp(
+            lambda x_s, s: model(x_s, t_jvp, y_jvp, s=s),
+            (x_jvp, s_jvp),
+            (tangent_jvp, torch.ones_like(s_jvp)),
+        )
+    if n == 0:
+        return u, du_ds.detach()
+    u_fm = model(x_s[:n], t[:n], None if y is None else y[:n], s=s[:n])
+    return torch.cat([u_fm, u]), torch.cat([torch.zeros_like(u_fm), du_ds.detach()])
 
 
 @torch.no_grad()

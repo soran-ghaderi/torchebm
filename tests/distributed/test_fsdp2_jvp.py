@@ -89,3 +89,70 @@ def test_jvp_dit_matches_unsharded_reference():
         assert res["tangent_err"] < 1e-5, res
         assert res["tangent_norm"] > 0, res
         assert res["grad_err"] < 1e-5, res
+
+
+def _average_velocity_jvp_worker(rank, world_size, tmpdir):
+    from torch.distributed.tensor import DTensor
+
+    from torchebm.losses import MeanFlowLoss
+    from torchebm.utils import average_velocity_jvp
+
+    torch.manual_seed(0)
+    model = DiT(
+        input_size=8,
+        in_channels=2,
+        patch_size=2,
+        embed_dim=16,
+        depth=2,
+        num_heads=2,
+        num_classes=4,
+        prediction_type="average_velocity",
+    ).to(dist_device())
+    with torch.no_grad():
+        for p in model.parameters():
+            p.add_(0.1 * torch.randn_like(p))
+    ref = copy.deepcopy(model)
+    mesh = dist_mesh(world_size)
+    for block in model.blocks:
+        fsdp.fully_shard(block, mesh=mesh)
+    fsdp.fully_shard(model, mesh=mesh)
+
+    torch.manual_seed(100 + rank)
+    x = torch.randn(4, 2, 8, 8).to(dist_device())
+    s = torch.rand(4).to(dist_device())
+    t = torch.cat([s[:2], s[2:] + (1 - s[2:]) * torch.rand(2).to(dist_device())])
+    y = torch.randint(0, 4, (4,)).to(dist_device())
+    v = torch.randn_like(x)
+    loss_fn = MeanFlowLoss()
+
+    u, du_ds = average_velocity_jvp(model, x, s, t, v, y, flow_matching_ratio=0.5)
+    loss_fn(u, du_ds, v, s, t).backward()
+    ref_u, ref_du_ds = average_velocity_jvp(ref, x, s, t, v, y, flow_matching_ratio=0.5)
+    loss_fn(ref_u, ref_du_ds, v, s, t).backward()
+
+    ref_params = dict(ref.named_parameters())
+    grad_err = 0.0
+    for name, p in model.named_parameters():
+        rg = ref_params[name].grad.detach().clone()
+        dist.all_reduce(rg)
+        rg /= world_size
+        sg = p.grad.full_tensor() if isinstance(p.grad, DTensor) else p.grad
+        grad_err = max(grad_err, (sg - rg).abs().max().item())
+    save_result(
+        tmpdir,
+        rank,
+        {
+            "out_err": (u - ref_u).abs().max().item(),
+            "tangent_err": (du_ds - ref_du_ds).abs().max().item(),
+            "tangent_norm": du_ds[2:].norm().item(),
+            "grad_err": grad_err,
+        },
+    )
+
+
+def test_average_velocity_jvp_matches_unsharded_reference():
+    for res in spawn_dist(_average_velocity_jvp_worker):
+        assert res["out_err"] < 1e-5, res
+        assert res["tangent_err"] < 1e-5, res
+        assert res["tangent_norm"] > 0, res
+        assert res["grad_err"] < 1e-5, res

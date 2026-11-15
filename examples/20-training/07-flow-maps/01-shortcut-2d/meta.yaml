@@ -1,0 +1,6 @@
+title: "Shortcut Models in 2D"
+summary: "Train a two-time average-velocity model with ShortcutLoss and FlowMatchingLoss as in the reference code, then sample in one, two, four or 128 jumps with FlowMapSampler."
+order: 1100
+difficulty: intermediate
+tags: [flow-maps, shortcut-models, training, one-step, 2d-energy]
+entrypoint: main.py
