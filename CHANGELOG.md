@@ -5,17 +5,7 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.4](https://github.com/soran-ghaderi/torchebm/compare/v0.9.3...v0.9.4) - 2026-11-16
-
-### Added
-
-- [`62edf14`](https://github.com/soran-ghaderi/torchebm/commit/62edf14b8fac0b651ad8a8e9853ea45b61a4e0a3) - add swiglu, rmsnorm, rope and qk-norm options to dit
-
-### Other
-
-- [`c2a29a9`](https://github.com/soran-ghaderi/torchebm/commit/c2a29a999a8129508315e8ed2ddbe5b2fcd710b7) - check lightningdit blocks against the reference code under jvp, compile and fsdp2 ++ chore(benchmarks): add a lightningdit variant of the dit benchmark
-
-## [0.9.3](https://github.com/soran-ghaderi/torchebm/compare/v0.9.2...v0.9.3) - 2026-11-14
+## [0.9.3](https://github.com/soran-ghaderi/torchebm/compare/v0.9.2...v0.9.3) - 2026-11-15
 
 ### Added
 
@@ -23,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`8eca53c`](https://github.com/soran-ghaderi/torchebm/commit/8eca53cc6fbd6938994495d90cd8a89f34025751) - add shortcut model self-consistency loss
 - [`5bc49f6`](https://github.com/soran-ghaderi/torchebm/commit/5bc49f60b3f2e7e09b7f36fadf34ed6e4bfbdc98) - add meanflow time pair sampling for two-time models + tests
 - [`87a5fd2`](https://github.com/soran-ghaderi/torchebm/commit/87a5fd21aaadd40bec47cc5f5b6381c210c8b15e) - add meanflow adaptive weight and ict pseudo-huber metric
+- [`7f4fb9a`](https://github.com/soran-ghaderi/torchebm/commit/7f4fb9aaa42331ef9a19462c350c7d4042853a94) - add meanflow loss and average velocity jvp
+
+### Fixed
+
+- [`013e12f`](https://github.com/soran-ghaderi/torchebm/commit/013e12f7abbf36c0995f0a36ae0aa004a5344dfd) - let compiled dit attention run before a jvp in the same graph
 
 ### Other
 
@@ -31,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`392aef3`](https://github.com/soran-ghaderi/torchebm/commit/392aef3fc9b5ec6ffcb52b0100047e189b2239f6) - add shortcut models 2d example with one-step sampling
 - [`98c15ff`](https://github.com/soran-ghaderi/torchebm/commit/98c15ff6be1bfb085861bd284f219179000c7234) - check adaptive weight and pseudo-huber against the reference code
 - [`3adf89a`](https://github.com/soran-ghaderi/torchebm/commit/3adf89ac4ff37e96348a3109bc8f0a227baa8f80) - state where shortcut and consistency sampling follow the paper or the code
+- [`5f44e76`](https://github.com/soran-ghaderi/torchebm/commit/5f44e76c0ca918d74ff9186f1be85c597c802b1c) - check meanflow loss against the reference code on cpu, cuda and fsdp2
+- [`5bb3039`](https://github.com/soran-ghaderi/torchebm/commit/5bb3039aa681d463c238bca2f458f0f49c6a5a40) - add one-step meanflow example on two moons
 
 ## [0.9.2](https://github.com/soran-ghaderi/torchebm/compare/v0.9.1...v0.9.2) - 2026-11-11
 
