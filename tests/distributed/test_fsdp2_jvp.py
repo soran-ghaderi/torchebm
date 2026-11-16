@@ -99,11 +99,11 @@ def test_jvp_dit_matches_unsharded_reference(options):
         assert res["grad_err"] < 1e-5, res
 
 
-def _average_velocity_jvp_worker(rank, world_size, tmpdir):
+def _average_velocity_jvp_worker(rank, world_size, tmpdir, guidance_conditioning):
     from torch.distributed.tensor import DTensor
 
     from torchebm.losses import MeanFlowLoss
-    from torchebm.utils import average_velocity_jvp
+    from torchebm.utils import average_velocity_jvp, sample_guidance
 
     torch.manual_seed(0)
     model = DiT(
@@ -115,6 +115,7 @@ def _average_velocity_jvp_worker(rank, world_size, tmpdir):
         num_heads=2,
         num_classes=4,
         prediction_type="average_velocity",
+        guidance_conditioning=guidance_conditioning,
     ).to(dist_device())
     with torch.no_grad():
         for p in model.parameters():
@@ -132,10 +133,18 @@ def _average_velocity_jvp_worker(rank, world_size, tmpdir):
     y = torch.randint(0, 4, (4,)).to(dist_device())
     v = torch.randn_like(x)
     loss_fn = MeanFlowLoss()
+    model_kwargs = {}
+    if guidance_conditioning is not None:
+        scale, interval = sample_guidance(4, flow_matching_ratio=0.5, device=dist_device())
+        model_kwargs = {"guidance_scale": scale, "guidance_interval": interval}
 
-    u, du_ds = average_velocity_jvp(model, x, s, t, v, y, flow_matching_ratio=0.5)
+    u, du_ds = average_velocity_jvp(
+        model, x, s, t, v, y, flow_matching_ratio=0.5, model_kwargs=model_kwargs
+    )
     loss_fn(u, du_ds, v, s, t).backward()
-    ref_u, ref_du_ds = average_velocity_jvp(ref, x, s, t, v, y, flow_matching_ratio=0.5)
+    ref_u, ref_du_ds = average_velocity_jvp(
+        ref, x, s, t, v, y, flow_matching_ratio=0.5, model_kwargs=model_kwargs
+    )
     loss_fn(ref_u, ref_du_ds, v, s, t).backward()
 
     ref_params = dict(ref.named_parameters())
@@ -158,8 +167,9 @@ def _average_velocity_jvp_worker(rank, world_size, tmpdir):
     )
 
 
-def test_average_velocity_jvp_matches_unsharded_reference():
-    for res in spawn_dist(_average_velocity_jvp_worker):
+@pytest.mark.parametrize("guidance_conditioning", [None, "scale_and_interval"])
+def test_average_velocity_jvp_matches_unsharded_reference(guidance_conditioning):
+    for res in spawn_dist(_average_velocity_jvp_worker, args=(guidance_conditioning,)):
         assert res["out_err"] < 1e-5, res
         assert res["tangent_err"] < 1e-5, res
         assert res["tangent_norm"] > 0, res
