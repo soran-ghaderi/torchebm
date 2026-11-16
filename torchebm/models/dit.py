@@ -10,6 +10,7 @@ from torchebm.models.components import (
     AdaLNZeroBlock,
     AdaLNZeroPatchHead,
     ConvPatchEmbed2d,
+    RotaryEmbedding2d,
     build_2d_sincos_pos_embed,
 )
 
@@ -63,6 +64,14 @@ class DiT(_ConditionalBackbone):
     ``head_dim``, run through ``head_depth`` additional adaLN-Zero blocks at
     that width, and decoded by the patch head there.
 
+    ``qk_norm``, ``swiglu``, ``rope`` and ``rms_norm`` switch on the blocks of
+    LightningDiT (Yao et al., 2025, arXiv:2501.01423): QK-norm in the
+    attention, a `SwiGLUFeedForward`, a `RotaryEmbedding2d` on queries and
+    keys on top of ``pos_embed``, and RMSNorm with a learnable scale in place
+    of the LayerNorms of the blocks and the patch head. They match the
+    reference code (github.com/hustvl/LightningDiT) and are off by default,
+    which leaves the model above unchanged.
+
     Parity with the reference implementation
     (github.com/facebookresearch/DiT): block math, modulation order,
     unpatchify layout, sin/cos tables (computed in float64 and cast, so the
@@ -112,6 +121,16 @@ class DiT(_ConditionalBackbone):
             reuses ``num_heads``.
         pos_embed: Positional embedding kind: ``"sincos"`` (fixed 2D
             sin/cos, default), ``"learnable"``, or ``None`` for none.
+        qk_norm: Normalize queries and keys over the head dimension in every
+            attention, with an affine LayerNorm, or RMSNorm with
+            ``rms_norm``.
+        swiglu: Use `SwiGLUFeedForward` in place of the GELU feed-forward
+            network.
+        rope: Apply `RotaryEmbedding2d` to queries and keys in every
+            attention, in addition to ``pos_embed``. The attention head
+            dimension must be a multiple of 4.
+        rms_norm: Use RMSNorm with a learnable scale in place of the
+            LayerNorms of the blocks and the patch head.
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
             Matching model convention; labels and ``cond`` still apply.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
@@ -132,6 +151,27 @@ class DiT(_ConditionalBackbone):
 
         model = dit_xl_2(
             input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1
+        )
+        v = model(x_t, t, y=y)
+        ```
+
+        LightningDiT-XL/1 on the 16x16x32 VA-VAE latents of ImageNet 256 with
+        the blocks of its final configuration
+        (``configs/lightningdit_xl_vavae_f16d32.yaml``: SwiGLU, RoPE and
+        RMSNorm, no QK-norm):
+
+        ```python
+        from torchebm.models import DiT
+
+        model = DiT(
+            input_size=16,
+            in_channels=32,
+            patch_size=1,
+            num_classes=1000,
+            class_dropout_prob=0.1,
+            swiglu=True,
+            rope=True,
+            rms_norm=True,
         )
         v = model(x_t, t, y=y)
         ```
@@ -158,6 +198,10 @@ class DiT(_ConditionalBackbone):
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
         pos_embed: Optional[str] = "sincos",
+        qk_norm: bool = False,
+        swiglu: bool = False,
+        rope: bool = False,
+        rms_norm: bool = False,
         time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
@@ -232,6 +276,9 @@ class DiT(_ConditionalBackbone):
                 num_heads=self.num_heads,
                 cond_dim=self.cond_dim,
                 mlp_ratio=mlp_ratio,
+                qk_norm=qk_norm,
+                swiglu=swiglu,
+                rms_norm=rms_norm,
             )
             for _ in range(self.depth)
         )
@@ -241,12 +288,16 @@ class DiT(_ConditionalBackbone):
             if self.head_dim != self.embed_dim
             else None
         )
+        head_heads = int(head_num_heads) if head_num_heads is not None else self.num_heads
         self.head_blocks = nn.ModuleList(
             AdaLNZeroBlock(
                 embed_dim=self.head_dim,
-                num_heads=int(head_num_heads) if head_num_heads is not None else self.num_heads,
+                num_heads=head_heads,
                 cond_dim=self.cond_dim,
                 mlp_ratio=mlp_ratio,
+                qk_norm=qk_norm,
+                swiglu=swiglu,
+                rms_norm=rms_norm,
             )
             for _ in range(self.head_depth)
         )
@@ -256,6 +307,15 @@ class DiT(_ConditionalBackbone):
             patch_size=p,
             out_channels=self.out_channels,
             grid_size=self.grid_size,
+            rms_norm=rms_norm,
+        )
+        self.rope = (
+            RotaryEmbedding2d(self.embed_dim // self.num_heads, self.grid_size) if rope else None
+        )
+        self.head_rope = (
+            RotaryEmbedding2d(self.head_dim // head_heads, self.grid_size)
+            if rope and self.head_depth
+            else None
         )
 
         self._initialize_weights()
@@ -331,11 +391,11 @@ class DiT(_ConditionalBackbone):
         if self.pos_embed is not None:
             tokens = tokens + self.pos_embed.to(device=tokens.device, dtype=tokens.dtype)
         for block in self.blocks:
-            tokens = block(tokens, c)
+            tokens = block(tokens, c, self.rope)
         if self.head_proj is not None:
             tokens = self.head_proj(tokens)
         for block in self.head_blocks:
-            tokens = block(tokens, c)
+            tokens = block(tokens, c, self.head_rope)
         return self._output(x, self.head(tokens, c), s, t)
 
 

@@ -6,14 +6,15 @@ import torch
 import torch.nn as nn
 
 from .patch import unpatchify2d
-from .transformer import modulate
+from .transformer import _norm, modulate
 
 
 class AdaLNZeroPatchHead(nn.Module):
     """Final layer that maps token features to patch pixels with adaLN-Zero.
 
     `grid_size` is the `(gh, gw)` token grid; `None` infers a square grid at
-    forward time (rectangular grids must set it).
+    forward time (rectangular grids must set it). `rms_norm` uses RMSNorm
+    with a learnable scale in place of the LayerNorm, as in LightningDiT.
     """
 
     def __init__(
@@ -25,6 +26,7 @@ class AdaLNZeroPatchHead(nn.Module):
         out_channels: int,
         grid_size: Optional[Tuple[int, int]] = None,
         eps: float = 1e-6,
+        rms_norm: bool = False,
     ):
         super().__init__()
         self.embed_dim = int(embed_dim)
@@ -33,7 +35,7 @@ class AdaLNZeroPatchHead(nn.Module):
         self.out_channels = int(out_channels)
         self.grid_size = tuple(int(s) for s in grid_size) if grid_size is not None else None
 
-        self.norm = nn.LayerNorm(self.embed_dim, elementwise_affine=False, eps=eps)
+        self.norm = _norm(self.embed_dim, eps, rms_norm)
         self.modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(self.cond_dim, 2 * self.embed_dim, bias=True),
