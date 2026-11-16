@@ -29,7 +29,13 @@ pytestmark = [
 ]
 
 
-def _jvp_worker(rank, world_size, tmpdir):
+BLOCK_OPTIONS = {
+    "dit": {},
+    "lightningdit": dict(qk_norm=True, swiglu=True, rope=True, rms_norm=True),
+}
+
+
+def _jvp_worker(rank, world_size, tmpdir, options):
     from torch.distributed.tensor import DTensor
 
     torch.manual_seed(0)
@@ -41,6 +47,7 @@ def _jvp_worker(rank, world_size, tmpdir):
         depth=2,
         num_heads=2,
         num_classes=4,
+        **options,
     ).to(dist_device())
     with torch.no_grad():
         for p in model.parameters():
@@ -83,8 +90,9 @@ def _jvp_worker(rank, world_size, tmpdir):
     )
 
 
-def test_jvp_dit_matches_unsharded_reference():
-    for res in spawn_dist(_jvp_worker):
+@pytest.mark.parametrize("options", BLOCK_OPTIONS.values(), ids=BLOCK_OPTIONS.keys())
+def test_jvp_dit_matches_unsharded_reference(options):
+    for res in spawn_dist(_jvp_worker, args=(options,)):
         assert res["out_err"] < 1e-5, res
         assert res["tangent_err"] < 1e-5, res
         assert res["tangent_norm"] > 0, res

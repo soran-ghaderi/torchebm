@@ -293,6 +293,10 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "variants": {
             "transformer_fwd": {},
             "transformer_fwd_bwd": {"bench_backward": True},
+            "lightningdit_fwd_bwd": {
+                "bench_backward": True,
+                "init_kwargs": {"swiglu": True, "rope": True, "rms_norm": True},
+            },
         },
     },
 }
@@ -1054,7 +1058,7 @@ def build_model_bench(
 
     cfg = spec.model_configs[scale]
     bs_model = cfg.pop("bs", bs)
-    model = spec.cls(in_channels=3, out_channels=3, **cfg).to(device, dtype)
+    model = spec.cls(in_channels=3, out_channels=3, **cfg, **spec.init_kwargs).to(device, dtype)
 
     input_size = cfg["input_size"]
     embed_dim = cfg["embed_dim"]
