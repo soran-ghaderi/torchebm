@@ -6,17 +6,17 @@ from torchebm.interpolants import LinearInterpolant
 from torchebm.losses import MeanFlowLoss
 from torchebm.losses.functional import adaptive_weight, meanflow_loss
 from torchebm.models import DiT, TimeConditionedMLP
-from torchebm.utils import average_velocity_jvp
+from torchebm.utils import average_velocity_jvp, sample_guidance
 
 NUM_CLASSES = 4
 EQUAL_RATIO = 0.25
 
 
-def _model(kind):
+def _model(kind, **options):
     torch.manual_seed(0)
     if kind == "mlp":
         model = TimeConditionedMLP(
-            in_dim=6, num_classes=NUM_CLASSES, prediction_type="average_velocity"
+            in_dim=6, num_classes=NUM_CLASSES, prediction_type="average_velocity", **options
         )
     else:
         model = DiT(
@@ -27,6 +27,7 @@ def _model(kind):
             num_heads=2,
             num_classes=NUM_CLASSES,
             prediction_type="average_velocity",
+            **options,
         )
     with torch.no_grad():
         for p in model.parameters():
@@ -109,6 +110,50 @@ def _imf_reference(net, x, e, t, r, labels, norm_p):
     return _adaptive_mean(loss_u, norm_p)
 
 
+def _guided_reference_net(model):
+    r"""``net(x, t, h, w, t_min, t_max, y)`` of the reference code (data at t = 0) from a torchebm model."""
+
+    def net(z, t, h, w, t_min, t_max, y):
+        interval = torch.stack([1 - t_max, 1 - t_min], dim=-1)
+        return -model(z, 1 - t + h, y, s=1 - t, guidance_scale=w, guidance_interval=interval)
+
+    return net
+
+
+def _imf_guidance_reference(net, x, e, t, r, labels, drop, omega, t_min, t_max, norm_p):
+    r"""`iMeanFlow.forward` and `guidance_fn` of Lyy-iiis/imeanflow (bf60cd7c) with
+    \(v_\theta(z_t) = u_\theta(z_t, t, t)\) in place of the auxiliary head and the draws passed in."""
+    tb = _view(t, x)
+    z_t = (1 - tb) * x + tb * e
+    v_t = e - x
+    fm_mask = _view(torch.arange(len(x)) < int(len(x) * EQUAL_RATIO), x)
+
+    def v_cond_fn(z, t, w, y):
+        return net(z, t, torch.zeros_like(t), w, torch.zeros_like(t), torch.ones_like(t), y)
+
+    v_c, v_u = v_cond_fn(
+        torch.cat([z_t, z_t]),
+        torch.cat([t, t]),
+        torch.cat([omega, torch.ones_like(omega)]),
+        torch.cat([labels, torch.full_like(labels, NUM_CLASSES)]),
+    ).chunk(2)
+    v_g_fm = v_t + _view(1 - 1 / omega, x) * (v_c - v_u)
+    w = torch.where((t >= t_min) & (t <= t_max), omega, 1.0)
+    v_c = v_cond_fn(z_t, t, w, labels)
+    v_g = v_t + _view(1 - 1 / w, x) * (v_c - v_u)
+    v_g = torch.where(fm_mask, v_g_fm, v_g)
+    labels = torch.where(drop, NUM_CLASSES, labels)
+    v_g = torch.where(_view(drop, x), v_t, v_g)
+    u, du_dt = torch.func.jvp(
+        lambda z, t, r: net(z, t, t - r, omega, t_min, t_max, labels),
+        (z_t, t, r),
+        (v_c, torch.ones_like(t), torch.zeros_like(r)),
+    )
+    V = u + _view(t - r, x) * du_dt.detach()
+    loss_u = ((V - v_g.detach()) ** 2).flatten(1).sum(1)
+    return _adaptive_mean(loss_u, norm_p)
+
+
 def _grads(model, loss):
     return torch.autograd.grad(loss, list(model.parameters()))
 
@@ -157,6 +202,58 @@ def test_matches_imf_reference(p, ratio):
         v_model = model(x_s, s, labels, s=s)
     u, du_ds = average_velocity_jvp(model, x_s, s, t, v_model, labels, flow_matching_ratio=ratio)
     loss = MeanFlowLoss(p=p)(u, du_ds, v, s, t)
+
+    assert_close(loss, reference)
+    for grad, reference_grad in zip(_grads(model, loss), _grads(model, reference)):
+        assert_close(grad, reference_grad)
+
+
+@pytest.mark.parametrize("ratio", [0.0, EQUAL_RATIO])
+@pytest.mark.parametrize("p", [0.0, 1.0])
+@pytest.mark.parametrize("kind", ["mlp", "dit"])
+def test_matches_imf_reference_with_guidance_conditioning(kind, p, ratio):
+    model = _model(kind, guidance_conditioning="scale_and_interval")
+    x, e, t_ref, r_ref, labels, drop = _batch(kind)
+    n = len(x)
+    scale, interval = sample_guidance(
+        n,
+        flow_matching_ratio=EQUAL_RATIO,
+        dtype=torch.float64,
+        generator=torch.Generator().manual_seed(2),
+    )
+    t_min, t_max = 1 - interval[:, 1], 1 - interval[:, 0]
+    reference = _imf_guidance_reference(
+        _guided_reference_net(model), x, e, t_ref, r_ref, labels, drop, scale, t_min, t_max, p
+    )
+
+    s, t = 1 - t_ref, 1 - r_ref
+    x_s, v = LinearInterpolant()(e, x, s)
+    null = torch.full_like(labels, NUM_CLASSES)
+    inside = (s >= interval[:, 0]) & (s <= interval[:, 1])
+    w = torch.where(inside, scale, 1.0)
+    with torch.no_grad():
+        v_c, v_u = model(
+            x_s.repeat(2, *(1,) * (x.ndim - 1)),
+            s.repeat(2),
+            torch.cat([labels, null]),
+            s=s.repeat(2),
+            guidance_scale=torch.cat([w, torch.ones_like(w)]),
+            guidance_interval=x.new_tensor([0.0, 1.0]).expand(2 * n, 2),
+        ).chunk(2)
+    v_guided = v + _view(1 - 1 / w, x) * (v_c - v_u)
+    y = torch.where(drop, null, labels)
+    v_guided = torch.where(_view(drop, x), v, v_guided)
+    u, du_ds = average_velocity_jvp(
+        model,
+        x_s,
+        s,
+        t,
+        v_c,
+        y,
+        flow_matching_ratio=ratio,
+        model_kwargs={"guidance_scale": scale, "guidance_interval": interval},
+    )
+    loss = MeanFlowLoss(p=p)(u, du_ds, v_guided, s, t)
 
     assert_close(loss, reference)
     for grad, reference_grad in zip(_grads(model, loss), _grads(model, reference)):
