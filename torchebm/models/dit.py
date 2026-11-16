@@ -51,6 +51,13 @@ class DiT(_ConditionalBackbone):
     ``cond``; the embeddings of whichever are present are summed into the
     single adaLN vector. Both embedders are pluggable modules.
 
+    ``guidance_conditioning`` makes the classifier-free guidance scale, and
+    with ``"scale_and_interval"`` the guidance interval, inputs of
+    ``forward``, as in Improved MeanFlow (Geng et al., 2025b, Sec. 4.2).
+    Training draws them with `sample_guidance` and regresses on the guided
+    velocity, so sampling at a fixed scale takes one forward pass per step
+    in place of a conditional and an unconditional pass.
+
     When ``num_classes`` is set, the label table always allocates one extra
     null row with id ``num_classes``, so classifier-free guidance works
     regardless of where the label dropout happens: model-side
@@ -105,6 +112,15 @@ class DiT(_ConditionalBackbone):
             ``(B, cond_dim)`` for the two-time prediction types. ``None``
             (default) builds an `MLPTimestepEmbedder` when ``prediction_type``
             is ``"average_velocity"`` or ``"flow_map"``, and nothing otherwise.
+        guidance_conditioning: Guidance inputs of ``forward``: ``None``
+            (default) for none, ``"scale"`` for ``guidance_scale``, or
+            ``"scale_and_interval"`` for ``guidance_scale`` and
+            ``guidance_interval``. Each end of the interval is embedded by
+            its own `MLPTimestepEmbedder`.
+        guidance_embedder: Module mapping ``(B,)`` guidance scales to
+            ``(B, cond_dim)``. ``None`` (default) embeds \(1 - 1/\omega\)
+            with an `MLPTimestepEmbedder`, as Improved MeanFlow does.
+            Requires ``guidance_conditioning``.
         head_dim: Token width of the head. ``None`` (default) keeps
             ``embed_dim`` and adds no projection.
         head_depth: Number of extra adaLN-Zero blocks in the head.
@@ -154,6 +170,8 @@ class DiT(_ConditionalBackbone):
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
         dt_embedder: Optional[nn.Module] = None,
+        guidance_conditioning: Optional[str] = None,
+        guidance_embedder: Optional[nn.Module] = None,
         head_dim: Optional[int] = None,
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
@@ -196,6 +214,8 @@ class DiT(_ConditionalBackbone):
             t_embedder=t_embedder,
             y_embedder=y_embedder,
             dt_embedder=dt_embedder,
+            guidance_conditioning=guidance_conditioning,
+            guidance_embedder=guidance_embedder,
             time_invariant=time_invariant,
             prediction_type=prediction_type,
         )
@@ -296,6 +316,8 @@ class DiT(_ConditionalBackbone):
         *,
         s: Optional[torch.Tensor] = None,
         cond: Optional[torch.Tensor] = None,
+        guidance_scale: Optional[torch.Tensor] = None,
+        guidance_interval: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         r"""Map ``(B, C, H, W)`` to ``(B, out_channels, H, W)``.
 
@@ -317,11 +339,17 @@ class DiT(_ConditionalBackbone):
                 embeds \(t - s\). Rejected by the one-time types.
             cond: Pre-built conditioning vector of shape ``(B, cond_dim)``,
                 added as-is.
+            guidance_scale: Guidance scales \(\omega \geq 1\) of shape
+                ``(B,)`` for models with ``guidance_conditioning``;
+                \(\omega = 1\) is no guidance.
+            guidance_interval: Start and end times of the guidance interval,
+                in torchebm time, of shape ``(B, 2)``, for
+                ``guidance_conditioning="scale_and_interval"``.
 
         Returns:
             torch.Tensor: Output of shape ``(B, out_channels, H, W)``.
         """
-        c = self._condition(x, t, y, cond, s)
+        c = self._condition(x, t, y, cond, s, guidance_scale, guidance_interval)
         if tuple(x.shape[-2:]) != self.input_size:
             raise ValueError(
                 f"input has spatial size {tuple(x.shape[-2:])}, "
