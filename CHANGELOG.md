@@ -5,6 +5,16 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4](https://github.com/soran-ghaderi/torchebm/compare/v0.9.3...v0.9.4) - 2026-11-16
+
+### Added
+
+- [`62edf14`](https://github.com/soran-ghaderi/torchebm/commit/62edf14b8fac0b651ad8a8e9853ea45b61a4e0a3) - add swiglu, rmsnorm, rope and qk-norm options to dit
+
+### Other
+
+- [`c2a29a9`](https://github.com/soran-ghaderi/torchebm/commit/c2a29a999a8129508315e8ed2ddbe5b2fcd710b7) - check lightningdit blocks against the reference code under jvp, compile and fsdp2 ++ chore(benchmarks): add a lightningdit variant of the dit benchmark
+
 ## [0.9.3](https://github.com/soran-ghaderi/torchebm/compare/v0.9.2...v0.9.3) - 2026-11-14
 
 ### Added
