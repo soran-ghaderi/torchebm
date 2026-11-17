@@ -5,18 +5,21 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.4](https://github.com/soran-ghaderi/torchebm/compare/v0.9.3...v0.9.4) - 2026-11-16
+## [0.9.4](https://github.com/soran-ghaderi/torchebm/compare/v0.9.3...v0.9.4) - 2026-11-17
 
 ### Added
 
 - [`62edf14`](https://github.com/soran-ghaderi/torchebm/commit/62edf14b8fac0b651ad8a8e9853ea45b61a4e0a3) - add swiglu, rmsnorm, rope and qk-norm options to dit
 - [`68e918b`](https://github.com/soran-ghaderi/torchebm/commit/68e918b042c467492b2a9d85fe55b151eb1c2b3e) - add guidance scale and interval as conditioning inputs
 - [`4c3b5be`](https://github.com/soran-ghaderi/torchebm/commit/4c3b5be38e79a922854462fa51d5e9101766a166) - add guidance sampling and model kwargs in average velocity jvp
+- [`8b351d5`](https://github.com/soran-ghaderi/torchebm/commit/8b351d5a868606f3a0a1fe120a0070ad058371e5) - add in-context block, patch head, 1d rope and bias options
+- [`b9e9821`](https://github.com/soran-ghaderi/torchebm/commit/b9e9821b68a8b377f5d263f4fc82ae224aa22206) - add in-context conditioning to dit and interval-only two-time models
 
 ### Other
 
 - [`c2a29a9`](https://github.com/soran-ghaderi/torchebm/commit/c2a29a999a8129508315e8ed2ddbe5b2fcd710b7) - check lightningdit blocks against the reference code under jvp, compile and fsdp2 ++ chore(benchmarks): add a lightningdit variant of the dit benchmark
 - [`fb60ba7`](https://github.com/soran-ghaderi/torchebm/commit/fb60ba70d04ea141630b92ee75e6c0047d06d841) - check guidance conditioning against the improved meanflow reference code
+- [`ed24bb3`](https://github.com/soran-ghaderi/torchebm/commit/ed24bb3cfc33bef9b39c0a8c6e78860e2093b557) - check in-context dit against the improved meanflow reference code
 
 ## [0.9.3](https://github.com/soran-ghaderi/torchebm/compare/v0.9.2...v0.9.3) - 2026-11-15
 
