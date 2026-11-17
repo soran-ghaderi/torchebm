@@ -75,7 +75,8 @@ class TimeConditionedMLP(_ConditionalBackbone):
             ``(B, cond_dim)``. ``None`` (default) embeds \(1 - 1/\omega\)
             with an `MLPTimestepEmbedder`. Requires ``guidance_conditioning``.
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
-            Matching model convention; labels and ``cond`` still apply.
+            Matching model convention; labels and ``cond`` still apply. A
+            two-time model embeds \(t - s\) only, as Improved MeanFlow does.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
             ``"score"``, or ``"epsilon"``, a declaration for consumers that
             leaves the computation unchanged; or a two-time output,

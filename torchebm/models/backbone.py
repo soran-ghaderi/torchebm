@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -56,7 +56,10 @@ class _ConditionalBackbone(nn.Module):
     \(u(x_s, s, t)\) of the flow from time \(s\) to time \(t\).
     ``"average_velocity"`` returns \(u\); ``"flow_map"`` returns the flow map
     \(F(x_s, s, t) = x_s + (t - s)\, u(x_s, s, t)\), which satisfies
-    \(F(x_s, s, s) = x_s\) by construction.
+    \(F(x_s, s, s) = x_s\) by construction. With ``time_invariant=True`` a
+    two-time model embeds \(t - s\) only and builds no ``t_embedder``, as
+    the Improved MeanFlow model conditions on \(t - r\) only (Lyy-iiis/
+    imeanflow, ``imfDiT``, following Sun et al., 2025).
 
     ``guidance_conditioning`` adds the classifier-free guidance scale, and
     with ``"scale_and_interval"`` the guidance interval, as inputs, as in
@@ -102,10 +105,16 @@ class _ConditionalBackbone(nn.Module):
             raise ValueError(
                 "dt_embedder requires prediction_type 'average_velocity' or 'flow_map'"
             )
-        if two_time and (cond_dim <= 0 or time_invariant):
+        if two_time and cond_dim <= 0:
             raise ValueError(
                 f"prediction_type={prediction_type!r} conditions on s and t; it "
-                "requires cond_dim > 0 and time_invariant=False"
+                "requires cond_dim > 0"
+            )
+        no_t_embedder = two_time and time_invariant
+        if no_t_embedder and t_embedder is not None:
+            raise ValueError(
+                "a two-time model with time_invariant=True embeds t - s only and "
+                "takes no t_embedder"
             )
         if cond_dim < 0:
             raise ValueError(f"cond_dim must be non-negative, got {cond_dim}")
@@ -131,7 +140,7 @@ class _ConditionalBackbone(nn.Module):
         self.num_classes = int(num_classes) if num_classes is not None else None
         self.time_invariant = bool(time_invariant)
         self.prediction_type = prediction_type
-        self._default_t_embedder = t_embedder is None and self.cond_dim > 0
+        self._default_t_embedder = t_embedder is None and self.cond_dim > 0 and not no_t_embedder
         self._default_y_embedder = y_embedder is None and self.num_classes is not None
         self._default_dt_embedder = dt_embedder is None and two_time
         self._default_guidance_embedder = (
@@ -144,11 +153,14 @@ class _ConditionalBackbone(nn.Module):
             self.y_embedder = None
             self.dt_embedder = None
         else:
-            self.t_embedder = (
-                t_embedder
-                if t_embedder is not None
-                else MLPTimestepEmbedder(self.cond_dim)
-            )
+            if no_t_embedder:
+                self.t_embedder = None
+            else:
+                self.t_embedder = (
+                    t_embedder
+                    if t_embedder is not None
+                    else MLPTimestepEmbedder(self.cond_dim)
+                )
             if y_embedder is not None:
                 self.y_embedder = y_embedder
             elif self.num_classes is not None:
@@ -183,6 +195,82 @@ class _ConditionalBackbone(nn.Module):
         else:
             self.interval_start_embedder = self.interval_end_embedder = None
 
+    def _embeddings(
+        self,
+        x: torch.Tensor,
+        t: Optional[torch.Tensor],
+        y: Optional[torch.Tensor],
+        cond: Optional[torch.Tensor],
+        s: Optional[torch.Tensor] = None,
+        guidance_scale: Optional[torch.Tensor] = None,
+        guidance_interval: Optional[torch.Tensor] = None,
+    ) -> List[Tuple[str, torch.Tensor]]:
+        r"""Embeddings of the conditioning inputs by name, in summation order."""
+        embeddings = []
+        if self.dt_embedder is not None:
+            if s is None or t is None:
+                raise ValueError(
+                    f"prediction_type={self.prediction_type!r} requires both s and t"
+                )
+            if self.t_embedder is not None:
+                embeddings.append(("t", self.t_embedder(s)))
+            embeddings.append(("dt", self.dt_embedder(t - s)))
+        elif s is not None:
+            raise ValueError(
+                f"s was given but this {type(self).__name__} is a one-time model; "
+                "construct it with prediction_type='average_velocity' or 'flow_map'"
+            )
+        elif self.time_invariant:
+            embeddings.append(("t", self.t_embedder(x.new_zeros(x.shape[0]))))
+        elif t is not None:
+            embeddings.append(("t", self.t_embedder(t)))
+        if y is not None:
+            if self.y_embedder is None:
+                raise ValueError(
+                    f"y was given but this {type(self).__name__} has no label "
+                    "embedder; construct it with num_classes= or y_embedder="
+                )
+            if isinstance(self.y_embedder, LabelEmbedder):
+                embeddings.append(("y", self.y_embedder(y, training=self.training)))
+            else:
+                embeddings.append(("y", self.y_embedder(y)))
+        if cond is not None:
+            if cond.shape[-1] != self.cond_dim:
+                raise ValueError(
+                    f"cond has width {cond.shape[-1]}, expected cond_dim={self.cond_dim}"
+                )
+            embeddings.append(("cond", cond))
+        if not embeddings:
+            raise ValueError(
+                f"{type(self).__name__}.forward requires at least one of t, y, or cond"
+            )
+        if self.guidance_embedder is None:
+            if guidance_scale is not None or guidance_interval is not None:
+                raise ValueError(
+                    f"guidance inputs were given but this {type(self).__name__} has no "
+                    "guidance conditioning; construct it with guidance_conditioning="
+                )
+            return embeddings
+        if guidance_scale is None:
+            raise ValueError(
+                f"guidance_conditioning={self.guidance_conditioning!r} requires guidance_scale"
+            )
+        embeddings.append(("guidance", self.guidance_embedder(guidance_scale)))
+        if self.interval_start_embedder is None:
+            if guidance_interval is not None:
+                raise ValueError(
+                    "guidance_interval requires guidance_conditioning='scale_and_interval'"
+                )
+            return embeddings
+        if guidance_interval is None:
+            raise ValueError(
+                "guidance_conditioning='scale_and_interval' requires guidance_interval"
+            )
+        start, end = guidance_interval.unbind(-1)
+        embeddings.append(("interval_start", self.interval_start_embedder(start)))
+        embeddings.append(("interval_end", self.interval_end_embedder(end)))
+        return embeddings
+
     def _condition(
         self,
         x: torch.Tensor,
@@ -193,67 +281,11 @@ class _ConditionalBackbone(nn.Module):
         guidance_scale: Optional[torch.Tensor] = None,
         guidance_interval: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        if self.time_invariant:
-            t = x.new_zeros(x.shape[0])
-        c = None
-        if self.dt_embedder is not None:
-            if s is None or t is None:
-                raise ValueError(
-                    f"prediction_type={self.prediction_type!r} requires both s and t"
-                )
-            c = self.t_embedder(s) + self.dt_embedder(t - s)
-        elif s is not None:
-            raise ValueError(
-                f"s was given but this {type(self).__name__} is a one-time model; "
-                "construct it with prediction_type='average_velocity' or 'flow_map'"
-            )
-        elif t is not None:
-            c = self.t_embedder(t)
-        if y is not None:
-            if self.y_embedder is None:
-                raise ValueError(
-                    f"y was given but this {type(self).__name__} has no label "
-                    "embedder; construct it with num_classes= or y_embedder="
-                )
-            if isinstance(self.y_embedder, LabelEmbedder):
-                emb = self.y_embedder(y, training=self.training)
-            else:
-                emb = self.y_embedder(y)
-            c = emb if c is None else c + emb
-        if cond is not None:
-            if cond.shape[-1] != self.cond_dim:
-                raise ValueError(
-                    f"cond has width {cond.shape[-1]}, expected cond_dim={self.cond_dim}"
-                )
-            c = cond if c is None else c + cond
-        if c is None:
-            raise ValueError(
-                f"{type(self).__name__}.forward requires at least one of t, y, or cond"
-            )
-        if self.guidance_embedder is None:
-            if guidance_scale is not None or guidance_interval is not None:
-                raise ValueError(
-                    f"guidance inputs were given but this {type(self).__name__} has no "
-                    "guidance conditioning; construct it with guidance_conditioning="
-                )
-            return c
-        if guidance_scale is None:
-            raise ValueError(
-                f"guidance_conditioning={self.guidance_conditioning!r} requires guidance_scale"
-            )
-        c = c + self.guidance_embedder(guidance_scale)
-        if self.interval_start_embedder is None:
-            if guidance_interval is not None:
-                raise ValueError(
-                    "guidance_interval requires guidance_conditioning='scale_and_interval'"
-                )
-            return c
-        if guidance_interval is None:
-            raise ValueError(
-                "guidance_conditioning='scale_and_interval' requires guidance_interval"
-            )
-        start, end = guidance_interval.unbind(-1)
-        return c + self.interval_start_embedder(start) + self.interval_end_embedder(end)
+        embeddings = self._embeddings(x, t, y, cond, s, guidance_scale, guidance_interval)
+        c = embeddings[0][1]
+        for _, emb in embeddings[1:]:
+            c = c + emb
+        return c
 
     def _output(
         self,
@@ -266,18 +298,25 @@ class _ConditionalBackbone(nn.Module):
             return u
         return x + (t - s).to(x.dtype).reshape(-1, *(1,) * (x.ndim - 1)) * u
 
+    def _default_timestep_embedders(self) -> List[MLPTimestepEmbedder]:
+        r"""The default-built timestep embedders, in a fixed order."""
+        return [
+            embedder
+            for embedder, is_default in (
+                (self.t_embedder, self._default_t_embedder),
+                (self.dt_embedder, self._default_dt_embedder),
+                (self.guidance_embedder, self._default_guidance_embedder),
+                (self.interval_start_embedder, self.interval_start_embedder is not None),
+                (self.interval_end_embedder, self.interval_end_embedder is not None),
+            )
+            if is_default
+        ]
+
     def _init_default_embedder_weights(self) -> None:
         r"""Reference init for default-built embedders; user modules untouched."""
-        for embedder, is_default in (
-            (self.t_embedder, self._default_t_embedder),
-            (self.dt_embedder, self._default_dt_embedder),
-            (self.guidance_embedder, self._default_guidance_embedder),
-            (self.interval_start_embedder, self.interval_start_embedder is not None),
-            (self.interval_end_embedder, self.interval_end_embedder is not None),
-        ):
-            if is_default:
-                embedder.apply(_xavier_linear_init)
-                nn.init.normal_(embedder.mlp[0].weight, std=0.02)
-                nn.init.normal_(embedder.mlp[2].weight, std=0.02)
+        for embedder in self._default_timestep_embedders():
+            embedder.apply(_xavier_linear_init)
+            nn.init.normal_(embedder.mlp[0].weight, std=0.02)
+            nn.init.normal_(embedder.mlp[2].weight, std=0.02)
         if self._default_y_embedder:
             nn.init.normal_(self.y_embedder.embedding.weight, std=0.02)

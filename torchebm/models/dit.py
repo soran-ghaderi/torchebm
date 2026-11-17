@@ -10,6 +10,9 @@ from torchebm.models.components import (
     AdaLNZeroBlock,
     AdaLNZeroPatchHead,
     ConvPatchEmbed2d,
+    InContextBlock,
+    PatchHead,
+    RotaryEmbedding1d,
     RotaryEmbedding2d,
     build_2d_sincos_pos_embed,
 )
@@ -22,6 +25,32 @@ _DIT_CONFIGS = {
 }
 
 _POS_EMBED_KINDS = ("sincos", "learnable", None)
+_CONDITIONING_KINDS = ("adaln_zero", "in_context")
+_ROPE_KINDS = (None, "1d", "2d")
+_IN_CONTEXT_TOKENS = (
+    ("y", 8),
+    ("guidance", 4),
+    ("interval_start", 2),
+    ("interval_end", 2),
+    ("t", 4),
+    ("dt", 4),
+)
+_IMF_BLOCK_INIT_GAIN = 0.32
+
+
+def _scaled_normal_init(module: nn.Module, gain: float) -> None:
+    if isinstance(module, nn.Linear):
+        nn.init.normal_(module.weight, std=gain / module.in_features**0.5)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+
+
+def _rotary_embedding(kind, head_dim, grid_size, seq_len) -> Optional[nn.Module]:
+    if kind == "2d":
+        return RotaryEmbedding2d(head_dim, grid_size)
+    if kind == "1d":
+        return RotaryEmbedding1d(head_dim, seq_len)
+    return None
 
 
 class DiT(_ConditionalBackbone):
@@ -71,13 +100,23 @@ class DiT(_ConditionalBackbone):
     ``head_dim``, run through ``head_depth`` additional adaLN-Zero blocks at
     that width, and decoded by the patch head there.
 
-    ``qk_norm``, ``swiglu``, ``rope`` and ``rms_norm`` switch on the blocks of
-    LightningDiT (Yao et al., 2025, arXiv:2501.01423): QK-norm in the
-    attention, a `SwiGLUFeedForward`, a `RotaryEmbedding2d` on queries and
-    keys on top of ``pos_embed``, and RMSNorm with a learnable scale in place
-    of the LayerNorms of the blocks and the patch head. They match the
+    ``qk_norm``, ``swiglu``, ``rope="2d"`` and ``rms_norm`` switch on the
+    blocks of LightningDiT (Yao et al., 2025, arXiv:2501.01423): QK-norm in
+    the attention, a `SwiGLUFeedForward`, a `RotaryEmbedding2d` on queries
+    and keys on top of ``pos_embed``, and RMSNorm with a learnable scale in
+    place of the LayerNorms of the blocks and the patch head. They match the
     reference code (github.com/hustvl/LightningDiT) and are off by default,
     which leaves the model above unchanged.
+
+    ``conditioning="in_context"`` is the in-context conditioning of Improved
+    MeanFlow (Geng et al., 2025b, Sec. 4.3): each conditioning embedding is
+    added to its own learnable tokens, 8 for the class, 4 for the guidance
+    scale, 2 for each end of the guidance interval and 4 for each time, and
+    these tokens are prepended to the patch tokens. The blocks are
+    `InContextBlock`, without modulation and with residual gates initialized
+    at zero, the head is a `PatchHead` on the patch tokens, and ``rope="1d"``
+    numbers the whole sequence. The model then matches ``imfDiT`` of the
+    reference code (Lyy-iiis/imeanflow) and its initialization.
 
     Parity with the reference implementation
     (github.com/facebookresearch/DiT): block math, modulation order,
@@ -102,9 +141,12 @@ class DiT(_ConditionalBackbone):
         depth: Number of trunk blocks.
         num_heads: Attention heads in the trunk (must divide ``embed_dim``).
         mlp_ratio: Feed-forward expansion ratio.
+        conditioning: ``"adaln_zero"`` (default) sums the conditioning
+            embeddings into one adaLN vector; ``"in_context"`` turns them
+            into tokens of the sequence and takes no ``cond``.
         cond_dim: Width of the conditioning vector. ``None`` (default) uses
-            ``embed_dim``. Custom embedders and ``cond=`` inputs must produce
-            this width.
+            ``embed_dim``, which ``"in_context"`` requires. Custom embedders
+            and ``cond=`` inputs must produce this width.
         num_classes: Enables the built-in label embedder with this many
             classes (plus the null row). ``None`` (default) builds no label
             table; ``y=`` then requires a custom ``y_embedder``.
@@ -142,13 +184,19 @@ class DiT(_ConditionalBackbone):
             ``rms_norm``.
         swiglu: Use `SwiGLUFeedForward` in place of the GELU feed-forward
             network.
-        rope: Apply `RotaryEmbedding2d` to queries and keys in every
-            attention, in addition to ``pos_embed``. The attention head
-            dimension must be a multiple of 4.
+        rope: Rotary embedding of queries and keys in every attention, in
+            addition to ``pos_embed``: ``None`` (default) for none, ``"2d"``
+            for `RotaryEmbedding2d` on the patch grid (LightningDiT; the head
+            dimension must be a multiple of 4), or ``"1d"`` for
+            `RotaryEmbedding1d` on the sequence, conditioning tokens first
+            (Improved MeanFlow). ``"2d"`` requires ``"adaln_zero"``.
         rms_norm: Use RMSNorm with a learnable scale in place of the
             LayerNorms of the blocks and the patch head.
+        block_bias: Biases of the attention and feed-forward linear layers of
+            the blocks; Improved MeanFlow uses none.
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
-            Matching model convention; labels and ``cond`` still apply.
+            Matching model convention; labels and ``cond`` still apply. A
+            two-time model embeds \(t - s\) only, as Improved MeanFlow does.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
             ``"score"``, or ``"epsilon"``, a declaration for consumers that
             leaves the computation unchanged; or a two-time output,
@@ -186,10 +234,39 @@ class DiT(_ConditionalBackbone):
             num_classes=1000,
             class_dropout_prob=0.1,
             swiglu=True,
-            rope=True,
+            rope="2d",
             rms_norm=True,
         )
         v = model(x_t, t, y=y)
+        ```
+
+        The \(u\) branch of iMF-B/2 (Lyy-iiis/imeanflow, ``imfDiT_B_2``:
+        12 blocks of width 768 with 12 heads on the 32x32x4 SD-VAE latents,
+        SwiGLU of hidden width 2048, conditioning on \(t - s\), the guidance
+        scale and the guidance interval):
+
+        ```python
+        from torchebm.models import DiT
+
+        model = DiT(
+            input_size=32,
+            in_channels=4,
+            embed_dim=768,
+            depth=12,
+            num_heads=12,
+            num_classes=1000,
+            conditioning="in_context",
+            pos_embed=None,
+            qk_norm=True,
+            swiglu=True,
+            rope="1d",
+            rms_norm=True,
+            block_bias=False,
+            guidance_conditioning="scale_and_interval",
+            time_invariant=True,
+            prediction_type="average_velocity",
+        )
+        u = model(x_s, t, y, s=s, guidance_scale=w, guidance_interval=interval)
         ```
     """
 
@@ -204,6 +281,7 @@ class DiT(_ConditionalBackbone):
         depth: int = 28,
         num_heads: int = 16,
         mlp_ratio: float = 4.0,
+        conditioning: str = "adaln_zero",
         cond_dim: Optional[int] = None,
         num_classes: Optional[int] = None,
         class_dropout_prob: float = 0.0,
@@ -218,8 +296,9 @@ class DiT(_ConditionalBackbone):
         pos_embed: Optional[str] = "sincos",
         qk_norm: bool = False,
         swiglu: bool = False,
-        rope: bool = False,
+        rope: Optional[str] = None,
         rms_norm: bool = False,
+        block_bias: bool = True,
         time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
@@ -238,9 +317,26 @@ class DiT(_ConditionalBackbone):
             raise ValueError(f"pos_embed must be one of {_POS_EMBED_KINDS}, got {pos_embed!r}")
         if head_depth < 0:
             raise ValueError(f"head_depth must be non-negative, got {head_depth}")
+        if conditioning not in _CONDITIONING_KINDS:
+            raise ValueError(
+                f"conditioning must be one of {_CONDITIONING_KINDS}, got {conditioning!r}"
+            )
+        if rope not in _ROPE_KINDS:
+            raise ValueError(f"rope must be one of {_ROPE_KINDS}, got {rope!r}")
+        in_context = conditioning == "in_context"
+        if in_context and rope == "2d":
+            raise ValueError(
+                "rope='2d' positions the patch grid only; in-context conditioning "
+                "takes rope='1d' or None"
+            )
         resolved_cond = int(cond_dim) if cond_dim is not None else int(embed_dim)
         if resolved_cond <= 0:
             raise ValueError(f"cond_dim must be positive, got {resolved_cond}")
+        if in_context and resolved_cond != embed_dim:
+            raise ValueError(
+                f"in-context conditioning requires cond_dim == embed_dim, got "
+                f"{resolved_cond} and {embed_dim}"
+            )
         if (
             prediction_type == "flow_map"
             and out_channels is not None
@@ -275,10 +371,34 @@ class DiT(_ConditionalBackbone):
         self.head_dim = int(head_dim) if head_dim is not None else self.embed_dim
         self.head_depth = int(head_depth)
         self.pos_embed_type = pos_embed
+        self.conditioning = conditioning
 
         self.patch_embed = ConvPatchEmbed2d(
             in_channels=self.in_channels, embed_dim=self.embed_dim, patch_size=p
         )
+
+        if in_context:
+            embedders = {
+                "y": self.y_embedder,
+                "guidance": self.guidance_embedder,
+                "interval_start": self.interval_start_embedder,
+                "interval_end": self.interval_end_embedder,
+                "t": self.t_embedder,
+                "dt": self.dt_embedder,
+            }
+            groups = [(name, n) for name, n in _IN_CONTEXT_TOKENS if embedders[name] is not None]
+            self.token_groups = tuple(name for name, _ in groups)
+            counts = torch.tensor([n for _, n in groups])
+            self.condition_tokens = nn.Parameter(torch.empty(int(counts.sum()), self.embed_dim))
+            self.register_buffer(
+                "token_group_index",
+                torch.repeat_interleave(torch.arange(len(groups)), counts),
+                persistent=False,
+            )
+        else:
+            self.token_groups = ()
+            self.condition_tokens = None
+        num_prefix = 0 if self.condition_tokens is None else self.condition_tokens.shape[0]
 
         num_patches = self.grid_size[0] * self.grid_size[1]
         if pos_embed == "sincos":
@@ -290,18 +410,21 @@ class DiT(_ConditionalBackbone):
         else:
             self.pos_embed = None
 
-        self.blocks = nn.ModuleList(
-            AdaLNZeroBlock(
-                embed_dim=self.embed_dim,
-                num_heads=self.num_heads,
-                cond_dim=self.cond_dim,
+        def block(width, heads):
+            options = dict(
+                embed_dim=width,
+                num_heads=heads,
                 mlp_ratio=mlp_ratio,
                 qk_norm=qk_norm,
                 swiglu=swiglu,
                 rms_norm=rms_norm,
+                bias=block_bias,
             )
-            for _ in range(self.depth)
-        )
+            if in_context:
+                return InContextBlock(**options)
+            return AdaLNZeroBlock(cond_dim=self.cond_dim, **options)
+
+        self.blocks = nn.ModuleList(block(self.embed_dim, self.num_heads) for _ in range(self.depth))
 
         self.head_proj = (
             nn.Linear(self.embed_dim, self.head_dim)
@@ -309,36 +432,55 @@ class DiT(_ConditionalBackbone):
             else None
         )
         head_heads = int(head_num_heads) if head_num_heads is not None else self.num_heads
-        self.head_blocks = nn.ModuleList(
-            AdaLNZeroBlock(
-                embed_dim=self.head_dim,
-                num_heads=head_heads,
-                cond_dim=self.cond_dim,
-                mlp_ratio=mlp_ratio,
-                qk_norm=qk_norm,
-                swiglu=swiglu,
-                rms_norm=rms_norm,
-            )
-            for _ in range(self.head_depth)
-        )
-        self.head = AdaLNZeroPatchHead(
+        self.head_blocks = nn.ModuleList(block(self.head_dim, head_heads) for _ in range(self.head_depth))
+        head_options = dict(
             embed_dim=self.head_dim,
-            cond_dim=self.cond_dim,
             patch_size=p,
             out_channels=self.out_channels,
             grid_size=self.grid_size,
             rms_norm=rms_norm,
         )
-        self.rope = (
-            RotaryEmbedding2d(self.embed_dim // self.num_heads, self.grid_size) if rope else None
-        )
+        if in_context:
+            self.head = PatchHead(**head_options)
+        else:
+            self.head = AdaLNZeroPatchHead(cond_dim=self.cond_dim, **head_options)
+        seq_len = num_prefix + num_patches
+        self.rope = _rotary_embedding(rope, self.embed_dim // self.num_heads, self.grid_size, seq_len)
         self.head_rope = (
-            RotaryEmbedding2d(self.head_dim // head_heads, self.grid_size)
-            if rope and self.head_depth
+            _rotary_embedding(rope, self.head_dim // head_heads, self.grid_size, seq_len)
+            if self.head_depth
             else None
         )
 
-        self._initialize_weights()
+        if in_context:
+            self._initialize_in_context_weights()
+        else:
+            self._initialize_weights()
+
+    def _initialize_in_context_weights(self) -> None:
+        r"""Apply the initialization of the Improved MeanFlow code (``imfDiT``).
+
+        Normal weights of standard deviation \(0.32/\sqrt{\text{fan-in}}\) in
+        the blocks and \(1/\sqrt{\text{fan-in}}\) in the default embedders,
+        zero biases, conditioning tokens and default label rows of standard
+        deviation \(1/\sqrt{D}\), the patch conv as a flattened Linear, and
+        zero residual gates and head projection. User-supplied embedder
+        modules are left untouched.
+        """
+        for module in (self.blocks, self.head_blocks):
+            module.apply(lambda m: _scaled_normal_init(m, _IMF_BLOCK_INIT_GAIN))
+        if self.head_proj is not None:
+            _scaled_normal_init(self.head_proj, _IMF_BLOCK_INIT_GAIN)
+
+        w = self.patch_embed.proj.weight.data
+        nn.init.xavier_uniform_(w.view(w.shape[0], -1))
+        nn.init.zeros_(self.patch_embed.proj.bias)
+
+        for embedder in self._default_timestep_embedders():
+            embedder.apply(lambda m: _scaled_normal_init(m, 1.0))
+        if self._default_y_embedder:
+            nn.init.normal_(self.y_embedder.embedding.weight, std=self.embed_dim**-0.5)
+        nn.init.normal_(self.condition_tokens, std=self.embed_dim**-0.5)
 
     def _initialize_weights(self) -> None:
         r"""Apply the reference DiT initialization scheme.
@@ -385,7 +527,9 @@ class DiT(_ConditionalBackbone):
         conditioning vector is the sum of the embeddings of whichever of
         ``t``, ``y``, and ``cond`` are given; passing none raises.
         Two-time models are called as ``model(x_s, t, s=s)`` and embed
-        \(s\) and \(t - s\) in place of \(t\).
+        \(s\) and \(t - s\) in place of \(t\). In-context conditioning needs
+        every conditioning input of the model on every call, the null label
+        for unconditional outputs.
 
         Args:
             x: Input of shape ``(B, in_channels, H, W)`` matching
@@ -409,12 +553,14 @@ class DiT(_ConditionalBackbone):
         Returns:
             torch.Tensor: Output of shape ``(B, out_channels, H, W)``.
         """
-        c = self._condition(x, t, y, cond, s, guidance_scale, guidance_interval)
         if tuple(x.shape[-2:]) != self.input_size:
             raise ValueError(
                 f"input has spatial size {tuple(x.shape[-2:])}, "
                 f"expected input_size={self.input_size}"
             )
+        if self.condition_tokens is not None:
+            return self._forward_in_context(x, t, y, cond, s, guidance_scale, guidance_interval)
+        c = self._condition(x, t, y, cond, s, guidance_scale, guidance_interval)
         tokens = self.patch_embed(x)
         if self.pos_embed is not None:
             tokens = tokens + self.pos_embed.to(device=tokens.device, dtype=tokens.dtype)
@@ -425,6 +571,27 @@ class DiT(_ConditionalBackbone):
         for block in self.head_blocks:
             tokens = block(tokens, c, self.head_rope)
         return self._output(x, self.head(tokens, c), s, t)
+
+    def _forward_in_context(self, x, t, y, cond, s, guidance_scale, guidance_interval):
+        if cond is not None:
+            raise ValueError("in-context conditioning takes no cond")
+        embeddings = dict(self._embeddings(x, t, y, cond, s, guidance_scale, guidance_interval))
+        missing = [name for name in self.token_groups if name not in embeddings]
+        if missing:
+            raise ValueError(f"in-context conditioning needs {missing} on every call")
+        groups = torch.stack([embeddings[name] for name in self.token_groups], dim=1)
+        prefix = self.condition_tokens + groups[:, self.token_group_index]
+        tokens = self.patch_embed(x)
+        if self.pos_embed is not None:
+            tokens = tokens + self.pos_embed.to(device=tokens.device, dtype=tokens.dtype)
+        tokens = torch.cat([prefix.to(tokens.dtype), tokens], dim=1)
+        for block in self.blocks:
+            tokens = block(tokens, self.rope)
+        if self.head_proj is not None:
+            tokens = self.head_proj(tokens)
+        for block in self.head_blocks:
+            tokens = block(tokens, self.head_rope)
+        return self._output(x, self.head(tokens[:, prefix.shape[1] :]), s, t)
 
 
 def _preset(size: str, patch_size: int, kwargs: dict) -> DiT:
