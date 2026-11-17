@@ -183,11 +183,11 @@ def _reference_forward(model, blocks, final_layer, rope, x, t, y):
 
 
 OPTIONS = {
-    "final_config": dict(qk_norm=False, swiglu=True, rope=True, rms_norm=True),
-    "all": dict(qk_norm=True, swiglu=True, rope=True, rms_norm=True),
-    "qk_layer_norm": dict(qk_norm=True, swiglu=False, rope=False, rms_norm=False),
-    "rope": dict(qk_norm=False, swiglu=False, rope=True, rms_norm=False),
-    "none": dict(qk_norm=False, swiglu=False, rope=False, rms_norm=False),
+    "final_config": dict(qk_norm=False, swiglu=True, rope="2d", rms_norm=True),
+    "all": dict(qk_norm=True, swiglu=True, rope="2d", rms_norm=True),
+    "qk_layer_norm": dict(qk_norm=True, swiglu=False, rope=None, rms_norm=False),
+    "rope": dict(qk_norm=False, swiglu=False, rope="2d", rms_norm=False),
+    "none": dict(qk_norm=False, swiglu=False, rope=None, rms_norm=False),
 }
 
 
@@ -259,4 +259,4 @@ def test_rope_scores_depend_on_relative_position_only():
 
 def test_rope_rejects_head_dim_not_multiple_of_four():
     with pytest.raises(ValueError, match="multiple of 4"):
-        DiT(input_size=8, in_channels=3, patch_size=2, embed_dim=36, depth=1, num_heads=6, rope=True)
+        DiT(input_size=8, in_channels=3, patch_size=2, embed_dim=36, depth=1, num_heads=6, rope="2d")

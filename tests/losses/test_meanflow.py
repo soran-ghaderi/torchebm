@@ -10,6 +10,16 @@ from torchebm.utils import average_velocity_jvp, sample_guidance
 
 NUM_CLASSES = 4
 EQUAL_RATIO = 0.25
+IN_CONTEXT_OPTIONS = dict(
+    conditioning="in_context",
+    pos_embed=None,
+    qk_norm=True,
+    swiglu=True,
+    rope="1d",
+    rms_norm=True,
+    block_bias=False,
+    time_invariant=True,
+)
 
 
 def _model(kind, **options):
@@ -19,6 +29,8 @@ def _model(kind, **options):
             in_dim=6, num_classes=NUM_CLASSES, prediction_type="average_velocity", **options
         )
     else:
+        if kind == "in_context_dit":
+            options = {**IN_CONTEXT_OPTIONS, **options}
         model = DiT(
             input_size=8,
             in_channels=3,
@@ -210,7 +222,7 @@ def test_matches_imf_reference(p, ratio):
 
 @pytest.mark.parametrize("ratio", [0.0, EQUAL_RATIO])
 @pytest.mark.parametrize("p", [0.0, 1.0])
-@pytest.mark.parametrize("kind", ["mlp", "dit"])
+@pytest.mark.parametrize("kind", ["mlp", "dit", "in_context_dit"])
 def test_matches_imf_reference_with_guidance_conditioning(kind, p, ratio):
     model = _model(kind, guidance_conditioning="scale_and_interval")
     x, e, t_ref, r_ref, labels, drop = _batch(kind)

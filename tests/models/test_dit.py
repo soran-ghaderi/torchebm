@@ -155,7 +155,7 @@ def test_wide_head():
 
 def test_wide_head_with_lightningdit_blocks():
     model = _tiny(
-        head_dim=24, head_depth=1, head_num_heads=2, qk_norm=True, swiglu=True, rope=True, rms_norm=True
+        head_dim=24, head_depth=1, head_num_heads=2, qk_norm=True, swiglu=True, rope="2d", rms_norm=True
     )
     assert model.rope.cos.shape == (4, 8)
     assert model.head_rope.cos.shape == (4, 12)
@@ -199,7 +199,16 @@ requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA u
 
 BLOCK_OPTIONS = {
     "dit": {},
-    "lightningdit": dict(qk_norm=True, swiglu=True, rope=True, rms_norm=True),
+    "lightningdit": dict(qk_norm=True, swiglu=True, rope="2d", rms_norm=True),
+    "in_context": dict(
+        conditioning="in_context",
+        pos_embed=None,
+        qk_norm=True,
+        swiglu=True,
+        rope="1d",
+        rms_norm=True,
+        block_bias=False,
+    ),
 }
 
 
