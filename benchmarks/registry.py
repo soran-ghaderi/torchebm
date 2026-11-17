@@ -295,7 +295,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
             "transformer_fwd_bwd": {"bench_backward": True},
             "lightningdit_fwd_bwd": {
                 "bench_backward": True,
-                "init_kwargs": {"swiglu": True, "rope": True, "rms_norm": True},
+                "init_kwargs": {"swiglu": True, "rope": "2d", "rms_norm": True},
             },
         },
     },

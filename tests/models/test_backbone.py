@@ -97,9 +97,18 @@ def test_two_time_backbone_requires_s_and_t(backbone, prediction_type):
 
 @pytest.mark.parametrize("backbone", [mlp, dit])
 @pytest.mark.parametrize("prediction_type", TWO_TIME)
-def test_two_time_backbone_rejects_time_invariant(backbone, prediction_type):
-    with pytest.raises(ValueError, match="time_invariant"):
-        backbone(prediction_type=prediction_type, time_invariant=True)
+def test_time_invariant_two_time_backbone_embeds_the_interval_only(backbone, prediction_type):
+    torch.manual_seed(0)
+    model = _perturbed(backbone(prediction_type=prediction_type, time_invariant=True))
+    assert model.t_embedder is None
+    x = _input(model)
+    s, t = _times()
+    with torch.no_grad():
+        u = model(x, t, s=s)
+        shifted = model(x, t + 0.5, s=s + 0.5)
+    assert torch.allclose(u, shifted)
+    with pytest.raises(ValueError, match="takes no t_embedder"):
+        backbone(prediction_type=prediction_type, time_invariant=True, t_embedder=torch.nn.Linear(1, 8))
 
 
 def test_two_time_mlp_rejects_unconditional():

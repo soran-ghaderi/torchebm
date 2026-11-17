@@ -31,7 +31,16 @@ pytestmark = [
 
 BLOCK_OPTIONS = {
     "dit": {},
-    "lightningdit": dict(qk_norm=True, swiglu=True, rope=True, rms_norm=True),
+    "lightningdit": dict(qk_norm=True, swiglu=True, rope="2d", rms_norm=True),
+    "in_context": dict(
+        conditioning="in_context",
+        pos_embed=None,
+        qk_norm=True,
+        swiglu=True,
+        rope="1d",
+        rms_norm=True,
+        block_bias=False,
+    ),
 }
 
 
