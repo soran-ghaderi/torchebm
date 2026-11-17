@@ -50,7 +50,56 @@ def build_2d_sincos_pos_embed(
     return emb
 
 
-class RotaryEmbedding2d(nn.Module):
+class _RotaryEmbedding(nn.Module):
+    r"""Rotation of the pairs \((2i, 2i + 1)\) by per-position angles ``(N, head_dim)``."""
+
+    def __init__(self, angles: torch.Tensor):
+        super().__init__()
+        sign = torch.tensor([-1.0, 1.0]).repeat(angles.shape[-1] // 2)
+        self.register_buffer("cos", angles.cos(), persistent=False)
+        self.register_buffer("sin", angles.sin() * sign, persistent=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        r"""Rotate ``x`` of shape ``(..., N, head_dim)``."""
+        swapped = x.unflatten(-1, (-1, 2)).flip(-1).flatten(-2)
+        return torch.addcmul(x * self.cos, swapped, self.sin)
+
+
+class RotaryEmbedding1d(_RotaryEmbedding):
+    r"""Rotary position embedding (RoPE) of a token sequence (Su et al., 2021).
+
+    The pair \((2i, 2i + 1)\) of the head dimension rotates by the angle
+    \(p\, \theta^{-2i/D}\) for sequence position \(p\) and head dimension
+    \(D\), as in Improved MeanFlow (Lyy-iiis/imeanflow,
+    ``precompute_rope_freqs`` and ``apply_rotary_pos_emb``), which numbers
+    the conditioning tokens and the patch tokens of one sequence. The tables
+    are built once in float32 and stored as non-persistent buffers, ``cos``
+    and ``sin`` with the sign of the rotation folded in.
+
+    Args:
+        head_dim: Head dimension \(D\) of the attention, even.
+        seq_len: Number of positions.
+        theta: Base \(\theta\) of the frequencies.
+
+    Example:
+        ```python
+        import torch
+        from torchebm.models.components import RotaryEmbedding1d
+
+        rope = RotaryEmbedding1d(head_dim=64, seq_len=276)
+        q = rope(torch.randn(2, 12, 276, 64))
+        ```
+    """
+
+    def __init__(self, head_dim: int, seq_len: int, theta: float = 10000.0):
+        if head_dim % 2 != 0:
+            raise ValueError(f"head_dim must be even for RoPE, got {head_dim}")
+        freqs = 1.0 / (theta ** (torch.arange(0, head_dim, 2).float() / head_dim))
+        angles = torch.arange(seq_len).float()[:, None] * freqs
+        super().__init__(angles.repeat_interleave(2, dim=-1))
+
+
+class RotaryEmbedding2d(_RotaryEmbedding):
     r"""2D rotary position embedding (RoPE) of image tokens.
 
     The 2D RoPE of EVA-02 (Fang et al., 2023) that LightningDiT (Yao et al.,
@@ -87,7 +136,6 @@ class RotaryEmbedding2d(nn.Module):
     """
 
     def __init__(self, head_dim: int, grid_size: int | Tuple[int, int], theta: float = 10000.0):
-        super().__init__()
         if head_dim % 4 != 0:
             raise ValueError(f"head_dim must be a multiple of 4 for 2D RoPE, got {head_dim}")
         gh, gw = (grid_size, grid_size) if isinstance(grid_size, int) else grid_size
@@ -98,11 +146,4 @@ class RotaryEmbedding2d(nn.Module):
         angles = torch.cat(
             [angles_h[:, None].expand(gh, gw, dim), angles_w[None].expand(gh, gw, dim)], dim=-1
         ).reshape(gh * gw, head_dim)
-        sign = torch.tensor([-1.0, 1.0]).repeat(head_dim // 2)
-        self.register_buffer("cos", angles.cos(), persistent=False)
-        self.register_buffer("sin", angles.sin() * sign, persistent=False)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""Rotate ``x`` of shape ``(..., gh * gw, head_dim)``."""
-        swapped = x.unflatten(-1, (-1, 2)).flip(-1).flatten(-2)
-        return torch.addcmul(x * self.cos, swapped, self.sin)
+        super().__init__(angles)

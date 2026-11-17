@@ -59,6 +59,45 @@ class AdaLNZeroPatchHead(nn.Module):
         )
 
 
+class PatchHead(nn.Module):
+    """Final layer that maps token features to patch pixels, without modulation.
+
+    The head of in-context conditioning: a norm and a zero-initialized
+    linear layer, as the ``FinalLayer`` of Improved MeanFlow
+    (Lyy-iiis/imeanflow). `grid_size` is the `(gh, gw)` token grid; `None`
+    infers a square grid at forward time. `rms_norm` uses RMSNorm with a
+    learnable scale in place of the LayerNorm.
+    """
+
+    def __init__(
+        self,
+        *,
+        embed_dim: int,
+        patch_size: int,
+        out_channels: int,
+        grid_size: Optional[Tuple[int, int]] = None,
+        eps: float = 1e-6,
+        rms_norm: bool = False,
+    ):
+        super().__init__()
+        self.embed_dim = int(embed_dim)
+        self.patch_size = int(patch_size)
+        self.out_channels = int(out_channels)
+        self.grid_size = tuple(int(s) for s in grid_size) if grid_size is not None else None
+        self.norm = _norm(self.embed_dim, eps, rms_norm)
+        self.proj = nn.Linear(self.embed_dim, self.patch_size * self.patch_size * self.out_channels)
+        nn.init.zeros_(self.proj.weight)
+        nn.init.zeros_(self.proj.bias)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        return unpatchify2d(
+            self.proj(self.norm(tokens)),
+            self.patch_size,
+            out_channels=self.out_channels,
+            grid_size=self.grid_size,
+        )
+
+
 class AdaLNZeroLinearHead(nn.Module):
     """Final layer mapping a vector stream to `out_dim` with adaLN-Zero.
 

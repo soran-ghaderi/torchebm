@@ -49,7 +49,9 @@ class MultiheadSelfAttention(nn.Module):
     ``qk_norm`` normalizes queries and keys over the head dimension before
     attention (QK-norm), with an affine LayerNorm, or RMSNorm when
     ``rms_norm`` is set, as in LightningDiT. ``forward`` takes an optional
-    `RotaryEmbedding2d` applied to queries and keys after QK-norm.
+    `RotaryEmbedding1d` or `RotaryEmbedding2d` applied to queries and keys
+    after QK-norm. ``bias=False`` drops the biases of the projections, as in
+    Improved MeanFlow.
     """
 
     def __init__(
@@ -59,6 +61,7 @@ class MultiheadSelfAttention(nn.Module):
         dropout: float = 0.0,
         qk_norm: bool = False,
         rms_norm: bool = False,
+        bias: bool = True,
     ):
         super().__init__()
         if embed_dim % num_heads != 0:
@@ -69,8 +72,8 @@ class MultiheadSelfAttention(nn.Module):
         self.num_heads = int(num_heads)
         self.head_dim = self.embed_dim // self.num_heads
         self.dropout = float(dropout)
-        self.qkv = nn.Linear(self.embed_dim, 3 * self.embed_dim, bias=True)
-        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=True)
+        self.qkv = nn.Linear(self.embed_dim, 3 * self.embed_dim, bias=bias)
+        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=bias)
         if qk_norm:
             self.q_norm = _RMSNorm(self.head_dim, eps=1e-6) if rms_norm else nn.LayerNorm(self.head_dim)
             self.k_norm = _RMSNorm(self.head_dim, eps=1e-6) if rms_norm else nn.LayerNorm(self.head_dim)
@@ -101,15 +104,16 @@ class FeedForward(nn.Module):
         mlp_ratio: float = 4.0,
         dropout: float = 0.0,
         act_layer: Optional[Callable[[], nn.Module]] = None,
+        bias: bool = True,
     ):
         super().__init__()
         hidden = int(embed_dim * mlp_ratio)
         act = act_layer() if act_layer is not None else nn.GELU(approximate="tanh")
         self.net = nn.Sequential(
-            nn.Linear(embed_dim, hidden, bias=True),
+            nn.Linear(embed_dim, hidden, bias=bias),
             act,
             nn.Dropout(dropout),
-            nn.Linear(hidden, embed_dim, bias=True),
+            nn.Linear(hidden, embed_dim, bias=bias),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -129,13 +133,14 @@ class SwiGLUFeedForward(nn.Module):
     Args:
         embed_dim: Input and output width \(D\).
         mlp_ratio: Expansion ratio \(r\) of the equivalent `FeedForward`.
+        bias: Biases of the two linear layers.
     """
 
-    def __init__(self, embed_dim: int, mlp_ratio: float = 4.0):
+    def __init__(self, embed_dim: int, mlp_ratio: float = 4.0, bias: bool = True):
         super().__init__()
         hidden = int(2 / 3 * int(embed_dim * mlp_ratio))
-        self.fc1 = nn.Linear(embed_dim, 2 * hidden, bias=True)
-        self.fc2 = nn.Linear(hidden, embed_dim, bias=True)
+        self.fc1 = nn.Linear(embed_dim, 2 * hidden, bias=bias)
+        self.fc2 = nn.Linear(hidden, embed_dim, bias=bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x1, x2 = self.fc1(x).chunk(2, dim=-1)
@@ -153,8 +158,9 @@ class AdaLNZeroBlock(nn.Module):
 
     ``qk_norm``, ``swiglu`` and ``rms_norm`` switch on the LightningDiT block:
     QK-norm in the attention, a `SwiGLUFeedForward`, and RMSNorm with a
-    learnable scale in place of the LayerNorms. ``forward`` passes an
-    optional `RotaryEmbedding2d` to the attention.
+    learnable scale in place of the LayerNorms. ``bias=False`` drops the
+    biases of the attention and feed-forward linear layers. ``forward``
+    passes an optional rotary embedding to the attention.
     """
 
     def __init__(
@@ -170,6 +176,7 @@ class AdaLNZeroBlock(nn.Module):
         qk_norm: bool = False,
         swiglu: bool = False,
         rms_norm: bool = False,
+        bias: bool = True,
     ):
         super().__init__()
         self.embed_dim = int(embed_dim)
@@ -178,13 +185,13 @@ class AdaLNZeroBlock(nn.Module):
         self.norm1 = _norm(self.embed_dim, eps, rms_norm)
         if attn is None:
             attn = MultiheadSelfAttention(
-                self.embed_dim, num_heads=num_heads, qk_norm=qk_norm, rms_norm=rms_norm
+                self.embed_dim, num_heads=num_heads, qk_norm=qk_norm, rms_norm=rms_norm, bias=bias
             )
         self.attn = attn
         self.norm2 = _norm(self.embed_dim, eps, rms_norm)
         if mlp is None:
             ffn = SwiGLUFeedForward if swiglu else FeedForward
-            mlp = ffn(self.embed_dim, mlp_ratio=mlp_ratio)
+            mlp = ffn(self.embed_dim, mlp_ratio=mlp_ratio, bias=bias)
         self.mlp = mlp
 
         self.modulation = nn.Sequential(
@@ -206,6 +213,61 @@ class AdaLNZeroBlock(nn.Module):
         x = x + gate1.unsqueeze(1) * (self.attn(h) if rope is None else self.attn(h, rope))
         x = x + gate2.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift2, scale2))
         return x
+
+
+class InContextBlock(nn.Module):
+    r"""Transformer block of in-context conditioning, without modulation.
+
+    The conditioning enters as tokens of the sequence, so the block is a
+    pre-norm transformer block whose two residual branches are scaled by
+    learnable per-channel gates initialized at zero, and the block starts
+    as the identity, as in Improved MeanFlow (Lyy-iiis/imeanflow,
+    ``TransformerBlock`` with ``attn_scale`` and ``mlp_scale``):
+
+    \[
+    x \leftarrow x + g_1 \odot \mathrm{Attn}(\mathrm{Norm}(x)), \qquad
+    x \leftarrow x + g_2 \odot \mathrm{MLP}(\mathrm{Norm}(x)).
+    \]
+
+    Args:
+        embed_dim: Token width.
+        num_heads: Attention heads.
+        mlp_ratio: Feed-forward expansion ratio.
+        eps: Epsilon of the norms.
+        qk_norm: QK-norm in the attention.
+        swiglu: `SwiGLUFeedForward` in place of `FeedForward`.
+        rms_norm: RMSNorm with a learnable scale in place of the LayerNorms.
+        bias: Biases of the attention and feed-forward linear layers.
+    """
+
+    def __init__(
+        self,
+        *,
+        embed_dim: int,
+        num_heads: int,
+        mlp_ratio: float = 4.0,
+        eps: float = 1e-6,
+        qk_norm: bool = False,
+        swiglu: bool = False,
+        rms_norm: bool = False,
+        bias: bool = True,
+    ):
+        super().__init__()
+        self.embed_dim = int(embed_dim)
+        self.norm1 = _norm(self.embed_dim, eps, rms_norm)
+        self.attn = MultiheadSelfAttention(
+            self.embed_dim, num_heads=num_heads, qk_norm=qk_norm, rms_norm=rms_norm, bias=bias
+        )
+        self.norm2 = _norm(self.embed_dim, eps, rms_norm)
+        ffn = SwiGLUFeedForward if swiglu else FeedForward
+        self.mlp = ffn(self.embed_dim, mlp_ratio=mlp_ratio, bias=bias)
+        self.attn_scale = nn.Parameter(torch.zeros(self.embed_dim))
+        self.mlp_scale = nn.Parameter(torch.zeros(self.embed_dim))
+
+    def forward(self, x: torch.Tensor, rope: Optional[nn.Module] = None) -> torch.Tensor:
+        h = self.norm1(x)
+        x = x + (self.attn(h) if rope is None else self.attn(h, rope)) * self.attn_scale
+        return x + self.mlp(self.norm2(x)) * self.mlp_scale
 
 
 class AdaLNZeroMLPBlock(nn.Module):
