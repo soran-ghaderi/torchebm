@@ -130,9 +130,11 @@ class MeanFlowLoss(BaseLoss):
     `average_velocity_jvp`, the JVP along the tangent \((v, 1)\) in
     \((x_s, s)\), run only on the pairs with \(s < t\); `DiT` attention then
     uses its JVP kernel. Pairs with \(s = t\) reduce to flow
-    matching. Improved MeanFlow (Geng et al., 2025b, Algorithm 1) takes the
-    tangent \((u_\theta(x_s, s, s), 1)\), computed without gradient, and the
-    loss is unchanged. Sample with `FlowMapSampler`. See `meanflow_loss`.
+    matching. Improved MeanFlow (Geng et al., 2025b, Sec. 4.1) takes the
+    tangent \((v_\theta(x_s, s), 1)\), the model's own velocity computed
+    without gradient: \(u_\theta(x_s, s, s)\) (Algorithm 1), or the output of
+    an auxiliary velocity head (App. A), which ``aux_input`` trains with the
+    flow matching loss. Sample with `FlowMapSampler`. See `meanflow_loss`.
 
     Args:
         p: Power \(p\) of the adaptive weight; ``0`` gives the squared error.
@@ -171,6 +173,62 @@ class MeanFlowLoss(BaseLoss):
         u, du_ds = average_velocity_jvp(model, x_s, s, t, v_guided, y)
         loss = loss_fn(u, du_ds, v_guided, s, t)
         ```
+
+        One training step of iMF-XL/2 (Lyy-iiis/imeanflow,
+        ``iMeanFlow.forward``; Table 4) over ImageNet 256 latents: 50% of the
+        pairs with \(s \neq t\), the guidance scale drawn from
+        \(p(\omega) \propto \omega^{-2}\) on \([1, 8]\) and the guidance
+        interval with `sample_guidance`, the guided velocity (Eq. 17) and the
+        tangent from the auxiliary head, with no guidance outside the
+        interval, 10% of the labels dropped at the start of the batch, and
+        the auxiliary loss. The paper trains for 800 epochs at batch size
+        1024 with Adam (0.9, 0.95), learning rate 1e-4 after 10 warmup
+        epochs, and EMA decay 0.9999:
+
+        ```python
+        from torchebm.interpolants import LinearInterpolant
+        from torchebm.losses import MeanFlowLoss
+        from torchebm.models import imf_dit_xl_2
+        from torchebm.utils import average_velocity_jvp, sample_guidance, sample_time_pairs
+
+        model = imf_dit_xl_2(input_size=32, in_channels=4, num_classes=1000)
+        path = LinearInterpolant()
+        loss_fn = MeanFlowLoss()
+
+        n = len(x1)
+        s, t = sample_time_pairs(n, flow_matching_ratio=0.5)
+        scale, interval = sample_guidance(n, power=2.0, flow_matching_ratio=0.5)
+        x_s, v = path(torch.randn_like(x1), x1, s)
+        inside = (s >= interval[:, 0]) & (s <= interval[:, 1])
+        w = torch.where(inside, scale, 1.0)
+        null = torch.full_like(y, 1000)
+        with torch.no_grad():
+            v_c, v_u = model(
+                x_s.repeat(2, 1, 1, 1),
+                s.repeat(2),
+                torch.cat([y, null]),
+                s=s.repeat(2),
+                guidance_scale=torch.cat([w, torch.ones_like(w)]),
+                guidance_interval=torch.tensor([0.0, 1.0]).expand(2 * n, 2),
+                head="aux",
+            ).chunk(2)
+        v_guided = v + (1 - 1 / w).view(-1, 1, 1, 1) * (v_c - v_u)
+        drop = torch.arange(n) < (torch.rand(n) < 0.1).sum()
+        y = torch.where(drop, null, y)
+        v_guided = torch.where(drop.view(-1, 1, 1, 1), v, v_guided)
+        u, du_ds, v_aux = average_velocity_jvp(
+            model,
+            x_s,
+            s,
+            t,
+            v_c,
+            y,
+            flow_matching_ratio=0.5,
+            model_kwargs={"guidance_scale": scale, "guidance_interval": interval},
+            aux_head=True,
+        )
+        loss = loss_fn(u, du_ds, v_guided, s, t, aux_input=v_aux)
+        ```
     """
 
     def __init__(self, p: float = 1.0, c: float = 0.01, **kwargs):
@@ -186,6 +244,7 @@ class MeanFlowLoss(BaseLoss):
         s: torch.Tensor,
         t: torch.Tensor,
         weight: Optional[torch.Tensor] = None,
+        aux_input: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         r"""Compute the loss from the model output and its time derivative.
 
@@ -199,6 +258,9 @@ class MeanFlowLoss(BaseLoss):
             s: Times of the input, shape (batch_size,).
             t: Target times, shape (batch_size,).
             weight: Per-sample weight, shape (batch_size,).
+            aux_input: Output of the auxiliary velocity head from
+                `average_velocity_jvp` with ``aux_head=True``, same shape;
+                adds its flow matching loss with its own adaptive weight.
 
         Returns:
             Scalar loss, or shape (batch_size,) for ``reduction="none"``.
@@ -213,4 +275,5 @@ class MeanFlowLoss(BaseLoss):
             c=self.c,
             weight=weight,
             reduction=self.reduction,
+            aux_input=aux_input,
         )
