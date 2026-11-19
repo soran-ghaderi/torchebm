@@ -14,12 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`4c3b5be`](https://github.com/soran-ghaderi/torchebm/commit/4c3b5be38e79a922854462fa51d5e9101766a166) - add guidance sampling and model kwargs in average velocity jvp
 - [`8b351d5`](https://github.com/soran-ghaderi/torchebm/commit/8b351d5a868606f3a0a1fe120a0070ad058371e5) - add in-context block, patch head, 1d rope and bias options
 - [`b9e9821`](https://github.com/soran-ghaderi/torchebm/commit/b9e9821b68a8b377f5d263f4fc82ae224aa22206) - add in-context conditioning to dit and interval-only two-time models
+- [`aee3729`](https://github.com/soran-ghaderi/torchebm/commit/aee3729acfde0a5887c0c81af672baa11c93109f) - add the improved meanflow auxiliary velocity head and imf dit presets
+- [`c2e6df4`](https://github.com/soran-ghaderi/torchebm/commit/c2e6df41c2289dc9329c8cbb91488ca26d7e13f6) - train the auxiliary velocity head with the meanflow loss
 
 ### Other
 
 - [`c2a29a9`](https://github.com/soran-ghaderi/torchebm/commit/c2a29a999a8129508315e8ed2ddbe5b2fcd710b7) - check lightningdit blocks against the reference code under jvp, compile and fsdp2 ++ chore(benchmarks): add a lightningdit variant of the dit benchmark
 - [`fb60ba7`](https://github.com/soran-ghaderi/torchebm/commit/fb60ba70d04ea141630b92ee75e6c0047d06d841) - check guidance conditioning against the improved meanflow reference code
 - [`ed24bb3`](https://github.com/soran-ghaderi/torchebm/commit/ed24bb3cfc33bef9b39c0a8c6e78860e2093b557) - check in-context dit against the improved meanflow reference code
+- [`31d266b`](https://github.com/soran-ghaderi/torchebm/commit/31d266b5b1df85def27218d31448410d7ffc2a5c) - add improved meanflow 2d example with guidance as a model input
 
 ## [0.9.3](https://github.com/soran-ghaderi/torchebm/compare/v0.9.2...v0.9.3) - 2026-11-15
 
