@@ -247,7 +247,8 @@ def average_velocity_jvp(
     y: Optional[torch.Tensor] = None,
     flow_matching_ratio: float = 0.75,
     model_kwargs: Optional[Dict[str, torch.Tensor]] = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    aux_head: bool = False,
+) -> Tuple[torch.Tensor, ...]:
     r"""Average velocity of a two-time model and its JVP, the inputs of `MeanFlowLoss`.
 
     Returns \(u = u_\theta(x_s, s, t)\) and its total derivative along the
@@ -277,6 +278,12 @@ def average_velocity_jvp(
     activations and, under `torch.compile`, no product with the zero tangent
     of the weights is formed.
 
+    With ``aux_head=True`` the model is called with ``head="both"`` and the
+    output of its auxiliary velocity head (Improved MeanFlow, App. A) comes
+    from the same forward pass, with gradient and without JVP. In eager mode
+    the tangents of the auxiliary blocks are still computed and discarded;
+    `torch.compile` removes them.
+
     Args:
         model: Two-time model, called as
             ``model(x_s, t, y, s=s, **model_kwargs)``.
@@ -289,10 +296,13 @@ def average_velocity_jvp(
         model_kwargs: Further model inputs with the batch on the first
             dimension, such as ``guidance_scale`` and ``guidance_interval``,
             split with the rows.
+        aux_head: Also return the output of the auxiliary velocity head, for
+            models built with ``aux_head_depth``.
 
     Returns:
-        Tuple ``(u, du_ds)`` of tensors of the shape of ``x_s``; ``du_ds`` is
-        detached.
+        Tuple ``(u, du_ds)`` of tensors of the shape of ``x_s``, or
+        ``(u, du_ds, v)`` with the auxiliary output ``v`` for
+        ``aux_head=True``; ``du_ds`` is detached.
 
     Example:
         ```python
@@ -312,17 +322,22 @@ def average_velocity_jvp(
         rows = tuple(None if a is None else a[n:].clone() for a in rows)
         jvp_kwargs = {k: v[n:].clone() for k, v in kwargs.items()}
     x_jvp, s_jvp, t_jvp, tangent_jvp, y_jvp = rows
+    head = {"head": "both"} if aux_head else {}
     with _LinearTangentMode():
-        u, du_ds = torch.func.jvp(
-            lambda x_s, s: model(x_s, t_jvp, y_jvp, s=s, **jvp_kwargs),
+        u, du_ds, *aux = torch.func.jvp(
+            lambda x_s, s: model(x_s, t_jvp, y_jvp, s=s, **jvp_kwargs, **head),
             (x_jvp, s_jvp),
             (tangent_jvp, torch.ones_like(s_jvp)),
+            has_aux=aux_head,
         )
-    if n == 0:
-        return u, du_ds.detach()
-    fm_kwargs = {k: v[:n] for k, v in kwargs.items()}
-    u_fm = model(x_s[:n], t[:n], None if y is None else y[:n], s=s[:n], **fm_kwargs)
-    return torch.cat([u_fm, u]), torch.cat([torch.zeros_like(u_fm), du_ds.detach()])
+    du_ds = du_ds.detach()
+    if n > 0:
+        fm_kwargs = {k: v[:n] for k, v in kwargs.items()}
+        fm = model(x_s[:n], t[:n], None if y is None else y[:n], s=s[:n], **fm_kwargs, **head)
+        u_fm, *aux_fm = fm if aux_head else (fm,)
+        u, du_ds = torch.cat([u_fm, u]), torch.cat([torch.zeros_like(u_fm), du_ds])
+        aux = [torch.cat(pair) for pair in zip(aux_fm, aux)]
+    return (u, du_ds, *aux)
 
 
 @torch.no_grad()

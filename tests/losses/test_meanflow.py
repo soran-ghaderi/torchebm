@@ -166,6 +166,98 @@ def _imf_guidance_reference(net, x, e, t, r, labels, drop, omega, t_min, t_max, 
     return _adaptive_mean(loss_u, norm_p)
 
 
+def _guided_aux_reference_net(model):
+    r"""``net`` of the reference code returning the u and auxiliary v outputs of a torchebm model."""
+
+    def net(z, t, h, w, t_min, t_max, y):
+        interval = torch.stack([1 - t_max, 1 - t_min], dim=-1)
+        u, v = model(z, 1 - t + h, y, s=1 - t, guidance_scale=w, guidance_interval=interval, head="both")
+        return -u, -v
+
+    return net
+
+
+def _imf_aux_reference(net, x, e, t, r, labels, drop, omega, t_min, t_max, norm_p):
+    r"""`iMeanFlow.forward`, `guidance_fn` and `cond_drop` of Lyy-iiis/imeanflow (bf60cd7c) with the
+    auxiliary v head and the draws passed in."""
+    tb = _view(t, x)
+    z_t = (1 - tb) * x + tb * e
+    v_t = e - x
+    fm_mask = _view(torch.arange(len(x)) < int(len(x) * EQUAL_RATIO), x)
+
+    def v_cond_fn(z, t, w, y):
+        return net(z, t, torch.zeros_like(t), w, torch.zeros_like(t), torch.ones_like(t), y)[1]
+
+    v_c, v_u = v_cond_fn(
+        torch.cat([z_t, z_t]),
+        torch.cat([t, t]),
+        torch.cat([omega, torch.ones_like(omega)]),
+        torch.cat([labels, torch.full_like(labels, NUM_CLASSES)]),
+    ).chunk(2)
+    v_g_fm = v_t + _view(1 - 1 / omega, x) * (v_c - v_u)
+    w = torch.where((t >= t_min) & (t <= t_max), omega, 1.0)
+    v_c = v_cond_fn(z_t, t, w, labels)
+    v_g = v_t + _view(1 - 1 / w, x) * (v_c - v_u)
+    v_g = torch.where(fm_mask, v_g_fm, v_g)
+    labels = torch.where(drop, NUM_CLASSES, labels)
+    v_g = torch.where(_view(drop, x), v_t, v_g)
+    u, du_dt, v = torch.func.jvp(
+        lambda z, t, r: net(z, t, t - r, omega, t_min, t_max, labels),
+        (z_t, t, r),
+        (v_c, torch.ones_like(t), torch.zeros_like(r)),
+        has_aux=True,
+    )
+    V = u + _view(t - r, x) * du_dt.detach()
+    loss_u = ((V - v_g.detach()) ** 2).flatten(1).sum(1)
+    loss_v = ((v - v_g.detach()) ** 2).flatten(1).sum(1)
+    return _adaptive_mean(loss_u, norm_p) + _adaptive_mean(loss_v, norm_p)
+
+
+def _imf_aux_step(model, loss_fn, x_s, v, s, t, labels, drop, scale, interval, ratio):
+    r"""The iMF-XL/2 training step of the `MeanFlowLoss` docstring on a fixed batch."""
+    n = len(x_s)
+    null = torch.full_like(labels, NUM_CLASSES)
+    inside = (s >= interval[:, 0]) & (s <= interval[:, 1])
+    w = torch.where(inside, scale, 1.0)
+    with torch.no_grad():
+        v_c, v_u = model(
+            x_s.repeat(2, 1, 1, 1),
+            s.repeat(2),
+            torch.cat([labels, null]),
+            s=s.repeat(2),
+            guidance_scale=torch.cat([w, torch.ones_like(w)]),
+            guidance_interval=interval.new_tensor([0.0, 1.0]).expand(2 * n, 2),
+            head="aux",
+        ).chunk(2)
+    v_guided = v + _view(1 - 1 / w, v) * (v_c - v_u)
+    y = torch.where(drop, null, labels)
+    v_guided = torch.where(_view(drop, v), v, v_guided)
+    u, du_ds, v_aux = average_velocity_jvp(
+        model,
+        x_s,
+        s,
+        t,
+        v_c,
+        y,
+        flow_matching_ratio=ratio,
+        model_kwargs={"guidance_scale": scale, "guidance_interval": interval},
+        aux_head=True,
+    )
+    return loss_fn(u, du_ds, v_guided, s, t, aux_input=v_aux)
+
+
+def _aux_head_batch():
+    model = _model("in_context_dit", guidance_conditioning="scale_and_interval", aux_head_depth=1)
+    x, e, t_ref, r_ref, labels, drop = _batch("in_context_dit")
+    scale, interval = sample_guidance(
+        len(x),
+        flow_matching_ratio=EQUAL_RATIO,
+        dtype=torch.float64,
+        generator=torch.Generator().manual_seed(2),
+    )
+    return model, x, e, t_ref, r_ref, labels, drop, scale, interval
+
+
 def _grads(model, loss):
     return torch.autograd.grad(loss, list(model.parameters()))
 
@@ -272,6 +364,24 @@ def test_matches_imf_reference_with_guidance_conditioning(kind, p, ratio):
         assert_close(grad, reference_grad)
 
 
+@pytest.mark.parametrize("ratio", [0.0, EQUAL_RATIO])
+@pytest.mark.parametrize("p", [0.0, 1.0])
+def test_matches_imf_reference_with_aux_head(p, ratio):
+    model, x, e, t_ref, r_ref, labels, drop, scale, interval = _aux_head_batch()
+    t_min, t_max = 1 - interval[:, 1], 1 - interval[:, 0]
+    reference = _imf_aux_reference(
+        _guided_aux_reference_net(model), x, e, t_ref, r_ref, labels, drop, scale, t_min, t_max, p
+    )
+
+    s, t = 1 - t_ref, 1 - r_ref
+    x_s, v = LinearInterpolant()(e, x, s)
+    loss = _imf_aux_step(model, MeanFlowLoss(p=p), x_s, v, s, t, labels, drop, scale, interval, ratio)
+
+    assert_close(loss, reference)
+    for grad, reference_grad in zip(_grads(model, loss), _grads(model, reference)):
+        assert_close(grad, reference_grad)
+
+
 @pytest.mark.parametrize("kind", ["mlp", "dit"])
 def test_average_velocity_jvp_matches_full_batch_jvp(kind):
     model = _model(kind)
@@ -331,6 +441,27 @@ def test_cuda_matches_meanflow_reference(autocast, compile, rtol):
     assert _relative_error(grads, reference_grads) < rtol
 
 
+@requires_cuda
+@pytest.mark.usefixtures("highest_matmul_precision")
+@pytest.mark.parametrize("compile", [False, True])
+def test_cuda_aux_head_step_matches_float64(compile):
+    model, x, e, t_ref, r_ref, labels, drop, scale, interval = _aux_head_batch()
+    s, t = 1 - t_ref, 1 - r_ref
+    x_s, v = LinearInterpolant()(e, x, s)
+    loss_fn = MeanFlowLoss()
+    reference = _imf_aux_step(model, loss_fn, x_s, v, s, t, labels, drop, scale, interval, EQUAL_RATIO)
+    reference_grads = torch.cat([g.flatten() for g in _grads(model, reference)])
+
+    model = model.to("cuda", torch.float32)
+    x_s, v, s, t, scale, interval = (a.to("cuda", torch.float32) for a in (x_s, v, s, t, scale, interval))
+    step = torch.compile(_imf_aux_step, fullgraph=True) if compile else _imf_aux_step
+    loss = step(model, loss_fn, x_s, v, s, t, labels.cuda(), drop.cuda(), scale, interval, EQUAL_RATIO)
+    grads = torch.cat([g.flatten() for g in _grads(model, loss)])
+
+    assert _relative_error(loss, reference) < 1e-4
+    assert _relative_error(grads, reference_grads) < 1e-4
+
+
 def _outputs():
     g = torch.Generator().manual_seed(2)
     u, du_ds, v = torch.randn(3, 8, 3, 4, 4, generator=g, dtype=torch.float64)
@@ -344,6 +475,16 @@ def test_equal_times_is_flow_matching():
     squared_error = (u - v).square().flatten(1).sum(1)
     expected = (adaptive_weight(squared_error) * squared_error).mean()
     assert_close(meanflow_loss(u, du_ds, v, s, s), expected)
+
+
+def test_aux_input_adds_its_flow_matching_loss():
+    u, du_ds, v, s, t = _outputs()
+    aux = torch.randn_like(u).requires_grad_()
+    per_sample = meanflow_loss(u, du_ds, v, s, t, reduction="none", aux_input=aux)
+    flow_matching = meanflow_loss(aux, du_ds, v, s, s, reduction="none")
+    assert_close(per_sample, meanflow_loss(u, du_ds, v, s, t, reduction="none") + flow_matching)
+    grads = torch.autograd.grad(per_sample.sum(), (aux, v), allow_unused=True)
+    assert grads[0] is not None and grads[1] is None
 
 
 def test_target_is_detached():

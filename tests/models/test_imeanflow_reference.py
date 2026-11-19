@@ -2,9 +2,10 @@ r"""DiT with in-context conditioning against a port of the Improved MeanFlow mod
 
 The reference is ``imfDiT`` of Lyy-iiis/imeanflow (bf60cd7c), with
 ``models/imfDiT.py``, ``models/embedder.py`` and ``models/torch_models.py``,
-in PyTorch: the u branch (``shared_blocks`` then ``u_heads``) without the
-auxiliary v head. Rotations and sinusoids run in the input precision instead
-of float32, so the float64 comparison is exact up to rounding.
+in PyTorch: the u branch (``shared_blocks`` then ``u_heads``) and the
+auxiliary v head (``v_heads`` and ``v_final_layer``). Rotations and sinusoids
+run in the input precision instead of float32, so the float64 comparison is
+exact up to rounding.
 """
 
 import math
@@ -15,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.testing import assert_close
 
-from torchebm.models import DiT
+from torchebm.models import DiT, imf_dit_b_2, imf_dit_l_2, imf_dit_m_2, imf_dit_xl_2
 from torchebm.models.components import RotaryEmbedding1d
 
 IMF_OPTIONS = dict(
@@ -125,9 +126,11 @@ class _TransformerBlock(nn.Module):
 
 
 class _ImfDiT(nn.Module):
-    r"""``imfDiT.__call__`` up to the u output, with the patch embedding of a torchebm `DiT`."""
+    r"""``imfDiT.__call__``, with the patch embedding of a torchebm `DiT`; ``v`` is None without v heads."""
 
-    def __init__(self, patch_embed, input_size, patch_size, in_channels, hidden_size, depth, num_heads, num_classes):
+    def __init__(
+        self, patch_embed, input_size, patch_size, in_channels, hidden_size, depth, num_heads, num_classes, aux_head_depth=0
+    ):
         super().__init__()
         self.patch_embed = patch_embed
         self.patch_size = patch_size
@@ -145,9 +148,15 @@ class _ImfDiT(nn.Module):
         self.prefix_tokens = 8 + 4 + 2 * 2 + 4
         num_patches = (input_size // patch_size) ** 2
         self.rope_freqs = _precompute_rope_freqs(hidden_size // num_heads, num_patches + self.prefix_tokens)
-        self.blocks = nn.ModuleList(_TransformerBlock(hidden_size, num_heads) for _ in range(depth))
+        self.shared_blocks = nn.ModuleList(
+            _TransformerBlock(hidden_size, num_heads) for _ in range(depth - aux_head_depth)
+        )
+        self.u_heads = nn.ModuleList(_TransformerBlock(hidden_size, num_heads) for _ in range(aux_head_depth))
+        self.v_heads = nn.ModuleList(_TransformerBlock(hidden_size, num_heads) for _ in range(aux_head_depth))
         self.u_final_norm = _RMSNorm(hidden_size)
         self.u_final_linear = nn.Linear(hidden_size, patch_size * patch_size * in_channels)
+        self.v_final_norm = _RMSNorm(hidden_size)
+        self.v_final_linear = nn.Linear(hidden_size, patch_size * patch_size * in_channels)
 
     def unpatchify(self, x):
         c, p = self.out_channels, self.patch_size
@@ -168,10 +177,34 @@ class _ImfDiT(nn.Module):
             ],
             dim=1,
         )
-        for block in self.blocks:
+        for block in self.shared_blocks:
             seq = block(seq, self.rope_freqs)
-        u = self.unpatchify(self.u_final_linear(self.u_final_norm(seq[:, self.prefix_tokens :])))
-        return u.permute(0, 3, 1, 2)
+        u_seq = v_seq = seq
+        for block in self.u_heads:
+            u_seq = block(u_seq, self.rope_freqs)
+        for block in self.v_heads:
+            v_seq = block(v_seq, self.rope_freqs)
+        u = self.unpatchify(self.u_final_linear(self.u_final_norm(u_seq[:, self.prefix_tokens :])))
+        v = self.unpatchify(self.v_final_linear(self.v_final_norm(v_seq[:, self.prefix_tokens :])))
+        return u.permute(0, 3, 1, 2), v.permute(0, 3, 1, 2) if len(self.v_heads) else None
+
+
+def _copy_block(block, ref):
+    q, k, v = block.attn.qkv.weight.chunk(3)
+    ref.attn.q_proj.weight.copy_(q)
+    ref.attn.k_proj.weight.copy_(k)
+    ref.attn.v_proj.weight.copy_(v)
+    ref.attn.out_proj.weight.copy_(block.attn.out_proj.weight)
+    ref.attn.q_norm.weight.copy_(block.attn.q_norm.weight)
+    ref.attn.k_norm.weight.copy_(block.attn.k_norm.weight)
+    ref.norm1.weight.copy_(block.norm1.weight)
+    ref.norm2.weight.copy_(block.norm2.weight)
+    w1, w3 = block.mlp.fc1.weight.chunk(2)
+    ref.mlp.w1.weight.copy_(w1)
+    ref.mlp.w3.weight.copy_(w3)
+    ref.mlp.w2.weight.copy_(block.mlp.fc2.weight)
+    ref.attn_scale.copy_(block.attn_scale)
+    ref.mlp_scale.copy_(block.mlp_scale)
 
 
 def _load_reference(reference, model):
@@ -196,24 +229,15 @@ def _load_reference(reference, model):
             ("time_tokens", time_tokens),
         ):
             getattr(reference, name).copy_(value)
-        for block, ref in zip(model.blocks, reference.blocks):
-            q, k, v = block.attn.qkv.weight.chunk(3)
-            ref.attn.q_proj.weight.copy_(q)
-            ref.attn.k_proj.weight.copy_(k)
-            ref.attn.v_proj.weight.copy_(v)
-            ref.attn.out_proj.weight.copy_(block.attn.out_proj.weight)
-            ref.attn.q_norm.weight.copy_(block.attn.q_norm.weight)
-            ref.attn.k_norm.weight.copy_(block.attn.k_norm.weight)
-            ref.norm1.weight.copy_(block.norm1.weight)
-            ref.norm2.weight.copy_(block.norm2.weight)
-            w1, w3 = block.mlp.fc1.weight.chunk(2)
-            ref.mlp.w1.weight.copy_(w1)
-            ref.mlp.w3.weight.copy_(w3)
-            ref.mlp.w2.weight.copy_(block.mlp.fc2.weight)
-            ref.attn_scale.copy_(block.attn_scale)
-            ref.mlp_scale.copy_(block.mlp_scale)
+        for block, ref in zip(model.blocks, [*reference.shared_blocks, *reference.u_heads]):
+            _copy_block(block, ref)
+        for block, ref in zip(model.aux_blocks, reference.v_heads):
+            _copy_block(block, ref)
         reference.u_final_norm.weight.copy_(model.head.norm.weight)
         reference.u_final_linear.load_state_dict(model.head.proj.state_dict())
+        if model.aux_head is not None:
+            reference.v_final_norm.weight.copy_(model.aux_head.norm.weight)
+            reference.v_final_linear.load_state_dict(model.aux_head.proj.state_dict())
 
 
 def _imf_model(**overrides):
@@ -228,22 +252,54 @@ def _imf_model(**overrides):
     return model.double().eval()
 
 
-def test_in_context_dit_matches_imfdit():
-    model = _imf_model()
-    reference = _ImfDiT(model.patch_embed, 8, 2, 4, 48, 2, 4, 10).double()
-    _load_reference(reference, model)
-
+def _inputs():
     g = torch.Generator().manual_seed(1)
     x = torch.randn(3, 4, 8, 8, generator=g, dtype=torch.float64)
     s = torch.rand(3, generator=g, dtype=torch.float64)
     h = torch.rand(3, generator=g, dtype=torch.float64) * (1 - s)
     w = 1 + 7 * torch.rand(3, generator=g, dtype=torch.float64)
     interval = torch.stack([0.5 * torch.rand(3, generator=g), 0.5 + 0.5 * torch.rand(3, generator=g)], -1).double()
-    y = torch.tensor([0, 7, 10])
+    return x, s, h, w, interval, torch.tensor([0, 7, 10])
+
+
+def test_in_context_dit_matches_imfdit():
+    model = _imf_model()
+    reference = _ImfDiT(model.patch_embed, 8, 2, 4, 48, 2, 4, 10).double()
+    _load_reference(reference, model)
+
+    x, s, h, w, interval, y = _inputs()
     with torch.no_grad():
         out = model(x, s + h, y, s=s, guidance_scale=w, guidance_interval=interval)
-        expected = reference(x, h, w, interval[:, 0], interval[:, 1], y)
+        expected, _ = reference(x, h, w, interval[:, 0], interval[:, 1], y)
     assert_close(out, expected)
+
+
+def test_aux_head_matches_imfdit():
+    model = _imf_model(depth=3, aux_head_depth=2)
+    reference = _ImfDiT(model.patch_embed, 8, 2, 4, 48, 3, 4, 10, aux_head_depth=2).double()
+    _load_reference(reference, model)
+
+    x, s, h, w, interval, y = _inputs()
+    kwargs = dict(s=s, guidance_scale=w, guidance_interval=interval)
+    with torch.no_grad():
+        u, v = model(x, s + h, y, head="both", **kwargs)
+        expected_u, expected_v = reference(x, h, w, interval[:, 0], interval[:, 1], y)
+        assert_close(u, expected_u)
+        assert_close(v, expected_v)
+        assert torch.equal(model(x, s + h, y, **kwargs), u)
+        assert torch.equal(model(x, s + h, y, head="aux", **kwargs), v)
+
+
+@pytest.mark.parametrize(
+    "preset, params", [(imf_dit_b_2, 89), (imf_dit_m_2, 174), (imf_dit_l_2, 409), (imf_dit_xl_2, 610)]
+)
+def test_imf_presets_match_the_paper_sizes(preset, params):
+    with torch.device("meta"):
+        model = preset(input_size=32, in_channels=4, num_classes=1000)
+    aux = [*model.aux_blocks.parameters(), *model.aux_head.parameters()]
+    main = sum(p.numel() for p in model.parameters()) - sum(p.numel() for p in aux)
+    assert model.aux_head_depth == 8
+    assert round(main / 1e6) == params
 
 
 def test_rotary_embedding_1d_matches_reference():
@@ -254,16 +310,19 @@ def test_rotary_embedding_1d_matches_reference():
 
 
 def test_in_context_initialization_follows_imfdit():
-    model = DiT(input_size=8, in_channels=4, patch_size=2, embed_dim=256, depth=2, num_heads=4, num_classes=10, **IMF_OPTIONS)
-    block = model.blocks[0]
-    assert_close(block.attn.qkv.weight.std(), torch.tensor(0.32 / 256**0.5), rtol=0.05, atol=0)
-    assert_close(block.mlp.fc2.weight.std(), torch.tensor(0.32 / block.mlp.fc2.in_features**0.5), rtol=0.05, atol=0)
+    model = DiT(
+        input_size=8, in_channels=4, patch_size=2, embed_dim=256, depth=2, num_heads=4, num_classes=10,
+        aux_head_depth=1, **IMF_OPTIONS,
+    )
+    for block in (model.blocks[0], model.aux_blocks[0]):
+        assert_close(block.attn.qkv.weight.std(), torch.tensor(0.32 / 256**0.5), rtol=0.05, atol=0)
+        assert_close(block.mlp.fc2.weight.std(), torch.tensor(0.32 / block.mlp.fc2.in_features**0.5), rtol=0.05, atol=0)
+        assert block.attn.qkv.bias is None and block.mlp.fc1.bias is None
+        assert torch.all(block.attn_scale == 0) and torch.all(block.mlp_scale == 0)
     assert_close(model.dt_embedder.mlp[0].weight.std(), torch.tensor(1 / 256**0.5), rtol=0.05, atol=0)
     assert_close(model.condition_tokens.std(), torch.tensor(1 / 256**0.5), rtol=0.1, atol=0)
     assert_close(model.y_embedder.embedding.weight.std(), torch.tensor(1 / 256**0.5), rtol=0.1, atol=0)
-    assert block.attn.qkv.bias is None and block.mlp.fc1.bias is None
-    assert torch.all(block.attn_scale == 0) and torch.all(block.mlp_scale == 0)
-    assert torch.all(model.head.proj.weight == 0)
+    assert torch.all(model.head.proj.weight == 0) and torch.all(model.aux_head.proj.weight == 0)
 
 
 def test_two_time_time_invariant_model_sees_the_interval_only():
@@ -287,6 +346,9 @@ def test_two_time_time_invariant_model_sees_the_interval_only():
         (dict(conditioning="cross_attention"), "conditioning must be one of"),
         (dict(rope="3d"), "rope must be one of"),
         (dict(t_embedder=nn.Linear(1, 48)), "takes no t_embedder"),
+        (dict(aux_head_depth=3), r"aux_head_depth must be in \[0, depth\]"),
+        (dict(aux_head_depth=1, conditioning="adaln_zero"), "requires conditioning='in_context'"),
+        (dict(aux_head_depth=1, head_depth=1), "cannot be combined with head_dim or head_depth"),
     ],
 )
 def test_invalid_in_context_configurations(overrides, match):
@@ -303,3 +365,13 @@ def test_in_context_forward_needs_every_conditioning_input():
         model(x, t, s=s, **kwargs)
     with pytest.raises(ValueError, match="takes no cond"):
         model(x, t, torch.tensor([1, 2]), s=s, cond=torch.zeros(2, 48).double(), **kwargs)
+
+
+def test_head_selection_requires_an_aux_head():
+    x = torch.randn(2, 4, 8, 8, dtype=torch.float64)
+    s, t, y = torch.zeros(2, dtype=torch.float64), torch.ones(2, dtype=torch.float64), torch.tensor([1, 2])
+    kwargs = dict(guidance_scale=torch.ones(2).double(), guidance_interval=torch.tensor([[0.0, 1.0]] * 2).double())
+    with pytest.raises(ValueError, match="requires aux_head_depth > 0"):
+        _imf_model()(x, t, y, s=s, head="aux", **kwargs)
+    with pytest.raises(ValueError, match="head must be 'main', 'aux' or 'both'"):
+        _imf_model(aux_head_depth=1)(x, t, y, s=s, head="u", **kwargs)

@@ -62,6 +62,21 @@ class FlowMapSampler(BaseSampler):
         sampler = FlowMapSampler(prediction_type="average_velocity")
         samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=1, model_kwargs={"y": y})
         ```
+
+        One-step sampling of iMF-XL/2 (`imf_dit_xl_2`), whose guidance scale
+        and interval are model inputs, at \(\omega = 8\) on \([0.38, 0.58]\),
+        the setting of the reference code (Lyy-iiis/imeanflow,
+        ``configs/eval_config.yml``: \([0.42, 0.62]\) with data at 0):
+
+        ```python
+        sampler = FlowMapSampler(prediction_type="average_velocity")
+        model_kwargs = {
+            "y": y,
+            "guidance_scale": torch.full((64,), 8.0),
+            "guidance_interval": torch.tensor([0.38, 0.58]).expand(64, 2),
+        }
+        samples = sampler(model, torch.randn(64, 4, 32, 32), n_steps=1, model_kwargs=model_kwargs)
+        ```
     """
 
     timestep_conditioned = True

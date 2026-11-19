@@ -108,13 +108,14 @@ def test_jvp_dit_matches_unsharded_reference(options):
         assert res["grad_err"] < 1e-5, res
 
 
-def _average_velocity_jvp_worker(rank, world_size, tmpdir, guidance_conditioning):
+def _average_velocity_jvp_worker(rank, world_size, tmpdir, guidance_conditioning, aux_head):
     from torch.distributed.tensor import DTensor
 
     from torchebm.losses import MeanFlowLoss
     from torchebm.utils import average_velocity_jvp, sample_guidance
 
     torch.manual_seed(0)
+    options = dict(BLOCK_OPTIONS["in_context"], time_invariant=True, aux_head_depth=1) if aux_head else {}
     model = DiT(
         input_size=8,
         in_channels=2,
@@ -125,13 +126,14 @@ def _average_velocity_jvp_worker(rank, world_size, tmpdir, guidance_conditioning
         num_classes=4,
         prediction_type="average_velocity",
         guidance_conditioning=guidance_conditioning,
+        **options,
     ).to(dist_device())
     with torch.no_grad():
         for p in model.parameters():
             p.add_(0.1 * torch.randn_like(p))
     ref = copy.deepcopy(model)
     mesh = dist_mesh(world_size)
-    for block in model.blocks:
+    for block in (*model.blocks, *model.aux_blocks):
         fsdp.fully_shard(block, mesh=mesh)
     fsdp.fully_shard(model, mesh=mesh)
 
@@ -147,14 +149,14 @@ def _average_velocity_jvp_worker(rank, world_size, tmpdir, guidance_conditioning
         scale, interval = sample_guidance(4, flow_matching_ratio=0.5, device=dist_device())
         model_kwargs = {"guidance_scale": scale, "guidance_interval": interval}
 
-    u, du_ds = average_velocity_jvp(
-        model, x, s, t, v, y, flow_matching_ratio=0.5, model_kwargs=model_kwargs
+    u, du_ds, *aux = average_velocity_jvp(
+        model, x, s, t, v, y, flow_matching_ratio=0.5, model_kwargs=model_kwargs, aux_head=aux_head
     )
-    loss_fn(u, du_ds, v, s, t).backward()
-    ref_u, ref_du_ds = average_velocity_jvp(
-        ref, x, s, t, v, y, flow_matching_ratio=0.5, model_kwargs=model_kwargs
+    loss_fn(u, du_ds, v, s, t, aux_input=aux[0] if aux_head else None).backward()
+    ref_u, ref_du_ds, *ref_aux = average_velocity_jvp(
+        ref, x, s, t, v, y, flow_matching_ratio=0.5, model_kwargs=model_kwargs, aux_head=aux_head
     )
-    loss_fn(ref_u, ref_du_ds, v, s, t).backward()
+    loss_fn(ref_u, ref_du_ds, v, s, t, aux_input=ref_aux[0] if aux_head else None).backward()
 
     ref_params = dict(ref.named_parameters())
     grad_err = 0.0
@@ -168,7 +170,7 @@ def _average_velocity_jvp_worker(rank, world_size, tmpdir, guidance_conditioning
         tmpdir,
         rank,
         {
-            "out_err": (u - ref_u).abs().max().item(),
+            "out_err": max((a - b).abs().max().item() for a, b in zip([u, *aux], [ref_u, *ref_aux])),
             "tangent_err": (du_ds - ref_du_ds).abs().max().item(),
             "tangent_norm": du_ds[2:].norm().item(),
             "grad_err": grad_err,
@@ -176,9 +178,12 @@ def _average_velocity_jvp_worker(rank, world_size, tmpdir, guidance_conditioning
     )
 
 
-@pytest.mark.parametrize("guidance_conditioning", [None, "scale_and_interval"])
-def test_average_velocity_jvp_matches_unsharded_reference(guidance_conditioning):
-    for res in spawn_dist(_average_velocity_jvp_worker, args=(guidance_conditioning,)):
+@pytest.mark.parametrize(
+    "guidance_conditioning, aux_head",
+    [(None, False), ("scale_and_interval", False), ("scale_and_interval", True)],
+)
+def test_average_velocity_jvp_matches_unsharded_reference(guidance_conditioning, aux_head):
+    for res in spawn_dist(_average_velocity_jvp_worker, args=(guidance_conditioning, aux_head)):
         assert res["out_err"] < 1e-5, res
         assert res["tangent_err"] < 1e-5, res
         assert res["tangent_norm"] > 0, res

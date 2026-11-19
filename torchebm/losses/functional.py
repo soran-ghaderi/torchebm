@@ -322,6 +322,7 @@ def meanflow_loss(
     c: float = 0.01,
     weight: Optional[torch.Tensor] = None,
     reduction: str = "mean",
+    aux_input: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     r"""MeanFlow loss (Geng et al., 2025, Eq. 9 and Eq. 22) in torchebm time.
 
@@ -341,6 +342,11 @@ def meanflow_loss(
     along the model velocity \(u_\theta(x_s, s, s)\) instead of \(v\).
     ``p=0`` gives the squared error.
 
+    With ``aux_input``, the output \(v_\theta\) of an auxiliary velocity head
+    adds the flow matching loss \(\mathrm{sg}(\lambda_v)\, \|v_\theta - v\|^2\)
+    with its own adaptive weight, summed per sample as in the Improved
+    MeanFlow code (App. A).
+
     Args:
         input: Average velocity \(u_\theta(x_s, s, t)\), shape (batch_size, ...).
         du_ds: Total derivative \(\tfrac{d}{ds} u_\theta\), same shape.
@@ -352,6 +358,8 @@ def meanflow_loss(
         c: Constant \(c\) of the adaptive weight.
         weight: Per-sample weight \(w\), shape (batch_size,).
         reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+        aux_input: Output \(v_\theta\) of an auxiliary velocity head, same
+            shape as ``input``.
 
     Returns:
         Scalar loss, or shape (batch_size,) for ``reduction="none"``.
@@ -359,7 +367,11 @@ def meanflow_loss(
     interval = (t - s).to(input.dtype).reshape(-1, *(1,) * (input.ndim - 1))
     target = (velocity + interval * du_ds).detach()
     squared_error = (input - target).square().flatten(1).sum(1)
-    return _reduce(adaptive_weight(squared_error, p, c) * squared_error, reduction, weight)
+    loss = adaptive_weight(squared_error, p, c) * squared_error
+    if aux_input is not None:
+        aux_error = (aux_input - velocity.detach()).square().flatten(1).sum(1)
+        loss = loss + adaptive_weight(aux_error, p, c) * aux_error
+    return _reduce(loss, reduction, weight)
 
 
 def pseudo_huber_loss(
