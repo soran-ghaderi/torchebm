@@ -16,6 +16,8 @@ objective to the most recent.
 - **Flow maps**: two-time models that jump from noise to data in one call,
   trained here with the self-consistency loss of shortcut models and with
   the MeanFlow identity.
+- **One-step generators**: generators with no time input, trained here with
+  the drifting loss of Drifting models.
 
 Start with **CD-k on Two Moons**, then **Equilibrium Matching in 2D** to sample
 one time-invariant field two ways and an explicit energy with repulsion.
