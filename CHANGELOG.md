@@ -5,7 +5,7 @@ All notable changes to ∇ TorchEBM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.4](https://github.com/soran-ghaderi/torchebm/compare/v0.9.3...v0.9.4) - 2026-11-19
+## [0.9.4](https://github.com/soran-ghaderi/torchebm/compare/v0.9.3...v0.9.4) - 2026-11-20
 
 ### Added
 
@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`b9e9821`](https://github.com/soran-ghaderi/torchebm/commit/b9e9821b68a8b377f5d263f4fc82ae224aa22206) - add in-context conditioning to dit and interval-only two-time models
 - [`aee3729`](https://github.com/soran-ghaderi/torchebm/commit/aee3729acfde0a5887c0c81af672baa11c93109f) - add the improved meanflow auxiliary velocity head and imf dit presets
 - [`c2e6df4`](https://github.com/soran-ghaderi/torchebm/commit/c2e6df41c2289dc9329c8cbb91488ca26d7e13f6) - train the auxiliary velocity head with the meanflow loss
+- [`b7d00fd`](https://github.com/soran-ghaderi/torchebm/commit/b7d00fd1bb3c236870b967f5f92a8906c6b81cb4) - add the drifting loss for one-step generators
 
 ### Other
 
@@ -23,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [`fb60ba7`](https://github.com/soran-ghaderi/torchebm/commit/fb60ba70d04ea141630b92ee75e6c0047d06d841) - check guidance conditioning against the improved meanflow reference code
 - [`ed24bb3`](https://github.com/soran-ghaderi/torchebm/commit/ed24bb3cfc33bef9b39c0a8c6e78860e2093b557) - check in-context dit against the improved meanflow reference code
 - [`31d266b`](https://github.com/soran-ghaderi/torchebm/commit/31d266b5b1df85def27218d31448410d7ffc2a5c) - add improved meanflow 2d example with guidance as a model input
+- [`e2f9c13`](https://github.com/soran-ghaderi/torchebm/commit/e2f9c13d98735a6c16da20a6cc9d712179786f2e) - add a drifting models 2d example
+- [`86bf7b7`](https://github.com/soran-ghaderi/torchebm/commit/86bf7b7d1b49d8a0176cd9f95e84a21221367520) - fix the drifting guidance distribution in the sample_guidance docstring
 
 ## [0.9.3](https://github.com/soran-ghaderi/torchebm/compare/v0.9.2...v0.9.3) - 2026-11-15
 
