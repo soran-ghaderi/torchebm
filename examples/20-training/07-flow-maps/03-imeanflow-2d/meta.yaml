@@ -1,0 +1,6 @@
+title: "Improved MeanFlow in 2D"
+summary: "Train a class-conditional average-velocity model on the guided velocity with the guidance scale and interval as model inputs, then sample in one step at several guidance scales with FlowMapSampler."
+order: 1120
+difficulty: intermediate
+tags: [flow-maps, meanflow, guidance, training, one-step, 2d-energy]
+entrypoint: main.py

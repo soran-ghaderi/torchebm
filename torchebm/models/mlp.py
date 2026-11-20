@@ -67,8 +67,16 @@ class TimeConditionedMLP(_ConditionalBackbone):
             ``(B, cond_dim)`` for the two-time prediction types. ``None``
             (default) builds an `MLPTimestepEmbedder` when ``prediction_type``
             is ``"average_velocity"`` or ``"flow_map"``, and nothing otherwise.
+        guidance_conditioning: Guidance inputs of ``forward``: ``None``
+            (default) for none, ``"scale"`` for ``guidance_scale``, or
+            ``"scale_and_interval"`` for ``guidance_scale`` and
+            ``guidance_interval``, as in `DiT`.
+        guidance_embedder: Module mapping ``(B,)`` guidance scales to
+            ``(B, cond_dim)``. ``None`` (default) embeds \(1 - 1/\omega\)
+            with an `MLPTimestepEmbedder`. Requires ``guidance_conditioning``.
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
-            Matching model convention; labels and ``cond`` still apply.
+            Matching model convention; labels and ``cond`` still apply. A
+            two-time model embeds \(t - s\) only, as Improved MeanFlow does.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
             ``"score"``, or ``"epsilon"``, a declaration for consumers that
             leaves the computation unchanged; or a two-time output,
@@ -104,6 +112,8 @@ class TimeConditionedMLP(_ConditionalBackbone):
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
         dt_embedder: Optional[nn.Module] = None,
+        guidance_conditioning: Optional[str] = None,
+        guidance_embedder: Optional[nn.Module] = None,
         time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
@@ -135,6 +145,8 @@ class TimeConditionedMLP(_ConditionalBackbone):
             t_embedder=t_embedder,
             y_embedder=y_embedder,
             dt_embedder=dt_embedder,
+            guidance_conditioning=guidance_conditioning,
+            guidance_embedder=guidance_embedder,
             time_invariant=time_invariant,
             prediction_type=prediction_type,
         )
@@ -196,6 +208,8 @@ class TimeConditionedMLP(_ConditionalBackbone):
         *,
         s: Optional[torch.Tensor] = None,
         cond: Optional[torch.Tensor] = None,
+        guidance_scale: Optional[torch.Tensor] = None,
+        guidance_interval: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         r"""Map ``(B, in_dim)`` to ``(B, out_dim)``.
 
@@ -214,6 +228,12 @@ class TimeConditionedMLP(_ConditionalBackbone):
                 types: ``t_embedder`` embeds \(s\) and ``dt_embedder``
                 embeds \(t - s\). Rejected by the one-time types.
             cond: Pre-built conditioning vector of shape ``(B, cond_dim)``.
+            guidance_scale: Guidance scales \(\omega \geq 1\) of shape
+                ``(B,)`` for models with ``guidance_conditioning``;
+                \(\omega = 1\) is no guidance.
+            guidance_interval: Start and end times of the guidance interval,
+                in torchebm time, of shape ``(B, 2)``, for
+                ``guidance_conditioning="scale_and_interval"``.
 
         Returns:
             torch.Tensor: Output of shape ``(B, out_dim)``.
@@ -225,7 +245,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
                     "y, s and cond are not accepted"
                 )
             return self.net(x)
-        c = self._condition(x, t, y, cond, s)
+        c = self._condition(x, t, y, cond, s, guidance_scale, guidance_interval)
         if self.conditioning == "adaln_zero":
             h = self.stem(x)
             for block in self.blocks:

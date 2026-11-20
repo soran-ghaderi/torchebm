@@ -1,0 +1,6 @@
+title: "Drifting Models in 2D"
+summary: "Train a one-step generator on a checkerboard with the drifting loss, which attracts generated samples to the data and repels them from each other, then generate in one call."
+order: 1130
+difficulty: intermediate
+tags: [drifting, training, one-step, 2d-energy]
+entrypoint: main.py

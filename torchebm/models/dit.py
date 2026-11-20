@@ -10,6 +10,10 @@ from torchebm.models.components import (
     AdaLNZeroBlock,
     AdaLNZeroPatchHead,
     ConvPatchEmbed2d,
+    InContextBlock,
+    PatchHead,
+    RotaryEmbedding1d,
+    RotaryEmbedding2d,
     build_2d_sincos_pos_embed,
 )
 
@@ -21,6 +25,53 @@ _DIT_CONFIGS = {
 }
 
 _POS_EMBED_KINDS = ("sincos", "learnable", None)
+_CONDITIONING_KINDS = ("adaln_zero", "in_context")
+_ROPE_KINDS = (None, "1d", "2d")
+_IN_CONTEXT_TOKENS = (
+    ("y", 8),
+    ("guidance", 4),
+    ("interval_start", 2),
+    ("interval_end", 2),
+    ("t", 4),
+    ("dt", 4),
+)
+_IMF_BLOCK_INIT_GAIN = 0.32
+_AUX_OUTPUTS = ("aux", "both")
+_IMF_DIT_CONFIGS = {
+    "B": {"embed_dim": 768, "depth": 12, "num_heads": 12},
+    "M": {"embed_dim": 768, "depth": 24, "num_heads": 12},
+    "L": {"embed_dim": 1024, "depth": 32, "num_heads": 16},
+    "XL": {"embed_dim": 1024, "depth": 48, "num_heads": 16},
+}
+_IMF_DIT_OPTIONS = {
+    "patch_size": 2,
+    "conditioning": "in_context",
+    "pos_embed": None,
+    "qk_norm": True,
+    "swiglu": True,
+    "rope": "1d",
+    "rms_norm": True,
+    "block_bias": False,
+    "guidance_conditioning": "scale_and_interval",
+    "aux_head_depth": 8,
+    "time_invariant": True,
+    "prediction_type": "average_velocity",
+}
+
+
+def _scaled_normal_init(module: nn.Module, gain: float) -> None:
+    if isinstance(module, nn.Linear):
+        nn.init.normal_(module.weight, std=gain / module.in_features**0.5)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+
+
+def _rotary_embedding(kind, head_dim, grid_size, seq_len) -> Optional[nn.Module]:
+    if kind == "2d":
+        return RotaryEmbedding2d(head_dim, grid_size)
+    if kind == "1d":
+        return RotaryEmbedding1d(head_dim, seq_len)
+    return None
 
 
 class DiT(_ConditionalBackbone):
@@ -51,6 +102,13 @@ class DiT(_ConditionalBackbone):
     ``cond``; the embeddings of whichever are present are summed into the
     single adaLN vector. Both embedders are pluggable modules.
 
+    ``guidance_conditioning`` makes the classifier-free guidance scale, and
+    with ``"scale_and_interval"`` the guidance interval, inputs of
+    ``forward``, as in Improved MeanFlow (Geng et al., 2025b, Sec. 4.2).
+    Training draws them with `sample_guidance` and regresses on the guided
+    velocity, so sampling at a fixed scale takes one forward pass per step
+    in place of a conditional and an unconditional pass.
+
     When ``num_classes`` is set, the label table always allocates one extra
     null row with id ``num_classes``, so classifier-free guidance works
     regardless of where the label dropout happens: model-side
@@ -62,6 +120,34 @@ class DiT(_ConditionalBackbone):
     used for high-dimensional latent spaces): tokens are projected to
     ``head_dim``, run through ``head_depth`` additional adaLN-Zero blocks at
     that width, and decoded by the patch head there.
+
+    ``qk_norm``, ``swiglu``, ``rope="2d"`` and ``rms_norm`` switch on the
+    blocks of LightningDiT (Yao et al., 2025, arXiv:2501.01423): QK-norm in
+    the attention, a `SwiGLUFeedForward`, a `RotaryEmbedding2d` on queries
+    and keys on top of ``pos_embed``, and RMSNorm with a learnable scale in
+    place of the LayerNorms of the blocks and the patch head. They match the
+    reference code (github.com/hustvl/LightningDiT) and are off by default,
+    which leaves the model above unchanged.
+
+    ``conditioning="in_context"`` is the in-context conditioning of Improved
+    MeanFlow (Geng et al., 2025b, Sec. 4.3): each conditioning embedding is
+    added to its own learnable tokens, 8 for the class, 4 for the guidance
+    scale, 2 for each end of the guidance interval and 4 for each time, and
+    these tokens are prepended to the patch tokens. The blocks are
+    `InContextBlock`, without modulation and with residual gates initialized
+    at zero, the head is a `PatchHead` on the patch tokens, and ``rope="1d"``
+    numbers the whole sequence. The model then matches ``imfDiT`` of the
+    reference code (Lyy-iiis/imeanflow) and its initialization.
+
+    ``aux_head_depth`` adds the auxiliary velocity head of Improved MeanFlow
+    (Sec. 4.1 and App. A) to an in-context model: a second branch of
+    ``aux_head_depth`` blocks and its own `PatchHead` runs on the tokens
+    before the last ``aux_head_depth`` blocks and predicts the instantaneous
+    velocity. ``forward(..., head="aux")`` returns its output and
+    ``head="both"`` returns the main and auxiliary outputs of one forward
+    pass. Training uses it for the JVP tangent and the guided velocity;
+    sampling does not call it, and the paper's parameter counts exclude it.
+    `imf_dit_b_2` ... `imf_dit_xl_2` build the four models of the paper.
 
     Parity with the reference implementation
     (github.com/facebookresearch/DiT): block math, modulation order,
@@ -86,9 +172,12 @@ class DiT(_ConditionalBackbone):
         depth: Number of trunk blocks.
         num_heads: Attention heads in the trunk (must divide ``embed_dim``).
         mlp_ratio: Feed-forward expansion ratio.
+        conditioning: ``"adaln_zero"`` (default) sums the conditioning
+            embeddings into one adaLN vector; ``"in_context"`` turns them
+            into tokens of the sequence and takes no ``cond``.
         cond_dim: Width of the conditioning vector. ``None`` (default) uses
-            ``embed_dim``. Custom embedders and ``cond=`` inputs must produce
-            this width.
+            ``embed_dim``, which ``"in_context"`` requires. Custom embedders
+            and ``cond=`` inputs must produce this width.
         num_classes: Enables the built-in label embedder with this many
             classes (plus the null row). ``None`` (default) builds no label
             table; ``y=`` then requires a custom ``y_embedder``.
@@ -105,15 +194,44 @@ class DiT(_ConditionalBackbone):
             ``(B, cond_dim)`` for the two-time prediction types. ``None``
             (default) builds an `MLPTimestepEmbedder` when ``prediction_type``
             is ``"average_velocity"`` or ``"flow_map"``, and nothing otherwise.
+        guidance_conditioning: Guidance inputs of ``forward``: ``None``
+            (default) for none, ``"scale"`` for ``guidance_scale``, or
+            ``"scale_and_interval"`` for ``guidance_scale`` and
+            ``guidance_interval``. Each end of the interval is embedded by
+            its own `MLPTimestepEmbedder`.
+        guidance_embedder: Module mapping ``(B,)`` guidance scales to
+            ``(B, cond_dim)``. ``None`` (default) embeds \(1 - 1/\omega\)
+            with an `MLPTimestepEmbedder`, as Improved MeanFlow does.
+            Requires ``guidance_conditioning``.
         head_dim: Token width of the head. ``None`` (default) keeps
             ``embed_dim`` and adds no projection.
         head_depth: Number of extra adaLN-Zero blocks in the head.
         head_num_heads: Attention heads of the head blocks. ``None`` (default)
             reuses ``num_heads``.
+        aux_head_depth: Number of blocks of the auxiliary velocity head, which
+            branches off before the last ``aux_head_depth`` trunk blocks; 0
+            (default) builds none. Requires ``"in_context"`` and no
+            ``head_dim`` or ``head_depth``; Improved MeanFlow uses 8.
         pos_embed: Positional embedding kind: ``"sincos"`` (fixed 2D
             sin/cos, default), ``"learnable"``, or ``None`` for none.
+        qk_norm: Normalize queries and keys over the head dimension in every
+            attention, with an affine LayerNorm, or RMSNorm with
+            ``rms_norm``.
+        swiglu: Use `SwiGLUFeedForward` in place of the GELU feed-forward
+            network.
+        rope: Rotary embedding of queries and keys in every attention, in
+            addition to ``pos_embed``: ``None`` (default) for none, ``"2d"``
+            for `RotaryEmbedding2d` on the patch grid (LightningDiT; the head
+            dimension must be a multiple of 4), or ``"1d"`` for
+            `RotaryEmbedding1d` on the sequence, conditioning tokens first
+            (Improved MeanFlow). ``"2d"`` requires ``"adaln_zero"``.
+        rms_norm: Use RMSNorm with a learnable scale in place of the
+            LayerNorms of the blocks and the patch head.
+        block_bias: Biases of the attention and feed-forward linear layers of
+            the blocks; Improved MeanFlow uses none.
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
-            Matching model convention; labels and ``cond`` still apply.
+            Matching model convention; labels and ``cond`` still apply. A
+            two-time model embeds \(t - s\) only, as Improved MeanFlow does.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
             ``"score"``, or ``"epsilon"``, a declaration for consumers that
             leaves the computation unchanged; or a two-time output,
@@ -135,6 +253,58 @@ class DiT(_ConditionalBackbone):
         )
         v = model(x_t, t, y=y)
         ```
+
+        LightningDiT-XL/1 on the 16x16x32 VA-VAE latents of ImageNet 256 with
+        the blocks of its final configuration
+        (``configs/lightningdit_xl_vavae_f16d32.yaml``: SwiGLU, RoPE and
+        RMSNorm, no QK-norm):
+
+        ```python
+        from torchebm.models import DiT
+
+        model = DiT(
+            input_size=16,
+            in_channels=32,
+            patch_size=1,
+            num_classes=1000,
+            class_dropout_prob=0.1,
+            swiglu=True,
+            rope="2d",
+            rms_norm=True,
+        )
+        v = model(x_t, t, y=y)
+        ```
+
+        iMF-B/2 (Lyy-iiis/imeanflow, ``imfDiT_B_2``): 12 blocks of width 768
+        with 12 heads on the 32x32x4 SD-VAE latents, SwiGLU of hidden width
+        2048, conditioning on \(t - s\), the guidance scale and the guidance
+        interval, and the auxiliary velocity head over the last 8 blocks;
+        `imf_dit_b_2` builds the same model:
+
+        ```python
+        from torchebm.models import DiT
+
+        model = DiT(
+            input_size=32,
+            in_channels=4,
+            embed_dim=768,
+            depth=12,
+            num_heads=12,
+            num_classes=1000,
+            conditioning="in_context",
+            pos_embed=None,
+            qk_norm=True,
+            swiglu=True,
+            rope="1d",
+            rms_norm=True,
+            block_bias=False,
+            guidance_conditioning="scale_and_interval",
+            aux_head_depth=8,
+            time_invariant=True,
+            prediction_type="average_velocity",
+        )
+        u = model(x_s, t, y, s=s, guidance_scale=w, guidance_interval=interval)
+        ```
     """
 
     def __init__(
@@ -148,16 +318,25 @@ class DiT(_ConditionalBackbone):
         depth: int = 28,
         num_heads: int = 16,
         mlp_ratio: float = 4.0,
+        conditioning: str = "adaln_zero",
         cond_dim: Optional[int] = None,
         num_classes: Optional[int] = None,
         class_dropout_prob: float = 0.0,
         t_embedder: Optional[nn.Module] = None,
         y_embedder: Optional[nn.Module] = None,
         dt_embedder: Optional[nn.Module] = None,
+        guidance_conditioning: Optional[str] = None,
+        guidance_embedder: Optional[nn.Module] = None,
         head_dim: Optional[int] = None,
         head_depth: int = 0,
         head_num_heads: Optional[int] = None,
+        aux_head_depth: int = 0,
         pos_embed: Optional[str] = "sincos",
+        qk_norm: bool = False,
+        swiglu: bool = False,
+        rope: Optional[str] = None,
+        rms_norm: bool = False,
+        block_bias: bool = True,
         time_invariant: bool = False,
         prediction_type: str = "velocity",
     ):
@@ -176,9 +355,32 @@ class DiT(_ConditionalBackbone):
             raise ValueError(f"pos_embed must be one of {_POS_EMBED_KINDS}, got {pos_embed!r}")
         if head_depth < 0:
             raise ValueError(f"head_depth must be non-negative, got {head_depth}")
+        if conditioning not in _CONDITIONING_KINDS:
+            raise ValueError(
+                f"conditioning must be one of {_CONDITIONING_KINDS}, got {conditioning!r}"
+            )
+        if rope not in _ROPE_KINDS:
+            raise ValueError(f"rope must be one of {_ROPE_KINDS}, got {rope!r}")
+        in_context = conditioning == "in_context"
+        if in_context and rope == "2d":
+            raise ValueError(
+                "rope='2d' positions the patch grid only; in-context conditioning "
+                "takes rope='1d' or None"
+            )
+        if not 0 <= aux_head_depth <= depth:
+            raise ValueError(f"aux_head_depth must be in [0, depth], got {aux_head_depth}")
+        if aux_head_depth and not in_context:
+            raise ValueError("aux_head_depth requires conditioning='in_context'")
+        if aux_head_depth and (head_depth or head_dim is not None):
+            raise ValueError("aux_head_depth cannot be combined with head_dim or head_depth")
         resolved_cond = int(cond_dim) if cond_dim is not None else int(embed_dim)
         if resolved_cond <= 0:
             raise ValueError(f"cond_dim must be positive, got {resolved_cond}")
+        if in_context and resolved_cond != embed_dim:
+            raise ValueError(
+                f"in-context conditioning requires cond_dim == embed_dim, got "
+                f"{resolved_cond} and {embed_dim}"
+            )
         if (
             prediction_type == "flow_map"
             and out_channels is not None
@@ -196,6 +398,8 @@ class DiT(_ConditionalBackbone):
             t_embedder=t_embedder,
             y_embedder=y_embedder,
             dt_embedder=dt_embedder,
+            guidance_conditioning=guidance_conditioning,
+            guidance_embedder=guidance_embedder,
             time_invariant=time_invariant,
             prediction_type=prediction_type,
         )
@@ -210,11 +414,36 @@ class DiT(_ConditionalBackbone):
         self.grid_size = (size[0] // p, size[1] // p)
         self.head_dim = int(head_dim) if head_dim is not None else self.embed_dim
         self.head_depth = int(head_depth)
+        self.aux_head_depth = int(aux_head_depth)
         self.pos_embed_type = pos_embed
+        self.conditioning = conditioning
 
         self.patch_embed = ConvPatchEmbed2d(
             in_channels=self.in_channels, embed_dim=self.embed_dim, patch_size=p
         )
+
+        if in_context:
+            embedders = {
+                "y": self.y_embedder,
+                "guidance": self.guidance_embedder,
+                "interval_start": self.interval_start_embedder,
+                "interval_end": self.interval_end_embedder,
+                "t": self.t_embedder,
+                "dt": self.dt_embedder,
+            }
+            groups = [(name, n) for name, n in _IN_CONTEXT_TOKENS if embedders[name] is not None]
+            self.token_groups = tuple(name for name, _ in groups)
+            counts = [n for _, n in groups]
+            self.condition_tokens = nn.Parameter(torch.empty(sum(counts), self.embed_dim))
+            self.register_buffer(
+                "token_group_index",
+                torch.tensor([i for i, n in enumerate(counts) for _ in range(n)]),
+                persistent=False,
+            )
+        else:
+            self.token_groups = ()
+            self.condition_tokens = None
+        num_prefix = 0 if self.condition_tokens is None else self.condition_tokens.shape[0]
 
         num_patches = self.grid_size[0] * self.grid_size[1]
         if pos_embed == "sincos":
@@ -226,39 +455,81 @@ class DiT(_ConditionalBackbone):
         else:
             self.pos_embed = None
 
-        self.blocks = nn.ModuleList(
-            AdaLNZeroBlock(
-                embed_dim=self.embed_dim,
-                num_heads=self.num_heads,
-                cond_dim=self.cond_dim,
+        def block(width, heads):
+            options = dict(
+                embed_dim=width,
+                num_heads=heads,
                 mlp_ratio=mlp_ratio,
+                qk_norm=qk_norm,
+                swiglu=swiglu,
+                rms_norm=rms_norm,
+                bias=block_bias,
             )
-            for _ in range(self.depth)
-        )
+            if in_context:
+                return InContextBlock(**options)
+            return AdaLNZeroBlock(cond_dim=self.cond_dim, **options)
+
+        self.blocks = nn.ModuleList(block(self.embed_dim, self.num_heads) for _ in range(self.depth))
 
         self.head_proj = (
             nn.Linear(self.embed_dim, self.head_dim)
             if self.head_dim != self.embed_dim
             else None
         )
-        self.head_blocks = nn.ModuleList(
-            AdaLNZeroBlock(
-                embed_dim=self.head_dim,
-                num_heads=int(head_num_heads) if head_num_heads is not None else self.num_heads,
-                cond_dim=self.cond_dim,
-                mlp_ratio=mlp_ratio,
-            )
-            for _ in range(self.head_depth)
-        )
-        self.head = AdaLNZeroPatchHead(
+        head_heads = int(head_num_heads) if head_num_heads is not None else self.num_heads
+        self.head_blocks = nn.ModuleList(block(self.head_dim, head_heads) for _ in range(self.head_depth))
+        head_options = dict(
             embed_dim=self.head_dim,
-            cond_dim=self.cond_dim,
             patch_size=p,
             out_channels=self.out_channels,
             grid_size=self.grid_size,
+            rms_norm=rms_norm,
+        )
+        if in_context:
+            self.head = PatchHead(**head_options)
+        else:
+            self.head = AdaLNZeroPatchHead(cond_dim=self.cond_dim, **head_options)
+        self.aux_blocks = nn.ModuleList(
+            block(self.embed_dim, self.num_heads) for _ in range(self.aux_head_depth)
+        )
+        self.aux_head = PatchHead(**head_options) if self.aux_head_depth else None
+        seq_len = num_prefix + num_patches
+        self.rope = _rotary_embedding(rope, self.embed_dim // self.num_heads, self.grid_size, seq_len)
+        self.head_rope = (
+            _rotary_embedding(rope, self.head_dim // head_heads, self.grid_size, seq_len)
+            if self.head_depth
+            else None
         )
 
-        self._initialize_weights()
+        if in_context:
+            self._initialize_in_context_weights()
+        else:
+            self._initialize_weights()
+
+    def _initialize_in_context_weights(self) -> None:
+        r"""Apply the initialization of the Improved MeanFlow code (``imfDiT``).
+
+        Normal weights of standard deviation \(0.32/\sqrt{\text{fan-in}}\) in
+        the blocks and \(1/\sqrt{\text{fan-in}}\) in the default embedders,
+        zero biases, conditioning tokens and default label rows of standard
+        deviation \(1/\sqrt{D}\), the patch conv as a flattened Linear, and
+        zero residual gates and head projections. User-supplied embedder
+        modules are left untouched.
+        """
+        for module in (self.blocks, self.head_blocks, self.aux_blocks):
+            module.apply(lambda m: _scaled_normal_init(m, _IMF_BLOCK_INIT_GAIN))
+        if self.head_proj is not None:
+            _scaled_normal_init(self.head_proj, _IMF_BLOCK_INIT_GAIN)
+
+        w = self.patch_embed.proj.weight.data
+        nn.init.xavier_uniform_(w.view(w.shape[0], -1))
+        nn.init.zeros_(self.patch_embed.proj.bias)
+
+        for embedder in self._default_timestep_embedders():
+            embedder.apply(lambda m: _scaled_normal_init(m, 1.0))
+        if self._default_y_embedder:
+            nn.init.normal_(self.y_embedder.embedding.weight, std=self.embed_dim**-0.5)
+        nn.init.normal_(self.condition_tokens, std=self.embed_dim**-0.5)
 
     def _initialize_weights(self) -> None:
         r"""Apply the reference DiT initialization scheme.
@@ -296,14 +567,19 @@ class DiT(_ConditionalBackbone):
         *,
         s: Optional[torch.Tensor] = None,
         cond: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        guidance_scale: Optional[torch.Tensor] = None,
+        guidance_interval: Optional[torch.Tensor] = None,
+        head: str = "main",
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         r"""Map ``(B, C, H, W)`` to ``(B, out_channels, H, W)``.
 
         Follows the library's ``model(x, t, y=)`` convention. The adaLN
         conditioning vector is the sum of the embeddings of whichever of
         ``t``, ``y``, and ``cond`` are given; passing none raises.
         Two-time models are called as ``model(x_s, t, s=s)`` and embed
-        \(s\) and \(t - s\) in place of \(t\).
+        \(s\) and \(t - s\) in place of \(t\). In-context conditioning needs
+        every conditioning input of the model on every call, the null label
+        for unconditional outputs.
 
         Args:
             x: Input of shape ``(B, in_channels, H, W)`` matching
@@ -317,26 +593,80 @@ class DiT(_ConditionalBackbone):
                 embeds \(t - s\). Rejected by the one-time types.
             cond: Pre-built conditioning vector of shape ``(B, cond_dim)``,
                 added as-is.
+            guidance_scale: Guidance scales \(\omega \geq 1\) of shape
+                ``(B,)`` for models with ``guidance_conditioning``;
+                \(\omega = 1\) is no guidance.
+            guidance_interval: Start and end times of the guidance interval,
+                in torchebm time, of shape ``(B, 2)``, for
+                ``guidance_conditioning="scale_and_interval"``.
+            head: ``"main"`` (default) for the output named by
+                ``prediction_type``, ``"aux"`` for the instantaneous velocity
+                of the auxiliary head only, or ``"both"`` for the two from one
+                forward pass. ``"aux"`` and ``"both"`` require
+                ``aux_head_depth``.
 
         Returns:
-            torch.Tensor: Output of shape ``(B, out_channels, H, W)``.
+            torch.Tensor: Output of shape ``(B, out_channels, H, W)``, or the
+            tuple of the main and auxiliary outputs for ``head="both"``.
         """
-        c = self._condition(x, t, y, cond, s)
         if tuple(x.shape[-2:]) != self.input_size:
             raise ValueError(
                 f"input has spatial size {tuple(x.shape[-2:])}, "
                 f"expected input_size={self.input_size}"
             )
+        if head != "main":
+            if head not in _AUX_OUTPUTS:
+                raise ValueError(f"head must be 'main', 'aux' or 'both', got {head!r}")
+            if self.aux_head is None:
+                raise ValueError(f"head={head!r} requires aux_head_depth > 0")
+        if self.condition_tokens is not None:
+            return self._forward_in_context(
+                x, t, y, cond, s, guidance_scale, guidance_interval, head
+            )
+        c = self._condition(x, t, y, cond, s, guidance_scale, guidance_interval)
         tokens = self.patch_embed(x)
         if self.pos_embed is not None:
             tokens = tokens + self.pos_embed.to(device=tokens.device, dtype=tokens.dtype)
         for block in self.blocks:
-            tokens = block(tokens, c)
+            tokens = block(tokens, c, self.rope)
         if self.head_proj is not None:
             tokens = self.head_proj(tokens)
         for block in self.head_blocks:
-            tokens = block(tokens, c)
+            tokens = block(tokens, c, self.head_rope)
         return self._output(x, self.head(tokens, c), s, t)
+
+    def _forward_in_context(self, x, t, y, cond, s, guidance_scale, guidance_interval, head):
+        if cond is not None:
+            raise ValueError("in-context conditioning takes no cond")
+        embeddings = dict(self._embeddings(x, t, y, cond, s, guidance_scale, guidance_interval))
+        missing = [name for name in self.token_groups if name not in embeddings]
+        if missing:
+            raise ValueError(f"in-context conditioning needs {missing} on every call")
+        groups = torch.stack([embeddings[name] for name in self.token_groups], dim=1)
+        prefix = self.condition_tokens + groups[:, self.token_group_index]
+        tokens = self.patch_embed(x)
+        if self.pos_embed is not None:
+            tokens = tokens + self.pos_embed.to(device=tokens.device, dtype=tokens.dtype)
+        tokens = torch.cat([prefix.to(tokens.dtype), tokens], dim=1)
+        num_prefix = prefix.shape[1]
+        num_shared = self.depth - self.aux_head_depth
+        for i in range(num_shared):
+            tokens = self.blocks[i](tokens, self.rope)
+        if head != "main":
+            aux = tokens
+            for block in self.aux_blocks:
+                aux = block(aux, self.rope)
+            aux = self.aux_head(aux[:, num_prefix:])
+            if head == "aux":
+                return aux
+        for i in range(num_shared, self.depth):
+            tokens = self.blocks[i](tokens, self.rope)
+        if self.head_proj is not None:
+            tokens = self.head_proj(tokens)
+        for block in self.head_blocks:
+            tokens = block(tokens, self.head_rope)
+        output = self._output(x, self.head(tokens[:, num_prefix:]), s, t)
+        return output if head == "main" else (output, aux)
 
 
 def _preset(size: str, patch_size: int, kwargs: dict) -> DiT:
@@ -402,3 +732,43 @@ def dit_xl_4(**kwargs) -> DiT:
 def dit_xl_8(**kwargs) -> DiT:
     r"""DiT-XL/8: depth 28, width 1152, 16 heads, patch 8. Overrides pass through."""
     return _preset("XL", 8, kwargs)
+
+
+def _imf_preset(size: str, kwargs: dict) -> DiT:
+    return DiT(**{**_IMF_DIT_CONFIGS[size], **_IMF_DIT_OPTIONS, **kwargs})
+
+
+def imf_dit_b_2(**kwargs) -> DiT:
+    r"""iMF-B/2 of Improved MeanFlow (Geng et al., 2025b, Table 2).
+
+    Depth 12, width 768, 12 heads, patch 2: 89M parameters, plus the
+    auxiliary velocity head over the last 8 blocks, unused at sampling. The
+    model takes \(t - s\), the guidance scale and the guidance interval
+    through in-context conditioning, with the blocks of ``imfDiT``
+    (Lyy-iiis/imeanflow) and ``prediction_type="average_velocity"``; see
+    `DiT`. ``input_size`` and ``in_channels`` are required; overrides pass
+    through.
+
+    Example:
+        ```python
+        from torchebm.models import imf_dit_b_2
+
+        model = imf_dit_b_2(input_size=32, in_channels=4, num_classes=1000)
+        ```
+    """
+    return _imf_preset("B", kwargs)
+
+
+def imf_dit_m_2(**kwargs) -> DiT:
+    r"""iMF-M/2: depth 24, width 768, 12 heads, patch 2, 174M parameters plus the auxiliary head; see `imf_dit_b_2`."""
+    return _imf_preset("M", kwargs)
+
+
+def imf_dit_l_2(**kwargs) -> DiT:
+    r"""iMF-L/2: depth 32, width 1024, 16 heads, patch 2, 409M parameters plus the auxiliary head; see `imf_dit_b_2`."""
+    return _imf_preset("L", kwargs)
+
+
+def imf_dit_xl_2(**kwargs) -> DiT:
+    r"""iMF-XL/2: depth 48, width 1024, 16 heads, patch 2, 610M parameters plus the auxiliary head; see `imf_dit_b_2`."""
+    return _imf_preset("XL", kwargs)

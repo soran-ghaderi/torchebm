@@ -2,7 +2,8 @@ r"""Loss-family audit under FSDP2 (shard-inside pattern).
 
 First-order objectives run through FSDP2 hooks unchanged and must match an
 unsharded per-rank replica: contrastive divergence (k no-grad sampler
-forwards, two grad-tracked forwards, one backward) and implicit EqM. Their
+forwards, two grad-tracked forwards, one backward), implicit EqM and the
+drifting loss on a sharded generator. Their
 parameter gradients follow the data-parallel convention: the sharded gradient
 equals the cross-rank mean of the per-rank reference gradients.
 
@@ -25,6 +26,7 @@ from torch import nn
 from torchebm.core import BaseModel
 from torchebm.losses import (
     ContrastiveDivergence,
+    DriftingLoss,
     EnergyMatchingLoss,
     EquilibriumMatchingLoss,
 )
@@ -219,3 +221,39 @@ def test_explicit_eqm_fails_fast_in_training_and_matches_in_eval():
     for res in spawn_dist(_eqm_explicit_worker):
         assert "DTensor" in res["train_error"], res
         assert res["eval_err"] < 1e-6, res
+
+
+class Generator(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(DIM, 16), nn.SiLU(), nn.Linear(16, DIM))
+
+    def forward(self, z):
+        return self.net(z)
+
+
+def _drifting_worker(rank, world_size, tmpdir):
+    model, ref = _pair(Generator, world_size)
+    z = _local_batch(rank)
+    positive = torch.randn(2, 6, DIM).to(dist_device())
+    negative = torch.randn(2, 3, DIM).to(dist_device())
+    weight = torch.tensor([0.5, 1.5]).to(dist_device())
+    loss_fn = DriftingLoss()
+    loss = loss_fn(model(z).unflatten(0, (2, -1)), positive, negative, negative_weight=weight)
+    loss.backward()
+    ref_loss = loss_fn(ref(z).unflatten(0, (2, -1)), positive, negative, negative_weight=weight)
+    ref_loss.backward()
+    save_result(
+        tmpdir,
+        rank,
+        {
+            "loss_err": abs(loss.item() - ref_loss.item()),
+            "grad_err": _grad_err(model, ref, world_size),
+        },
+    )
+
+
+def test_drifting_loss_matches_unsharded_reference():
+    for res in spawn_dist(_drifting_worker):
+        assert res["loss_err"] < 1e-6, res
+        assert res["grad_err"] < 1e-5, res

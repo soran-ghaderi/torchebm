@@ -153,6 +153,15 @@ def test_wide_head():
     assert torch.allclose(y, torch.zeros_like(y))
 
 
+def test_wide_head_with_lightningdit_blocks():
+    model = _tiny(
+        head_dim=24, head_depth=1, head_num_heads=2, qk_norm=True, swiglu=True, rope="2d", rms_norm=True
+    )
+    assert model.rope.cos.shape == (4, 8)
+    assert model.head_rope.cos.shape == (4, 12)
+    assert model(torch.randn(2, 3, 8, 8), torch.rand(2)).shape == (2, 3, 8, 8)
+
+
 def test_default_head_adds_nothing():
     model = _tiny()
     assert model.head_proj is None
@@ -188,10 +197,24 @@ def test_gradient_flows():
 
 requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
 
+BLOCK_OPTIONS = {
+    "dit": {},
+    "lightningdit": dict(qk_norm=True, swiglu=True, rope="2d", rms_norm=True),
+    "in_context": dict(
+        conditioning="in_context",
+        pos_embed=None,
+        qk_norm=True,
+        swiglu=True,
+        rope="1d",
+        rms_norm=True,
+        block_bias=False,
+    ),
+}
 
-def _jvp_setup(device, dtype=torch.float32):
+
+def _jvp_setup(device, dtype=torch.float32, **options):
     torch.manual_seed(0)
-    model = _tiny(patch_size=2, embed_dim=144, num_heads=2, num_classes=4)
+    model = _tiny(patch_size=2, embed_dim=144, num_heads=2, num_classes=4, **options)
     with torch.no_grad():
         for p in model.parameters():
             p.add_(0.1 * torch.randn_like(p))
@@ -203,6 +226,7 @@ def _jvp_setup(device, dtype=torch.float32):
 
 
 @pytest.mark.usefixtures("highest_matmul_precision")
+@pytest.mark.parametrize("options", BLOCK_OPTIONS.values(), ids=BLOCK_OPTIONS.keys())
 @pytest.mark.parametrize(
     "device, dtype, autocast_dtype, rtol",
     [
@@ -211,8 +235,8 @@ def _jvp_setup(device, dtype=torch.float32):
         pytest.param("cuda", torch.float32, torch.bfloat16, 5e-2, marks=requires_cuda),
     ],
 )
-def test_jvp_matches_finite_differences(device, dtype, autocast_dtype, rtol):
-    model, x, t, y, v, dt = _jvp_setup(device, dtype)
+def test_jvp_matches_finite_differences(device, dtype, autocast_dtype, rtol, options):
+    model, x, t, y, v, dt = _jvp_setup(device, dtype, **options)
     with torch.autocast(device, autocast_dtype or torch.bfloat16, enabled=autocast_dtype is not None):
         _, out_t = torch.func.jvp(lambda x, t: model(x, t, y), (x, t), (v, dt))
     reference = model.double()
@@ -226,9 +250,10 @@ def test_jvp_matches_finite_differences(device, dtype, autocast_dtype, rtol):
 
 
 @pytest.mark.usefixtures("highest_matmul_precision")
+@pytest.mark.parametrize("options", BLOCK_OPTIONS.values(), ids=BLOCK_OPTIONS.keys())
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=requires_cuda)])
-def test_jvp_and_backward_compile_without_graph_breaks(device):
-    model, x, t, y, v, dt = _jvp_setup(device)
+def test_jvp_and_backward_compile_without_graph_breaks(device, options):
+    model, x, t, y, v, dt = _jvp_setup(device, **options)
 
     def jvp(x, t):
         return torch.func.jvp(lambda x, t: model(x, t, y), (x, t), (v, dt))

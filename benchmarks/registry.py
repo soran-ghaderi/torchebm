@@ -175,6 +175,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "ShortcutLoss": {"model_type": "velocity", "on_outputs": True},
     "MeanFlowLoss": {"model_type": "velocity", "on_outputs": True},
+    "DriftingLoss": {"model_type": "velocity", "on_outputs": True},
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
@@ -293,6 +294,10 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "variants": {
             "transformer_fwd": {},
             "transformer_fwd_bwd": {"bench_backward": True},
+            "lightningdit_fwd_bwd": {
+                "bench_backward": True,
+                "init_kwargs": {"swiglu": True, "rope": "2d", "rms_norm": True},
+            },
         },
     },
 }
@@ -771,6 +776,15 @@ def _step_meanflow(loss_fn, model, x, device, dtype):
     return step
 
 
+def _step_drifting(loss_fn, model, x, device, dtype):
+    positive = x.unflatten(0, (8, -1))
+
+    def step():
+        return loss_fn(model(torch.randn_like(x)).unflatten(0, (8, -1)), positive)
+
+    return step
+
+
 def _step_energy_matching(loss_fn, model, x, device, dtype):
     path = LinearInterpolant()
     coupling = resolve_coupling("ot", default="ot", owner="benchmark")
@@ -793,6 +807,7 @@ _LOSS_FN_STEPS = {
     "EnergyMatchingLoss": _step_energy_matching,
     "ShortcutLoss": _step_shortcut,
     "MeanFlowLoss": _step_meanflow,
+    "DriftingLoss": _step_drifting,
 }
 
 
@@ -1054,7 +1069,7 @@ def build_model_bench(
 
     cfg = spec.model_configs[scale]
     bs_model = cfg.pop("bs", bs)
-    model = spec.cls(in_channels=3, out_channels=3, **cfg).to(device, dtype)
+    model = spec.cls(in_channels=3, out_channels=3, **cfg, **spec.init_kwargs).to(device, dtype)
 
     input_size = cfg["input_size"]
     embed_dim = cfg["embed_dim"]

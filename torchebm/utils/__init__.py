@@ -4,6 +4,7 @@ from .ema import EMA
 from .training import (
     compute_density_for_timestep_sampling,
     sample_time_pairs,
+    sample_guidance,
     average_velocity_jvp,
     update_ema,
     requires_grad,
@@ -26,6 +27,7 @@ __all__ = [
     "EMA",
     "compute_density_for_timestep_sampling",
     "sample_time_pairs",
+    "sample_guidance",
     "average_velocity_jvp",
     "update_ema",
     "requires_grad",

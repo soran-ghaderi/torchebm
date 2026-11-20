@@ -23,6 +23,9 @@ __all__ = [
     # Flow maps
     "ShortcutLoss",
     "MeanFlowLoss",
+    # Drifting
+    "DriftingLoss",
+    "drifting_features",
     # Utilities
     "mean_flat",
     "get_interpolant",
@@ -47,6 +50,8 @@ _LAZY_IMPORTS = {
     "EnergyMatchingLoss": ".energy_matching",
     "ShortcutLoss": ".flow_map",
     "MeanFlowLoss": ".flow_map",
+    "DriftingLoss": ".drifting",
+    "drifting_features": ".drifting",
     "mean_flat": ".loss_utils",
     "get_interpolant": ".loss_utils",
     "trimmed_mean": ".loss_utils",
