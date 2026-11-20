@@ -175,6 +175,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "ShortcutLoss": {"model_type": "velocity", "on_outputs": True},
     "MeanFlowLoss": {"model_type": "velocity", "on_outputs": True},
+    "DriftingLoss": {"model_type": "velocity", "on_outputs": True},
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
@@ -775,6 +776,15 @@ def _step_meanflow(loss_fn, model, x, device, dtype):
     return step
 
 
+def _step_drifting(loss_fn, model, x, device, dtype):
+    positive = x.unflatten(0, (8, -1))
+
+    def step():
+        return loss_fn(model(torch.randn_like(x)).unflatten(0, (8, -1)), positive)
+
+    return step
+
+
 def _step_energy_matching(loss_fn, model, x, device, dtype):
     path = LinearInterpolant()
     coupling = resolve_coupling("ot", default="ot", owner="benchmark")
@@ -797,6 +807,7 @@ _LOSS_FN_STEPS = {
     "EnergyMatchingLoss": _step_energy_matching,
     "ShortcutLoss": _step_shortcut,
     "MeanFlowLoss": _step_meanflow,
+    "DriftingLoss": _step_drifting,
 }
 
 

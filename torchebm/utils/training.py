@@ -155,8 +155,10 @@ def sample_guidance(
     The defaults of ``low``, ``high`` and ``power`` are those of Improved
     MeanFlow (Lyy-iiis/imeanflow, ``sample_cfg_scale`` with
     ``s_max = 7`` and ``cfg_beta = 1``, and ``sample_cfg_interval``), which
-    uses ``flow_matching_ratio=0.5``. Drifting models (Deng et al., 2026)
-    draw the scale on \([1, 4]\) with \(\beta = 1\) and use no interval.
+    uses ``flow_matching_ratio=0.5``. Drifting models (Deng et al., 2026,
+    Table 8) draw the scale on \([1, 4]\) with \(\beta = 5\), or
+    \(\beta = 3\) with half of the scales set to 1 for L/2, and use no
+    interval.
 
     Args:
         batch_size: Number of draws.

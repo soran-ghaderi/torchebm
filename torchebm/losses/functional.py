@@ -7,7 +7,7 @@ and ``"sum"`` reduce over the batch, ``"none"`` returns one value per sample.
 """
 
 import math
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 
@@ -408,6 +408,104 @@ def pseudo_huber_loss(
     return _reduce(torch.sqrt(squared_norm + c**2) - c, reduction, weight)
 
 
+def drifting_loss(
+    input: torch.Tensor,
+    positive: torch.Tensor,
+    negative: Optional[torch.Tensor] = None,
+    negative_weight: Optional[torch.Tensor] = None,
+    temperatures: Sequence[float] = (0.02, 0.05, 0.2),
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Drifting loss of one feature (Deng et al., 2026, Eq. 6 and App. A.6).
+
+    \[
+    L = \big\|\tilde\phi(x) - \mathrm{sg}\big(\tilde\phi(x)
+        + \textstyle\sum_\tau \tilde V_\tau(\tilde\phi(x))\big)\big\|^2
+    \]
+
+    averaged over the feature dimensions. The drifting field
+    \(V = V^+_p - V^-_q\) (Eqs. 8 to 11) attracts each generated sample to the
+    positives and repels it from the negatives: the generated samples of its
+    group, its own one masked, and the unconditional negatives. The kernel
+    \(\exp(-\|x - y\| / \tau)\) (Eq. 12) is normalized by a softmax over the
+    positives and negatives and a softmax over the generated samples, and the
+    weights take their geometric mean with a floor of \(10^{-3}\). The floor
+    weights every pair, so groups of thousands of samples flatten the kernel;
+    the paper uses 64 generated and up to 128 positive samples per group
+    (Table 8). Features
+    are divided by the scalar \(S\) that sets the mean distance between
+    generated samples and all others to \(\sqrt{D}\), with the negative
+    weights in the mean, and the field of each temperature by its root mean
+    square \(\lambda_\tau\) over all groups and locations. \(S\), the field
+    and the target are computed without gradients and in float32 or wider, as in the
+    reference code (lambertae/drifting, ``drift_loss.py``); its loss value is
+    the mean of \(\|\sum_\tau \tilde V_\tau\|^2 / D\). \(S\) and
+    \(\lambda_\tau\) are statistics of the local batch; the reference code
+    takes them over the global batch.
+
+    Args:
+        input: Features \(\phi(x)\) of the generated samples, shape
+            (groups, n, ..., D): groups of ``n`` samples with one field each,
+            such as one group per class label, then any location dimensions.
+        positive: Features of the positive samples (data of each group's
+            class), shape (groups, n_pos, ..., D).
+        negative: Features of the unconditional negatives (data of random
+            classes) for classifier-free guidance, shape
+            (groups, n_neg, ..., D).
+        negative_weight: Kernel weight \(w\) of the unconditional negatives
+            of each group, shape (groups,); the guidance scale
+            \(\alpha\) sets \(w = (\alpha - 1)(n - 1) / n_{neg}\) (App. A.7).
+            Weight 1 when ``None``.
+        temperatures: Temperatures \(\tau\) of the kernel; the fields of all
+            temperatures are summed.
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``.
+
+    Returns:
+        Scalar loss, or shape (groups, n) for ``reduction="none"``.
+    """
+    n = input.shape[1]
+    n_pos = positive.shape[1]
+    dtype = torch.promote_types(input.dtype, torch.float32)
+    with torch.no_grad(), torch.autocast(input.device.type, enabled=False):
+        x = input.detach().movedim(1, -2).to(dtype)
+        y_pos = positive.movedim(1, -2).to(dtype)
+        y_neg = x if negative is None else torch.cat([x, negative.movedim(1, -2).to(dtype)], dim=-2)
+        targets = torch.cat([y_neg, y_pos], dim=-2)
+        squared_dist = (
+            x.square().sum(-1, keepdim=True)
+            + targets.square().sum(-1).unsqueeze(-2)
+            - 2 * x @ targets.mT
+        )
+        dist = squared_dist.clamp_min_(1e-8).sqrt_()
+        if negative is None or negative_weight is None:
+            weight = None
+            scale = dist.mean()
+        else:
+            weight = dist.new_ones(dist.shape[0], *(1,) * (dist.ndim - 2), dist.shape[-1])
+            weight[..., n : y_neg.shape[-2]] = negative_weight.to(dtype).reshape(-1, *(1,) * (dist.ndim - 1))
+            scale = (dist.mean(-2, keepdim=True) * weight).mean() / weight.mean()
+        input_scale = (scale / math.sqrt(x.shape[-1])).clamp_min(1e-3)
+        dist.div_(scale.clamp_min(1e-3))
+        dist[..., :n].diagonal(dim1=-2, dim2=-1).add_(100.0)
+        drift = torch.zeros_like(x)
+        for tau in temperatures:
+            logits = dist / -tau
+            row_lse = logits.logsumexp(-1, keepdim=True)
+            col_lse = logits.logsumexp(-2, keepdim=True)
+            affinity = logits.sub_(0.5 * row_lse).sub_(0.5 * col_lse).clamp_min_(math.log(1e-3)).exp_()
+            if weight is not None:
+                affinity.mul_(weight)
+            a_neg, a_pos = affinity.split([affinity.shape[-1] - n_pos, n_pos], dim=-1)
+            field = (
+                a_neg.sum(-1, keepdim=True) * (a_pos @ y_pos)
+                - a_pos.sum(-1, keepdim=True) * (a_neg @ y_neg)
+            ) / input_scale
+            drift += field / field.square().mean().clamp_min(1e-8).sqrt()
+        target = x / input_scale + drift
+    error = (input.movedim(1, -2).to(dtype) / input_scale - target).square().mean(-1)
+    return _reduce(error.reshape(error.shape[0], -1, n).mean(1), reduction)
+
+
 __all__ = [
     "contrastive_divergence_loss",
     "flow_matching_loss",
@@ -420,4 +518,5 @@ __all__ = [
     "adaptive_weight",
     "meanflow_loss",
     "pseudo_huber_loss",
+    "drifting_loss",
 ]
