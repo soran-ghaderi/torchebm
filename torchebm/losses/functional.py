@@ -157,12 +157,15 @@ def mixed_field_matching_loss(
     Returns:
         Scalar loss, or shape (batch_size,) for ``reduction="none"``.
     """
+    if endpoint_penalty == "in_batch":
+        is_clean = t >= 1.0
+        ct = ct.masked_fill(is_clean, 0.0)
+    ct = ct.view(-1, *([1] * (input.ndim - 1)))
+    error = mean_flat((input - ct * target).square())
     if endpoint_penalty is None:
-        return equilibrium_matching_loss(input, target, ct, reduction=reduction)
+        return _reduce(error, reduction)
     if endpoint_penalty == "separate":
-        error = equilibrium_matching_loss(input, target, ct, reduction="none")
         return _reduce(error + endpoint_weight * mean_flat(clean.square()), reduction)
-    is_clean = t >= 1.0
     n = t.shape[0]
     n_clean = is_clean.sum(dtype=torch.promote_types(t.dtype, torch.float32))
     weight = torch.where(
@@ -170,9 +173,7 @@ def mixed_field_matching_loss(
         endpoint_weight * n / n_clean.clamp_min(1.0),
         n / (n - n_clean).clamp_min(1.0),
     )
-    return equilibrium_matching_loss(
-        input, target, ct.masked_fill(is_clean, 0.0), weight, reduction
-    )
+    return _reduce(error, reduction, weight)
 
 
 def energy_matching_loss(

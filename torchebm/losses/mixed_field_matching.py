@@ -17,8 +17,9 @@ class MixedFieldMatchingLoss(BaseLoss):
 
     One field \(f_\theta(x, \tau)\) is a time-conditioned transport field for
     \(t \le a\) and a single time-independent refinement field for \(t > a\):
-    the model receives the time input \(\tau_a(t) = \min(t, a)\), and the
-    target uses the true \(t\),
+    the model receives the time input \(\tau_a(t) = \min(t, a)\), the true
+    time up to \(a\) and then held at \(a\) (a model built with
+    ``max_time=a``), and the target uses the true \(t\),
 
     \[
     \mathcal{L} = \|f_\theta(x_t, \min(t, a)) - \lambda c_a(t)\, u_t\|^2,
@@ -42,7 +43,7 @@ class MixedFieldMatchingLoss(BaseLoss):
             ``"linear"`` (\(1 - t\)), ``"constant"`` (1), or a callable
             ``t -> c(t)`` on a (batch_size,) time tensor.
         ct_threshold: Threshold \(a\) between transport and refinement,
-            strictly inside (0, 1).
+            strictly inside (0, 1); the ``max_time`` of the model.
         ct_multiplier: Target multiplier \(\lambda\).
         endpoint_penalty: ``None`` (default), ``"in_batch"``, or
             ``"separate"``.
@@ -65,7 +66,10 @@ class MixedFieldMatchingLoss(BaseLoss):
         from torchebm.models import ClassifierFreeGuidance, dit_xl_2
         from torchebm.samplers import MixedFieldSampler
 
-        model = dit_xl_2(input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1)
+        model = dit_xl_2(
+            input_size=32, in_channels=4, num_classes=1000, class_dropout_prob=0.1,
+            max_time=0.8,
+        )
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
         ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.9999))
         path = LinearInterpolant()
@@ -73,7 +77,7 @@ class MixedFieldMatchingLoss(BaseLoss):
 
         t = loss_fn.sample_times(len(x1))
         x_t, u_t = path(torch.randn_like(x1), x1, t)
-        loss = loss_fn(model(x_t, t.clamp(max=0.8), y=y), u_t, t)
+        loss = loss_fn(model(x_t, t, y=y), u_t, t)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -90,7 +94,7 @@ class MixedFieldMatchingLoss(BaseLoss):
         ```
 
         With ``endpoint_penalty="separate"`` the loss call is
-        ``loss_fn(model(x_t, t.clamp(max=0.8), y=y), u_t, t, clean=model(x1, torch.full_like(t, 0.8), y=y))``.
+        ``loss_fn(model(x_t, t, y=y), u_t, t, clean=model(x1, torch.ones_like(t), y=y))``.
     """
 
     def __init__(
