@@ -16,6 +16,8 @@ __all__ = [
     "SlicedScoreMatching",
     # Equilibrium Matching
     "EquilibriumMatchingLoss",
+    # Mixed-Field Matching
+    "MixedFieldMatchingLoss",
     # Flow Matching
     "FlowMatchingLoss",
     # Energy Matching
@@ -46,6 +48,7 @@ _LAZY_IMPORTS = {
     "DenoisingScoreMatching": ".score_matching",
     "SlicedScoreMatching": ".score_matching",
     "EquilibriumMatchingLoss": ".equilibrium_matching",
+    "MixedFieldMatchingLoss": ".mixed_field_matching",
     "FlowMatchingLoss": ".flow_matching",
     "EnergyMatchingLoss": ".energy_matching",
     "ShortcutLoss": ".flow_map",

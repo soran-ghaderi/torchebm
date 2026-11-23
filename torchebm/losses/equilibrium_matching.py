@@ -53,9 +53,9 @@ from torchebm._deprecation import declare_deprecation
 from torchebm.losses.functional import equilibrium_matching_loss
 from torchebm.losses import (
     mean_flat,
-    compute_eqm_ct,
     dispersive_loss,
 )
+from torchebm.losses.loss_utils import compute_ct
 
 _MODEL_BOUND_DEPRECATION = declare_deprecation(
     module=__name__,
@@ -284,15 +284,7 @@ class EquilibriumMatchingLoss(BaseInterpolantLoss):
 
     def _compute_ct(self, t: torch.Tensor) -> torch.Tensor:
         r"""Target scaling c(t) for the configured variant, times `ct_multiplier`."""
-        if callable(self.ct):
-            return self.ct(t) * self.ct_multiplier
-        if self.ct == "truncated":
-            return compute_eqm_ct(
-                t, threshold=self.ct_threshold, multiplier=self.ct_multiplier
-            )
-        if self.ct == "linear":
-            return (1.0 - t) * self.ct_multiplier
-        return torch.full_like(t, self.ct_multiplier)
+        return compute_ct(t, self.ct, self.ct_threshold, self.ct_multiplier)
 
     def _reduce_dims(self, ndim: int) -> tuple:
         r"""Cached `tuple(range(1, ndim))` reduction dims (avoids per-call construction)."""
