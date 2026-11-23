@@ -123,7 +123,7 @@ clock the model sees:
 | --- | --- | --- | --- |
 | `FlowMatchingLoss` | `u_t` (noise -> data) | `t` | `FlowSampler` |
 | `EquilibriumMatchingLoss` | `c(t) u_t` | none (time-invariant) | `FlowSampler`, fixed-point iteration with `GradientDescentSampler` |
-| `MixedFieldMatchingLoss` | `c(t) u_t` | `min(t, a)` | `MixedFieldSampler` |
+| `MixedFieldMatchingLoss` | `c(t) u_t` | `min(t, a)` (model built with `max_time=a`) | `MixedFieldSampler` |
 
 With `ct="constant"` and `ct_multiplier=1` the EqM objective is bit-identical
 to `FlowMatchingLoss`. Mixed-field matching keeps the clock up to the

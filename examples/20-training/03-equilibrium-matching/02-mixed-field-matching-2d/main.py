@@ -7,7 +7,9 @@ matching (Wang and Du, 2025) regresses the same truncated target with a
 constant time input. As in the paper's two-dimensional example (Sec. 4.5,
 App. D): five points on a regular pentagon of radius 0.5 with probabilities
 0.50, 0.20, 0.15, 0.10 and 0.05, a = 0.8, multiplier 4, and an endpoint
-penalty of weight 0.1 for both models, which differ only in the time input.
+penalty of weight 0.1 for both models, which differ only in the time input,
+set by max_time of the model: a for mixed-field matching, 0 for equilibrium
+matching.
 Each model is an MLP with three hidden layers of 128 units on the point and
 five time features, trained with Adam at learning rate 1e-3 and batch 1024 for
 20,000 updates. The endpoint penalty is in-batch, with the share of clean
@@ -53,8 +55,9 @@ def pentagon(n):
 
 
 class MLP(nn.Module):
-    def __init__(self, hidden=128):
+    def __init__(self, max_time, hidden=128):
         super().__init__()
+        self.max_time = max_time
         self.net = nn.Sequential(
             nn.Linear(7, hidden),
             nn.SiLU(),
@@ -66,7 +69,7 @@ class MLP(nn.Module):
         )
 
     def forward(self, x, t=None):
-        t = x.new_zeros(x.shape[0]) if t is None else t
+        t = x.new_zeros(x.shape[0]) if t is None else t.clamp(max=self.max_time)
         w = math.pi * t[:, None]
         return self.net(
             torch.cat(
@@ -75,9 +78,9 @@ class MLP(nn.Module):
         )
 
 
-def train(time_input):
+def train(max_time):
     torch.manual_seed(0)
-    model = MLP().to(device)
+    model = MLP(max_time).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     path = LinearInterpolant()
     loss_fn = MixedFieldMatchingLoss(
@@ -87,7 +90,7 @@ def train(time_input):
         x1 = pentagon(BATCH_SIZE)
         t = loss_fn.sample_times(BATCH_SIZE, device=device)
         x_t, u_t = path(torch.randn_like(x1), x1, t)
-        loss = loss_fn(model(x_t, time_input(t)), u_t, t)
+        loss = loss_fn(model(x_t, t), u_t, t)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -104,8 +107,8 @@ def scores(x):
     )
 
 
-mixed_field = train(lambda t: t.clamp(max=THRESHOLD))
-equilibrium = train(torch.zeros_like)
+mixed_field = train(THRESHOLD)
+equilibrium = train(0.0)
 
 torch.manual_seed(1)
 x0 = torch.randn(N_SAMPLES, 2, device=device)
