@@ -54,7 +54,8 @@ class FlowMatchingLoss(BaseInterpolantLoss):
 
     Built without ``model``, the loss acts on model outputs,
     ``loss = loss_fn(model(x_t, t), u_t)``, with ``x_t, u_t`` from an
-    interpolant and ``reduction`` as in `torch.nn`; only ``reduction`` applies.
+    interpolant and ``reduction`` as in `torch.nn`; only ``ct_multiplier``
+    and ``reduction`` apply.
     Built with ``model`` (deprecated), it runs the training step itself as
     described below.
 
@@ -83,6 +84,9 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             `EquilibriumMatchingLoss` and of `EqMEnergy`. Sample it with
             ``FlowSampler(negate_velocity=True)``. Mirrors the sampler flag of
             the same name. Default False.
+        ct_multiplier: Target multiplier \(\lambda\): the velocity is trained
+            toward \(\lambda u_t\) and sampled with
+            ``FlowSampler(ct_multiplier=...)``. Default 1.
         dtype: Data type for computations.
         device: Device for computations.
 
@@ -135,6 +139,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         t_p_std: float = 1.2,
         loss_weight_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         negate_velocity: bool = False,
+        ct_multiplier: float = 1.0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         *args,
@@ -155,6 +160,7 @@ class FlowMatchingLoss(BaseInterpolantLoss):
         )
         self.model = model
         self.negate_velocity = bool(negate_velocity)
+        self.ct_multiplier = float(ct_multiplier)
         if model is not None:
             _MODEL_BOUND_DEPRECATION.warn()
 
@@ -185,6 +191,8 @@ class FlowMatchingLoss(BaseInterpolantLoss):
             return self._legacy_forward(input, **kwargs)
         if target is None:
             raise TypeError("FlowMatchingLoss() takes (input, target[, weight])")
+        if self.ct_multiplier != 1.0:
+            target = self.ct_multiplier * target
         return flow_matching_loss(
             input, target, weight=weight, reduction=self.reduction
         )

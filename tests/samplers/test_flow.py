@@ -627,3 +627,20 @@ class TestFlowIntegrators:
         z = torch.randn(4, 2, device=device, dtype=dtype)
         samples = sampler.sample(x=z, n_steps=10)
         assert torch.isfinite(samples).all()
+
+
+def test_ct_multiplier_divides_the_model_output():
+    class Scaled(nn.Module):
+        def forward(self, x, t):
+            return 4.0 * (1.0 - x)
+
+    class Unscaled(nn.Module):
+        def forward(self, x, t):
+            return 1.0 - x
+
+    x = torch.randn(8, 2)
+    expected = FlowSampler(integrator="euler")(Unscaled(), x, n_steps=10)
+    samples = FlowSampler(integrator="euler", ct_multiplier=4.0)(
+        Scaled(), x, n_steps=10
+    )
+    assert_close(samples, expected)

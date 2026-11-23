@@ -55,6 +55,17 @@ _UNSET = object()
 _LAST_STEPS = ("Mean", "Euler", "Tweedie", None)
 
 
+def _scaled(
+    call: Callable[..., torch.Tensor], scale: float
+) -> Callable[..., torch.Tensor]:
+    r"""Closure ``(x, t) -> scale * call(x, t)``."""
+
+    def scaled(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        return call(x, t) * scale
+
+    return scaled
+
+
 class PredictionType(str, enum.Enum):
     r"""Model output consumed by `FlowSampler`; compares equal to its name
     as used by the models (``"velocity"``, ``"score"``, ``"epsilon"``)."""
@@ -108,6 +119,9 @@ class FlowSampler(BaseSampler):
         last_step_size: SDE-only. Size of the final step (default 0.04).
         prediction_type: Model output the sampler consumes: ``"velocity"``
             (default), ``"score"``, or ``"epsilon"``.
+        ct_multiplier: Target multiplier \(\lambda\) the model was trained
+            with (``FlowMatchingLoss(ct_multiplier=...)``); the model output
+            is divided by it. Default 1.
         dtype: Data type for computations.
         device: Device for computations.
         integrator: `None` (default) uses `Dopri5Integrator` for ODE mode
@@ -154,11 +168,13 @@ class FlowSampler(BaseSampler):
         last_step: Union[str, None, object] = _UNSET,
         last_step_size: Optional[float] = None,
         prediction_type: Literal["velocity", "score", "epsilon"] = "velocity",
+        ct_multiplier: float = 1.0,
         dtype: torch.dtype = torch.float32,
         device: Optional[Union[str, torch.device]] = None,
         integrator: Union[str, BaseRungeKuttaIntegrator, None] = None,
     ):
         super().__init__(model=model, dtype=dtype, device=device)
+        self.ct_multiplier = float(ct_multiplier)
         if (
             model is not None
             or prediction is not None
@@ -315,6 +331,8 @@ class FlowSampler(BaseSampler):
                 adaptive integrator.
         """
         model_output = self._model_fn(model, model_kwargs)
+        if self.ct_multiplier != 1.0:
+            model_output = _scaled(model_output, 1.0 / self.ct_multiplier)
         grid = self._time_grid(n_steps, t, x)
         sde = self.mode == "sde"
 

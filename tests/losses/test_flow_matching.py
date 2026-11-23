@@ -245,3 +245,9 @@ def test_fm_samples_through_flow_sampler_without_negation():
     out = sampler.sample(x=torch.randn(4, 2), n_steps=5)
     assert out.shape == (4, 2)
     assert torch.isfinite(out).all()
+
+
+def test_fm_ct_multiplier_scales_the_target():
+    input, target = torch.randn(8, 3), torch.randn(8, 3)
+    loss = FlowMatchingLoss(ct_multiplier=4.0)(input, target)
+    torch.testing.assert_close(loss, FlowMatchingLoss()(input, 4.0 * target))
