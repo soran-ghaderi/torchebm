@@ -1,0 +1,6 @@
+title: "Mixed-Field Matching in 2D"
+summary: "Train mixed-field matching and equilibrium matching on five points of unequal probability; only the model with the time input during transport gives the points the right proportions."
+order: 1010
+difficulty: intermediate
+tags: [mfm, eqm, training, sampling, 2d-energy]
+entrypoint: main.py

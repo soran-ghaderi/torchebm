@@ -116,16 +116,21 @@ samples_ode = FlowSampler(integrator="euler")(model, x0, n_steps=100)
 samples_gd = GradientDescentSampler(step_size=0.05)(model, x0, n_steps=200)
 ```
 
-The two losses differ only in the scaling of the regression target and in the
+The losses differ only in the scaling of the regression target and in the
 clock the model sees:
 
 | Loss | Target | Clock shown to the model | Sample with |
 | --- | --- | --- | --- |
 | `FlowMatchingLoss` | `u_t` (noise -> data) | `t` | `FlowSampler` |
 | `EquilibriumMatchingLoss` | `c(t) u_t` | none (time-invariant) | `FlowSampler`, fixed-point iteration with `GradientDescentSampler` |
+| `MixedFieldMatchingLoss` | `c(t) u_t` | `min(t, a)` | `MixedFieldSampler` |
 
 With `ct="constant"` and `ct_multiplier=1` the EqM objective is bit-identical
-to `FlowMatchingLoss`.
+to `FlowMatchingLoss`. Mixed-field matching keeps the clock up to the
+threshold \(a\) and holds it at \(a\) above, so one network is a transport
+field far from the data and a time-independent refinement field near it; an
+optional endpoint penalty on clean examples (rows with \(t = 1\)) keeps
+refined samples at the data.
 
 **Energy matching** (arXiv:2504.10612) keeps a single time-independent scalar
 potential: an OT flow-matching warm-up shapes it as transport, then a
@@ -172,6 +177,7 @@ a scalar energy.
 - [Persistent CD](../examples/20-training/01-mcmc-losses/02-persistent-cd.md)
 - [Denoising Score Matching](../examples/20-training/02-score-matching/01-denoising-score-matching.md)
 - [Equilibrium Matching in 2D](../examples/20-training/03-equilibrium-matching/01-equilibrium-matching-2d.md)
+- [Mixed-Field Matching in 2D](../examples/20-training/03-equilibrium-matching/02-mixed-field-matching-2d.md)
 - [Energy Matching in 2D](../examples/20-training/04-energy-matching/01-energy-matching-2d.md)
 
 [^1]: G. E. Hinton. Training products of experts by minimizing contrastive divergence. *Neural Computation*, 14(8), 2002.

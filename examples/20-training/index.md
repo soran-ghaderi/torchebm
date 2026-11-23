@@ -8,7 +8,8 @@ objective to the most recent.
 - **Score matching**: fit the score directly, with no sampler in the training loop.
 - **Equilibrium matching**: learn a time-invariant field, then generate by
   integrating it as an ODE or by iterating it toward its attractors; the
-  explicit variant learns a scalar energy.
+  explicit variant learns a scalar energy. Mixed-field matching keeps the time
+  input during transport.
 - **Energy matching**: a single time-independent potential serving both transport
   and Boltzmann sampling.
 - **Couplings**: which noise sample is paired with which datum, which decides how
