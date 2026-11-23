@@ -77,6 +77,10 @@ class TimeConditionedMLP(_ConditionalBackbone):
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
             Matching model convention; labels and ``cond`` still apply. A
             two-time model embeds \(t - s\) only, as Improved MeanFlow does.
+        max_time: Clamp ``t`` to at most this value on every call, the
+            mixed-field matching model convention: with ``max_time=a`` the
+            time input is \(\min(t, a)\), so the model is time-invariant
+            above \(a\). One-time models only.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
             ``"score"``, or ``"epsilon"``, a declaration for consumers that
             leaves the computation unchanged; or a two-time output,
@@ -115,6 +119,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
         guidance_conditioning: Optional[str] = None,
         guidance_embedder: Optional[nn.Module] = None,
         time_invariant: bool = False,
+        max_time: Optional[float] = None,
         prediction_type: str = "velocity",
     ):
         if in_dim <= 0:
@@ -148,6 +153,7 @@ class TimeConditionedMLP(_ConditionalBackbone):
             guidance_conditioning=guidance_conditioning,
             guidance_embedder=guidance_embedder,
             time_invariant=time_invariant,
+            max_time=max_time,
             prediction_type=prediction_type,
         )
         self.in_dim = int(in_dim)

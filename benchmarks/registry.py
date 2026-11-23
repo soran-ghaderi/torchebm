@@ -176,6 +176,7 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "ShortcutLoss": {"model_type": "velocity", "on_outputs": True},
     "MeanFlowLoss": {"model_type": "velocity", "on_outputs": True},
     "DriftingLoss": {"model_type": "velocity", "on_outputs": True},
+    "MixedFieldMatchingLoss": {"model_type": "velocity", "on_outputs": True},
     "EnergyMatchingLoss": {
         "model_type": "ebm",
         # lambda_cd=0.0 benchmarks the flow-matching (phase-1) forward without
@@ -257,6 +258,12 @@ COMPONENT_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "model_type": "velocity",
         "variants": {
             "flow_map_sampler_call": {"call_time_model": True},
+        },
+    },
+    "MixedFieldSampler": {
+        "model_type": "velocity",
+        "variants": {
+            "mixed_field_sampler_call": {"call_time_model": True},
         },
     },
     # ── Interpolants (defaults are fine — no overrides needed) ──
@@ -751,6 +758,17 @@ def _step_equilibrium_matching(loss_fn, model, x, device, dtype):
     return step
 
 
+def _step_mixed_field_matching(loss_fn, model, x, device, dtype):
+    path = LinearInterpolant()
+
+    def step():
+        t = loss_fn.sample_times(x.shape[0], device=device, dtype=dtype)
+        x_t, u_t = path(torch.randn_like(x), x, t)
+        return loss_fn(model(x_t, t.clamp(max=0.8)), u_t, t)
+
+    return step
+
+
 def _step_shortcut(loss_fn, model, x, device, dtype):
     path = LinearInterpolant()
 
@@ -804,6 +822,7 @@ _LOSS_FN_STEPS = {
     "SlicedScoreMatchingLoss": _step_sliced_score_matching,
     "FlowMatchingLoss": _step_flow_matching,
     "EquilibriumMatchingLoss": _step_equilibrium_matching,
+    "MixedFieldMatchingLoss": _step_mixed_field_matching,
     "EnergyMatchingLoss": _step_energy_matching,
     "ShortcutLoss": _step_shortcut,
     "MeanFlowLoss": _step_meanflow,

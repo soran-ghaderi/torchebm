@@ -1,5 +1,7 @@
 r"""Utility functions for loss computations."""
 
+from typing import Callable, Union
+
 import torch
 
 from torchebm.interpolants.interpolant_utils import get_interpolant
@@ -103,6 +105,34 @@ def compute_eqm_ct(
             "EquilibriumMatchingLoss for the endpoints"
         )
     return ((1.0 - t) / (1.0 - threshold)).clamp(max=1.0) * multiplier
+
+
+def compute_ct(
+    t: torch.Tensor,
+    ct: Union[str, Callable[[torch.Tensor], torch.Tensor]] = "truncated",
+    threshold: float = 0.8,
+    multiplier: float = 4.0,
+) -> torch.Tensor:
+    r"""Target scaling \(c(t)\) of equilibrium and mixed-field matching, times
+    the multiplier \(\lambda\).
+
+    Args:
+        t: Time tensor of shape (batch_size,).
+        ct: ``"truncated"`` (`compute_eqm_ct`), ``"linear"`` (\(1 - t\)),
+            ``"constant"`` (1), or a callable ``t -> c(t)``.
+        threshold: Threshold \(a\) of ``"truncated"``.
+        multiplier: Target multiplier \(\lambda\).
+
+    Returns:
+        Scaling of the same shape as ``t``.
+    """
+    if callable(ct):
+        return ct(t) * multiplier
+    if ct == "truncated":
+        return compute_eqm_ct(t, threshold=threshold, multiplier=multiplier)
+    if ct == "linear":
+        return (1.0 - t) * multiplier
+    return torch.full_like(t, multiplier)
 
 
 def dispersive_loss(z: torch.Tensor) -> torch.Tensor:

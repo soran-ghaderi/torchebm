@@ -2,8 +2,8 @@ r"""Loss-family audit under FSDP2 (shard-inside pattern).
 
 First-order objectives run through FSDP2 hooks unchanged and must match an
 unsharded per-rank replica: contrastive divergence (k no-grad sampler
-forwards, two grad-tracked forwards, one backward), implicit EqM and the
-drifting loss on a sharded generator. Their
+forwards, two grad-tracked forwards, one backward), implicit EqM, mixed-field
+matching and the drifting loss on a sharded generator. Their
 parameter gradients follow the data-parallel convention: the sharded gradient
 equals the cross-rank mean of the per-rank reference gradients.
 
@@ -29,6 +29,7 @@ from torchebm.losses import (
     DriftingLoss,
     EnergyMatchingLoss,
     EquilibriumMatchingLoss,
+    MixedFieldMatchingLoss,
 )
 from torchebm.samplers import LangevinDynamics
 
@@ -255,5 +256,33 @@ def _drifting_worker(rank, world_size, tmpdir):
 
 def test_drifting_loss_matches_unsharded_reference():
     for res in spawn_dist(_drifting_worker):
+        assert res["loss_err"] < 1e-6, res
+        assert res["grad_err"] < 1e-5, res
+
+
+def _mixed_field_worker(rank, world_size, tmpdir):
+    model, ref = _pair(FieldNet, world_size)
+    x1 = _local_batch(rank)
+    x0 = torch.randn_like(x1)
+    t = torch.rand(BATCH).to(dist_device())
+    t[-2:] = 1.0
+    x_t, u_t = (1 - t[:, None]) * x0 + t[:, None] * x1, x1 - x0
+    loss_fn = MixedFieldMatchingLoss(endpoint_penalty="in_batch")
+    loss = loss_fn(model(x_t, t.clamp(max=0.8)), u_t, t)
+    loss.backward()
+    ref_loss = loss_fn(ref(x_t, t.clamp(max=0.8)), u_t, t)
+    ref_loss.backward()
+    save_result(
+        tmpdir,
+        rank,
+        {
+            "loss_err": abs(loss.item() - ref_loss.item()),
+            "grad_err": _grad_err(model, ref, world_size),
+        },
+    )
+
+
+def test_mixed_field_matching_loss_matches_unsharded_reference():
+    for res in spawn_dist(_mixed_field_worker):
         assert res["loss_err"] < 1e-6, res
         assert res["grad_err"] < 1e-5, res

@@ -118,6 +118,64 @@ def equilibrium_matching_loss(
     return _reduce(mean_flat((input - target * ct).square()), reduction, weight)
 
 
+def mixed_field_matching_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    t: torch.Tensor,
+    ct: torch.Tensor,
+    clean: Optional[torch.Tensor] = None,
+    endpoint_penalty: Optional[str] = None,
+    endpoint_weight: float = 0.1,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    r"""Mixed-field matching loss on a predicted field.
+
+    \[
+    L = \|f_\theta(x_t, \min(t, a)) - c(t)\, u_t\|^2
+    \]
+
+    with the target scaling ``ct``, \(\lambda c_a(t)\) by default (see
+    `compute_ct`), and the squared error averaged over the non-batch
+    dimensions. ``endpoint_penalty`` adds \(w \|f_\theta(x_1, a)\|^2\) at
+    clean examples: for ``"in_batch"`` the rows with \(t = 1\), whose target
+    is set to zero, with each term averaged over its own rows; for
+    ``"separate"`` the field ``clean``.
+
+    Args:
+        input: Predicted field \(f_\theta(x_t, \min(t, a))\), shape
+            (batch_size, ...).
+        target: Path velocity \(u_t\) (noise to data), same shape.
+        t: Times, shape (batch_size,).
+        ct: Target scaling \(c(t)\), shape (batch_size,).
+        clean: Field at clean examples \(f_\theta(x_1, a)\), same shape as
+            ``input``, for ``endpoint_penalty="separate"``.
+        endpoint_penalty: ``None``, ``"in_batch"``, or ``"separate"``.
+        endpoint_weight: Weight \(w\) of the endpoint penalty.
+        reduction: ``"mean"``, ``"sum"``, or ``"none"``; ``"none"`` returns
+            per-sample losses whose mean is the loss.
+
+    Returns:
+        Scalar loss, or shape (batch_size,) for ``reduction="none"``.
+    """
+    if endpoint_penalty == "in_batch":
+        is_clean = t >= 1.0
+        ct = ct.masked_fill(is_clean, 0.0)
+    ct = ct.view(-1, *([1] * (input.ndim - 1)))
+    error = mean_flat((input - ct * target).square())
+    if endpoint_penalty is None:
+        return _reduce(error, reduction)
+    if endpoint_penalty == "separate":
+        return _reduce(error + endpoint_weight * mean_flat(clean.square()), reduction)
+    n = t.shape[0]
+    n_clean = is_clean.sum(dtype=torch.promote_types(t.dtype, torch.float32))
+    weight = torch.where(
+        is_clean,
+        endpoint_weight * n / n_clean.clamp_min(1.0),
+        n / (n - n_clean).clamp_min(1.0),
+    )
+    return _reduce(error, reduction, weight)
+
+
 def energy_matching_loss(
     input: torch.Tensor,
     target: torch.Tensor,
@@ -510,6 +568,7 @@ __all__ = [
     "contrastive_divergence_loss",
     "flow_matching_loss",
     "equilibrium_matching_loss",
+    "mixed_field_matching_loss",
     "energy_matching_loss",
     "score_matching_loss",
     "denoising_score_matching_loss",
