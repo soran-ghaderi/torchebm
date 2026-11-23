@@ -44,7 +44,10 @@ class _ConditionalBackbone(nn.Module):
     semantics. ``cond_dim=0`` builds no embedders (unconditional backbone);
     subclasses decide whether that is allowed. ``time_invariant=True`` pins
     ``t`` to zero on every call, the Equilibrium Matching model convention,
-    so the backbone defines one field for all times. ``prediction_type``
+    so the backbone defines one field for all times. ``max_time`` clamps
+    ``t`` to at most that value on every call, the mixed-field matching model
+    convention (time input \(\min(t, a)\)), so the backbone is time-invariant
+    above it. ``prediction_type``
     declares what ``forward`` returns (``"velocity"``, ``"score"``, or
     ``"epsilon"``); it does not change the computation.
 
@@ -83,6 +86,7 @@ class _ConditionalBackbone(nn.Module):
         guidance_conditioning: Optional[str] = None,
         guidance_embedder: Optional[nn.Module] = None,
         time_invariant: bool = False,
+        max_time: Optional[float] = None,
         prediction_type: str = "velocity",
     ):
         super().__init__()
@@ -116,6 +120,11 @@ class _ConditionalBackbone(nn.Module):
                 "a two-time model with time_invariant=True embeds t - s only and "
                 "takes no t_embedder"
             )
+        if max_time is not None and (time_invariant or two_time):
+            raise ValueError(
+                "max_time clamps the time of a one-time model; it takes no "
+                "time_invariant=True and no two-time prediction_type"
+            )
         if cond_dim < 0:
             raise ValueError(f"cond_dim must be non-negative, got {cond_dim}")
         if not 0.0 <= class_dropout_prob <= 1.0:
@@ -139,6 +148,7 @@ class _ConditionalBackbone(nn.Module):
         self.cond_dim = int(cond_dim)
         self.num_classes = int(num_classes) if num_classes is not None else None
         self.time_invariant = bool(time_invariant)
+        self.max_time = None if max_time is None else float(max_time)
         self.prediction_type = prediction_type
         self._default_t_embedder = t_embedder is None and self.cond_dim > 0 and not no_t_embedder
         self._default_y_embedder = y_embedder is None and self.num_classes is not None
@@ -223,6 +233,8 @@ class _ConditionalBackbone(nn.Module):
         elif self.time_invariant:
             embeddings.append(("t", self.t_embedder(x.new_zeros(x.shape[0]))))
         elif t is not None:
+            if self.max_time is not None:
+                t = t.clamp(max=self.max_time)
             embeddings.append(("t", self.t_embedder(t)))
         if y is not None:
             if self.y_embedder is None:

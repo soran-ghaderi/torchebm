@@ -192,3 +192,35 @@ def test_two_time_backbone_compiles_without_graph_breaks(backbone):
     x, (s, t) = _input(model), _times()
     compiled = torch.compile(model, fullgraph=True)
     assert torch.allclose(compiled(x, t, s=s), model(x, t, s=s), atol=1e-12)
+
+
+@pytest.mark.parametrize("backbone", [mlp, dit])
+def test_max_time_holds_the_time_input(backbone):
+    torch.manual_seed(0)
+    model = _perturbed(backbone(max_time=0.8))
+    reference = backbone().double()
+    reference.load_state_dict(model.state_dict())
+    x = _input(model)
+    t = torch.tensor([0.1, 0.8, 0.9, 1.0], dtype=torch.float64)
+    with torch.no_grad():
+        assert torch.equal(model(x, t), reference(x, t.clamp(max=0.8)))
+        held = model(x, torch.full_like(t, 0.8))
+        assert torch.equal(model(x, torch.ones_like(t)), held)
+        assert not torch.equal(model(x, torch.zeros_like(t)), held)
+
+
+@pytest.mark.parametrize("backbone", [mlp, dit])
+def test_max_time_rejects_time_invariant_and_two_time_models(backbone):
+    with pytest.raises(ValueError, match="max_time"):
+        backbone(max_time=0.8, time_invariant=True)
+    with pytest.raises(ValueError, match="max_time"):
+        backbone(max_time=0.8, prediction_type="flow_map")
+
+
+@pytest.mark.parametrize("backbone", [mlp, dit])
+def test_max_time_compiles_without_graph_breaks(backbone):
+    model = backbone(max_time=0.8)
+    x = _input(model).float()
+    t = torch.rand(4)
+    compiled = torch.compile(model, backend="eager", fullgraph=True)
+    assert torch.allclose(compiled(x, t), model(x, t))

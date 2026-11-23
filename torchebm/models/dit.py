@@ -232,6 +232,10 @@ class DiT(_ConditionalBackbone):
         time_invariant: Pin ``t`` to zero on every call, the Equilibrium
             Matching model convention; labels and ``cond`` still apply. A
             two-time model embeds \(t - s\) only, as Improved MeanFlow does.
+        max_time: Clamp ``t`` to at most this value on every call, the
+            mixed-field matching model convention: with ``max_time=a`` the
+            time input is \(\min(t, a)\), so the model is time-invariant
+            above \(a\). One-time models only.
         prediction_type: What ``forward`` returns: ``"velocity"`` (default),
             ``"score"``, or ``"epsilon"``, a declaration for consumers that
             leaves the computation unchanged; or a two-time output,
@@ -338,6 +342,7 @@ class DiT(_ConditionalBackbone):
         rms_norm: bool = False,
         block_bias: bool = True,
         time_invariant: bool = False,
+        max_time: Optional[float] = None,
         prediction_type: str = "velocity",
     ):
         if isinstance(input_size, int):
@@ -401,6 +406,7 @@ class DiT(_ConditionalBackbone):
             guidance_conditioning=guidance_conditioning,
             guidance_embedder=guidance_embedder,
             time_invariant=time_invariant,
+            max_time=max_time,
             prediction_type=prediction_type,
         )
 
